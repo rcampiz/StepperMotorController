@@ -346,25 +346,27 @@ ser = serial.Serial('COM3', 115200, timeout=1)  # Windows
 
 | Component | Status |
 |-----------|--------|
-| `ITransport` interface | Complete |
-| `UartTransport` | Stub (TODO: USART2 init) |
-| `RttTransport` | Stub (needs SEGGER sources) |
-| `CommandParser` | Protocol skeleton with sync commands |
-| `TelemetryManager` | Complete |
-| `CommsTask` | Stub with init framework |
-| Tick timer service | Not implemented |
-| Command queue | Not implemented |
-| ARM/START state machine | Not implemented |
-| PING/PONG timestamps | Not implemented |
+| `ITransport` interface | **Complete** |
+| `UartTransport` | *Scaffolded* - init/transfer stubs, USART2 config TBD |
+| `RttTransport` | **Complete** - SEGGER RTT integrated |
+| `CommandParser` | **Complete** - all commands parsed and dispatched |
+| `TelemetryManager` | **Complete** |
+| `CommsTask` | **Complete** - task framework with transport selection |
+| Tick timer service | **Complete** - TIM5 @ 1MHz |
+| Command queue | **Complete** - FIFO with 8-command depth |
+| ARM/START state machine | **Complete** - ARM/START/START_AT |
+| PING/PONG timestamps | **Complete** - RX/TX tick capture |
+| Device identification | **Complete** - NOR flash storage |
+| Control modes | **Complete** - OPEN_LOOP/CLOSED_LOOP |
+| Motor command execution | *Scaffolded* - parser complete, powerSTEP01 TBD |
+| Telemetry output | *Scaffolded* - data collected, formatting TBD |
 
 ## Next Steps
 
-1. **Implement tick timer service** - TIM5 as 32-bit microsecond counter
-2. **Implement command queue** - FIFO with ARM/START gating
-3. **Add PING/PONG** - Timestamp capture at RX/TX
-4. **Implement UartTransport** - USART2 configuration
-5. Wire `CommandParser` dispatch to `MotorTask_SendCommand()`
-6. Implement state machine (IDLE/ARMED/RUNNING/FAULT)
+1. **Implement UartTransport** - USART2 initialization and interrupt/DMA handling
+2. **Implement powerSTEP01 driver** - SPI command sequences for motor control
+3. **Wire motor dispatch** - Connect CommandParser to powerSTEP01 driver
+4. **Format telemetry output** - Implement telemetry stream formatting
 
 ## References
 

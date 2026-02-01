@@ -24,29 +24,43 @@ public:
         Div256 = 0b111
     };
 
-    SPIBus(SPI_TypeDef* spi, Prescaler prescaler = Prescaler::Div16)
+    /**
+     * @brief SPI clock polarity and phase modes
+     *
+     * Mode 0: CPOL=0, CPHA=0 - Clock idle low, sample on rising edge (NOR flash)
+     * Mode 1: CPOL=0, CPHA=1 - Clock idle low, sample on falling edge
+     * Mode 2: CPOL=1, CPHA=0 - Clock idle high, sample on falling edge
+     * Mode 3: CPOL=1, CPHA=1 - Clock idle high, sample on rising edge (powerSTEP01)
+     */
+    enum class Mode : uint8_t {
+        Mode0 = 0,                              // CPOL=0, CPHA=0
+        Mode1 = SPI_CR1_CPHA,                   // CPOL=0, CPHA=1
+        Mode2 = SPI_CR1_CPOL,                   // CPOL=1, CPHA=0
+        Mode3 = SPI_CR1_CPOL | SPI_CR1_CPHA     // CPOL=1, CPHA=1
+    };
+
+    SPIBus(SPI_TypeDef* spi, Prescaler prescaler = Prescaler::Div16, Mode mode = Mode::Mode3)
         : m_spi(spi), m_mutex(nullptr) {
         m_mutex = xSemaphoreCreateMutex();
-        init(prescaler);
+        init(prescaler, mode);
     }
 
     ~SPIBus() {
         if (m_mutex) vSemaphoreDelete(m_mutex);
     }
 
-    void init(Prescaler prescaler) {
+    void init(Prescaler prescaler, Mode mode = Mode::Mode3) {
         enableClock();
         configurePins();
 
         // Disable SPI for configuration
         m_spi->CR1 &= ~SPI_CR1_SPE;
 
-        // Configure: Master, Software NSS, 8-bit, CPOL=1, CPHA=1 (Mode 3)
+        // Configure: Master, Software NSS, 8-bit, with specified mode
         m_spi->CR1 = SPI_CR1_MSTR          // Master mode
                    | SPI_CR1_SSM           // Software slave management
                    | SPI_CR1_SSI           // Internal slave select high
-                   | SPI_CR1_CPOL          // Clock polarity high when idle
-                   | SPI_CR1_CPHA          // Sample on second edge
+                   | static_cast<uint8_t>(mode)  // CPOL/CPHA from mode
                    | (static_cast<uint8_t>(prescaler) << SPI_CR1_BR_Pos);
 
         m_spi->CR2 = 0;

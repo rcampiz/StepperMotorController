@@ -172,6 +172,9 @@ bool Encoder::init()
         return false;
     }
 
+    // Enable index pulse interrupt (EXTI4 on PC4)
+    enableIndexInterrupt();
+
     m_indexSeen = false;
     m_indexTick = 0;
     m_status = Status::READY;

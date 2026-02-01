@@ -53,6 +53,7 @@ StepperMotorController/
 |       |   +-- command_queue.cpp
 |       |   +-- device_config.cpp
 |       |   +-- control_mode.cpp
+|       +-- legacy/                   # Deprecated files (not built)
 |       +-- main.cpp                  # Application entry point
 |       +-- [other source files]
 +-- Drivers/

@@ -27,10 +27,7 @@ static TickType_t s_lastTelemetryTime = 0;
 
 bool CommsTask_Init(TransportType transport)
 {
-    // Initialize telemetry manager
-    if (!Comms::g_telemetry.init()) {
-        return false;
-    }
+    // NOTE: Telemetry is initialized in main.cpp before tasks are created
 
     // Create transport based on selection
     switch (transport) {
