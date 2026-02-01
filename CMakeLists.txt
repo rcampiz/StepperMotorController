@@ -18,7 +18,7 @@ set(CMAKE_SIZE ${TOOLCHAIN_PREFIX}size)
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
 # Project name
-project(LedArray C CXX ASM)
+project(StepperMotorController C CXX ASM)
 
 # Enable compile_commands.json generation
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
@@ -50,9 +50,19 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Include directories
 include_directories(
     Core/Inc
+    Core/Inc/board
+    Core/Inc/comms
+    Core/Inc/drivers
+    Core/Inc/tasks
     Drivers/CMSIS
+    Drivers/CMSIS/Device/ST/STM32F4xx/Include
+    Drivers/CMSIS/Include
+    Drivers/STM32F4xx_HAL_Driver/Inc
     Middlewares/Third_Party/FreeRTOS-Kernel/include
     Middlewares/Third_Party/FreeRTOS-Kernel/portable/GCC/ARM_CM4F
+    # SEGGER (uncomment when sources are added)
+    # Middlewares/SEGGER/RTT
+    # Middlewares/SEGGER/SystemView
 )
 
 # Defines
@@ -60,6 +70,7 @@ add_compile_definitions(
     STM32F401xE
     __FPU_PRESENT=1
     __FPU_USED=1
+    # ENABLE_SEGGER_SYSTEMVIEW  # Uncomment after adding SEGGER sources
 )
 
 # FreeRTOS source files
@@ -82,12 +93,42 @@ set(C_SOURCES
     ${FREERTOS_SOURCES}
 )
 
+# Communications module sources
+set(COMMS_SOURCES
+    Core/Src/comms/uart_transport.cpp
+    Core/Src/comms/rtt_transport.cpp
+    Core/Src/comms/command_parser.cpp
+    Core/Src/comms/telemetry.cpp
+)
+
+# Task sources
+set(TASK_SOURCES
+    Core/Src/tasks/motor_task.cpp
+    Core/Src/tasks/encoder_task.cpp
+    Core/Src/tasks/display_task.cpp
+    Core/Src/tasks/comms_task.cpp
+    Core/Src/tasks/bringup_task.cpp
+)
+
+# SEGGER sources (uncomment when downloaded)
+# set(SEGGER_RTT_SOURCES
+#     Middlewares/SEGGER/RTT/SEGGER_RTT.c
+#     Middlewares/SEGGER/RTT/SEGGER_RTT_printf.c
+# )
+# set(SEGGER_SYSVIEW_SOURCES
+#     Middlewares/SEGGER/SystemView/SEGGER_SYSVIEW.c
+#     Middlewares/SEGGER/SystemView/SEGGER_SYSVIEW_Config_FreeRTOS.c
+#     Middlewares/SEGGER/SystemView/SEGGER_SYSVIEW_FreeRTOS.c
+# )
+
 set(CXX_SOURCES
     Core/Src/main.cpp
     Core/Src/led_pattern_task.cpp
     Core/Src/heartbeat_task.cpp
     Core/Src/button_monitor_task.cpp
     Core/Src/usb_comm_task.cpp
+    ${COMMS_SOURCES}
+    ${TASK_SOURCES}
 )
 
 set(ASM_SOURCES

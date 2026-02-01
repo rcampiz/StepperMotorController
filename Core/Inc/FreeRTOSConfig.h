@@ -43,9 +43,10 @@
 #define configCHECK_FOR_STACK_OVERFLOW          0
 #define configUSE_RECURSIVE_MUTEXES             1
 #define configUSE_MALLOC_FAILED_HOOK            0
-#define configUSE_APPLICATION_TASK_TAG          0
+#define configUSE_APPLICATION_TASK_TAG          1
 #define configUSE_COUNTING_SEMAPHORES           1
 #define configGENERATE_RUN_TIME_STATS           0
+#define configRECORD_STACK_HIGH_ADDRESS         1
 
 /* Co-routine definitions. */
 #define configUSE_CO_ROUTINES                   0
@@ -67,6 +68,8 @@ to exclude the API function. */
 #define INCLUDE_vTaskDelayUntil                 1
 #define INCLUDE_vTaskDelay                      1
 #define INCLUDE_xTaskGetSchedulerState          1
+#define INCLUDE_xTaskGetIdleTaskHandle          1
+#define INCLUDE_pxTaskGetStackStart             1
 
 /* Cortex-M specific definitions. */
 #ifdef __NVIC_PRIO_BITS
@@ -102,5 +105,18 @@ standard names. */
 #define vPortSVCHandler    SVC_Handler
 #define xPortPendSVHandler PendSV_Handler
 #define xPortSysTickHandler SysTick_Handler
+
+/*-----------------------------------------------------------
+ * SEGGER SystemView Configuration
+ *
+ * SystemView provides real-time recording and visualization of FreeRTOS
+ * task execution, ISRs, and system events via SEGGER RTT.
+ *
+ * To enable: Define ENABLE_SEGGER_SYSTEMVIEW and add SEGGER sources.
+ * RTT Channel 1 is used for SystemView (Channel 0 reserved for console).
+ *----------------------------------------------------------*/
+#ifdef ENABLE_SEGGER_SYSTEMVIEW
+  #include "SEGGER_SYSVIEW_FreeRTOS.h"
+#endif
 
 #endif /* FREERTOS_CONFIG_H */
