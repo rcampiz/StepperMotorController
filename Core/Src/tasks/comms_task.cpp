@@ -14,6 +14,9 @@
 
 namespace Tasks {
 
+// Forward declaration
+static void publishTelemetry();
+
 // Transport and parser instances
 static Comms::ITransport* s_transport = nullptr;
 static Comms::CommandParser* s_parser = nullptr;

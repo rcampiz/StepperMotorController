@@ -12,6 +12,13 @@
 
 namespace Tasks {
 
+// Forward declarations for render functions
+static void renderStatusPage(const Comms::TelemetrySnapshot& telem);
+static void renderMotorPage(const Comms::TelemetrySnapshot& telem);
+static void renderEncoderPage(const Comms::TelemetrySnapshot& telem);
+static void renderSystemPage(const Comms::TelemetrySnapshot& telem);
+static void renderDebugPage(const Comms::TelemetrySnapshot& telem);
+
 // Display state
 static DisplayPage s_currentPage = DisplayPage::Status;
 static bool s_refreshPending = false;

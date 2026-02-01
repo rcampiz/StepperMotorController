@@ -91,6 +91,39 @@ static inline void __ISB(void)         { __asm volatile ("isb 0xF":::"memory"); 
 static inline void __DSB(void)         { __asm volatile ("dsb 0xF":::"memory"); }
 static inline void __DMB(void)         { __asm volatile ("dmb 0xF":::"memory"); }
 
+// NVIC functions
+#define __NVIC_PRIO_BITS          4U  // STM32F4 uses 4 priority bits
+
+static inline void NVIC_SetPriority(int IRQn, uint32_t priority)
+{
+    if (IRQn >= 0) {
+        NVIC->IP[(uint32_t)IRQn] = (uint8_t)((priority << (8U - __NVIC_PRIO_BITS)) & 0xFFUL);
+    } else {
+        SCB->SHP[(((uint32_t)IRQn) & 0xFUL) - 4UL] = (uint8_t)((priority << (8U - __NVIC_PRIO_BITS)) & 0xFFUL);
+    }
+}
+
+static inline void NVIC_EnableIRQ(int IRQn)
+{
+    if (IRQn >= 0) {
+        NVIC->ISER[(uint32_t)IRQn >> 5UL] = (1UL << ((uint32_t)IRQn & 0x1FUL));
+    }
+}
+
+static inline void NVIC_DisableIRQ(int IRQn)
+{
+    if (IRQn >= 0) {
+        NVIC->ICER[(uint32_t)IRQn >> 5UL] = (1UL << ((uint32_t)IRQn & 0x1FUL));
+    }
+}
+
+static inline void NVIC_ClearPendingIRQ(int IRQn)
+{
+    if (IRQn >= 0) {
+        NVIC->ICPR[(uint32_t)IRQn >> 5UL] = (1UL << ((uint32_t)IRQn & 0x1FUL));
+    }
+}
+
 #ifdef __cplusplus
 }
 #endif

@@ -42,60 +42,54 @@
 *                                                                    *
 **********************************************************************
 -------------------------- END-OF-HEADER -----------------------------
-
-File    : SEGGER_SYSVIEW_Config_FreeRTOS.c
-Purpose : Sample setup configuration of SystemView with FreeRTOS.
-Revision: $Rev: 7745 $
+File    : SEGGER_SYSVIEW_Int.h
+Purpose : SEGGER SystemView internal header.
+Revision: $Rev: 21281 $
 */
-#include "FreeRTOS.h"
+
+#ifndef SEGGER_SYSVIEW_INT_H
+#define SEGGER_SYSVIEW_INT_H
+
+/*********************************************************************
+*
+*       #include Section
+*
+**********************************************************************
+*/
+
 #include "SEGGER_SYSVIEW.h"
 
-extern const SEGGER_SYSVIEW_OS_API SYSVIEW_X_OS_TraceAPI;
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 
 /*********************************************************************
 *
-*       Defines, configurable
+*       Private data types
 *
 **********************************************************************
 */
-// The application name to be displayed in SystemViewer
-#define SYSVIEW_APP_NAME        "StepperMotorController"
+//
+// Commands that Host can send to target
+//
+typedef enum {
+  SEGGER_SYSVIEW_COMMAND_ID_START = 1,
+  SEGGER_SYSVIEW_COMMAND_ID_STOP,
+  SEGGER_SYSVIEW_COMMAND_ID_GET_SYSTIME,
+  SEGGER_SYSVIEW_COMMAND_ID_GET_TASKLIST,
+  SEGGER_SYSVIEW_COMMAND_ID_GET_SYSDESC,
+  SEGGER_SYSVIEW_COMMAND_ID_GET_NUMMODULES,
+  SEGGER_SYSVIEW_COMMAND_ID_GET_MODULEDESC,
+  SEGGER_SYSVIEW_COMMAND_ID_HEARTBEAT = 127,
+  // Extended commands: Commands >= 128 have a second parameter
+  SEGGER_SYSVIEW_COMMAND_ID_GET_MODULE = 128
+} SEGGER_SYSVIEW_COMMAND_ID;
 
-// The target device name
-#define SYSVIEW_DEVICE_NAME     "STM32F401RE"
-
-// Frequency of the timestamp. Must match SEGGER_SYSVIEW_GET_TIMESTAMP in SEGGER_SYSVIEW_Conf.h
-#define SYSVIEW_TIMESTAMP_FREQ  (configCPU_CLOCK_HZ)
-
-// System Frequency. SystemcoreClock is used in most CMSIS compatible projects.
-#define SYSVIEW_CPU_FREQ        configCPU_CLOCK_HZ
-
-// The lowest RAM address used for IDs (pointers)
-// STM32F401RE SRAM starts at 0x20000000
-#define SYSVIEW_RAM_BASE        (0x20000000)
-
-/********************************************************************* 
-*
-*       _cbSendSystemDesc()
-*
-*  Function description
-*    Sends SystemView description strings.
-*/
-static void _cbSendSystemDesc(void) {
-  SEGGER_SYSVIEW_SendSysDesc("N="SYSVIEW_APP_NAME",D="SYSVIEW_DEVICE_NAME",O=FreeRTOS");
-  SEGGER_SYSVIEW_SendSysDesc("I#15=SysTick");
+#ifdef __cplusplus
 }
+#endif
 
-/*********************************************************************
-*
-*       Global functions
-*
-**********************************************************************
-*/
-void SEGGER_SYSVIEW_Conf(void) {
-  SEGGER_SYSVIEW_Init(SYSVIEW_TIMESTAMP_FREQ, SYSVIEW_CPU_FREQ, 
-                      &SYSVIEW_X_OS_TraceAPI, _cbSendSystemDesc);
-  SEGGER_SYSVIEW_SetRAMBase(SYSVIEW_RAM_BASE);
-}
+#endif
 
 /*************************** End of file ****************************/

@@ -54,15 +54,16 @@ include_directories(
     Core/Inc/comms
     Core/Inc/drivers
     Core/Inc/tasks
+    Core/Inc/services
     Drivers/CMSIS
     Drivers/CMSIS/Device/ST/STM32F4xx/Include
     Drivers/CMSIS/Include
     Drivers/STM32F4xx_HAL_Driver/Inc
     Middlewares/Third_Party/FreeRTOS-Kernel/include
     Middlewares/Third_Party/FreeRTOS-Kernel/portable/GCC/ARM_CM4F
-    # SEGGER (uncomment when sources are added)
-    # Middlewares/SEGGER/RTT
-    # Middlewares/SEGGER/SystemView
+    # SEGGER RTT and SystemView
+    Middlewares/SEGGER/RTT
+    Middlewares/SEGGER/SystemView
 )
 
 # Defines
@@ -70,7 +71,8 @@ add_compile_definitions(
     STM32F401xE
     __FPU_PRESENT=1
     __FPU_USED=1
-    # ENABLE_SEGGER_SYSTEMVIEW  # Uncomment after adding SEGGER sources
+    ENABLE_SEGGER_SYSTEMVIEW
+    RTT_USE_ASM=0
 )
 
 # FreeRTOS source files
@@ -86,11 +88,26 @@ set(FREERTOS_SOURCES
     ${FREERTOS_DIR}/portable/GCC/ARM_CM4F/port.c
 )
 
+# SEGGER RTT sources
+set(SEGGER_RTT_SOURCES
+    Middlewares/SEGGER/RTT/SEGGER_RTT.c
+    Middlewares/SEGGER/RTT/SEGGER_RTT_printf.c
+)
+
+# SEGGER SystemView sources
+set(SEGGER_SYSVIEW_SOURCES
+    Middlewares/SEGGER/SystemView/SEGGER_SYSVIEW.c
+    Middlewares/SEGGER/SystemView/SEGGER_SYSVIEW_Config_FreeRTOS.c
+    Middlewares/SEGGER/SystemView/SEGGER_SYSVIEW_FreeRTOS.c
+)
+
 # Source files
 set(C_SOURCES
     Core/Src/system_stm32f4xx.c
     Core/Src/syscalls.c
     ${FREERTOS_SOURCES}
+    ${SEGGER_RTT_SOURCES}
+    ${SEGGER_SYSVIEW_SOURCES}
 )
 
 # Communications module sources
@@ -110,25 +127,19 @@ set(TASK_SOURCES
     Core/Src/tasks/bringup_task.cpp
 )
 
-# SEGGER sources (uncomment when downloaded)
-# set(SEGGER_RTT_SOURCES
-#     Middlewares/SEGGER/RTT/SEGGER_RTT.c
-#     Middlewares/SEGGER/RTT/SEGGER_RTT_printf.c
-# )
-# set(SEGGER_SYSVIEW_SOURCES
-#     Middlewares/SEGGER/SystemView/SEGGER_SYSVIEW.c
-#     Middlewares/SEGGER/SystemView/SEGGER_SYSVIEW_Config_FreeRTOS.c
-#     Middlewares/SEGGER/SystemView/SEGGER_SYSVIEW_FreeRTOS.c
-# )
+# Service sources
+set(SERVICE_SOURCES
+    Core/Src/services/tick_timer.cpp
+    Core/Src/services/command_queue.cpp
+    Core/Src/services/device_config.cpp
+    Core/Src/services/control_mode.cpp
+)
 
 set(CXX_SOURCES
     Core/Src/main.cpp
-    Core/Src/led_pattern_task.cpp
-    Core/Src/heartbeat_task.cpp
-    Core/Src/button_monitor_task.cpp
-    Core/Src/usb_comm_task.cpp
     ${COMMS_SOURCES}
     ${TASK_SOURCES}
+    ${SERVICE_SOURCES}
 )
 
 set(ASM_SOURCES

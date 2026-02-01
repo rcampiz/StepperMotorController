@@ -42,6 +42,12 @@ struct EncoderState {
 bool EncoderTask_Init();
 
 /**
+ * @brief Check if encoder hardware is available
+ * @return true if encoder was initialized successfully
+ */
+bool EncoderTask_IsAvailable();
+
+/**
  * @brief Encoder task entry point
  * @param pvParameters Unused
  */

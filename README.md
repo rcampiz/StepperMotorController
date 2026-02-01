@@ -1,151 +1,205 @@
-# NUCLEO-F401RE LED Array Project
+# STM32F401RE Stepper Motor Controller
 
-## Hardware
-- **Board**: NUCLEO-F401RE
-- **MCU**: STM32F401RET6 (ARM Cortex-M4, 84MHz, 512KB Flash, 96KB RAM)
-- **Debug Interface**: ST-LINK/V2-1 (onboard)
+## Project Vision
 
-## Development Environment Setup
+A **precision stepper motor controller** for a **mecanum-wheel robotic platform**, where **four identical controllers** (one per wheel) are coordinated by a Raspberry Pi host for synchronized motion.
 
-### Required Tools Installation Steps
+**Target Application:** Mecanum-wheel robot with:
+- **Synchronized multi-axis control** - Four controllers start motion simultaneously
+- **Closed-loop positioning** with quadrature encoder feedback
+- **Sub-millisecond coordination** via ARM/START protocol or timestamp-based sync
+- **Latency measurement** for host-side compensation (PING/PONG with timestamps)
+- **Windows + Raspberry Pi** host support via USB VCP
 
-#### 1. ARM GCC Toolchain (REQUIRED)
-   - Download from: https://developer.arm.com/downloads/-/gnu-rm
-   - Install the latest version (e.g., 13.2.rel1)
-   - During installation:
-     - Check "Add path to environment variable"
-     - Default install location: `C:\Program Files (x86)\GNU Arm Embedded Toolchain\`
-   - Verify installation: Open new terminal and run `arm-none-eabi-gcc --version`
+This firmware is designed for deterministic, real-time motor control where the host issues high-level commands and the MCU handles precise step generation.
 
-#### 2. Make for Windows (REQUIRED)
-   Choose ONE option:
-
-   **Option A: MinGW-w64 with MSYS2 (Recommended)**
-   - Download from: https://www.msys2.org/
-   - Install and run MSYS2
-   - Update package database: `pacman -Syu`
-   - Install make: `pacman -S make`
-   - Add to PATH: `C:\msys64\usr\bin`
-
-   **Option B: Make for Windows**
-   - Download from: http://gnuwin32.sourceforge.net/packages/make.htm
-   - Add installation bin folder to PATH
-
-   **Option C: Use Git Bash (if Git is installed)**
-   - Git for Windows includes make in Git Bash
-
-#### 3. OpenOCD (REQUIRED for debugging)
-   - Download from: https://github.com/xpack-dev-tools/openocd-xpack/releases
-   - Extract to `C:\OpenOCD\` or similar
-   - Add `C:\OpenOCD\bin` to PATH
-   - Verify: `openocd --version`
-
-#### 4. STM32CubeProgrammer (Optional, for advanced flashing)
-   - Download: https://www.st.com/en/development-tools/stm32cubeprog.html
-   - Only needed if OpenOCD doesn't work
-
-### VSCode Extensions (REQUIRED)
-1. **C/C++** (Microsoft) - For C++ IntelliSense
-2. **Cortex-Debug** - For ARM debugging with F5 support
-   - Install from VSCode marketplace
-   - Search for "Cortex-Debug" by marus25
-
-### Verification
-After installation, verify all tools in a NEW terminal:
-```bash
-arm-none-eabi-gcc --version
-make --version
-openocd --version
-```
-
-## Project Structure
+## System Architecture
 
 ```
-LedArray/
-├── Core/
-│   ├── Src/          # Application source files (C++)
-│   └── Inc/          # Application header files
-├── Drivers/
-│   ├── STM32F4xx_HAL_Driver/  # STM32 HAL library
-│   ├── CMSIS/                  # ARM CMSIS files
-│   └── Custom/                 # Custom peripheral drivers
-├── build/            # Build output directory
-├── Makefile          # Build configuration
-└── README.md         # This file
+                              Raspberry Pi / Windows Host
+                                          |
+              +------------+--------------+--------------+------------+
+              |            |              |              |            |
+              v            v              v              v            |
+       +----------+  +----------+  +----------+  +----------+        |
+       | Wheel FL |  | Wheel FR |  | Wheel RL |  | Wheel RR |        |
+       | STM32    |  | STM32    |  | STM32    |  | STM32    |        |
+       +----------+  +----------+  +----------+  +----------+        |
+                                                                     |
+       Host -> USB -> ST-LINK/J-LINK -> MCU (VCP UART or RTT)        |
 ```
 
-## Building the Project
+Each controller runs identical firmware. The host coordinates them via:
+1. **Command queuing** - Buffer multiple motion commands
+2. **ARM/START** - Prepare commands, then trigger simultaneous execution
+3. **PING/PONG** - Measure communication latency for compensation
+4. **GET_TICK** - Synchronize tick counters across controllers
 
-```bash
-make all
-```
+## Hardware Platform
 
-## Flashing the Board
+| Component | Model | Purpose |
+|-----------|-------|---------|
+| **MCU Board** | NUCLEO-F401RE | ARM Cortex-M4 @ 84MHz, 512KB Flash, 96KB RAM |
+| **Motor Driver** | X-NUCLEO-IHM03A1 | powerSTEP01 stepper driver (voltage/current mode) |
+| **Display Board** | X-NUCLEO-GFX01M2 | ST7789 LCD, NOR flash, 5-way joystick |
+| **Encoder** | External quadrature | A/B channels + index pulse (Z) |
+| **Debug Interface** | ST-LINK/V2-1 | On-board, convertible to J-Link OB |
 
-```bash
-make flash
-```
+## Key Features
 
-## Debugging
+### Synchronized Motion Control
+- **ARM/START protocol** - Queue commands, arm, then trigger all controllers simultaneously
+- **Timestamp-based sync** - START_AT command for precise scheduling
+- **Monotonic tick counter** - 1 microsecond resolution for timing
+- **Deterministic execution** - Motion driven by hardware timers, not host timing
 
-Use VSCode with Cortex-Debug extension or:
-```bash
-make debug
-```
+### Motor Control
+- Full powerSTEP01 command set (move, goto, run, stop, hi-z)
+- Configurable acceleration, deceleration, and max speed
+- Position tracking with 32-bit absolute position
+- Stall detection and fault monitoring
 
-## Quick Start Guide
+### Latency Measurement
+- **PING/PONG** with timestamps for round-trip measurement
+- MCU captures tick at RX and TX for precise timing
+- Host can compensate for communication jitter
 
-### First Time Setup
-1. **Install Tools** (follow instructions above):
-   - ARM GCC Toolchain
-   - Make
-   - OpenOCD
+### Encoder Feedback
+- Hardware quadrature decoding via TIM2 encoder mode
+- 32-bit position counter
+- 100 Hz velocity calculation
+- Index pulse detection for homing
 
-2. **Install VSCode Extensions**:
+### Communication
+- ASCII command protocol over USB VCP (USART2)
+- Works from **Windows** (COM port) and **Raspberry Pi** (/dev/ttyACM0)
+- Optional SEGGER RTT for high-speed debugging
+
+### Safety
+- **ESTOP** command for immediate stop
+- Fault detection and reporting
+- Explicit recovery sequence (CLEAR_FAULT -> ENABLE)
+
+## Command Protocol Summary
+
+| Command | Description |
+|---------|-------------|
+| `MOVE <steps> <dir>` | Relative move |
+| `GOTO <position>` | Absolute move |
+| `RUN <speed> <dir>` | Continuous rotation |
+| `STOP [hard]` | Decelerate or immediate stop |
+| `QUEUE <cmd> <params>` | Add to command queue |
+| `ARM` | Prepare queued commands |
+| `START` | Begin execution |
+| `PING <seq>` | Latency measurement |
+| `GET_TICK` | Query tick counter |
+| `GET_STATUS` | Query controller state |
+| `ESTOP` | Emergency stop |
+
+See [docs/HOST_INTERFACE_AND_SYNC.md](docs/HOST_INTERFACE_AND_SYNC.md) for complete protocol specification.
+
+## Project Status
+
+| Phase | Description | Status |
+|-------|-------------|--------|
+| 1 | Project Reorganization | Complete |
+| 2 | Build Configuration (CMake) | Complete |
+| 3 | SEGGER Source Download | Optional |
+| 4 | SystemView Integration Prep | Complete |
+| 5 | ST-LINK to J-Link Conversion | Optional |
+| 6 | main.cpp Integration | Complete |
+| 7 | Build Verification | Complete |
+| 8 | Tick Timer Service | Complete |
+| 9 | Command Queue + ARM/START | Complete |
+| 10 | PING/PONG Timestamps | Complete |
+| 11 | State Machine (IDLE/ARMED/RUNNING) | Complete |
+
+**Current State:** Core synchronization features complete. Hardware drivers (powerSTEP01, LCD, UART transport) need implementation.
+
+## Quick Start
+
+### Prerequisites
+
+1. **ARM GCC Toolchain** (14.x recommended)
+   - Download: https://developer.arm.com/downloads/-/gnu-rm
+
+2. **CMake** (3.20+) and **Ninja**
+   - CMake: https://cmake.org/download/
+   - Ninja: https://ninja-build.org/
+
+3. **VS Code Extensions** (recommended)
    - C/C++ (Microsoft)
    - Cortex-Debug
 
-3. **Verify Installation** (open NEW terminal after installation):
-   ```bash
-   arm-none-eabi-gcc --version
-   make --version
-   openocd --version
-   ```
+### Building
 
-### Building and Running
+```bash
+# Configure (first time only)
+mkdir build && cd build
+cmake -G Ninja ..
 
-#### Option 1: Using VSCode (Easiest)
-1. Open this folder in VSCode
-2. Connect NUCLEO-F401RE via USB
-3. Press **F5** to build, flash, and start debugging
-   - First press will build the project
-   - OpenOCD will flash the firmware
-   - Debugger will stop at main()
-4. Press F5 again (or Continue) to run
-5. The onboard LED (LD2/PA5) should blink every 500ms
+# Build
+ninja
 
-#### Option 2: Using Command Line
-1. Connect NUCLEO-F401RE via USB
-2. Build: `make all`
-3. Flash: `make flash`
-4. The LED should start blinking automatically
+# Output: build/StepperMotorController.elf
+```
 
-### Debugging from VSCode
-- Press **F5** to start debugging
-- Use breakpoints, step through code, inspect variables
-- The "Cortex-Debug" configuration provides peripheral register views
+### Testing from Windows
 
-## C++ Notes
+```python
+import serial
 
-This project uses C++ (embedded subset):
-- No STL (due to memory constraints)
-- No exceptions (disabled with -fno-exceptions)
-- No RTTI (disabled with -fno-rtti)
-- Limited dynamic memory allocation
-- C++11/14 features available (constexpr, auto, lambdas, etc.)
+# Connect via COM port (VCP)
+ser = serial.Serial('COM3', 115200, timeout=1)
+
+# Query tick
+ser.write(b'GET_TICK\n')
+print(ser.readline())
+
+# Measure latency
+ser.write(b'PING 1\n')
+print(ser.readline())  # PONG with timestamps
+
+# Queue and execute motion
+ser.write(b'QUEUE MOVE 1000 1\n')
+ser.write(b'ARM\n')
+ser.write(b'START\n')
+```
+
+## Documentation
+
+| Document | Description |
+|----------|-------------|
+| [docs/HOST_INTERFACE_AND_SYNC.md](docs/HOST_INTERFACE_AND_SYNC.md) | **Synchronization protocol and requirements** |
+| [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) | Directory layout and design rationale |
+| [docs/TASK_ARCHITECTURE.md](docs/TASK_ARCHITECTURE.md) | FreeRTOS task design and priorities |
+| [docs/COMMUNICATION_ARCHITECTURE.md](docs/COMMUNICATION_ARCHITECTURE.md) | Transport layer design |
+| [docs/PIN_ASSIGNMENTS.md](docs/PIN_ASSIGNMENTS.md) | Hardware pin mappings |
+| [docs/IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md) | Implementation notes |
 
 ## Next Steps
 
-1. Configure peripherals using STM32CubeMX
-2. Implement custom drivers for additional hardware
-3. Set up debugging configuration in VSCode
+### Phase 8-11: Synchronization Features
+
+1. **Tick timer service** - Configure TIM5 as 32-bit microsecond counter
+2. **Command queue** - FIFO buffer with ARM/START gating
+3. **PING/PONG** - Timestamp capture at RX/TX points
+4. **State machine** - IDLE/ARMED/RUNNING/FAULT transitions
+
+### Hardware Drivers
+
+5. **UartTransport** - Complete USART2 initialization
+6. **powerSTEP01 driver** - SPI command sequences
+7. **LCD driver** - ST7789 initialization
+
+## License
+
+This project is provided as-is for educational and development purposes.
+
+## References
+
+- [STM32F401RE Reference Manual (RM0368)](https://www.st.com/resource/en/reference_manual/rm0368-stm32f401xbc-and-stm32f401xde-advanced-armbased-32bit-mcus-stmicroelectronics.pdf)
+- [NUCLEO-F401RE User Manual (UM1724)](https://www.st.com/resource/en/user_manual/um1724-stm32-nucleo64-boards-mb1136-stmicroelectronics.pdf)
+- [X-NUCLEO-IHM03A1 User Manual](https://www.st.com/resource/en/user_manual/um2032-getting-started-with-the-xnucleoihm03a1-high-power-stepper-motor-driver-expansion-board-based-on-powerstep01-for-stm32-nucleo-stmicroelectronics.pdf)
+- [powerSTEP01 Datasheet](https://www.st.com/resource/en/datasheet/powerstep01.pdf)
+- [FreeRTOS Documentation](https://www.freertos.org/Documentation/RTOS_book.html)

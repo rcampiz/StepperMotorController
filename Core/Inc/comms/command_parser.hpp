@@ -3,8 +3,16 @@
  * @brief ASCII command protocol parser
  *
  * Line-based protocol:
- *   Command: <CMD> [ARG1] [ARG2]...\r\n
- *   Response: OK: <msg>\r\n or ERR: <msg>\r\n
+ *   Command: <CMD> [ARG1] [ARG2]...\n
+ *   Response: OK [<data>]\n or ERROR <code> [<msg>]\n
+ *
+ * Supports synchronized multi-controller operation:
+ *   - Command queuing (QUEUE)
+ *   - Arm/Start synchronization (ARM, START, START_AT)
+ *   - Latency measurement (PING/PONG with timestamps)
+ *   - Tick counter queries (GET_TICK)
+ *
+ * See docs/HOST_INTERFACE_AND_SYNC.md for protocol specification.
  */
 
 #ifndef COMMAND_PARSER_HPP
@@ -19,7 +27,38 @@ namespace Comms {
 constexpr size_t CMD_BUFFER_SIZE = 128;
 
 // Maximum number of arguments
-constexpr size_t MAX_ARGS = 4;
+constexpr size_t MAX_ARGS = 6;
+
+// Command queue depth
+constexpr size_t CMD_QUEUE_DEPTH = 8;
+
+/**
+ * @brief Error codes for command responses
+ */
+enum class ErrorCode : uint8_t {
+    OK = 0,
+    INVALID_CMD,
+    INVALID_PARAM,
+    QUEUE_FULL,
+    QUEUE_EMPTY,
+    NOT_ARMED,
+    ALREADY_RUNNING,
+    DRIVER_FAULT,
+    STALL,
+    OVERCURRENT
+};
+
+/**
+ * @brief Controller state machine states
+ */
+enum class ControllerState : uint8_t {
+    IDLE,       // Ready for commands
+    ARMED,      // Commands queued, awaiting START
+    RUNNING,    // Motion in progress
+    STOPPING,   // Decelerating
+    FAULT,      // Error, requires CLEAR_FAULT
+    ESTOP       // Emergency stop, outputs disabled
+};
 
 /**
  * @brief Parsed command structure
@@ -87,21 +126,49 @@ private:
      */
     void dispatch(const ParsedCommand& cmd);
 
-    // Command handlers (stubs)
-    void cmdHelp();
-    void cmdStatus();
-    void cmdVersion();
+    // Motion command handlers
     void cmdMove(const ParsedCommand& cmd);
     void cmdGoTo(const ParsedCommand& cmd);
     void cmdRun(const ParsedCommand& cmd);
-    void cmdStop();
-    void cmdHalt();
-    void cmdHome();
-    void cmdZero();
-    void cmdEncoder();
+    void cmdStop(const ParsedCommand& cmd);
+    void cmdEstop();
+
+    // Configuration command handlers
+    void cmdEnable();
+    void cmdDisable();
     void cmdAccel(const ParsedCommand& cmd);
     void cmdDecel(const ParsedCommand& cmd);
     void cmdMaxSpd(const ParsedCommand& cmd);
+
+    // Synchronization command handlers
+    void cmdQueue(const ParsedCommand& cmd);
+    void cmdArm();
+    void cmdStart();
+    void cmdStartAt(const ParsedCommand& cmd);
+    void cmdClearQueue();
+
+    // Timing/diagnostics command handlers
+    void cmdPing(const ParsedCommand& cmd);
+    void cmdGetTick();
+    void cmdGetStatus();
+    void cmdClearFault();
+
+    // Utility command handlers
+    void cmdHelp();
+    void cmdVersion();
+    void cmdHome();
+    void cmdZero();
+    void cmdEncoder();
+
+    // Device identification command handlers
+    void cmdGetDeviceId();
+    void cmdSetDeviceId(const ParsedCommand& cmd);
+    void cmdSetRole(const ParsedCommand& cmd);
+
+    // Control mode command handlers
+    void cmdGetMode();
+    void cmdSetMode(const ParsedCommand& cmd);
+    void cmdGetEncoderStatus();
 };
 
 } // namespace Comms

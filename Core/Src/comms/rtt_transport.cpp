@@ -4,8 +4,7 @@
  */
 
 #include "comms/rtt_transport.hpp"
-// TODO: Uncomment when SEGGER RTT is added
-// #include "SEGGER_RTT.h"
+#include "SEGGER_RTT.h"
 #include <cstring>
 
 namespace Comms {
@@ -24,33 +23,28 @@ bool RttTransport::init()
 
 bool RttTransport::available()
 {
-    // TODO: return SEGGER_RTT_HasKey() for channel 0
-    // or SEGGER_RTT_GetBytesInBuffer(m_channel) > 0
-    return false;
+    return SEGGER_RTT_HasData(m_channel) > 0;
 }
 
 size_t RttTransport::read(uint8_t* buffer, size_t maxLen)
 {
-    // TODO: return SEGGER_RTT_Read(m_channel, buffer, maxLen);
-    (void)buffer;
-    (void)maxLen;
-    return 0;
+    return SEGGER_RTT_Read(m_channel, buffer, maxLen);
 }
 
 bool RttTransport::readByte(uint8_t& byte, uint32_t timeoutMs)
 {
-    // TODO: Poll with timeout using SEGGER_RTT_GetKey() or Read
-    (void)byte;
-    (void)timeoutMs;
+    // Simple polling with timeout
+    // In FreeRTOS context, could use vTaskDelay for better efficiency
+    (void)timeoutMs;  // For now, just check once
+    if (SEGGER_RTT_HasData(m_channel)) {
+        return SEGGER_RTT_Read(m_channel, &byte, 1) == 1;
+    }
     return false;
 }
 
 size_t RttTransport::write(const uint8_t* data, size_t len)
 {
-    // TODO: return SEGGER_RTT_Write(m_channel, data, len);
-    (void)data;
-    (void)len;
-    return 0;
+    return SEGGER_RTT_Write(m_channel, data, len);
 }
 
 size_t RttTransport::print(const char* str)

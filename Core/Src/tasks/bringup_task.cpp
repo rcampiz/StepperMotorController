@@ -3,15 +3,15 @@
  * @brief Hardware bring-up and test task implementation
  */
 
-#include "bringup_task.hpp"
-#include "board_pins.hpp"
+#include "tasks/bringup_task.hpp"
+#include "board/board_pins.hpp"
 #include "uart.hpp"
 
-#include "../drivers/spi_bus.hpp"
-#include "../drivers/ihm03a1/powerstep01.hpp"
-#include "../drivers/gfx01m2/lcd.hpp"
-#include "../drivers/gfx01m2/flash.hpp"
-#include "../drivers/gfx01m2/joystick.hpp"
+#include "drivers/spi_bus.hpp"
+#include "drivers/powerstep01.hpp"
+#include "drivers/lcd_st7789.hpp"
+#include "drivers/flash_nor.hpp"
+#include "drivers/joystick.hpp"
 
 // External UART for debug output (defined in main.cpp)
 extern UART* usb;

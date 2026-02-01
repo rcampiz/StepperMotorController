@@ -1,63 +1,136 @@
 /**
  * @file encoder.hpp
- * @brief Quadrature encoder interface placeholder
+ * @brief Quadrature encoder hardware driver
  *
- * Pin assignments (timer encoder mode capable):
- *   EA  - PA0 (TIM2_CH1 / TIM5_CH1) - Quadrature A
- *   EB  - PA1 (TIM2_CH2 / TIM5_CH2) - Quadrature B
- *   EZ  - PC4                       - Index pulse (optional)
- *   nG  - PC2                       - Config pin (directly active low)
- *   G   - PC3                       - Config pin
+ * Provides hardware abstraction for quadrature encoder using TIM2 in encoder mode.
+ * Supports optional index pulse detection via EXTI4.
  *
- * Implementation will use TIM2 or TIM5 in encoder mode for
- * hardware quadrature decoding.
+ * Pin assignments:
+ *   EA  - PA0 (TIM2_CH1) - Quadrature A
+ *   EB  - PA1 (TIM2_CH2) - Quadrature B
+ *   EZ  - PC4 (EXTI4)    - Index pulse (active low, optional)
  */
 
-#ifndef ENCODER_HPP
-#define ENCODER_HPP
+#pragma once
 
 #include "stm32f401xe.h"
 #include "board/board_pins.hpp"
+#include <cstdint>
 
+/**
+ * @brief Hardware quadrature encoder driver
+ *
+ * Wraps TIM2 in encoder mode for 32-bit position counting.
+ * Index pulse detection available via EXTI4 interrupt.
+ */
 class Encoder {
 public:
-    Encoder() {
-        // Placeholder - pins defined but not initialized yet
+    /**
+     * @brief Encoder hardware status
+     */
+    enum class Status : uint8_t {
+        NOT_INITIALIZED = 0,
+        INITIALIZING    = 1,
+        READY           = 2,
+        FAULT           = 3
+    };
+
+    Encoder() : m_status(Status::NOT_INITIALIZED),
+                m_indexSeen(false),
+                m_indexTick(0) {}
+
+    /**
+     * @brief Initialize encoder hardware
+     *
+     * Configures TIM2 in encoder mode and optionally enables index pulse interrupt.
+     *
+     * @return true if initialization succeeded
+     */
+    bool init();
+
+    /**
+     * @brief Get current status
+     */
+    Status getStatus() const { return m_status; }
+
+    /**
+     * @brief Check if encoder is ready for use
+     */
+    bool isReady() const { return m_status == Status::READY; }
+
+    /**
+     * @brief Get current position count
+     *
+     * Direct register read, always returns current hardware value.
+     * Thread-safe (single 32-bit read).
+     *
+     * @return Signed 32-bit encoder count
+     */
+    int32_t getCount() const {
+        return static_cast<int32_t>(TIM2->CNT);
     }
 
-    void init() {
-        // TODO: Implement encoder initialization
-        // 1. Enable GPIO clocks
-        // 2. Configure EA/EB as alternate function for timer
-        // 3. Configure EZ as input with interrupt (optional)
-        // 4. Configure nG/G as needed for encoder type
-        // 5. Set up TIM2 or TIM5 in encoder mode
-    }
-
-    int32_t read() const {
-        // TODO: Return timer counter value
-        return 0;
-    }
-
+    /**
+     * @brief Reset position count to zero
+     */
     void reset() {
-        // TODO: Reset counter to zero
+        TIM2->CNT = 0;
     }
 
-    bool indexPulse() const {
-        // TODO: Read EZ pin state
-        return false;
+    /**
+     * @brief Check if index pulse has been seen
+     */
+    bool isIndexSeen() const { return m_indexSeen; }
+
+    /**
+     * @brief Get tick when index pulse was last detected
+     */
+    uint32_t getIndexTick() const { return m_indexTick; }
+
+    /**
+     * @brief Clear index pulse flag
+     */
+    void clearIndexFlag() {
+        m_indexSeen = false;
     }
 
-    // Configuration pins for encoder type selection
-    void setGatingConfig(bool g, bool ng) {
-        (void)g;
-        (void)ng;
-        // TODO: Set G and nG pins
+    /**
+     * @brief Index pulse ISR callback
+     *
+     * Called from EXTI4_IRQHandler when index pulse detected.
+     * Sets indexSeen flag and records tick time.
+     *
+     * @param tick Current FreeRTOS tick count
+     */
+    void indexISR(uint32_t tick) {
+        m_indexSeen = true;
+        m_indexTick = tick;
     }
+
+    /**
+     * @brief Enable index pulse interrupt
+     *
+     * Configures EXTI4 for falling edge interrupt on PC4.
+     */
+    void enableIndexInterrupt();
+
+    /**
+     * @brief Disable index pulse interrupt
+     */
+    void disableIndexInterrupt();
 
 private:
-    // Timer to use (TIM2 has 32-bit counter)
-    static constexpr TIM_TypeDef* TIMER = TIM2;
-};
+    Status m_status;
+    volatile bool m_indexSeen;
+    volatile uint32_t m_indexTick;
 
-#endif // ENCODER_HPP
+    /**
+     * @brief Initialize GPIO pins for encoder
+     */
+    bool initGPIO();
+
+    /**
+     * @brief Initialize TIM2 in encoder mode
+     */
+    bool initTimer();
+};
