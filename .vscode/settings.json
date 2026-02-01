@@ -1,0 +1,61 @@
+{
+    // Disable Microsoft C++ IntelliSense in favor of clangd
+    "C_Cpp.intelliSenseEngine": "disabled",
+    "C_Cpp.autocomplete": "disabled",
+    "C_Cpp.errorSquiggles": "disabled",
+
+    // Enable clangd
+    "clangd.path": "clangd",
+    "clangd.arguments": [
+        "--background-index",
+        "--clang-tidy",
+        "--completion-style=detailed",
+        "--header-insertion=iwyu",
+        "--pch-storage=memory",
+        "--log=error",
+        "--pretty"
+    ],
+    "clangd.fallbackFlags": [
+        "-std=c++14"
+    ],
+
+    // File associations
+    "files.associations": {
+        "*.h": "c",
+        "*.c": "c",
+        "*.cpp": "cpp",
+        "*.hpp": "cpp",
+        "stm32f401xe.h": "c",
+        "core_cm4.h": "c"
+    },
+
+    // Editor settings for embedded development
+    "editor.rulers": [80, 120],
+    "editor.formatOnSave": true,
+    "editor.tabSize": 4,
+    "editor.insertSpaces": true,
+
+    // Terminal settings
+    "terminal.integrated.defaultProfile.windows": "Git Bash",
+
+    // Build task settings
+    "task.problemMatchers": [
+        "$gcc"
+    ],
+
+    // Files to exclude from explorer
+    "files.exclude": {
+        "**/.git": true,
+        "**/.DS_Store": true,
+        "**/build": false
+    },
+
+    // Search exclusions
+    "search.exclude": {
+        "**/build": true,
+        "**/*.o": true,
+        "**/*.d": true,
+        "**/*.lst": true,
+        "**/*.map": true
+    }
+}

@@ -1,0 +1,12 @@
+[
+  {
+    "directory": "F:/Users/Ryan/Documents/Projects/STMicro/LedArray",
+    "command": "arm-none-eabi-gcc -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard -ICore/Inc -IDrivers/CMSIS -Og -Wall -fdata-sections -ffunction-sections -g -gdwarf-2 -MMD -MP -DSTM32F401xE -c Core/Src/system_stm32f4xx.c -o build/system_stm32f4xx.o",
+    "file": "Core/Src/system_stm32f4xx.c"
+  },
+  {
+    "directory": "F:/Users/Ryan/Documents/Projects/STMicro/LedArray",
+    "command": "arm-none-eabi-g++ -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard -ICore/Inc -IDrivers/CMSIS -Og -Wall -fdata-sections -ffunction-sections -g -gdwarf-2 -MMD -MP -std=c++14 -fno-exceptions -fno-rtti -fno-use-cxa-atexit -DSTM32F401xE -c Core/Src/main.cpp -o build/main.o",
+    "file": "Core/Src/main.cpp"
+  }
+]

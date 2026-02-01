@@ -1,0 +1,45 @@
+CompileFlags:
+  Add:
+    - -DSTM32F401xE
+    - -D__FPU_PRESENT=1
+    - -D__FPU_USED=1
+    - --target=arm-none-eabi
+    - -mcpu=cortex-m4
+    - -mthumb
+    - -mfpu=fpv4-sp-d16
+    - -mfloat-abi=hard
+    - -std=c++14
+    - -fno-exceptions
+    - -fno-rtti
+    - -Wall
+    - -IMiddlewares/Third_Party/FreeRTOS-Kernel/include
+    - -IMiddlewares/Third_Party/FreeRTOS-Kernel/portable/GCC/ARM_CM4F
+  Remove:
+    - -Wa,*
+    - -mno-*
+    - -specs=*
+
+Diagnostics:
+  ClangTidy:
+    Add:
+      - readability-*
+      - performance-*
+      - modernize-*
+      - bugprone-*
+    Remove:
+      - modernize-use-trailing-return-type
+      - readability-magic-numbers
+      - readability-identifier-length
+  UnusedIncludes: Strict
+  MissingIncludes: Strict
+
+Index:
+  Background: Build
+
+InlayHints:
+  Enabled: Yes
+  ParameterNames: Yes
+  DeducedTypes: Yes
+
+Hover:
+  ShowAKA: Yes

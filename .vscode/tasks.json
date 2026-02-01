@@ -1,0 +1,121 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Build",
+            "type": "shell",
+            "command": "powershell",
+            "args": [
+                "-Command",
+                "& { .\\scripts\\build_direct.bat; exit $LASTEXITCODE }"
+            ],
+            "options": {
+                "cwd": "${workspaceFolder}"
+            },
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "problemMatcher": [
+                "$gcc"
+            ],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": true
+            }
+        },
+        {
+            "label": "Build and Kill OpenOCD",
+            "dependsOn": ["Kill OpenOCD", "Build"],
+            "dependsOrder": "sequence",
+            "problemMatcher": []
+        },
+        {
+            "label": "Clean",
+            "type": "shell",
+            "command": "rmdir",
+            "args": [
+                "/S",
+                "/Q",
+                "build"
+            ],
+            "windows": {
+                "command": "rmdir",
+                "args": [
+                    "/S",
+                    "/Q",
+                    "build"
+                ]
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Flash",
+            "type": "shell",
+            "command": "cmd",
+            "args": [
+                "/c",
+                "${workspaceFolder}\\scripts\\build.bat",
+                "flash"
+            ],
+            "windows": {
+                "command": "cmd",
+                "args": [
+                    "/c",
+                    "${workspaceFolder}\\scripts\\build.bat",
+                    "flash"
+                ]
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "echo": true,
+                "reveal": "always",
+                "focus": false,
+                "panel": "shared",
+                "showReuseMessage": false,
+                "clear": false
+            }
+        },
+        {
+            "label": "Kill OpenOCD",
+            "type": "shell",
+            "windows": {
+                "command": "powershell",
+                "args": [
+                    "-Command",
+                    "Get-Process openocd -ErrorAction SilentlyContinue | Stop-Process -Force; exit 0"
+                ]
+            },
+            "linux": {
+                "command": "sh",
+                "args": [
+                    "-c",
+                    "killall openocd 2>/dev/null || true"
+                ]
+            },
+            "osx": {
+                "command": "sh",
+                "args": [
+                    "-c",
+                    "killall openocd 2>/dev/null || true"
+                ]
+            },
+            "problemMatcher": [],
+            "presentation": {
+                "reveal": "never",
+                "panel": "shared",
+                "close": true
+            }
+        },
+        {
+            "label": "Build & Flash",
+            "dependsOn": ["Build", "Flash"],
+            "dependsOrder": "sequence",
+            "problemMatcher": []
+        }
+    ]
+}
