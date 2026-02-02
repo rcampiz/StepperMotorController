@@ -12,22 +12,22 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
-#include <cstdint>
+#include <stdint.h>
 
 namespace Tasks {
 
 // Task configuration
 constexpr uint32_t COMMS_TASK_STACK_SIZE = 512;
 constexpr UBaseType_t COMMS_TASK_PRIORITY = tskIDLE_PRIORITY + 3;
-constexpr TickType_t COMMS_POLL_PERIOD_MS = 10;      // Command polling
-constexpr TickType_t TELEMETRY_PERIOD_MS = 100;      // Telemetry publish rate
+constexpr TickType_t COMMS_POLL_PERIOD_MS = 10; // Command polling
+constexpr TickType_t TELEMETRY_PERIOD_MS = 100; // Telemetry publish rate
 
 /**
  * @brief Transport type selection
  */
 enum class TransportType : uint8_t {
-    VCP_UART,   // USART2 via ST-LINK/J-Link Virtual COM Port
-    RTT         // SEGGER RTT channel 0
+  VCP_UART, // USART2 via ST-LINK/J-Link Virtual COM Port
+  RTT       // SEGGER RTT channel 0
 };
 
 /**
@@ -45,7 +45,7 @@ bool CommsTask_Init(TransportType transport = TransportType::VCP_UART);
  * @brief Comms task entry point
  * @param pvParameters Unused
  */
-void vCommsTask(void* pvParameters);
+void vCommsTask(void *pvParameters);
 
 /**
  * @brief Enable/disable periodic telemetry publishing
@@ -58,6 +58,21 @@ void CommsTask_EnableTelemetry(bool enable);
  * @return true if enabled
  */
 bool CommsTask_IsTelemetryEnabled();
+
+/**
+ * @brief Send joystick event upstream (for REMOTE mode)
+ * @param direction Direction string (LEFT, RIGHT, UP, DOWN, CENTER, NONE)
+ * @param pressed true if pressed, false if released
+ */
+void CommsTask_SendJoyEvent(const char* direction, bool pressed);
+
+/**
+ * @brief Register joystick callback with UI mode manager
+ *
+ * Call after both CommsTask_Init and UI mode init to set up
+ * joystick event forwarding in REMOTE mode.
+ */
+void CommsTask_RegisterJoyCallback();
 
 } // namespace Tasks
 

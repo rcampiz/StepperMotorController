@@ -2,8 +2,10 @@
  * @file display_task.hpp
  * @brief Display refresh task for ST7789 LCD
  *
- * Periodically updates LCD with telemetry data.
- * Handles joystick input for local UI navigation.
+ * Supports two operation modes:
+ * - LOCAL: Periodically updates LCD with telemetry data, joystick navigates pages
+ * - REMOTE: Upstream controls display via commands, joystick events forwarded
+ *
  * Priority: Lowest (tskIDLE_PRIORITY + 1)
  */
 
@@ -12,35 +14,40 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
-#include <cstdint>
+#include <stdint.h>
+
+// Forward declarations
+class SPIBus;
+class LCD;
 
 namespace Tasks {
 
 // Task configuration
 constexpr uint32_t DISPLAY_TASK_STACK_SIZE = 256;
 constexpr UBaseType_t DISPLAY_TASK_PRIORITY = tskIDLE_PRIORITY + 1;
-constexpr TickType_t DISPLAY_REFRESH_PERIOD_MS = 100;  // 10 Hz refresh
+constexpr TickType_t DISPLAY_REFRESH_PERIOD_MS = 100; // 10 Hz refresh
 
 /**
- * @brief Display pages/screens
+ * @brief Display pages/screens for LOCAL mode
  */
 enum class DisplayPage : uint8_t {
-    Status,         // Main status (position, speed, encoder)
-    MotorDetail,    // Detailed motor info
-    EncoderDetail,  // Detailed encoder info
-    System,         // System info (uptime, heap, etc.)
-    Debug           // Debug/log output
+    Status,        // Main status (position, speed, encoder)
+    MotorDetail,   // Detailed motor info
+    EncoderDetail, // Detailed encoder info
+    System,        // System info (uptime, heap, etc.)
+    Debug          // Debug/log output
 };
 
 /**
  * @brief Initialize display task resources
  *
- * Initializes LCD driver, clears screen.
+ * Initializes LCD driver, UI mode manager, clears screen.
  * Call before vTaskStartScheduler().
  *
+ * @param spi Reference to shared SPI bus (SPI1)
  * @return true on success
  */
-bool DisplayTask_Init();
+bool DisplayTask_Init(SPIBus& spi);
 
 /**
  * @brief Display task entry point
@@ -49,7 +56,7 @@ bool DisplayTask_Init();
 void vDisplayTask(void* pvParameters);
 
 /**
- * @brief Set current display page
+ * @brief Set current display page (LOCAL mode only)
  * @param page Page to display
  */
 void DisplayTask_SetPage(DisplayPage page);
@@ -62,10 +69,63 @@ DisplayPage DisplayTask_GetPage();
 
 /**
  * @brief Force immediate refresh
- *
- * Signals task to refresh display on next cycle.
  */
 void DisplayTask_Refresh();
+
+// =============================================================================
+// Remote Rendering API (for REMOTE mode)
+// =============================================================================
+
+/**
+ * @brief Clear the display with a color
+ * @param color RGB565 color value
+ */
+void DisplayTask_RemoteClear(uint16_t color);
+
+/**
+ * @brief Draw text at position
+ * @param x, y Top-left position
+ * @param text Null-terminated string
+ * @param fg Foreground color (RGB565)
+ * @param bg Background color (RGB565)
+ */
+void DisplayTask_RemoteText(uint16_t x, uint16_t y, const char* text,
+                            uint16_t fg, uint16_t bg);
+
+/**
+ * @brief Draw a rectangle
+ * @param x, y Top-left position
+ * @param w, h Width and height
+ * @param color RGB565 color
+ * @param filled true for filled rectangle, false for outline
+ */
+void DisplayTask_RemoteRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+                            uint16_t color, bool filled);
+
+/**
+ * @brief Draw a line
+ * @param x0, y0 Start point
+ * @param x1, y1 End point
+ * @param color RGB565 color
+ */
+void DisplayTask_RemoteLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
+                            uint16_t color);
+
+/**
+ * @brief Draw a bitmap from raw RGB565 data
+ * @param x, y Top-left position
+ * @param w, h Bitmap dimensions
+ * @param data Pointer to RGB565 byte data (big-endian)
+ * @param len Length of data in bytes
+ */
+void DisplayTask_RemoteBitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+                              const uint8_t* data, size_t len);
+
+/**
+ * @brief Get pointer to LCD driver (for advanced use)
+ * @return Pointer to LCD instance, or nullptr if not initialized
+ */
+LCD* DisplayTask_GetLCD();
 
 } // namespace Tasks
 

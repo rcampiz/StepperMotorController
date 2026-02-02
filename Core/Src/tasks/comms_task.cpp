@@ -9,6 +9,7 @@
 #include "comms/rtt_transport.hpp"
 #include "comms/command_parser.hpp"
 #include "comms/telemetry.hpp"
+#include "ui/ui_mode.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
 #include <stdint.h>
@@ -171,6 +172,30 @@ static void publishTelemetry()
     s_transport->print(buf);
 
     s_transport->println("");
+}
+
+void CommsTask_SendJoyEvent(const char* direction, bool pressed)
+{
+    if (s_transport == nullptr) {
+        return;
+    }
+
+    // Format: EVENT JOY <direction> <pressed|released>
+    s_transport->print("EVENT JOY ");
+    s_transport->print(direction);
+    s_transport->println(pressed ? " pressed" : " released");
+}
+
+// Callback for UI mode manager joystick events
+static void joyEventCallback(const UI::JoyEvent& event)
+{
+    const char* dirName = UI::UIModeManager::directionName(event.direction);
+    CommsTask_SendJoyEvent(dirName, event.pressed);
+}
+
+void CommsTask_RegisterJoyCallback()
+{
+    UI::g_uiMode.setJoyEventCallback(joyEventCallback);
 }
 
 } // namespace Tasks

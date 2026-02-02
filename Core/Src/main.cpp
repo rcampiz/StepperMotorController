@@ -49,8 +49,9 @@
 // CMSIS device header (provides RCC, GPIO, SPI, etc.)
 #include "stm32f401xe.h"
 
-// Static SPI2 bus and NOR flash instances for persistent configuration
-static SPIBus* s_spi2Bus = nullptr;
+// Static SPI bus instances
+static SPIBus* s_spi1Bus = nullptr;  // Shared: motor driver + LCD
+static SPIBus* s_spi2Bus = nullptr;  // NOR flash only
 static SPIFlash* s_norFlash = nullptr;
 
 /**
@@ -203,9 +204,14 @@ int main(void)
         while (1) {}
     }
 
-    // Create SPI2 bus and NOR flash driver for persistent config
+    // Create SPI1 bus (shared between motor driver and LCD)
     // Note: SPIBus constructor configures the peripheral and pins
-    static SPIBus spi2Bus(SPI2, SPIBus::Prescaler::Div8);  // ~5 MHz at 42 MHz APB1
+    // Initial mode is Mode3 for powerSTEP01; LCD will switch to Mode0 as needed
+    static SPIBus spi1Bus(SPI1, SPIBus::Prescaler::Div16, SPIBus::Mode::Mode3);  // ~5 MHz at 84 MHz APB2
+    s_spi1Bus = &spi1Bus;
+
+    // Create SPI2 bus and NOR flash driver for persistent config
+    static SPIBus spi2Bus(SPI2, SPIBus::Prescaler::Div8, SPIBus::Mode::Mode0);  // ~5 MHz at 42 MHz APB1
     static SPIFlash norFlash(spi2Bus);
     s_spi2Bus = &spi2Bus;
     s_norFlash = &norFlash;
@@ -235,14 +241,14 @@ int main(void)
     bool encoderAvailable = Tasks::EncoderTask_Init();
     // EncoderTask_Init updates g_controlMode encoder status internally
 
-    // MotorTask: Creates command queue
-    if (!Tasks::MotorTask_Init()) {
+    // MotorTask: Creates command queue, uses shared SPI1 bus
+    if (!Tasks::MotorTask_Init(spi1Bus)) {
         // Motor init failed - halt
         while (1) {}
     }
 
-    // DisplayTask: Initializes LCD driver
-    if (!Tasks::DisplayTask_Init()) {
+    // DisplayTask: Initializes LCD driver, uses shared SPI1 bus
+    if (!Tasks::DisplayTask_Init(spi1Bus)) {
         // Display init failed - halt
         while (1) {}
     }
@@ -252,6 +258,10 @@ int main(void)
         // Comms init failed - halt
         while (1) {}
     }
+
+    // Register joystick callback for REMOTE mode event forwarding
+    // (must be after both DisplayTask and CommsTask init)
+    Tasks::CommsTask_RegisterJoyCallback();
 
     // 5. Create FreeRTOS tasks
     // Priority order: Motor (4) > Comms (3) > Encoder (2) > Display (1)
