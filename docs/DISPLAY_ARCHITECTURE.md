@@ -5,173 +5,294 @@ This document describes the display subsystem for the ST7789-based LCD on the X-
 ## Hardware
 
 - **Display**: ST7789 240x240 RGB LCD
-- **Interface**: SPI2 (shared with NOR flash)
-- **SPI Mode**: Mode 0 (CPOL=0, CPHA=0)
+- **Interface**: SPI1 (shared with powerSTEP01 motor driver)
+- **SPI Mode**: Mode 0 (CPOL=0, CPHA=0) - LCD switches mode dynamically
+- **Joystick**: 5-way (Up, Down, Left, Right, Center) for navigation
 
-## Display Modes
+## Dual-Mode UI Architecture
 
-The display operates in one of the following modes:
+The display operates in one of two primary modes:
 
 | Mode | Description |
 |------|-------------|
-| `Menu` | Interactive menu for parameter adjustment and mode selection |
-| `Status` | Real-time telemetry display (position, speed, encoder) |
-| `Debug` | Runtime information, task stats, heap usage |
-| `Image` | Full-frame image display via J-Link transfer |
+| `LOCAL` | MCU owns UI state machine; joystick navigates local screens |
+| `REMOTE` | Host controls display via commands; joystick events forwarded upstream |
 
 ### Mode Switching
 
 Mode transitions are triggered by:
-1. Joystick input (center button cycles modes)
-2. Host command (`DISPLAY:MODE:<mode>`)
-3. Automatic timeout (Image mode returns to Status after idle)
+1. Host command (`UI_MODE LOCAL` or `UI_MODE REMOTE`)
+2. Default mode at startup is `LOCAL`
 
-## Menu System
+When switching modes:
+- Screen content is not cleared automatically
+- In `REMOTE` mode, local page rendering is suspended
+- Joystick events are forwarded upstream instead of local navigation
 
-### Navigation
+## LOCAL Mode
+
+In LOCAL mode, the MCU manages the display through a screen abstraction layer.
+
+### Screen Types
+
+| Type | Description |
+|------|-------------|
+| `STATUS` | Telemetry display (position, speed, encoder) |
+| `MENU` | List-based navigation with selection |
+| `TERMINAL` | Scrolling text console |
+| `MOTOR_DETAIL` | Detailed motor information |
+| `ENCODER_DETAIL` | Detailed encoder information |
+| `SYSTEM` | System info (uptime, heap, CPU load) |
+| `DEBUG` | Debug/log output |
+
+### Joystick Navigation (LOCAL Mode)
 
 | Input | Action |
 |-------|--------|
-| Up | Previous menu item / increment value |
-| Down | Next menu item / decrement value |
-| Left | Back / cancel |
-| Right | Enter submenu / confirm |
-| Center | Select / toggle |
+| Left | Previous page / back in menu |
+| Right | Next page / enter submenu |
+| Up | Previous menu item / scroll up |
+| Down | Next menu item / scroll down |
+| Center | Select / refresh |
 
-### Menu Structure
+### Display Pages
 
-```
-Main Menu
-├── Control Mode
-│   ├── Open Loop
-│   └── Closed Loop
-├── Motor Settings
-│   ├── Max Speed
-│   ├── Acceleration
-│   └── Deceleration
-├── Encoder
-│   ├── Zero Position
-│   └── Show Index Status
-├── Display
-│   ├── Brightness
-│   └── Refresh Rate
-└── System
-    ├── Device ID
-    ├── Reset
-    └── About
-```
-
-## Status Display
-
-Default telemetry view showing:
+The default LOCAL mode cycles through these pages:
 
 ```
-┌────────────────────┐
-│ STEPPER CONTROLLER │
-├────────────────────┤
-│ Position:   12345  │
-│ Target:     15000  │
-│ Speed:       1200  │
-│ Status:     MOVING │
-├────────────────────┤
-│ Encoder:    12340  │
-│ Velocity:    1198  │
-│ Index:        YES  │
-├────────────────────┤
-│ Mode: CLOSED_LOOP  │
-│ ID: 0x01           │
-└────────────────────┘
+Status -> MotorDetail -> EncoderDetail -> System -> Debug
+  ^                                                   |
+  +---------------------------------------------------+
 ```
 
-## Debug Display
-
-Runtime diagnostics:
+### Status Page Layout
 
 ```
-┌────────────────────┐
-│ DEBUG INFO         │
-├────────────────────┤
-│ Heap Free:  45.2KB │
-│ Heap Min:   42.1KB │
-├────────────────────┤
-│ Task        Stack  │
-│ Motor        156   │
-│ Encoder       84   │
-│ Display      128   │
-│ Comms        312   │
-├────────────────────┤
-│ Uptime: 01:23:45   │
-│ CPU: 12%           │
-└────────────────────┘
++------------------------+
+| STATUS                 |
++------------------------+
+| Position:        12345 |
+| Speed:            1200 |
+| State:          Moving |
++------------------------+
+| Encoder:         12340 |
+| Velocity:         1198 |
+| Index:             Yes |
++------------------------+
 ```
 
-## J-Link Image Transfer
+## REMOTE Mode
 
-Full-frame images can be pushed to the display over RTT for splash screens, logos, or diagnostics.
+In REMOTE mode, the host has full control over display content via commands.
 
-### Protocol
+### Remote Rendering Commands
 
-1. Host sends `IMAGE:START` command
-2. Controller enters Image mode, clears display
-3. Host streams raw RGB565 pixel data over RTT channel 2
-4. Controller writes pixels to LCD via SPI
-5. Host sends `IMAGE:END` command
-6. Controller returns to previous mode (or stays in Image mode)
+| Command | Format | Description |
+|---------|--------|-------------|
+| `DISP_CLEAR` | `DISP_CLEAR [color]` | Clear display (RGB565 hex) |
+| `DISP_TEXT` | `DISP_TEXT <x> <y> <fg> <bg> <text>` | Draw text |
+| `DISP_RECT` | `DISP_RECT <x> <y> <w> <h> <color> [fill]` | Draw rectangle |
+| `DISP_LINE` | `DISP_LINE <x1> <y1> <x2> <y2> <color>` | Draw line |
+| `DISP_BITMAP_B64` | `DISP_BITMAP_B64 <x> <y> <w> <h> <base64>` | Draw bitmap |
 
-### Data Format
+All commands require REMOTE mode to be active. Colors are RGB565 format in hexadecimal.
 
-- **Pixel format**: RGB565 (16-bit, big-endian)
-- **Resolution**: 240x240 = 57,600 pixels = 115,200 bytes
-- **RTT channel**: 2 (dedicated for image data)
-- **Flow control**: RTT handles buffering; host should throttle to ~100KB/s
+### Joystick Event Forwarding
 
-### Host-Side Example (Python)
+In REMOTE mode, joystick events are sent upstream:
+
+```
+EVENT JOY <direction> <pressed|released>
+```
+
+Examples:
+```
+EVENT JOY LEFT pressed
+EVENT JOY LEFT released
+EVENT JOY CENTER pressed
+```
+
+Directions: `NONE`, `LEFT`, `RIGHT`, `UP`, `DOWN`, `CENTER`
+
+### Remote Rendering Example (Python)
 
 ```python
-import pylink
+import serial
 
-jlink = pylink.JLink()
-jlink.open()
-jlink.connect('STM32F401RE')
+ser = serial.Serial('COM3', 115200)
 
-# Send start command on channel 0
-jlink.rtt_write(0, b'IMAGE:START\n')
+# Switch to REMOTE mode
+ser.write(b'UI_MODE REMOTE\n')
+print(ser.readline())  # OK REMOTE
 
-# Stream image data on channel 2
-with open('splash.rgb565', 'rb') as f:
-    while chunk := f.read(1024):
-        jlink.rtt_write(2, chunk)
-        time.sleep(0.01)  # Throttle
+# Clear screen to blue
+ser.write(b'DISP_CLEAR 001F\n')
+print(ser.readline())  # OK
 
-# Send end command
-jlink.rtt_write(0, b'IMAGE:END\n')
+# Draw white text
+ser.write(b'DISP_TEXT 10 10 FFFF 001F Hello\n')
+print(ser.readline())  # OK
+
+# Draw red rectangle
+ser.write(b'DISP_RECT 50 50 100 100 F800 fill\n')
+print(ser.readline())  # OK
 ```
+
+## Screen Abstraction Layer
+
+### IScreen Interface
+
+All screens implement the `IScreen` interface:
+
+```cpp
+class IScreen {
+public:
+    virtual ScreenType getType() const = 0;
+    virtual void render(LCD& lcd) = 0;
+    virtual InputResult handleInput(JoyDirection dir, bool pressed) = 0;
+    virtual void onActivate() {}
+    virtual void onDeactivate() {}
+    virtual bool needsFullRedraw() const { return false; }
+    virtual void clearRedrawFlag() {}
+};
+```
+
+### InputResult Values
+
+| Result | Meaning |
+|--------|---------|
+| `HANDLED` | Input consumed by screen |
+| `UNHANDLED` | Input should be handled by parent |
+| `EXIT_SCREEN` | Screen requests to close |
+| `SWITCH_SCREEN` | Screen requests switching to another |
+
+### MenuScreen
+
+List-based navigation screen with:
+- Up to 16 menu items
+- Scrolling when items exceed visible area
+- Selection highlight
+- Item enable/disable
+- Callback on selection
+
+```cpp
+MenuScreen menu("Settings");
+menu.addItem("Motor Settings", onMotorSettings);
+menu.addItem("Encoder Settings", onEncoderSettings);
+menu.addItem("System Info", onSystemInfo);
+```
+
+### TerminalScreen
+
+Scrolling text console with:
+- 20-line circular buffer
+- 40 characters per line
+- Auto-scroll to new content
+- Manual scroll with Up/Down
+- Jump to bottom with Center
+
+```cpp
+TerminalScreen terminal("Debug Log");
+terminal.println("System started");
+terminal.printf("Heap: %lu bytes", freeHeap);
+```
+
+## LCD Driver
+
+### Drawing Primitives
+
+| Method | Description |
+|--------|-------------|
+| `fillScreen(color)` | Fill entire screen |
+| `fillRect(x, y, w, h, color)` | Filled rectangle |
+| `drawRect(x, y, w, h, color)` | Rectangle outline |
+| `drawHLine(x, y, w, color)` | Horizontal line |
+| `drawVLine(x, y, h, color)` | Vertical line |
+| `drawLine(x0, y0, x1, y1, color)` | Arbitrary line (Bresenham) |
+| `drawString(x, y, text, fg, bg)` | Text with colors |
+| `drawInt(x, y, value, width, fg, bg)` | Signed integer |
+| `drawUInt(x, y, value, width, fg, bg)` | Unsigned integer |
+| `drawBitmap(x, y, w, h, data)` | RGB565 bitmap (16-bit array) |
+| `drawBitmapRaw(x, y, w, h, data, len)` | RGB565 bitmap (byte array) |
+
+### Bitmap Streaming
+
+For large images, use streaming to avoid buffering:
+
+```cpp
+lcd.streamBitmapStart(x, y, w, h);
+while (hasData) {
+    lcd.streamBitmapData(chunk, chunkLen);
+}
+lcd.streamBitmapEnd();
+```
+
+### Color Constants
+
+| Name | RGB565 Value | Color |
+|------|--------------|-------|
+| `BLACK` | 0x0000 | Black |
+| `WHITE` | 0xFFFF | White |
+| `RED` | 0xF800 | Red |
+| `GREEN` | 0x07E0 | Green |
+| `BLUE` | 0x001F | Blue |
+| `CYAN` | 0x07FF | Cyan |
+| `YELLOW` | 0xFFE0 | Yellow |
+| `GRAY` | 0x8410 | Gray |
+
+## SPI Bus Sharing
+
+The display shares SPI1 with the powerSTEP01 motor driver. The `SPIBus` class handles:
+- Mutex-based locking for thread safety
+- Dynamic mode switching (Mode 0 for LCD, Mode 3 for motor)
+
+```cpp
+// LCD driver handles mode switching automatically
+lcd.fillScreen(LCD::BLACK);  // Acquires SPI, sets Mode 0, draws, releases
+```
+
+## Memory Considerations
+
+| Resource | Allocation |
+|----------|------------|
+| Menu items | 16 items x 32 bytes = 512 bytes |
+| Terminal buffer | 20 lines x 40 chars = 800 bytes |
+| Remote bitmap decode | 512 bytes max (base64 input) |
+| No frame buffer | Streaming directly to LCD |
 
 ## Implementation Status
 
 | Component | Status |
 |-----------|--------|
-| ST7789 initialization | *Scaffolded* |
-| Basic drawing primitives | *Scaffolded* |
-| Text rendering | *Scaffolded* |
-| Menu system | *Not started* |
-| Status display | *Not started* |
-| Debug display | *Not started* |
-| Image transfer | *Not started* |
-| Joystick input | *Scaffolded* |
+| ST7789 initialization | **Complete** |
+| Basic drawing primitives | **Complete** |
+| Text rendering (8x8 font) | **Complete** |
+| Line drawing (Bresenham) | **Complete** |
+| Bitmap rendering | **Complete** |
+| Bitmap streaming | **Complete** |
+| UI mode manager | **Complete** |
+| LOCAL mode pages | **Complete** (Status, Motor, Encoder, System, Debug) |
+| REMOTE mode rendering | **Complete** |
+| Joystick event forwarding | **Complete** |
+| IScreen interface | **Complete** |
+| MenuScreen | **Complete** |
+| TerminalScreen | **Complete** |
+| Joystick input handling | **Complete** |
 
-## SPI Bus Sharing
+## Files
 
-The display shares SPI2 with the NOR flash. Both use Mode 0, so no mode switching is required. The `SPIBus` class provides mutex-based locking to prevent conflicts.
-
-**Important**: Always acquire the SPI mutex before display operations:
-
-```cpp
-if (s_spi->lock(pdMS_TO_TICKS(100))) {
-    lcd.drawText(0, 0, "Hello");
-    s_spi->unlock();
-}
-```
+| File | Purpose |
+|------|---------|
+| `Core/Inc/drivers/lcd_st7789.hpp` | LCD driver with all drawing primitives |
+| `Core/Inc/ui/ui_mode.hpp` | UI mode enum and manager |
+| `Core/Inc/ui/screen.hpp` | IScreen interface |
+| `Core/Inc/ui/menu_screen.hpp` | MenuScreen class |
+| `Core/Inc/ui/terminal_screen.hpp` | TerminalScreen class |
+| `Core/Src/ui/ui_mode.cpp` | UI mode manager implementation |
+| `Core/Src/ui/menu_screen.cpp` | MenuScreen implementation |
+| `Core/Src/ui/terminal_screen.cpp` | TerminalScreen implementation |
+| `Core/Inc/tasks/display_task.hpp` | Display task interface |
+| `Core/Src/tasks/display_task.cpp` | Display task implementation |
 
 ## References
 

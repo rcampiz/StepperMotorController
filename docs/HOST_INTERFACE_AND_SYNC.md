@@ -85,6 +85,28 @@ The MCU exposes a deterministic command protocol over the host connection.
 | `GET_ENCODER_STATUS` | - | Query encoder availability and data |
 | `ENCODER` | - | Query encoder count, velocity, index status |
 
+#### UI Mode Commands
+
+| Command | Parameters | Description |
+|---------|------------|-------------|
+| `UI_MODE` | [LOCAL\|REMOTE] | Get/set UI mode (no arg = get) |
+| `UI_GET_MODE` | - | Query current UI mode |
+
+#### Display Commands (REMOTE Mode Only)
+
+| Command | Parameters | Description |
+|---------|------------|-------------|
+| `DISP_CLEAR` | [color] | Clear display with RGB565 color (hex) |
+| `DISP_TEXT` | x y fg bg text | Draw text at position |
+| `DISP_RECT` | x y w h color [fill] | Draw rectangle (outline or filled) |
+| `DISP_LINE` | x1 y1 x2 y2 color | Draw line between points |
+| `DISP_BITMAP_B64` | x y w h base64data | Draw bitmap from base64 RGB565 |
+
+**Notes:**
+- All DISP_* commands require UI mode to be REMOTE
+- Colors are RGB565 format in hexadecimal (e.g., `FFFF` = white, `F800` = red)
+- DISP_BITMAP_B64 limited to 512 bytes decoded (small icons only)
+
 ### 2. Synchronous Start Mechanism
 
 To coordinate four controllers for simultaneous motion, the firmware supports two patterns:
@@ -328,6 +350,24 @@ When enabled, the controller periodically transmits:
 TELEM <tick> <position> <velocity> <state> <flags>
 ```
 
+#### Joystick Events (REMOTE Mode)
+
+When UI mode is REMOTE, joystick events are forwarded upstream:
+```
+EVENT JOY <direction> <pressed|released>
+```
+
+Where direction is one of: `NONE`, `LEFT`, `RIGHT`, `UP`, `DOWN`, `CENTER`
+
+Examples:
+```
+EVENT JOY LEFT pressed
+EVENT JOY LEFT released
+EVENT JOY CENTER pressed
+```
+
+This allows the host to implement custom UI navigation when controlling the display remotely.
+
 ### 7. Safety and Recovery
 
 #### Emergency Stop (ESTOP)
@@ -466,6 +506,9 @@ print(ser.readline().decode())
 | Device identification | **Complete** - Persistent storage in NOR flash |
 | Control modes | **Complete** - OPEN_LOOP/CLOSED_LOOP |
 | Encoder abstraction | **Complete** - Optional encoder, graceful degradation |
+| UI mode commands | **Complete** - UI_MODE, UI_GET_MODE |
+| Display commands | **Complete** - DISP_CLEAR/TEXT/RECT/LINE/BITMAP_B64 |
+| Joystick event forwarding | **Complete** - EVENT JOY in REMOTE mode |
 
 ## Next Steps
 

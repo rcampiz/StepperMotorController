@@ -11,7 +11,7 @@ This document summarizes the work completed to build the Stepper Motor Controlle
 - Quadrature encoder feedback with index pulse
 - SEGGER SystemView integration for debugging
 
-**Current Status:** Infrastructure complete. Project compiles successfully with SEGGER RTT/SystemView integration.
+**Current Status:** Motor control functional. Dual-mode LCD UI framework complete. Project compiles successfully with SEGGER RTT/SystemView integration and full powerSTEP01 driver.
 
 | Component | Status |
 |-----------|--------|
@@ -21,9 +21,12 @@ This document summarizes the work completed to build the Stepper Motor Controlle
 | Command parser protocol | **Complete** (all commands parsed) |
 | Services (tick timer, command queue, device config, control mode) | **Complete** |
 | Encoder driver (TIM2 + index interrupt) | **Complete** |
-| Motor control (powerSTEP01) | *Scaffolded* - dispatch stubs only |
+| Motor control (powerSTEP01) | **Complete** |
 | UART transport | *Scaffolded* - init/transfer stubs |
-| LCD display | *Scaffolded* - render stubs only |
+| LCD display | **Complete** - dual-mode UI framework |
+| UI mode manager | **Complete** - LOCAL/REMOTE modes |
+| Remote display commands | **Complete** - DISP_CLEAR/TEXT/RECT/LINE/BITMAP |
+| Screen abstractions | **Complete** - IScreen, MenuScreen, TerminalScreen |
 | Telemetry formatting | *Scaffolded* - data collected, output TBD |
 
 ## Completed Phases
@@ -211,6 +214,80 @@ Convert on-board ST-LINK to J-Link OB using SEGGER STLinkReflash utility.
    33296    104      15700    49100    bfcc  StepperMotorController.elf
    ```
 
+### Phase 8: Motor Driver Implementation
+
+**Objective:** Wire up powerSTEP01 driver to motor task for full motor control.
+
+**Status:** Complete
+
+**Changes Made:**
+
+1. **Wired up `motor_task.cpp`:**
+   - Added includes for `powerstep01.hpp` and `spi_bus.hpp`
+   - Created static `SPIBus` and `PowerSTEP01` instances
+   - Initialized in `MotorTask_Init()` with SPI1, Mode 3 (CPOL=1, CPHA=1)
+
+2. **Implemented all command handlers:**
+   - Motion: Move, GoTo, Run, SoftStop, HardStop, SoftHiZ, HardHiZ, GoHome, GoMark, ResetPos
+   - Configuration: SetAccel, SetDecel, SetMaxSpeed, SetMark
+   - Query: GetStatus (triggers immediate telemetry update)
+
+3. **Implemented telemetry updates:**
+   - Reads STATUS register, ABS_POS, and SPEED every 50ms
+   - Sign-extends 22-bit position to 32-bit
+   - Publishes motor telemetry via `Comms::g_telemetry.updateMotor()`
+
+4. **Build output:**
+   ```
+   text     data     bss      dec      hex   filename
+   34952    104      15708    50764    c64c  StepperMotorController.elf
+   ```
+
+### Phase 9: Dual-Mode LCD UI Framework
+
+**Objective:** Implement bidirectional UI system supporting LOCAL (MCU-owned) and REMOTE (host-controlled) display modes.
+
+**Status:** Complete
+
+**Changes Made:**
+
+1. **Created UI mode manager (`Core/Inc/ui/ui_mode.hpp`, `Core/Src/ui/ui_mode.cpp`):**
+   - `UIMode` enum: LOCAL, REMOTE
+   - `UIModeManager` class with thread-safe mode switching
+   - Joystick event callback mechanism for REMOTE mode
+
+2. **Extended LCD driver (`Core/Inc/drivers/lcd_st7789.hpp`):**
+   - Added `drawLine()` using Bresenham's algorithm
+   - Added `drawBitmap()` and `drawBitmapRaw()` for image rendering
+   - Added streaming bitmap methods for large images
+
+3. **Updated display task (`Core/Src/tasks/display_task.cpp`):**
+   - Dual-mode operation (LOCAL pages vs REMOTE rendering)
+   - Joystick event forwarding in REMOTE mode
+   - Remote rendering API functions
+
+4. **Added display commands to command parser:**
+   - `UI_MODE [LOCAL|REMOTE]` - get/set UI mode
+   - `DISP_CLEAR [color]` - clear display with RGB565 color
+   - `DISP_TEXT <x> <y> <fg> <bg> <text>` - draw text
+   - `DISP_RECT <x> <y> <w> <h> <color> [fill]` - draw rectangle
+   - `DISP_LINE <x1> <y1> <x2> <y2> <color>` - draw line
+   - `DISP_BITMAP_B64 <x> <y> <w> <h> <base64>` - draw bitmap
+
+5. **Added joystick event forwarding (`Core/Src/tasks/comms_task.cpp`):**
+   - `EVENT JOY <direction> <pressed|released>` sent upstream in REMOTE mode
+
+6. **Created screen abstraction layer:**
+   - `IScreen` interface (`Core/Inc/ui/screen.hpp`)
+   - `MenuScreen` class (`Core/Inc/ui/menu_screen.hpp`, `Core/Src/ui/menu_screen.cpp`)
+   - `TerminalScreen` class (`Core/Inc/ui/terminal_screen.hpp`, `Core/Src/ui/terminal_screen.cpp`)
+
+7. **Build output:**
+   ```
+   text     data     bss      dec      hex   filename
+   42848    104      15748    58700    e54c  StepperMotorController.elf
+   ```
+
 ## File Summary
 
 ### New Files Created
@@ -237,6 +314,13 @@ Convert on-board ST-LINK to J-Link OB using SEGGER STLinkReflash utility.
 | `Middlewares/SEGGER/README.md` | SEGGER setup guide |
 | `Middlewares/SEGGER/SystemView/SEGGER_SYSVIEW_Conf.h` | SystemView config |
 | `Middlewares/SEGGER/SystemView/SEGGER_SYSVIEW_Config_FreeRTOS.c` | SystemView callbacks |
+| `Core/Inc/ui/ui_mode.hpp` | UI mode enum and manager |
+| `Core/Inc/ui/screen.hpp` | IScreen interface |
+| `Core/Inc/ui/menu_screen.hpp` | MenuScreen class |
+| `Core/Inc/ui/terminal_screen.hpp` | TerminalScreen class |
+| `Core/Src/ui/ui_mode.cpp` | UI mode manager implementation |
+| `Core/Src/ui/menu_screen.cpp` | MenuScreen implementation |
+| `Core/Src/ui/terminal_screen.cpp` | TerminalScreen implementation |
 
 ### Modified Files
 
@@ -265,12 +349,19 @@ Convert on-board ST-LINK to J-Link OB using SEGGER STLinkReflash utility.
 The following items need implementation to create a fully functional motor controller:
 
 1. **UartTransport** - USART2 initialization and interrupt/DMA handling
-2. **powerSTEP01 driver** - SPI command sequences for motor control
-3. **LCD driver** - ST7789 initialization and graphics primitives
-4. **Display pages** - Render functions for each display page
-5. **Command dispatch** - Wire CommandParser to MotorTask queue
-6. **Telemetry publishing** - Format and transmit telemetry data
-7. **Closed-loop control** - PID control using encoder feedback
-8. **Multi-controller testing** - Synchronized start across 4 controllers
+2. **Command dispatch** - Wire CommandParser to MotorTask queue for motion commands
+3. **Telemetry publishing** - Format and transmit telemetry data over transport
+4. **Closed-loop control** - PID control using encoder feedback
+5. **Multi-controller testing** - Synchronized start across 4 controllers
+6. **Binary bitmap streaming** - DISP_BITMAP command for raw binary transfer
 
-*Last verified: 2026-02-01*
+## Completed Recently
+
+- **LCD display** - ST7789 initialization and graphics primitives (complete)
+- **Display pages** - Status, Motor, Encoder, System, Debug pages (complete)
+- **Dual-mode UI** - LOCAL/REMOTE mode switching (complete)
+- **Remote rendering** - DISP_CLEAR/TEXT/RECT/LINE/BITMAP_B64 commands (complete)
+- **Screen abstractions** - IScreen, MenuScreen, TerminalScreen (complete)
+- **Joystick event forwarding** - EVENT JOY messages in REMOTE mode (complete)
+
+*Last verified: 2026-02-02*
