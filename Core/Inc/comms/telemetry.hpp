@@ -8,7 +8,7 @@
 #ifndef TELEMETRY_HPP
 #define TELEMETRY_HPP
 
-#include <cstdint>
+#include <stdint.h>
 #include "FreeRTOS.h"
 #include "semphr.h"
 

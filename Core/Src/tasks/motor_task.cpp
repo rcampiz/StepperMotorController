@@ -4,8 +4,9 @@
  */
 
 #include "tasks/motor_task.hpp"
-#include "drivers/powerstep01.hpp"
-#include "drivers/spi_bus.hpp"
+// TODO: Uncomment when PowerSTEP01 driver is implemented
+// #include "drivers/powerstep01.hpp"
+// #include "drivers/spi_bus.hpp"
 #include "comms/telemetry.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -17,8 +18,9 @@ namespace Tasks {
 QueueHandle_t g_motorCmdQueue = nullptr;
 
 // Motor driver instance (created in init)
-static PowerSTEP01* s_motor = nullptr;
-static SPIBus* s_spi = nullptr;
+// TODO: Uncomment when PowerSTEP01 driver is implemented
+// static PowerSTEP01* s_motor = nullptr;
+// static SPIBus* s_spi = nullptr;
 
 bool MotorTask_Init()
 {

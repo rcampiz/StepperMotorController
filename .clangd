@@ -14,10 +14,14 @@ CompileFlags:
     - -Wall
     - -IMiddlewares/Third_Party/FreeRTOS-Kernel/include
     - -IMiddlewares/Third_Party/FreeRTOS-Kernel/portable/GCC/ARM_CM4F
+    - -IMiddlewares/SEGGER/RTT
+    - -IMiddlewares/SEGGER/SystemView
+    - -ICore/Inc/services
   Remove:
     - -Wa,*
     - -mno-*
     - -specs=*
+  Compiler: arm-none-eabi-g++
 
 Diagnostics:
   ClangTidy:

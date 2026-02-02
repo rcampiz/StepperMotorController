@@ -13,7 +13,8 @@
         "--header-insertion=iwyu",
         "--pch-storage=memory",
         "--log=error",
-        "--pretty"
+        "--pretty",
+        "--query-driver=**/arm-none-eabi-*"
     ],
     "clangd.fallbackFlags": [
         "-std=c++14"

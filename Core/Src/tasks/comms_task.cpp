@@ -11,8 +11,40 @@
 #include "comms/telemetry.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
+#include <stdint.h>
 
 namespace Tasks {
+
+// Simple integer-to-string helpers (no printf dependency)
+static void intToStr(int32_t val, char* buf) {
+    if (val < 0) {
+        *buf++ = '-';
+        val = -val;
+    }
+    char tmp[12];
+    int i = 0;
+    do {
+        tmp[i++] = '0' + (val % 10);
+        val /= 10;
+    } while (val > 0);
+    while (i > 0) {
+        *buf++ = tmp[--i];
+    }
+    *buf = '\0';
+}
+
+static void uintToStr(uint32_t val, char* buf) {
+    char tmp[12];
+    int i = 0;
+    do {
+        tmp[i++] = '0' + (val % 10);
+        val /= 10;
+    } while (val > 0);
+    while (i > 0) {
+        *buf++ = tmp[--i];
+    }
+    *buf = '\0';
+}
 
 // Forward declaration
 static void publishTelemetry();
@@ -120,20 +152,25 @@ static void publishTelemetry()
 
     // Format and send telemetry line
     // Format: TELEM: pos=<pos> spd=<spd> enc=<enc> vel=<vel>
-    char buf[128];
+    char buf[32];
 
-    // Simple integer-to-string without snprintf (embedded friendly)
     s_transport->print("TELEM: pos=");
-    // TODO: Convert snap.motor.position to string
-    s_transport->print(" spd=");
-    // TODO: Convert snap.motor.speed to string
-    s_transport->print(" enc=");
-    // TODO: Convert snap.encoder.count to string
-    s_transport->print(" vel=");
-    // TODO: Convert snap.encoder.velocity to string
-    s_transport->println("");
+    intToStr(snap.motor.position, buf);
+    s_transport->print(buf);
 
-    (void)buf;  // Suppress unused warning for now
+    s_transport->print(" spd=");
+    uintToStr(snap.motor.speed, buf);
+    s_transport->print(buf);
+
+    s_transport->print(" enc=");
+    intToStr(snap.encoder.count, buf);
+    s_transport->print(buf);
+
+    s_transport->print(" vel=");
+    intToStr(snap.encoder.velocity, buf);
+    s_transport->print(buf);
+
+    s_transport->println("");
 }
 
 } // namespace Tasks
