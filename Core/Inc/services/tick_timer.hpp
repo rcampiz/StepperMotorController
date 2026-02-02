@@ -16,15 +16,15 @@
 
 #pragma once
 
-#include <cstdint>
+#include <stdint.h>
 
 namespace Services {
 
 /**
  * @brief Initialize the tick timer (TIM5)
  *
- * Configures TIM5 as a free-running 32-bit counter with 1 microsecond resolution.
- * Must be called once before any other tick timer functions.
+ * Configures TIM5 as a free-running 32-bit counter with 1 microsecond
+ * resolution. Must be called once before any other tick timer functions.
  *
  * @note Call from main() before starting FreeRTOS scheduler.
  */
@@ -52,9 +52,8 @@ uint32_t TickTimer_GetTick();
  *
  * @note Valid for elapsed times up to ~71.6 minutes.
  */
-inline uint32_t TickTimer_Elapsed(uint32_t startTick)
-{
-    return TickTimer_GetTick() - startTick;
+inline uint32_t TickTimer_Elapsed(uint32_t startTick) {
+  return TickTimer_GetTick() - startTick;
 }
 
 /**
@@ -64,9 +63,8 @@ inline uint32_t TickTimer_Elapsed(uint32_t startTick)
  * @param timeoutUs Timeout in microseconds
  * @return true if timeout has expired
  */
-inline bool TickTimer_IsExpired(uint32_t startTick, uint32_t timeoutUs)
-{
-    return TickTimer_Elapsed(startTick) >= timeoutUs;
+inline bool TickTimer_IsExpired(uint32_t startTick, uint32_t timeoutUs) {
+  return TickTimer_Elapsed(startTick) >= timeoutUs;
 }
 
 /**

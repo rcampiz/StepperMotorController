@@ -111,6 +111,7 @@ public:
     Status getStatus() {
         Status s;
         m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode3);
         csLow();
         m_spi.transfer(static_cast<uint8_t>(Cmd::GetStatus));
         uint8_t hi = m_spi.transfer(0x00);
@@ -126,6 +127,7 @@ public:
         uint32_t val = 0;
 
         m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode3);
         csLow();
         m_spi.transfer(static_cast<uint8_t>(Cmd::GetParam) | static_cast<uint8_t>(reg));
         for (uint8_t i = 0; i < len; i++) {
@@ -140,6 +142,7 @@ public:
         uint8_t len = paramLen(reg);
 
         m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode3);
         csLow();
         m_spi.transfer(static_cast<uint8_t>(Cmd::SetParam) | static_cast<uint8_t>(reg));
         for (int8_t i = len - 1; i >= 0; i--) {
@@ -151,6 +154,7 @@ public:
 
     void run(bool forward, uint32_t speed) {
         m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode3);
         csLow();
         m_spi.transfer(static_cast<uint8_t>(Cmd::Run) | (forward ? 1 : 0));
         m_spi.transfer((speed >> 16) & 0x0F);
@@ -162,6 +166,7 @@ public:
 
     void move(bool forward, uint32_t steps) {
         m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode3);
         csLow();
         m_spi.transfer(static_cast<uint8_t>(Cmd::Move) | (forward ? 1 : 0));
         m_spi.transfer((steps >> 16) & 0x3F);
@@ -173,6 +178,7 @@ public:
 
     void goTo(int32_t pos) {
         m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode3);
         csLow();
         m_spi.transfer(static_cast<uint8_t>(Cmd::GoTo));
         m_spi.transfer((pos >> 16) & 0x3F);
@@ -246,6 +252,7 @@ private:
 
     void sendCommand(Cmd cmd) {
         m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode3);
         csLow();
         m_spi.transfer(static_cast<uint8_t>(cmd));
         csHigh();

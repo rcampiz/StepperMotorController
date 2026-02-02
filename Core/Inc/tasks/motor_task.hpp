@@ -10,9 +10,12 @@
 #define MOTOR_TASK_HPP
 
 #include "FreeRTOS.h"
-#include "task.h"
 #include "queue.h"
-#include <cstdint>
+#include "task.h"
+#include <stdint.h>
+
+// Forward declaration
+class SPIBus;
 
 namespace Tasks {
 
@@ -25,35 +28,35 @@ constexpr size_t MOTOR_CMD_QUEUE_DEPTH = 8;
  * @brief Motor command types
  */
 enum class MotorCmdType : uint8_t {
-    // Motion commands
-    Move,           // Relative move: param1 = steps (signed)
-    GoTo,           // Absolute move: param1 = position
-    Run,            // Continuous: param1 = speed, param2 = direction (0=rev, 1=fwd)
-    SoftStop,       // Decelerate to stop
-    HardStop,       // Immediate stop
-    SoftHiZ,        // Decelerate then Hi-Z
-    HardHiZ,        // Immediate Hi-Z
-    GoHome,         // Return to home position
-    GoMark,         // Go to mark position
-    ResetPos,       // Set current position as zero
+  // Motion commands
+  Move,     // Relative move: param1 = steps (signed)
+  GoTo,     // Absolute move: param1 = position
+  Run,      // Continuous: param1 = speed, param2 = direction (0=rev, 1=fwd)
+  SoftStop, // Decelerate to stop
+  HardStop, // Immediate stop
+  SoftHiZ,  // Decelerate then Hi-Z
+  HardHiZ,  // Immediate Hi-Z
+  GoHome,   // Return to home position
+  GoMark,   // Go to mark position
+  ResetPos, // Set current position as zero
 
-    // Configuration commands
-    SetAccel,       // param1 = acceleration value
-    SetDecel,       // param1 = deceleration value
-    SetMaxSpeed,    // param1 = max speed value
-    SetMark,        // param1 = mark position
+  // Configuration commands
+  SetAccel,    // param1 = acceleration value
+  SetDecel,    // param1 = deceleration value
+  SetMaxSpeed, // param1 = max speed value
+  SetMark,     // param1 = mark position
 
-    // Query (response via telemetry)
-    GetStatus       // Trigger status read and telemetry update
+  // Query (response via telemetry)
+  GetStatus // Trigger status read and telemetry update
 };
 
 /**
  * @brief Motor command structure (sent via queue)
  */
 struct MotorCommand {
-    MotorCmdType type;
-    int32_t param1;
-    int32_t param2;
+  MotorCmdType type;
+  int32_t param1;
+  int32_t param2;
 };
 
 /**
@@ -62,15 +65,16 @@ struct MotorCommand {
  * Creates command queue and initializes powerSTEP01 driver.
  * Call before vTaskStartScheduler().
  *
+ * @param spi Reference to shared SPI bus (SPI1)
  * @return true on success
  */
-bool MotorTask_Init();
+bool MotorTask_Init(SPIBus& spi);
 
 /**
  * @brief Motor task entry point
  * @param pvParameters Unused
  */
-void vMotorTask(void* pvParameters);
+void vMotorTask(void *pvParameters);
 
 /**
  * @brief Send command to motor task
@@ -78,7 +82,7 @@ void vMotorTask(void* pvParameters);
  * @param timeout Ticks to wait if queue full (0 = don't wait)
  * @return true if command queued successfully
  */
-bool MotorTask_SendCommand(const MotorCommand& cmd, TickType_t timeout = 0);
+bool MotorTask_SendCommand(const MotorCommand &cmd, TickType_t timeout = 0);
 
 /**
  * @brief Convenience: send move command

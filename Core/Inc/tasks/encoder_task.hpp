@@ -12,23 +12,23 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
-#include <cstdint>
+#include <stdint.h>
 
 namespace Tasks {
 
 // Task configuration
 constexpr uint32_t ENCODER_TASK_STACK_SIZE = 128;
 constexpr UBaseType_t ENCODER_TASK_PRIORITY = tskIDLE_PRIORITY + 2;
-constexpr TickType_t ENCODER_SAMPLE_PERIOD_MS = 10;  // 100 Hz sampling
+constexpr TickType_t ENCODER_SAMPLE_PERIOD_MS = 10; // 100 Hz sampling
 
 /**
  * @brief Encoder state snapshot
  */
 struct EncoderState {
-    int32_t count;          // Current encoder count (from TIM2->CNT)
-    int32_t velocity;       // Calculated velocity (counts/sec)
-    bool indexSeen;         // Index pulse seen since last clear
-    uint32_t indexTick;     // Tick when index was last seen
+  int32_t count;      // Current encoder count (from TIM2->CNT)
+  int32_t velocity;   // Calculated velocity (counts/sec)
+  bool indexSeen;     // Index pulse seen since last clear
+  uint32_t indexTick; // Tick when index was last seen
 };
 
 /**
@@ -51,7 +51,7 @@ bool EncoderTask_IsAvailable();
  * @brief Encoder task entry point
  * @param pvParameters Unused
  */
-void vEncoderTask(void* pvParameters);
+void vEncoderTask(void *pvParameters);
 
 /**
  * @brief Get current encoder state (thread-safe copy)

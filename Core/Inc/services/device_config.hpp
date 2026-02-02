@@ -13,10 +13,10 @@
 
 #pragma once
 
-#include "drivers/flash_nor.hpp"
 #include "FreeRTOS.h"
+#include "drivers/flash_nor.hpp"
 #include "semphr.h"
-#include <cstdint>
+#include <stdint.h>
 
 namespace Services {
 
@@ -27,28 +27,28 @@ enum class ControlMode : uint8_t;
  * @brief Wheel position on mecanum robot chassis
  */
 enum class WheelRole : uint8_t {
-    UNASSIGNED  = 0,
-    FRONT_LEFT  = 1,
-    FRONT_RIGHT = 2,
-    REAR_LEFT   = 3,
-    REAR_RIGHT  = 4
+  UNASSIGNED = 0,
+  FRONT_LEFT = 1,
+  FRONT_RIGHT = 2,
+  REAR_LEFT = 3,
+  REAR_RIGHT = 4
 };
 
 /**
  * @brief Convert WheelRole to string
  */
-const char* roleToString(WheelRole role);
+const char *roleToString(WheelRole role);
 
 /**
  * @brief Parse WheelRole from string (FL, FR, RL, RR, NONE)
  * @return UNASSIGNED if invalid
  */
-WheelRole parseRole(const char* str);
+WheelRole parseRole(const char *str);
 
 // Flash storage constants
 constexpr uint32_t CONFIG_MAGIC = 0xDEADBEEF;
 constexpr uint16_t CONFIG_VERSION = 1;
-constexpr uint32_t CONFIG_FLASH_ADDR = 0x000000;  // First sector
+constexpr uint32_t CONFIG_FLASH_ADDR = 0x000000; // First sector
 
 /**
  * @brief Persistent device configuration structure
@@ -57,13 +57,13 @@ constexpr uint32_t CONFIG_FLASH_ADDR = 0x000000;  // First sector
  * Layout chosen for alignment and future expansion.
  */
 struct DeviceConfig {
-    uint32_t magic;           // 0xDEADBEEF - validity marker
-    uint16_t version;         // Config format version
-    uint16_t deviceId;        // Unique device ID (0-65535)
-    uint8_t role;             // WheelRole enum value
-    uint8_t defaultMode;      // ControlMode enum value
-    uint8_t reserved[22];     // Future expansion (zero-filled)
-    uint32_t crc32;           // Data integrity check
+  uint32_t magic;       // 0xDEADBEEF - validity marker
+  uint16_t version;     // Config format version
+  uint16_t deviceId;    // Unique device ID (0-65535)
+  uint8_t role;         // WheelRole enum value
+  uint8_t defaultMode;  // ControlMode enum value
+  uint8_t reserved[22]; // Future expansion (zero-filled)
+  uint32_t crc32;       // Data integrity check
 };
 
 static_assert(sizeof(DeviceConfig) == 36, "DeviceConfig must be 36 bytes");
@@ -76,81 +76,81 @@ static_assert(sizeof(DeviceConfig) == 36, "DeviceConfig must be 36 bytes");
  */
 class DeviceConfigManager {
 public:
-    /**
-     * @brief Initialize with flash driver
-     *
-     * Loads configuration from flash. If flash is empty or corrupted,
-     * applies default values (deviceId=0, UNASSIGNED, OPEN_LOOP).
-     *
-     * @param flash Reference to initialized SPIFlash driver
-     * @return true if valid config loaded, false if defaults applied
-     */
-    bool init(SPIFlash& flash);
+  /**
+   * @brief Initialize with flash driver
+   *
+   * Loads configuration from flash. If flash is empty or corrupted,
+   * applies default values (deviceId=0, UNASSIGNED, OPEN_LOOP).
+   *
+   * @param flash Reference to initialized SPIFlash driver
+   * @return true if valid config loaded, false if defaults applied
+   */
+  bool init(SPIFlash &flash);
 
-    /**
-     * @brief Check if configuration is valid
-     */
-    bool isValid() const { return m_valid; }
+  /**
+   * @brief Check if configuration is valid
+   */
+  bool isValid() const { return m_valid; }
 
-    // Getters (thread-safe, read from RAM)
-    uint16_t getDeviceId() const;
-    WheelRole getRole() const;
-    uint8_t getDefaultMode() const;
+  // Getters (thread-safe, read from RAM)
+  uint16_t getDeviceId() const;
+  WheelRole getRole() const;
+  uint8_t getDefaultMode() const;
 
-    /**
-     * @brief Set device ID and save to flash
-     * @return true if flash write succeeded
-     */
-    bool setDeviceId(uint16_t id);
+  /**
+   * @brief Set device ID and save to flash
+   * @return true if flash write succeeded
+   */
+  bool setDeviceId(uint16_t id);
 
-    /**
-     * @brief Set wheel role and save to flash
-     * @return true if flash write succeeded
-     */
-    bool setRole(WheelRole role);
+  /**
+   * @brief Set wheel role and save to flash
+   * @return true if flash write succeeded
+   */
+  bool setRole(WheelRole role);
 
-    /**
-     * @brief Set default control mode and save to flash
-     * @return true if flash write succeeded
-     */
-    bool setDefaultMode(uint8_t mode);
+  /**
+   * @brief Set default control mode and save to flash
+   * @return true if flash write succeeded
+   */
+  bool setDefaultMode(uint8_t mode);
 
-    /**
-     * @brief Reload configuration from flash
-     * @return true if valid config loaded
-     */
-    bool loadFromFlash();
+  /**
+   * @brief Reload configuration from flash
+   * @return true if valid config loaded
+   */
+  bool loadFromFlash();
 
-    /**
-     * @brief Save current configuration to flash
-     * @return true if write succeeded
-     */
-    bool saveToFlash();
+  /**
+   * @brief Save current configuration to flash
+   * @return true if write succeeded
+   */
+  bool saveToFlash();
 
-    /**
-     * @brief Reset to factory defaults and save
-     * @return true if write succeeded
-     */
-    bool factoryReset();
+  /**
+   * @brief Reset to factory defaults and save
+   * @return true if write succeeded
+   */
+  bool factoryReset();
 
 private:
-    DeviceConfig m_config;
-    SPIFlash* m_flash;
-    SemaphoreHandle_t m_mutex;
-    bool m_valid;
+  DeviceConfig m_config;
+  SPIFlash *m_flash;
+  SemaphoreHandle_t m_mutex;
+  bool m_valid;
 
-    // CRC32 calculation (polynomial 0xEDB88320)
-    uint32_t calculateCRC(const uint8_t* data, size_t len);
+  // CRC32 calculation (polynomial 0xEDB88320)
+  uint32_t calculateCRC(const uint8_t *data, size_t len);
 
-    // Apply default configuration
-    void applyDefaults();
+  // Apply default configuration
+  void applyDefaults();
 
-    // Validate magic and CRC
-    bool validateConfig(const DeviceConfig& cfg);
+  // Validate magic and CRC
+  bool validateConfig(const DeviceConfig &cfg);
 
-    // Lock/unlock helpers
-    bool lock(TickType_t timeout = portMAX_DELAY);
-    void unlock();
+  // Lock/unlock helpers
+  bool lock(TickType_t timeout = portMAX_DELAY);
+  void unlock();
 };
 
 // Global instance
