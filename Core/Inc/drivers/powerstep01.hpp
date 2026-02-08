@@ -97,26 +97,57 @@ public:
 
         // Reset device
         sendCommand(Cmd::ResetDevice);
+        for (volatile int i = 0; i < 50000; i++);  // Wait for reset
 
-        // Configure default parameters
+        // Clear latched faults
+        getStatus();
+
+        // Fix CONFIG: Clear EXT_CLK bit (IHM03A1 has no external clock)
+        uint32_t config = getParam(Reg::CONFIG);
+        config &= ~(1 << 3);  // Clear EXT_CLK bit
+        config &= ~(1 << 7);  // Clear OC_SD (OCD won't cause shutdown)
+        setParam(Reg::CONFIG, config);
+
+        // Disable problematic alarms (UVLO_ADC from floating ADCIN, thermal false positives)
+        // ALARM_EN: disable OCD(0), TH_SD(1), TH_WRN(2), UVLO_ADC(4)
+        setParam(Reg::ALARM_EN, 0xE8);
+
+        // Set high thresholds to prevent spurious trips
+        setParam(Reg::OCD_TH, 0x1F);    // Max OCD threshold (~10A)
+        setParam(Reg::STALL_TH, 0x7F);  // Max stall threshold
+
+        // Disable stall detection by setting FS_SPD to max (full-step speed threshold)
+        // When FS_SPD is at max, stall detection is effectively disabled
+        setParam(Reg::FS_SPD, 0x3FF);   // Max value, disables stall detection
+
+        // GATECFG2: moderate blanking/dead time
+        // TDT[2:0]=011 (1000ns dead time), TBLANK[7:3]=01000 (500ns blanking)
+        setParam(Reg::GATECFG2, 0x43);
+
+        // Configure motion parameters
         setParam(Reg::ACC, 0x08A);       // Acceleration
         setParam(Reg::DEC, 0x08A);       // Deceleration
         setParam(Reg::MAX_SPEED, 0x41);  // Max speed
-        setParam(Reg::KVAL_HOLD, 0x29);  // Holding current
-        setParam(Reg::KVAL_RUN, 0x29);   // Running current
-        setParam(Reg::KVAL_ACC, 0x29);   // Acceleration current
-        setParam(Reg::KVAL_DEC, 0x29);   // Deceleration current
+
+        // KVAL settings for NEMA 23 motor at ~21V supply
+        // Increased values for better starting torque
+        setParam(Reg::KVAL_HOLD, 0x20);  // Holding current
+        setParam(Reg::KVAL_RUN, 0x30);   // Running current
+        setParam(Reg::KVAL_ACC, 0x40);   // Acceleration current (higher for startup)
+        setParam(Reg::KVAL_DEC, 0x40);   // Deceleration current
+
+        // Clear any faults from initialization
+        getStatus();
     }
 
     Status getStatus() {
         Status s;
         m_spi.lock();
         m_spi.setMode(SPIBus::Mode::Mode3);
-        csLow();
-        m_spi.transfer(static_cast<uint8_t>(Cmd::GetStatus));
-        uint8_t hi = m_spi.transfer(0x00);
-        uint8_t lo = m_spi.transfer(0x00);
-        csHigh();
+        // powerSTEP01 requires CS toggle between each byte!
+        transferByte(static_cast<uint8_t>(Cmd::GetStatus));
+        uint8_t hi = transferByte(0x00);
+        uint8_t lo = transferByte(0x00);
         m_spi.unlock();
         s.raw = (hi << 8) | lo;
         return s;
@@ -128,12 +159,11 @@ public:
 
         m_spi.lock();
         m_spi.setMode(SPIBus::Mode::Mode3);
-        csLow();
-        m_spi.transfer(static_cast<uint8_t>(Cmd::GetParam) | static_cast<uint8_t>(reg));
+        // powerSTEP01 requires CS toggle between each byte!
+        transferByte(static_cast<uint8_t>(Cmd::GetParam) | static_cast<uint8_t>(reg));
         for (uint8_t i = 0; i < len; i++) {
-            val = (val << 8) | m_spi.transfer(0x00);
+            val = (val << 8) | transferByte(0x00);
         }
-        csHigh();
         m_spi.unlock();
         return val;
     }
@@ -143,48 +173,44 @@ public:
 
         m_spi.lock();
         m_spi.setMode(SPIBus::Mode::Mode3);
-        csLow();
-        m_spi.transfer(static_cast<uint8_t>(Cmd::SetParam) | static_cast<uint8_t>(reg));
+        // powerSTEP01 requires CS toggle between each byte!
+        transferByte(static_cast<uint8_t>(Cmd::SetParam) | static_cast<uint8_t>(reg));
         for (int8_t i = len - 1; i >= 0; i--) {
-            m_spi.transfer((val >> (8 * i)) & 0xFF);
+            transferByte((val >> (8 * i)) & 0xFF);
         }
-        csHigh();
         m_spi.unlock();
     }
 
     void run(bool forward, uint32_t speed) {
         m_spi.lock();
         m_spi.setMode(SPIBus::Mode::Mode3);
-        csLow();
-        m_spi.transfer(static_cast<uint8_t>(Cmd::Run) | (forward ? 1 : 0));
-        m_spi.transfer((speed >> 16) & 0x0F);
-        m_spi.transfer((speed >> 8) & 0xFF);
-        m_spi.transfer(speed & 0xFF);
-        csHigh();
+        // powerSTEP01 requires CS toggle between each byte!
+        transferByte(static_cast<uint8_t>(Cmd::Run) | (forward ? 1 : 0));
+        transferByte((speed >> 16) & 0x0F);
+        transferByte((speed >> 8) & 0xFF);
+        transferByte(speed & 0xFF);
         m_spi.unlock();
     }
 
     void move(bool forward, uint32_t steps) {
         m_spi.lock();
         m_spi.setMode(SPIBus::Mode::Mode3);
-        csLow();
-        m_spi.transfer(static_cast<uint8_t>(Cmd::Move) | (forward ? 1 : 0));
-        m_spi.transfer((steps >> 16) & 0x3F);
-        m_spi.transfer((steps >> 8) & 0xFF);
-        m_spi.transfer(steps & 0xFF);
-        csHigh();
+        // powerSTEP01 requires CS toggle per byte
+        transferByte(static_cast<uint8_t>(Cmd::Move) | (forward ? 1 : 0));
+        transferByte((steps >> 16) & 0x3F);
+        transferByte((steps >> 8) & 0xFF);
+        transferByte(steps & 0xFF);
         m_spi.unlock();
     }
 
     void goTo(int32_t pos) {
         m_spi.lock();
         m_spi.setMode(SPIBus::Mode::Mode3);
-        csLow();
-        m_spi.transfer(static_cast<uint8_t>(Cmd::GoTo));
-        m_spi.transfer((pos >> 16) & 0x3F);
-        m_spi.transfer((pos >> 8) & 0xFF);
-        m_spi.transfer(pos & 0xFF);
-        csHigh();
+        // powerSTEP01 requires CS toggle per byte
+        transferByte(static_cast<uint8_t>(Cmd::GoTo));
+        transferByte((pos >> 16) & 0x3F);
+        transferByte((pos >> 8) & 0xFF);
+        transferByte(pos & 0xFF);
         m_spi.unlock();
     }
 
@@ -250,12 +276,27 @@ private:
     void csLow()  { Pins::IHM03A1::CS_PORT->BSRR = (1 << (Pins::IHM03A1::CS_PIN + 16)); }
     void csHigh() { Pins::IHM03A1::CS_PORT->BSRR = (1 << Pins::IHM03A1::CS_PIN); }
 
+    /**
+     * @brief Transfer one byte with CS toggle (required by powerSTEP01)
+     *
+     * powerSTEP01 requires CS to go HIGH for at least 625ns between each byte.
+     * This method handles the CS low -> transfer -> CS high -> delay sequence.
+     */
+    uint8_t transferByte(uint8_t data) {
+        csLow();
+        for (volatile int d = 0; d < 10; d++);  // Setup time
+        uint8_t rx = m_spi.transfer(data);
+        csHigh();
+        // Minimum 625ns CS high time. At 84MHz, 100 cycles ≈ 1.2µs
+        for (volatile int d = 0; d < 100; d++);
+        return rx;
+    }
+
     void sendCommand(Cmd cmd) {
         m_spi.lock();
         m_spi.setMode(SPIBus::Mode::Mode3);
-        csLow();
-        m_spi.transfer(static_cast<uint8_t>(cmd));
-        csHigh();
+        // powerSTEP01 requires CS toggle per byte
+        transferByte(static_cast<uint8_t>(cmd));
         m_spi.unlock();
     }
 
@@ -263,11 +304,14 @@ private:
         switch (reg) {
             case Reg::ABS_POS:
             case Reg::MARK:
+            case Reg::SPEED:  // 20-bit register
                 return 3;
             case Reg::EL_POS:
-            case Reg::SPEED:
             case Reg::ACC:
             case Reg::DEC:
+            case Reg::MAX_SPEED:
+            case Reg::MIN_SPEED:
+            case Reg::FS_SPD:
             case Reg::INT_SPEED:
             case Reg::CONFIG:
             case Reg::STATUS:

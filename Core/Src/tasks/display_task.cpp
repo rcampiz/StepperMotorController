@@ -7,10 +7,12 @@
 #include "drivers/lcd_st7789.hpp"
 #include "drivers/joystick.hpp"
 #include "drivers/spi_bus.hpp"
+#include "drivers/spi_manager.hpp"
 #include "comms/telemetry.hpp"
 #include "ui/ui_mode.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
+#include <stddef.h>
 #include <stdint.h>
 
 namespace Tasks {
@@ -31,30 +33,44 @@ static bool s_refreshPending = false;
 static DisplayPage s_lastRenderedPage = DisplayPage::Status;
 
 // Driver instances (created in init)
+static SPIBus* s_spi = nullptr;
 static LCD* s_lcd = nullptr;
 static Joystick* s_joystick = nullptr;
 
-bool DisplayTask_Init(SPIBus& spi)
+bool DisplayTask_Init()
 {
     // Initialize UI mode manager
     if (!UI::g_uiMode.init(UI::UIMode::LOCAL)) {
         return false;
     }
 
+    // Create SPIBus wrapper around the bit-banged SPI1 from manager
+    // LCD (ST7789) uses SPI1 with Mode0
+    SPIBitBang* spi1 = g_spiManager.getSPI1();
+    if (spi1 == nullptr) {
+        return false;
+    }
+    s_spi = new SPIBus(*spi1);
+    if (s_spi == nullptr) {
+        return false;
+    }
+
     // Initialize LCD driver with shared SPI bus
-    s_lcd = new LCD(spi);
+    s_lcd = new LCD(*s_spi);
     if (s_lcd == nullptr) {
         return false;
     }
     s_lcd->init();
-    s_lcd->fillScreen(LCD::BLACK);
+
+    // Simple test: solid blue screen
+    s_lcd->fillScreen(LCD::BLUE);
 
     // Initialize joystick
     s_joystick = new Joystick();
 
     s_currentPage = DisplayPage::Status;
     s_lastRenderedPage = DisplayPage::Status;
-    s_refreshPending = true;
+    s_refreshPending = false;  // Don't refresh - keep blue screen
 
     return true;
 }
@@ -114,6 +130,8 @@ void vDisplayTask(void* pvParameters)
         }
 
         // Update display only in LOCAL mode
+        // DISABLED FOR BLUE SCREEN TEST
+#if 0
         if (s_lcd != nullptr && UI::g_uiMode.getMode() == UI::UIMode::LOCAL) {
             // Get current telemetry
             Comms::TelemetrySnapshot telem = Comms::g_telemetry.getSnapshot();
@@ -149,6 +167,7 @@ void vDisplayTask(void* pvParameters)
 
             s_refreshPending = false;
         }
+#endif
 
         // Wait for next refresh cycle
         vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(DISPLAY_REFRESH_PERIOD_MS));
@@ -237,6 +256,54 @@ void DisplayTask_RemoteBitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
 LCD* DisplayTask_GetLCD()
 {
     return s_lcd;
+}
+
+bool DisplayTask_StreamBitmapStart(uint16_t x, uint16_t y, uint16_t w, uint16_t h)
+{
+    if (s_lcd == nullptr) {
+        return false;
+    }
+    if (s_lcd->isStreaming()) {
+        return false;
+    }
+    s_lcd->streamBitmapStart(x, y, w, h);
+    return true;
+}
+
+void DisplayTask_StreamBitmapData(const uint8_t* data, size_t len)
+{
+    if (s_lcd != nullptr && data != nullptr) {
+        s_lcd->streamBitmapData(data, len);
+    }
+}
+
+void DisplayTask_StreamBitmapEnd()
+{
+    if (s_lcd != nullptr) {
+        s_lcd->streamBitmapEnd();
+    }
+}
+
+bool DisplayTask_IsStreaming()
+{
+    return s_lcd != nullptr && s_lcd->isStreaming();
+}
+
+// Task handle for suspend/resume
+TaskHandle_t g_displayTaskHandle = nullptr;
+
+void DisplayTask_Suspend()
+{
+    if (g_displayTaskHandle != nullptr) {
+        vTaskSuspend(g_displayTaskHandle);
+    }
+}
+
+void DisplayTask_Resume()
+{
+    if (g_displayTaskHandle != nullptr) {
+        vTaskResume(g_displayTaskHandle);
+    }
 }
 
 // =============================================================================

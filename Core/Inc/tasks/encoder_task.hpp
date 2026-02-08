@@ -1,8 +1,9 @@
 /**
  * @file encoder_task.hpp
- * @brief Encoder reading task using TIM2 hardware encoder mode
+ * @brief Encoder reading task using TIM4 hardware encoder mode
  *
- * Configures TIM2 for quadrature encoder counting on PA0/PA1.
+ * Configures TIM4 for quadrature encoder counting on PB6/PB7.
+ * TIM4 is 16-bit (wraps at 65535); position sign-extended to int32_t.
  * Monitors PC4 (EZ) for index pulse via EXTI.
  * Priority: Medium (tskIDLE_PRIORITY + 2)
  */

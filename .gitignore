@@ -57,6 +57,15 @@ Thumbs.db
 .cache/
 .clangd/
 
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Claude Code
+.claude/
+
 # Temporary files
 *.tmp
 *.log
+nul

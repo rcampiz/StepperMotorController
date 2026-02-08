@@ -8,6 +8,7 @@
 #include "uart.hpp"
 
 #include "drivers/spi_bus.hpp"
+#include "drivers/spi_manager.hpp"
 #include "drivers/powerstep01.hpp"
 #include "drivers/lcd_st7789.hpp"
 #include "drivers/flash_nor.hpp"
@@ -32,13 +33,11 @@ void bringupTask(void* pvParameters) {
     usb->println("\r\n=== Hardware Bring-up ===\r\n");
 
     // -------------------------------------------------------------------------
-    // Initialize SPI buses
+    // Get SPI buses from global manager (bit-banged)
     // -------------------------------------------------------------------------
-    usb->println("[SPI] Initializing SPI1 (IHM03A1 + LCD)...");
-    SPIBus spi1(SPI1, SPIBus::Prescaler::Div16);  // ~5 MHz @ 84MHz
-
-    usb->println("[SPI] Initializing SPI2 (Flash)...");
-    SPIBus spi2(SPI2, SPIBus::Prescaler::Div16);  // ~2.6 MHz @ 42MHz APB1
+    usb->println("[SPI] Using bit-banged SPI from g_spiManager...");
+    SPIBus spi1(*g_spiManager.getSPI1());  // SPI1: Motor + LCD
+    SPIBus spi2(*g_spiManager.getSPI2());  // SPI2: Flash
 
     // -------------------------------------------------------------------------
     // Initialize and test powerSTEP01

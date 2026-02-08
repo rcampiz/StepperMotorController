@@ -31,8 +31,8 @@
 #include "services/device_config.hpp"
 #include "services/control_mode.hpp"
 
-// Drivers for NOR flash
-#include "drivers/spi_bus.hpp"
+// Drivers
+#include "drivers/spi_manager.hpp"
 #include "drivers/flash_nor.hpp"
 
 // Task headers
@@ -48,11 +48,71 @@
 
 // CMSIS device header (provides RCC, GPIO, SPI, etc.)
 #include "stm32f401xe.h"
+#include <string.h>
 
-// Static SPI bus instances
-static SPIBus* s_spi1Bus = nullptr;  // Shared: motor driver + LCD
-static SPIBus* s_spi2Bus = nullptr;  // NOR flash only
+// NOR flash driver (uses SPI manager internally now)
 static SPIFlash* s_norFlash = nullptr;
+
+// ============================================================================
+// Early Debug UART - for debugging init failures before FreeRTOS starts
+// ============================================================================
+namespace EarlyDebug {
+    static bool s_initialized = false;
+
+    static void initUART() {
+        // Enable clocks
+        RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
+        RCC->APB1ENR |= RCC_APB1ENR_USART2EN;
+
+        // Brief delay
+        volatile uint32_t dummy = RCC->APB1ENR;
+        (void)dummy;
+
+        // Configure PA2 (TX) as alternate function
+        GPIOA->MODER &= ~(3UL << (2 * 2));
+        GPIOA->MODER |= (2UL << (2 * 2));   // AF mode
+        GPIOA->OSPEEDR |= (3UL << (2 * 2)); // High speed
+        GPIOA->AFR[0] &= ~(0xFUL << (2 * 4));
+        GPIOA->AFR[0] |= (7UL << (2 * 4));  // AF7 = USART2
+
+        // Configure PA3 (RX) as alternate function
+        GPIOA->MODER &= ~(3UL << (3 * 2));
+        GPIOA->MODER |= (2UL << (3 * 2));   // AF mode
+        GPIOA->PUPDR &= ~(3UL << (3 * 2));
+        GPIOA->PUPDR |= (1UL << (3 * 2));   // Pull-up
+        GPIOA->AFR[0] &= ~(0xFUL << (3 * 4));
+        GPIOA->AFR[0] |= (7UL << (3 * 4));  // AF7 = USART2
+
+        // Disable USART for config
+        USART2->CR1 = 0;
+
+        // Baud rate: 115200 at 42 MHz APB1
+        // BRR = 42000000 / (16 * 115200) = 22.786
+        USART2->BRR = (22 << 4) | 13;  // Mantissa=22, Fraction=13
+
+        // Enable TX, RX, USART
+        USART2->CR1 = USART_CR1_TE | USART_CR1_RE | USART_CR1_UE;
+
+        s_initialized = true;
+    }
+
+    static void putChar(char c) {
+        while ((USART2->SR & USART_SR_TXE) == 0) {}
+        USART2->DR = c;
+    }
+
+    static void print(const char* str) {
+        if (!s_initialized) return;
+        while (*str) {
+            putChar(*str++);
+        }
+    }
+
+    static void println(const char* str) {
+        print(str);
+        print("\r\n");
+    }
+} // namespace EarlyDebug
 
 /**
  * @brief Configure system clocks
@@ -94,174 +154,121 @@ static void SystemClock_Config(void)
     SystemCoreClock = 84000000;
 }
 
-/**
- * @brief Initialize SPI1 peripheral
- *
- * SPI1 is shared between powerSTEP01 motor driver and LCD.
- * Configured for ~5 MHz at 84 MHz APB2 (prescaler /16).
- */
-static void SPI1_Init(void)
-{
-    // Enable clocks
-    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
-    RCC->APB2ENR |= RCC_APB2ENR_SPI1EN;
-
-    // Configure PA5 (SCK), PA6 (MISO), PA7 (MOSI) as AF5
-    GPIOA->MODER &= ~(GPIO_MODER_MODER5 | GPIO_MODER_MODER6 | GPIO_MODER_MODER7);
-    GPIOA->MODER |= (GPIO_MODER_MODER5_1 | GPIO_MODER_MODER6_1 | GPIO_MODER_MODER7_1);
-    GPIOA->AFR[0] &= ~(GPIO_AFRL_AFRL5 | GPIO_AFRL_AFRL6 | GPIO_AFRL_AFRL7);
-    GPIOA->AFR[0] |= ((5 << GPIO_AFRL_AFRL5_Pos) |
-                      (5 << GPIO_AFRL_AFRL6_Pos) |
-                      (5 << GPIO_AFRL_AFRL7_Pos));
-    GPIOA->OSPEEDR |= (GPIO_OSPEEDER_OSPEEDR5 | GPIO_OSPEEDER_OSPEEDR7);
-
-    // Configure SPI1: Master, 8-bit, CPOL=1, CPHA=1, prescaler /16
-    SPI1->CR1 = (SPI_CR1_MSTR |
-                 SPI_CR1_BR_1 | SPI_CR1_BR_0 |  // /16
-                 SPI_CR1_CPOL | SPI_CR1_CPHA |
-                 SPI_CR1_SSM | SPI_CR1_SSI);
-    SPI1->CR1 |= SPI_CR1_SPE;
-}
-
-/**
- * @brief Initialize SPI2 peripheral
- *
- * SPI2 is used for NOR flash on X-NUCLEO-GFX01M2.
- * Configured for ~5 MHz at 42 MHz APB1 (prescaler /8).
- */
-static void SPI2_Init(void)
-{
-    // Enable clocks
-    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN;
-    RCC->APB1ENR |= RCC_APB1ENR_SPI2EN;
-
-    // Configure PB13 (SCK), PB14 (MISO), PB15 (MOSI) as AF5
-    // MODER: bits 26-27 (pin13), 28-29 (pin14), 30-31 (pin15)
-    GPIOB->MODER &= ~((0x3UL << 26) | (0x3UL << 28) | (0x3UL << 30));
-    GPIOB->MODER |= ((0x2UL << 26) | (0x2UL << 28) | (0x2UL << 30));  // AF mode
-
-    // AFR[1] (AFRH): pin13=bits20-23, pin14=bits24-27, pin15=bits28-31
-    GPIOB->AFR[1] &= ~((0xFUL << 20) | (0xFUL << 24) | (0xFUL << 28));
-    GPIOB->AFR[1] |= ((5UL << 20) | (5UL << 24) | (5UL << 28));  // AF5
-
-    // High speed for SCK and MOSI
-    GPIOB->OSPEEDR |= ((0x3UL << 26) | (0x3UL << 30));
-
-    // Configure SPI2: Master, 8-bit, CPOL=0, CPHA=0, prescaler /8 (~5 MHz)
-    SPI2->CR1 = (SPI_CR1_MSTR |
-                 SPI_CR1_BR_1 |  // /8
-                 SPI_CR1_SSM | SPI_CR1_SSI);
-    SPI2->CR1 |= SPI_CR1_SPE;
-}
-
-/**
- * @brief Initialize chip select GPIOs
- *
- * Configures CS pins for motor driver, LCD, and NOR flash as outputs, initially high.
- */
-static void ChipSelect_Init(void)
-{
-    // Enable GPIO clocks
-    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN | RCC_AHB1ENR_GPIOCEN;
-
-    // Motor CS (PC8) - output, high
-    GPIOC->MODER &= ~GPIO_MODER_MODER8;
-    GPIOC->MODER |= GPIO_MODER_MODER8_0;
-    GPIOC->BSRR = GPIO_BSRR_BS8;
-
-    // LCD CS (PB8) - output, high
-    GPIOB->MODER &= ~GPIO_MODER_MODER8;
-    GPIOB->MODER |= GPIO_MODER_MODER8_0;
-    GPIOB->BSRR = GPIO_BSRR_BS8;
-
-    // NOR Flash CS (PC6) - output, high
-    // MODER6 = bits 12-13
-    GPIOC->MODER &= ~(0x3UL << 12);
-    GPIOC->MODER |= (0x1UL << 12);  // Output mode
-    GPIOC->BSRR = (1UL << 6);       // Set PC6 high
-}
+// Hardware SPI init functions removed - now using bit-banged SPI via g_spiManager
+// CS pins are initialized by SPIManager::init()
 
 int main(void)
 {
     // 1. Hardware initialization
     SystemClock_Config();
-    SPI1_Init();
-    SPI2_Init();       // NOR flash
-    ChipSelect_Init();
+
+    // Initialize early debug UART first for visibility
+    EarlyDebug::initUART();
+    EarlyDebug::println("");
+    EarlyDebug::println("=== Early Debug ===");
+    EarlyDebug::println("Clock config: OK");
 
     // Initialize microsecond tick timer (TIM5)
     Services::TickTimer_Init();
+    EarlyDebug::println("TickTimer: OK");
 
     // 2. SystemView initialization (optional)
 #ifdef ENABLE_SEGGER_SYSTEMVIEW
     SEGGER_SYSVIEW_Conf();
+    EarlyDebug::println("SystemView: OK");
 #endif
 
     // 3. Initialize services
     // Control mode manager (must be before encoder init)
+    EarlyDebug::print("ControlMode init... ");
     if (!Services::g_controlMode.init()) {
         // Control mode init failed - halt
+        EarlyDebug::println("FAIL!");
         while (1) {}
     }
+    EarlyDebug::println("OK");
 
-    // Create SPI1 bus (shared between motor driver and LCD)
-    // Note: SPIBus constructor configures the peripheral and pins
-    // Initial mode is Mode3 for powerSTEP01; LCD will switch to Mode0 as needed
-    static SPIBus spi1Bus(SPI1, SPIBus::Prescaler::Div16, SPIBus::Mode::Mode3);  // ~5 MHz at 84 MHz APB2
-    s_spi1Bus = &spi1Bus;
+    // Initialize SPI manager (bit-banged SPI for both buses)
+    // SPI1: Motor (Mode3) + LCD (Mode0), ~1 MHz
+    // SPI2: NOR Flash (Mode0), ~1 MHz
+    EarlyDebug::print("SPI Manager init... ");
+    if (!g_spiManager.init(1000000, 1000000)) {
+        // SPI manager init failed - halt
+        EarlyDebug::println("FAIL!");
+        while (1) {}
+    }
+    EarlyDebug::println("OK");
 
-    // Create SPI2 bus and NOR flash driver for persistent config
-    static SPIBus spi2Bus(SPI2, SPIBus::Prescaler::Div8, SPIBus::Mode::Mode0);  // ~5 MHz at 42 MHz APB1
-    static SPIFlash norFlash(spi2Bus);
-    s_spi2Bus = &spi2Bus;
-    s_norFlash = &norFlash;
-    norFlash.init();
+    // NOR flash driver for persistent config (uses SPI manager internally)
+    // TODO: Update SPIFlash to use g_spiManager
+    // For now, we skip NOR flash initialization until SPIFlash is updated
+    // static SPIFlash norFlash(...);
+    // s_norFlash = &norFlash;
+    // norFlash.init();
 
     // Device config (persistent storage in NOR flash)
-    if (!Services::g_deviceConfig.init(norFlash)) {
-        // Device config init failed - continue with defaults
-        // (flash might not be present or corrupted)
-    }
+    // TODO: Re-enable when SPIFlash is updated to use g_spiManager
+    // For now, use defaults
+    // if (!Services::g_deviceConfig.init(norFlash)) {
+    //     // Device config init failed - continue with defaults
+    // }
 
-    // Apply default control mode from saved config
-    Services::g_controlMode.setMode(
-        static_cast<Services::ControlMode>(Services::g_deviceConfig.getDefaultMode()));
+    // Apply default control mode (using defaults until flash is available)
+    Services::g_controlMode.setMode(Services::ControlMode::OPEN_LOOP);
 
     // Telemetry manager must be initialized before any task uses it
     Comms::g_telemetry.init();
+    EarlyDebug::println("Telemetry: OK");
 
     // Command queue for ARM/START synchronization
+    EarlyDebug::print("CommandQueue init... ");
     if (!Services::g_commandQueue.init()) {
         // Command queue init failed - halt
+        EarlyDebug::println("FAIL!");
         while (1) {}
     }
+    EarlyDebug::println("OK");
 
     // 4. Initialize tasks (order matters for dependencies)
     // EncoderTask: OPTIONAL - system runs in OPEN_LOOP if encoder unavailable
+    EarlyDebug::print("EncoderTask init... ");
     bool encoderAvailable = Tasks::EncoderTask_Init();
+    EarlyDebug::println(encoderAvailable ? "OK" : "SKIP (optional)");
     // EncoderTask_Init updates g_controlMode encoder status internally
 
-    // MotorTask: Creates command queue, uses shared SPI1 bus
-    if (!Tasks::MotorTask_Init(spi1Bus)) {
+    // MotorTask: Creates command queue, uses g_spiManager
+    EarlyDebug::print("MotorTask init... ");
+    if (!Tasks::MotorTask_Init()) {
         // Motor init failed - halt
+        EarlyDebug::println("FAIL!");
         while (1) {}
     }
+    EarlyDebug::println("OK");
 
-    // DisplayTask: Initializes LCD driver, uses shared SPI1 bus
-    if (!Tasks::DisplayTask_Init(spi1Bus)) {
+    // DisplayTask: Initializes LCD driver, uses g_spiManager
+    EarlyDebug::print("DisplayTask init... ");
+    if (!Tasks::DisplayTask_Init()) {
         // Display init failed - halt
+        EarlyDebug::println("FAIL!");
         while (1) {}
     }
+    EarlyDebug::println("OK");
 
     // CommsTask: Initializes transport (UART or RTT)
+    EarlyDebug::print("CommsTask init... ");
     if (!Tasks::CommsTask_Init(Tasks::TransportType::VCP_UART)) {
         // Comms init failed - halt
+        EarlyDebug::println("FAIL!");
         while (1) {}
     }
+    EarlyDebug::println("OK");
 
     // Register joystick callback for REMOTE mode event forwarding
     // (must be after both DisplayTask and CommsTask init)
     Tasks::CommsTask_RegisterJoyCallback();
+    EarlyDebug::println("JoyCallback: OK");
+
+    EarlyDebug::println("Creating FreeRTOS tasks...");
 
     // 5. Create FreeRTOS tasks
     // Priority order: Motor (4) > Comms (3) > Encoder (2) > Display (1)
@@ -271,9 +278,9 @@ int main(void)
         xTaskCreate(
             Tasks::vEncoderTask,    // Task function
             "Encoder",              // Task name
-            128,                    // Stack size (words)
+            Tasks::ENCODER_TASK_STACK_SIZE,  // Stack size (words)
             nullptr,                // Parameters
-            2,                      // Priority
+            Tasks::ENCODER_TASK_PRIORITY,    // Priority
             nullptr                 // Task handle
         );
     }
@@ -281,27 +288,27 @@ int main(void)
     xTaskCreate(
         Tasks::vMotorTask,
         "Motor",
-        256,                    // Larger stack for SPI transactions
+        Tasks::MOTOR_TASK_STACK_SIZE,    // Stack size (words)
         nullptr,
-        4,                      // Highest priority
-        nullptr
+        Tasks::MOTOR_TASK_PRIORITY,      // Highest priority
+        &Tasks::g_motorTaskHandle  // Capture task handle for suspend/resume
     );
 
     xTaskCreate(
         Tasks::vDisplayTask,
         "Display",
-        256,                    // Larger stack for LCD buffer operations
+        Tasks::DISPLAY_TASK_STACK_SIZE,  // Stack size (words)
         nullptr,
-        1,                      // Lowest priority
-        nullptr
+        Tasks::DISPLAY_TASK_PRIORITY,    // Lowest priority
+        &Tasks::g_displayTaskHandle  // Capture handle for suspend/resume
     );
 
     xTaskCreate(
         Tasks::vCommsTask,
         "Comms",
-        512,                    // Largest stack for command parsing buffers
+        Tasks::COMMS_TASK_STACK_SIZE,
         nullptr,
-        3,
+        Tasks::COMMS_TASK_PRIORITY,
         nullptr
     );
 
@@ -310,10 +317,14 @@ int main(void)
     SEGGER_SYSVIEW_Start();
 #endif
 
+    EarlyDebug::println("Starting scheduler...");
+    EarlyDebug::println("===================");
+
     // 7. Start the FreeRTOS scheduler
     vTaskStartScheduler();
 
-    // Should never reach here
+    // Should never reach here - scheduler returned means failure
+    EarlyDebug::println("!!! SCHEDULER RETURNED !!!");
     while (1) {
         // Error: scheduler failed to start
     }
@@ -327,7 +338,8 @@ extern "C" {
 void vApplicationStackOverflowHook(TaskHandle_t xTask, char* pcTaskName)
 {
     (void)xTask;
-    (void)pcTaskName;
+    EarlyDebug::print("!!! STACK OVERFLOW: ");
+    EarlyDebug::println(pcTaskName);
     // Stack overflow detected - halt
     // In debug builds, set a breakpoint here
     while (1) {}
@@ -335,14 +347,25 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char* pcTaskName)
 
 void vApplicationMallocFailedHook(void)
 {
+    EarlyDebug::println("!!! MALLOC FAILED !!!");
     // Memory allocation failed - halt
     // In debug builds, set a breakpoint here
     while (1) {}
 }
 
+// Debug: count idle calls
+static volatile uint32_t s_idleCount = 0;
+
 // Idle hook can be used for low-power modes
 void vApplicationIdleHook(void)
 {
+    s_idleCount++;
+    // Print once to show we reached idle
+    static bool once = false;
+    if (!once) {
+        once = true;
+        EarlyDebug::println("[IDLE] First idle tick");
+    }
     // Enter low-power mode when idle
     __WFI();
 }

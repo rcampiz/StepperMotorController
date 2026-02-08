@@ -136,7 +136,12 @@ public:
     }
 
     void init() {
+        // Try hardware reset first
         reset();
+
+        // Software reset as backup
+        writeCmd(0x01);  // Software reset
+        delayMs(150);
 
         writeCmd(0x11);  // Sleep out
         delayMs(120);
@@ -154,6 +159,7 @@ public:
     }
 
     void reset() {
+        // Hardware reset - may not work if GPIOH has issues
         nresetHigh();
         delayMs(10);
         nresetLow();

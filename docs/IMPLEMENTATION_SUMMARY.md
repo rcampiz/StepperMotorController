@@ -18,14 +18,14 @@ This document summarizes the work completed to build the Stepper Motor Controlle
 | Project structure & build system | **Complete** |
 | FreeRTOS task framework | **Complete** |
 | SEGGER RTT/SystemView | **Complete** |
-| Command parser protocol | **Complete** (all commands parsed) |
+| Command parser protocol | **Complete** (parsed + dispatched to MotorTask) |
 | Services (tick timer, command queue, device config, control mode) | **Complete** |
 | Encoder driver (TIM2 + index interrupt) | **Complete** |
 | Motor control (powerSTEP01) | **Complete** |
-| UART transport | *Scaffolded* - init/transfer stubs |
+| UART transport | **Complete** - interrupt RX, polling TX |
 | LCD display | **Complete** - dual-mode UI framework |
 | UI mode manager | **Complete** - LOCAL/REMOTE modes |
-| Remote display commands | **Complete** - DISP_CLEAR/TEXT/RECT/LINE/BITMAP |
+| Remote display commands | **Complete** - DISP_CLEAR/TEXT/RECT/LINE/BITMAP_B64 (binary streaming TBD) |
 | Screen abstractions | **Complete** - IScreen, MenuScreen, TerminalScreen |
 | Telemetry formatting | *Scaffolded* - data collected, output TBD |
 
@@ -288,6 +288,146 @@ Convert on-board ST-LINK to J-Link OB using SEGGER STLinkReflash utility.
    42848    104      15748    58700    e54c  StepperMotorController.elf
    ```
 
+### Phase 10: Command Dispatch Integration
+
+**Objective:** Wire command parser to MotorTask queue so host commands drive actual motor motion.
+
+**Status:** Complete
+
+**Changes Made:**
+
+1. **Wired motion commands in `Core/Src/comms/command_parser.cpp`:**
+   - `cmdMove()` - Creates `MotorCmdType::Move` command, handles direction via sign
+   - `cmdGoTo()` - Creates `MotorCmdType::GoTo` command with absolute position
+   - `cmdRun()` - Creates `MotorCmdType::Run` command with speed and direction
+   - `cmdStop()` - Creates `MotorCmdType::SoftStop` or `HardStop` based on argument
+
+2. **Wired configuration commands:**
+   - `cmdEnable()` / `cmdDisable()` - Create `MotorCmdType::SoftHiZ` / `HardHiZ`
+   - `cmdAccel()` / `cmdDecel()` / `cmdMaxSpd()` - Create corresponding `SetAccel`/`SetDecel`/`SetMaxSpeed` commands
+
+3. **Wired homing commands:**
+   - `cmdHome()` - Creates `MotorCmdType::GoHome` command
+   - `cmdZero()` - Creates `MotorCmdType::ResetPos` command
+
+4. **Fixed `cmdGetStatus()` to return actual telemetry:**
+   - Gets telemetry snapshot via `g_telemetry.getSnapshot()`
+   - Returns actual `motor.position` and `motor.speed` instead of hardcoded zeros
+
+5. **Build output:**
+   ```
+   text     data     bss      dec      hex   filename
+   43556    104      15748    59408    e810  StepperMotorController.elf
+   ```
+
+### Phase 11: UART Transport Implementation
+
+**Objective:** Implement USART2 VCP transport for Raspberry Pi communication.
+
+**Status:** Complete
+
+**Changes Made:**
+
+1. **Updated `Core/Inc/comms/uart_transport.hpp`:**
+   - Added `RingBuffer<SIZE>` template class (lock-free SPSC ring buffer)
+   - Added 256-byte RX buffer for interrupt-driven reception
+   - Added singleton pattern for ISR access
+   - Added `handleIRQ()` method and `USART2_IRQHandler` declaration
+
+2. **Implemented `Core/Src/comms/uart_transport.cpp`:**
+   - GPIO configuration: PA2 (TX) and PA3 (RX) as AF7 for USART2
+   - USART2 initialization: 115200 8N1, RXNE interrupt enabled
+   - Baud rate calculation from APB1 clock (42 MHz)
+   - Interrupt-driven RX with ring buffer (ISR-safe)
+   - Polling TX with TXE wait
+   - Timeout-based `readByte()` with FreeRTOS yield
+   - `USART2_IRQHandler` implementation
+
+3. **Features:**
+   - Non-blocking RX (interrupt fills ring buffer)
+   - Blocking TX with TXE polling
+   - Overrun error handling (ORE flag cleared in ISR)
+   - Pull-up on RX pin to prevent floating when disconnected
+
+4. **Build output:**
+   ```
+   text     data     bss      dec      hex   filename
+   44232    104      15748    60084    eab4  StepperMotorController.elf
+   ```
+
+### Phase 12: Command Argument Validation
+
+**Objective:** Add bounds checking to command arguments to prevent invalid values reaching the motor driver.
+
+**Status:** Complete
+
+**Changes Made:**
+
+1. **Added `Limits` namespace in `Core/Src/comms/command_parser.cpp`:**
+   - `POS_MIN/POS_MAX`: -2097152 to 2097151 (22-bit signed position)
+   - `SPEED_MIN/SPEED_MAX`: 0 to 15625 (practical max for powerSTEP01)
+   - `ACCEL_MIN/ACCEL_MAX`: 1 to 4095 (12-bit register)
+   - `MAXSPD_MIN/MAXSPD_MAX`: 1 to 1023 (10-bit register)
+   - `DIR_MIN/DIR_MAX`: 0 to 1
+
+2. **Updated motion command handlers:**
+   - `cmdMove()`: Validates steps (0-2097151) and direction (0/1)
+   - `cmdGoTo()`: Validates position (-2097152 to 2097151)
+   - `cmdRun()`: Validates speed (0-15625) and direction (0/1)
+
+3. **Updated configuration command handlers:**
+   - `cmdAccel()`: Validates value (1-4095)
+   - `cmdDecel()`: Validates value (1-4095)
+   - `cmdMaxSpd()`: Validates value (1-1023)
+
+4. **Updated QUEUE sub-commands:**
+   - `QUEUE MOVE`: Same validation as direct MOVE
+   - `QUEUE GOTO`: Same validation as direct GOTO
+   - `QUEUE RUN`: Same validation as direct RUN
+
+5. **Error responses:** Invalid arguments return descriptive error messages (e.g., "dir must be 0 or 1", "speed out of range (0-15625)").
+
+### Phase 13: JSON Response Mode
+
+**Objective:** Add selectable JSON response format for structured client communication.
+
+**Status:** Complete
+
+**Changes Made:**
+
+1. **Added `ResponseFormat` enum in `Core/Inc/comms/command_parser.hpp`:**
+   - `ASCII` - Traditional OK/ERR format (default)
+   - `JSON` - Structured JSON responses
+
+2. **Added JSON response helpers in `Core/Src/comms/command_parser.cpp`:**
+   - `respondJsonOk(command, dataJson)` - Success response with optional data
+   - `respondJsonErr(command, code, message)` - Error response with code and message
+
+3. **New commands:**
+   - `SET_FORMAT <ASCII|JSON>` - Switch response format
+   - `GET_FORMAT` - Query current format
+
+4. **Updated commands for JSON mode:**
+   - `GET_STATUS` - Full telemetry JSON with motor/encoder nested objects
+   - `PING` - JSON with seq, rx_tick, tx_tick, state
+   - `GET_TICK` - JSON with tick value
+   - All other commands use `respondOk()`/`respondErr()` which auto-format
+
+5. **JSON Response Schema:**
+   ```json
+   // Success
+   {"status":"ok","command":"CMD","data":{...}}
+
+   // Error
+   {"status":"error","command":"CMD","code":"ERROR","message":"..."}
+   ```
+
+6. **Build output:**
+   ```
+   text     data     bss      dec      hex   filename
+   46188    104      15748    62040    f258  StepperMotorController.elf
+   ```
+
 ## File Summary
 
 ### New Files Created
@@ -348,15 +488,45 @@ Convert on-board ST-LINK to J-Link OB using SEGGER STLinkReflash utility.
 
 The following items need implementation to create a fully functional motor controller:
 
-1. **UartTransport** - USART2 initialization and interrupt/DMA handling
-2. **Command dispatch** - Wire CommandParser to MotorTask queue for motion commands
-3. **Telemetry publishing** - Format and transmit telemetry data over transport
-4. **Closed-loop control** - PID control using encoder feedback
-5. **Multi-controller testing** - Synchronized start across 4 controllers
-6. **Binary bitmap streaming** - DISP_BITMAP command for raw binary transfer
+### Firmware (Server)
+
+1. ~~**JSON Response Mode** - Add `SET_FORMAT JSON|ASCII` command and JSON response formatting~~ **COMPLETE** (Phase 13)
+2. **Introspection Commands** - `GET_DEVICE_INFO`, `GET_MOTOR_INFO`, `GET_LIMITS`
+3. **Telemetry Streaming** - `TELEMETRY ON|OFF` with periodic JSON updates
+4. **Test Mode** - Server-side test mode with conservative limits
+5. **Motor Metadata in Flash** - Store connected motor specifications
+6. **Closed-loop Control** - PID control using encoder feedback
+7. **Binary Bitmap Streaming** - DISP_BITMAP command for raw binary transfer
+
+### Python Client (New)
+
+8. **Transport Abstraction** - VcpTransport and RttTransport implementations
+   - See: [requirements_python_client.md](requirements_python_client.md)
+9. **GUI Application** - PySide6-based cross-platform GUI
+10. **Motor Control Panel** - Motion commands, rate control, safety display
+11. **Telemetry Panel** - Live motor/encoder data display
+12. **Display Testing** - Image transfer and test pattern tools
+
+### Tooling
+
+13. **Debugger Switching Scripts** - ST-LINK <-> J-Link OB conversion
+    - See: [requirements_debugger_switching.md](requirements_debugger_switching.md)
+14. **VS Code Integration** - Dual debug configs, flash tasks, GUI launcher
+15. **Multi-controller Testing** - Synchronized start across 4 controllers
+
+## Requirements Documents
+
+| Document | Description |
+|----------|-------------|
+| [requirements_transport_protocol.md](requirements_transport_protocol.md) | JSON protocol, transport abstraction |
+| [requirements_python_client.md](requirements_python_client.md) | Python GUI requirements |
+| [requirements_debugger_switching.md](requirements_debugger_switching.md) | ST-LINK/J-Link switching |
 
 ## Completed Recently
 
+- **UART transport** - USART2 VCP with interrupt-driven RX, 256-byte ring buffer (Phase 11)
+- **Command dispatch** - Parser→MotorTask queue wiring for MOVE/GOTO/RUN/STOP/ENABLE/DISABLE/ACCEL/DECEL/MAXSPD/HOME/ZERO (Phase 10)
+- **GET_STATUS telemetry** - Returns actual motor position and speed from telemetry snapshot
 - **LCD display** - ST7789 initialization and graphics primitives (complete)
 - **Display pages** - Status, Motor, Encoder, System, Debug pages (complete)
 - **Dual-mode UI** - LOCAL/REMOTE mode switching (complete)

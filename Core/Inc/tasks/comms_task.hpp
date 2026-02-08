@@ -17,7 +17,7 @@
 namespace Tasks {
 
 // Task configuration
-constexpr uint32_t COMMS_TASK_STACK_SIZE = 512;
+constexpr uint32_t COMMS_TASK_STACK_SIZE = 2048;  // 8192 bytes (GET_STATUS JSON uses 640B local buf + snprintf)
 constexpr UBaseType_t COMMS_TASK_PRIORITY = tskIDLE_PRIORITY + 3;
 constexpr TickType_t COMMS_POLL_PERIOD_MS = 10; // Command polling
 constexpr TickType_t TELEMETRY_PERIOD_MS = 100; // Telemetry publish rate
@@ -73,6 +73,39 @@ void CommsTask_SendJoyEvent(const char* direction, bool pressed);
  * joystick event forwarding in REMOTE mode.
  */
 void CommsTask_RegisterJoyCallback();
+
+// -------------------------------------------------------------------------
+// Heartbeat watchdog API
+// -------------------------------------------------------------------------
+
+constexpr uint32_t HEARTBEAT_TIMEOUT_MIN_MS = 100;
+constexpr uint32_t HEARTBEAT_TIMEOUT_MAX_MS = 5000;
+
+/**
+ * @brief Notify that a HEARTBEAT command was received
+ * @param seq Sequence number from client
+ */
+void CommsTask_HeartbeatReceived(uint32_t seq);
+
+/**
+ * @brief Configure heartbeat watchdog timeout
+ * @param timeout_ms Timeout in ms (0=disabled, clamped to [100,5000])
+ * @return Accepted timeout value (may be clamped)
+ */
+uint32_t CommsTask_SetHeartbeatTimeout(uint32_t timeout_ms);
+
+/**
+ * @brief Query heartbeat watchdog status
+ */
+void CommsTask_GetHeartbeatStatus(
+    bool& out_enabled, uint32_t& out_timeout_ms,
+    uint32_t& out_last_seq, uint32_t& out_remaining_ms,
+    bool& out_timed_out);
+
+/**
+ * @brief Clear comms timeout latch and disable watchdog
+ */
+void CommsTask_ClearCommsTimeout();
 
 } // namespace Tasks
 

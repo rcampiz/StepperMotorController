@@ -1,7 +1,7 @@
 @echo off
 REM Build script for NUCLEO-F401RE project using CMake + NMake
 
-setlocal
+setlocal enabledelayedexpansion
 
 REM Change to project root directory
 cd /d "%~dp0\.."
@@ -32,10 +32,10 @@ if %ERRORLEVEL% NEQ 0 (
 REM Check if NMake is available
 where nmake >nul 2>nul
 if %ERRORLEVEL% NEQ 0 (
-    echo WARNING: NMake not found! Falling back to direct build...
+    echo WARNING: NMake not found, falling back to direct build...
     echo.
     call "%~dp0\build_direct.bat" %BUILD_TARGET%
-    exit /b %ERRORLEVEL%
+    exit /b !ERRORLEVEL!
 )
 
 echo Using CMake + NMake build system

@@ -120,6 +120,8 @@ arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/device_config.cpp -o build/dev
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile device_config.cpp & exit /b 1)
 arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/control_mode.cpp -o build/control_mode.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile control_mode.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/motor_config.cpp -o build/motor_config.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile motor_config.cpp & exit /b 1)
 
 echo [17/25] Compiling UI sources...
 arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/ui/ui_mode.cpp -o build/ui_mode.o
@@ -129,21 +131,26 @@ if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile menu_screen.cpp & exit /b 1
 arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/ui/terminal_screen.cpp -o build/terminal_screen.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile terminal_screen.cpp & exit /b 1)
 
-echo [18/25] Assembling startup_stm32f401xe.s...
+echo [18/26] Compiling driver sources...
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/drivers/spi_manager.cpp -o build/spi_manager.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile spi_manager.cpp & exit /b 1)
+
+echo [19/26] Assembling startup_stm32f401xe.s...
 arm-none-eabi-gcc -c %ASFLAGS% Core/Src/startup_stm32f401xe.s -o build/startup_stm32f401xe.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to assemble startup_stm32f401xe.s & exit /b 1)
 
-echo [19/25] Collecting object files...
+echo [20/26] Collecting object files...
 set "OBJS=build/system_stm32f4xx.o build/syscalls.o build/tasks.o build/queue.o build/list.o"
 set "OBJS=%OBJS% build/timers.o build/event_groups.o build/stream_buffer.o build/heap_4.o build/port.o"
 set "OBJS=%OBJS% build/SEGGER_RTT.o build/SEGGER_RTT_printf.o build/SEGGER_SYSVIEW.o build/SEGGER_SYSVIEW_Config_FreeRTOS.o build/SEGGER_SYSVIEW_FreeRTOS.o"
 set "OBJS=%OBJS% build/main.o build/uart_transport.o build/rtt_transport.o build/command_parser.o build/telemetry.o"
 set "OBJS=%OBJS% build/motor_task.o build/encoder_task.o build/display_task.o build/comms_task.o build/bringup_task.o"
-set "OBJS=%OBJS% build/tick_timer.o build/command_queue.o build/device_config.o build/control_mode.o"
+set "OBJS=%OBJS% build/tick_timer.o build/command_queue.o build/device_config.o build/control_mode.o build/motor_config.o"
 set "OBJS=%OBJS% build/ui_mode.o build/menu_screen.o build/terminal_screen.o"
+set "OBJS=%OBJS% build/spi_manager.o"
 set "OBJS=%OBJS% build/startup_stm32f401xe.o"
 
-echo [20/25] Linking...
+echo [21/26] Linking...
 arm-none-eabi-g++ %OBJS% %LDFLAGS% -o build/StepperMotorController.elf
 if %ERRORLEVEL% NEQ 0 (
     echo ERROR: Linking failed
@@ -176,6 +183,12 @@ echo.
 if "%1"=="flash" (
     echo Flashing to target...
     openocd -f interface/stlink.cfg -f target/stm32f4x.cfg -c "program build/StepperMotorController.elf verify reset exit"
+    if !ERRORLEVEL! NEQ 0 (
+        echo ERROR: Flashing failed
+        exit /b 1
+    )
+    echo Flash completed successfully.
 )
 
 endlocal
+exit /b 0

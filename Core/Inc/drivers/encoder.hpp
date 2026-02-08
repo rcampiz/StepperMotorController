@@ -2,12 +2,14 @@
  * @file encoder.hpp
  * @brief Quadrature encoder hardware driver
  *
- * Provides hardware abstraction for quadrature encoder using TIM2 in encoder
+ * Provides hardware abstraction for quadrature encoder using TIM4 in encoder
  * mode. Supports optional index pulse detection via EXTI4.
  *
+ * Note: TIM4 is 16-bit (wraps at 65535). Position is sign-extended to int32_t.
+ *
  * Pin assignments:
- *   EA  - PA0 (TIM2_CH1) - Quadrature A
- *   EB  - PA1 (TIM2_CH2) - Quadrature B
+ *   EA  - PB6 (TIM4_CH1) - Quadrature A  (CN10 P-17)
+ *   EB  - PB7 (TIM4_CH2) - Quadrature B  (CN7 P-21)
  *   EZ  - PC4 (EXTI4)    - Index pulse (active low, optional)
  */
 
@@ -20,7 +22,7 @@
 /**
  * @brief Hardware quadrature encoder driver
  *
- * Wraps TIM2 in encoder mode for 32-bit position counting.
+ * Wraps TIM4 in encoder mode for 16-bit position counting.
  * Index pulse detection available via EXTI4 interrupt.
  */
 class Encoder {
@@ -62,16 +64,19 @@ public:
    * @brief Get current position count
    *
    * Direct register read, always returns current hardware value.
-   * Thread-safe (single 32-bit read).
+   * TIM4 is 16-bit, so we sign-extend to int32_t via int16_t cast.
+   * Thread-safe (single 16-bit read).
    *
-   * @return Signed 32-bit encoder count
+   * @return Signed 32-bit encoder count (sign-extended from 16-bit)
    */
-  int32_t getCount() const { return static_cast<int32_t>(TIM2->CNT); }
+  int32_t getCount() const {
+    return static_cast<int32_t>(static_cast<int16_t>(TIM4->CNT & 0xFFFF));
+  }
 
   /**
    * @brief Reset position count to zero
    */
-  void reset() { TIM2->CNT = 0; }
+  void reset() { TIM4->CNT = 0; }
 
   /**
    * @brief Check if index pulse has been seen

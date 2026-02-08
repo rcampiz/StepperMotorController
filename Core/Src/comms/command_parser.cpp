@@ -7,11 +7,14 @@
  */
 
 #include "comms/command_parser.hpp"
+#include "comms/telemetry.hpp"
 #include "services/command_queue.hpp"
 #include "services/control_mode.hpp"
 #include "services/device_config.hpp"
+#include "services/motor_config.hpp"
 #include "services/tick_timer.hpp"
 #include "tasks/display_task.hpp"
+#include "tasks/comms_task.hpp"
 #include "tasks/encoder_task.hpp"
 #include "tasks/motor_task.hpp"
 #include "ui/ui_mode.hpp"
@@ -22,9 +25,36 @@
 
 namespace Comms {
 
+// ============================================================================
+// Argument validation limits (based on powerSTEP01 register sizes)
+// ============================================================================
+namespace Limits {
+    // Position: 22-bit signed (-2^21 to 2^21-1)
+    constexpr int32_t POS_MIN = -2097152;
+    constexpr int32_t POS_MAX = 2097151;
+
+    // Speed: in steps/s (converted to 20-bit raw register value internally)
+    // Max 15625 steps/s per powerSTEP01 datasheet (raw 0xFFFFF * 2^-28 / 250ns)
+    constexpr int32_t SPEED_MIN = 0;
+    constexpr int32_t SPEED_MAX = 15625;  // steps per second
+
+    // Acceleration/Deceleration: 12-bit register (0-4095)
+    constexpr int32_t ACCEL_MIN = 1;
+    constexpr int32_t ACCEL_MAX = 4095;
+
+    // Max Speed: 10-bit register (0-1023)
+    constexpr int32_t MAXSPD_MIN = 1;
+    constexpr int32_t MAXSPD_MAX = 1023;
+
+    // Direction: 0 or 1
+    constexpr int32_t DIR_MIN = 0;
+    constexpr int32_t DIR_MAX = 1;
+}
+
 CommandParser::CommandParser(ITransport &transport)
-    : m_transport(transport), m_bufIndex(0) {
+    : m_transport(transport), m_bufIndex(0), m_format(ResponseFormat::ASCII) {
   memset(m_buffer, 0, sizeof(m_buffer));
+  memset(m_currentCmd, 0, sizeof(m_currentCmd));
 }
 
 void CommandParser::process() {
@@ -116,6 +146,19 @@ ParsedCommand CommandParser::parse(const char *line) {
 }
 
 void CommandParser::dispatch(const ParsedCommand &cmd) {
+  // Store current command for JSON echo
+  strncpy(m_currentCmd, cmd.cmd, sizeof(m_currentCmd) - 1);
+  m_currentCmd[sizeof(m_currentCmd) - 1] = '\0';
+
+  // Response format commands (handle first for immediate effect)
+  if (strcmp(cmd.cmd, "SET_FORMAT") == 0) {
+    cmdSetFormat(cmd);
+    return;
+  } else if (strcmp(cmd.cmd, "GET_FORMAT") == 0) {
+    cmdGetFormat();
+    return;
+  }
+
   // Motion commands
   if (strcmp(cmd.cmd, "MOVE") == 0) {
     cmdMove(cmd);
@@ -162,6 +205,14 @@ void CommandParser::dispatch(const ParsedCommand &cmd) {
   } else if (strcmp(cmd.cmd, "CLEAR_FAULT") == 0) {
     cmdClearFault();
   }
+  // Heartbeat commands
+  else if (strcmp(cmd.cmd, "HEARTBEAT") == 0) {
+    cmdHeartbeat(cmd);
+  } else if (strcmp(cmd.cmd, "SET_HEARTBEAT") == 0) {
+    cmdSetHeartbeat(cmd);
+  } else if (strcmp(cmd.cmd, "GET_HEARTBEAT_STATUS") == 0) {
+    cmdGetHeartbeatStatus();
+  }
   // Utility commands
   else if (strcmp(cmd.cmd, "HELP") == 0 || strcmp(cmd.cmd, "?") == 0) {
     cmdHelp();
@@ -173,6 +224,8 @@ void CommandParser::dispatch(const ParsedCommand &cmd) {
     cmdZero();
   } else if (strcmp(cmd.cmd, "ENCODER") == 0 || strcmp(cmd.cmd, "ENC") == 0) {
     cmdEncoder();
+  } else if (strcmp(cmd.cmd, "ENC_DEBUG") == 0) {
+    cmdEncDebug();
   }
   // Device identification commands
   else if (strcmp(cmd.cmd, "GET_DEVICE_ID") == 0) {
@@ -209,25 +262,1332 @@ void CommandParser::dispatch(const ParsedCommand &cmd) {
     cmdDispBitmap(cmd);
   } else if (strcmp(cmd.cmd, "DISP_BITMAP_B64") == 0) {
     cmdDispBitmapB64(cmd);
+  } else if (strcmp(cmd.cmd, "SPI_DEBUG") == 0) {
+    // Debug: show SPI1 and GPIO states
+    char buf[128];
+    snprintf(buf, sizeof(buf),
+             "SPI1_CR1=%08X SR=%04X MODER=%08X AFR0=%08X PC_ODR=%04X",
+             (unsigned)SPI1->CR1, (unsigned)SPI1->SR,
+             (unsigned)GPIOA->MODER, (unsigned)GPIOA->AFR[0],
+             (unsigned)GPIOC->ODR);
+    m_transport.println(buf);
+  } else if (strcmp(cmd.cmd, "MOTOR_DEBUG") == 0) {
+    cmdMotorDebug();
+
+  // ===== Motor Configuration Commands =====
+  } else if (strcmp(cmd.cmd, "MCONFIG") == 0) {
+    cmdMotorConfigShow();
+  } else if (strcmp(cmd.cmd, "MCONFIG_SAVE") == 0) {
+    cmdMotorConfigSave();
+  } else if (strcmp(cmd.cmd, "MCONFIG_LOAD") == 0) {
+    cmdMotorConfigLoad();
+  } else if (strcmp(cmd.cmd, "MCONFIG_RESET") == 0) {
+    cmdMotorConfigReset();
+  } else if (strcmp(cmd.cmd, "MCONFIG_KVAL") == 0) {
+    cmdMotorConfigKval(cmd);
+  } else if (strcmp(cmd.cmd, "MCONFIG_OCD") == 0) {
+    cmdMotorConfigOcd(cmd);
+  } else if (strcmp(cmd.cmd, "MCONFIG_STALL") == 0) {
+    cmdMotorConfigStall(cmd);
+  } else if (strcmp(cmd.cmd, "MCONFIG_FAULT") == 0) {
+    cmdMotorConfigFault(cmd);
+  } else if (strcmp(cmd.cmd, "MCONFIG_MOTION") == 0) {
+    cmdMotorConfigMotion(cmd);
+  } else if (strcmp(cmd.cmd, "MCONFIG_APPLY") == 0) {
+    cmdMotorConfigApply();
+
+  } else if (strcmp(cmd.cmd, "SPI_MODE_TEST") == 0) {
+    // Test all 4 SPI modes to find which one works
+    char buf[256];
+    m_transport.println("Testing SPI modes on motor CS (PB6/D10)...");
+
+    for (int mode = 0; mode < 4; mode++) {
+      // Disable SPI
+      SPI1->CR1 &= ~SPI_CR1_SPE;
+
+      // Clear and set CPOL/CPHA
+      SPI1->CR1 &= ~(SPI_CR1_CPOL | SPI_CR1_CPHA);
+      if (mode & 0x02) SPI1->CR1 |= SPI_CR1_CPOL;  // Mode 2,3
+      if (mode & 0x01) SPI1->CR1 |= SPI_CR1_CPHA;  // Mode 1,3
+
+      // Re-enable SPI
+      SPI1->CR1 |= SPI_CR1_SPE;
+
+      // Pull CS low (PB6)
+      GPIOB->BSRR = (1UL << (6 + 16));  // PB6 low
+
+      // Small delay
+      for (volatile int i = 0; i < 100; i++);
+
+      // Send GetStatus command (0xD0) and read 2 bytes
+      while (!(SPI1->SR & SPI_SR_TXE));
+      *(volatile uint8_t*)&SPI1->DR = 0xD0;
+      while (!(SPI1->SR & SPI_SR_RXNE));
+      uint8_t dummy = *(volatile uint8_t*)&SPI1->DR;
+
+      while (!(SPI1->SR & SPI_SR_TXE));
+      *(volatile uint8_t*)&SPI1->DR = 0x00;
+      while (!(SPI1->SR & SPI_SR_RXNE));
+      uint8_t hi = *(volatile uint8_t*)&SPI1->DR;
+
+      while (!(SPI1->SR & SPI_SR_TXE));
+      *(volatile uint8_t*)&SPI1->DR = 0x00;
+      while (!(SPI1->SR & SPI_SR_RXNE));
+      uint8_t lo = *(volatile uint8_t*)&SPI1->DR;
+
+      // Wait for SPI idle
+      while (SPI1->SR & SPI_SR_BSY);
+
+      // Pull CS high (PB6)
+      GPIOB->BSRR = (1UL << 6);  // PB6 high
+
+      uint16_t status = (hi << 8) | lo;
+      snprintf(buf, sizeof(buf), "Mode%d: STATUS=%04X (hi=%02X lo=%02X)",
+               mode, status, hi, lo);
+      m_transport.println(buf);
+    }
+
+    // Restore Mode 3
+    SPI1->CR1 &= ~SPI_CR1_SPE;
+    SPI1->CR1 |= (SPI_CR1_CPOL | SPI_CR1_CPHA);
+    SPI1->CR1 |= SPI_CR1_SPE;
+
+    m_transport.println("Done. Mode 3 restored.");
+  } else if (strcmp(cmd.cmd, "CS_LOW") == 0) {
+    // Force CS (PB6) low for measurement
+    GPIOB->BSRR = (1UL << (6 + 16));  // PB6 low
+    m_transport.println("PB6 (CS/D10) forced LOW. Measure voltage now.");
+    m_transport.println("Send CS_HIGH to release.");
+  } else if (strcmp(cmd.cmd, "CS_HIGH") == 0) {
+    // Release CS (PB6) high
+    GPIOB->BSRR = (1UL << 6);  // PB6 high
+    m_transport.println("PB6 (CS/D10) released HIGH.");
+  } else if (strcmp(cmd.cmd, "MISO_PULLDOWN") == 0) {
+    // Enable pull-down on PA6 (MISO)
+    GPIOA->PUPDR &= ~(0x3UL << 12);  // Clear PUPDR6
+    GPIOA->PUPDR |= (0x2UL << 12);   // Pull-down on PA6
+    m_transport.println("PA6 (MISO) pull-down ENABLED.");
+  } else if (strcmp(cmd.cmd, "MISO_NOPULL") == 0) {
+    // Disable pull on PA6 (MISO)
+    GPIOA->PUPDR &= ~(0x3UL << 12);  // Clear PUPDR6 (no pull)
+    m_transport.println("PA6 (MISO) pull DISABLED.");
+  } else if (strcmp(cmd.cmd, "STBY_RELEASE") == 0) {
+    // Release STBY/RST (PA9) - set HIGH for normal operation
+    GPIOA->MODER &= ~(0x3UL << 18);  // Clear MODER9
+    GPIOA->MODER |= (0x1UL << 18);   // Output mode
+    GPIOA->BSRR = (1UL << 9);        // PA9 high
+    m_transport.println("PA9 (STBY_RST) set HIGH - powerSTEP01 should be active.");
+  } else if (strcmp(cmd.cmd, "STBY_HOLD") == 0) {
+    // Hold STBY/RST (PA9) - set LOW for standby/reset
+    GPIOA->MODER &= ~(0x3UL << 18);  // Clear MODER9
+    GPIOA->MODER |= (0x1UL << 18);   // Output mode
+    GPIOA->BSRR = (1UL << (9 + 16)); // PA9 low
+    m_transport.println("PA9 (STBY_RST) set LOW - powerSTEP01 in standby/reset.");
+  } else if (strcmp(cmd.cmd, "GPIO_STATE") == 0) {
+    // Show GPIO states for motor pins
+    char buf[256];
+    uint32_t pa_idr = GPIOA->IDR;
+    uint32_t pb_idr = GPIOB->IDR;
+    snprintf(buf, sizeof(buf),
+             "PA: IDR=%04X (MISO/PA6=%d, STBY/PA9=%d, FLAG/PA10=%d)",
+             (unsigned)(pa_idr & 0xFFFF),
+             (int)((pa_idr >> 6) & 1),
+             (int)((pa_idr >> 9) & 1),
+             (int)((pa_idr >> 10) & 1));
+    m_transport.println(buf);
+    snprintf(buf, sizeof(buf),
+             "PB: IDR=%04X (BUSY/PB4=%d, CS/PB6=%d)",
+             (unsigned)(pb_idr & 0xFFFF),
+             (int)((pb_idr >> 4) & 1),
+             (int)((pb_idr >> 6) & 1));
+    m_transport.println(buf);
+  } else if (strcmp(cmd.cmd, "PA6_HIZ") == 0) {
+    // Force PA6 to high-impedance input to test resistance
+    // NOTE: Don't disable SPI1 - motor task uses it and will hang
+    char buf[128];
+
+    // Set PA6 as input with no pull (SPI1 stays enabled but won't drive PA6)
+    GPIOA->MODER &= ~(0x3UL << 12);   // Input mode (00)
+    GPIOA->PUPDR &= ~(0x3UL << 12);   // No pull (00)
+
+    snprintf(buf, sizeof(buf), "PA6 set to Hi-Z input. MODER=%08lX PUPDR=%08lX",
+             (unsigned long)GPIOA->MODER, (unsigned long)GPIOA->PUPDR);
+    m_transport.println(buf);
+    m_transport.println("Measure PA6 to GND now - should be MΩ if no external load.");
+    m_transport.println("Send PA6_RESTORE to restore SPI config.");
+  } else if (strcmp(cmd.cmd, "PA6_RESTORE") == 0) {
+    // Restore PA6 to SPI MISO
+    GPIOA->MODER &= ~(0x3UL << 12);
+    GPIOA->MODER |= (0x2UL << 12);    // AF mode (10)
+    GPIOA->PUPDR &= ~(0x3UL << 12);
+    GPIOA->PUPDR |= (0x2UL << 12);    // Pull-down (10)
+    m_transport.println("PA6 restored to SPI1 MISO with pull-down.");
+  } else if (strcmp(cmd.cmd, "SPI_STOP") == 0) {
+    // Completely stop SPI and set all SPI pins to hi-Z for measurement
+    char buf[80];
+
+    // FIRST: Suspend motor task to prevent SPI access during disable
+    Tasks::MotorTask_Suspend();
+    m_transport.println("Motor task suspended.");
+
+    // Disable SPI1 peripheral
+    SPI1->CR1 &= ~SPI_CR1_SPE;
+
+    // Set PA5 (SCK), PA6 (MISO), PA7 (MOSI) as inputs with no pull
+    GPIOA->MODER &= ~((0x3UL << 10) | (0x3UL << 12) | (0x3UL << 14));  // Input mode
+    GPIOA->PUPDR &= ~((0x3UL << 10) | (0x3UL << 12) | (0x3UL << 14));  // No pull
+
+    // Set PB6 (CS) as input with no pull
+    GPIOB->MODER &= ~(0x3UL << 12);  // Input mode for PB6
+    GPIOB->PUPDR &= ~(0x3UL << 12);  // No pull
+
+    m_transport.println("SPI1 DISABLED. All pins Hi-Z.");
+    snprintf(buf, sizeof(buf), "GPIOA MODER=%08lX GPIOB MODER=%08lX",
+             (unsigned long)GPIOA->MODER, (unsigned long)GPIOB->MODER);
+    m_transport.println(buf);
+    m_transport.println("Measure pins. Send SPI_START to restore.");
+  } else if (strcmp(cmd.cmd, "SPI_START") == 0) {
+    // Restore SPI pins and re-enable SPI1
+    char buf[128];
+
+    // Set PA5 (SCK), PA7 (MOSI) as AF5, PA6 (MISO) as AF5 with pull-down
+    // PA5: AF mode (10)
+    GPIOA->MODER &= ~(0x3UL << 10);
+    GPIOA->MODER |= (0x2UL << 10);
+    // PA6: AF mode (10) with pull-down
+    GPIOA->MODER &= ~(0x3UL << 12);
+    GPIOA->MODER |= (0x2UL << 12);
+    GPIOA->PUPDR &= ~(0x3UL << 12);
+    GPIOA->PUPDR |= (0x2UL << 12);
+    // PA7: AF mode (10)
+    GPIOA->MODER &= ~(0x3UL << 14);
+    GPIOA->MODER |= (0x2UL << 14);
+
+    // Set PB6 (CS) as output, high
+    GPIOB->MODER &= ~(0x3UL << 12);
+    GPIOB->MODER |= (0x1UL << 12);  // Output mode
+    GPIOB->BSRR = (1UL << 6);       // PB6 high
+
+    // Re-enable SPI1
+    SPI1->CR1 |= SPI_CR1_SPE;
+
+    m_transport.println("SPI1 ENABLED. Pins restored.");
+    snprintf(buf, sizeof(buf), "GPIOA MODER=%08lX SPI1 CR1=%04lX SR=%04lX",
+             (unsigned long)GPIOA->MODER,
+             (unsigned long)SPI1->CR1,
+             (unsigned long)SPI1->SR);
+    m_transport.println(buf);
+
+    // Resume motor task
+    Tasks::MotorTask_Resume();
+    m_transport.println("Motor task resumed.");
+  } else if (strcmp(cmd.cmd, "GPIO_DUMP") == 0) {
+    // Dump GPIO register states for debugging
+    char buf[128];
+    m_transport.println("=== GPIOA Registers ===");
+    snprintf(buf, sizeof(buf), "MODER=%08lX  (PA6 bits 13:12 = %lu)",
+             (unsigned long)GPIOA->MODER,
+             (unsigned long)((GPIOA->MODER >> 12) & 0x3));
+    m_transport.println(buf);
+    snprintf(buf, sizeof(buf), "OTYPER=%04lX  OSPEEDR=%08lX",
+             (unsigned long)GPIOA->OTYPER,
+             (unsigned long)GPIOA->OSPEEDR);
+    m_transport.println(buf);
+    snprintf(buf, sizeof(buf), "PUPDR=%08lX  (PA6 bits 13:12 = %lu)",
+             (unsigned long)GPIOA->PUPDR,
+             (unsigned long)((GPIOA->PUPDR >> 12) & 0x3));
+    m_transport.println(buf);
+    snprintf(buf, sizeof(buf), "IDR=%04lX  ODR=%04lX",
+             (unsigned long)GPIOA->IDR,
+             (unsigned long)GPIOA->ODR);
+    m_transport.println(buf);
+    snprintf(buf, sizeof(buf), "AFR[0]=%08lX  (PA6 bits 27:24 = %lu)",
+             (unsigned long)GPIOA->AFR[0],
+             (unsigned long)((GPIOA->AFR[0] >> 24) & 0xF));
+    m_transport.println(buf);
+    m_transport.println("=== SPI1 Registers ===");
+    snprintf(buf, sizeof(buf), "CR1=%04lX  CR2=%04lX  SR=%04lX",
+             (unsigned long)SPI1->CR1,
+             (unsigned long)SPI1->CR2,
+             (unsigned long)SPI1->SR);
+    m_transport.println(buf);
+    m_transport.println("PA6 MODER: 00=input, 01=output, 10=AF, 11=analog");
+    m_transport.println("PA6 PUPDR: 00=none, 01=up, 10=down");
+  } else if (strcmp(cmd.cmd, "SPI_FLOAT_TEST") == 0) {
+    // Test SPI pins as floating inputs to detect external pulls
+    char buf[128];
+    m_transport.println("Testing SPI pins as floating inputs...");
+
+    // Disable SPI1
+    SPI1->CR1 &= ~SPI_CR1_SPE;
+
+    // Save current MODER
+    uint32_t saved_moder = GPIOA->MODER;
+    uint32_t saved_pupdr = GPIOA->PUPDR;
+
+    // Set PA5 (SCK), PA6 (MISO), PA7 (MOSI) as inputs with no pull
+    GPIOA->MODER &= ~((0x3UL << 10) | (0x3UL << 12) | (0x3UL << 14));  // Input mode
+    GPIOA->PUPDR &= ~((0x3UL << 10) | (0x3UL << 12) | (0x3UL << 14));  // No pull
+
+    // Wait for pins to settle
+    for (volatile int d = 0; d < 1000; d++);
+
+    // Read pin states
+    uint32_t idr = GPIOA->IDR;
+    int sck_state = (idr >> 5) & 1;
+    int miso_state = (idr >> 6) & 1;
+    int mosi_state = (idr >> 7) & 1;
+
+    snprintf(buf, sizeof(buf), "Floating: SCK/PA5=%d, MISO/PA6=%d, MOSI/PA7=%d",
+             sck_state, miso_state, mosi_state);
+    m_transport.println(buf);
+
+    // Now enable pull-ups and re-read
+    GPIOA->PUPDR |= ((0x1UL << 10) | (0x1UL << 12) | (0x1UL << 14));  // Pull-up
+    for (volatile int d = 0; d < 1000; d++);
+
+    idr = GPIOA->IDR;
+    sck_state = (idr >> 5) & 1;
+    miso_state = (idr >> 6) & 1;
+    mosi_state = (idr >> 7) & 1;
+
+    snprintf(buf, sizeof(buf), "With pull-up: SCK/PA5=%d, MISO/PA6=%d, MOSI/PA7=%d",
+             sck_state, miso_state, mosi_state);
+    m_transport.println(buf);
+
+    // Interpretation
+    m_transport.println("If a pin stays 0 with pull-up, external pull-down exists.");
+    m_transport.println("If a pin floats (random), no external pull.");
+
+    // Restore
+    GPIOA->PUPDR = saved_pupdr;
+    GPIOA->MODER = saved_moder;
+    SPI1->CR1 |= SPI_CR1_SPE;
+
+    m_transport.println("SPI restored.");
+  } else if (strcmp(cmd.cmd, "SPI_BITBANG") == 0) {
+    // Bit-bang SPI test to verify physical connections
+    char buf[128];
+    m_transport.println("Bit-bang SPI test (bypasses SPI peripheral)...");
+
+    // Disable SPI1 and switch pins to GPIO
+    SPI1->CR1 &= ~SPI_CR1_SPE;
+
+    // Save current MODER for PA5,6,7
+    uint32_t saved_moder = GPIOA->MODER;
+
+    // Set PA5 (SCK) and PA7 (MOSI) as outputs, PA6 (MISO) as input
+    GPIOA->MODER &= ~((0x3 << 10) | (0x3 << 12) | (0x3 << 14));  // Clear PA5,6,7
+    GPIOA->MODER |= ((0x1 << 10) | (0x1 << 14));  // PA5,PA7 output; PA6 input
+
+    // Pull CS low
+    GPIOB->BSRR = (1UL << (6 + 16));  // PB6 low
+    for (volatile int d = 0; d < 100; d++);
+
+    // Send 0xD0 (GetStatus) bit by bit, MSB first
+    uint8_t txByte = 0xD0;
+    uint8_t rxByte = 0;
+
+    for (int bit = 7; bit >= 0; bit--) {
+      // Set MOSI
+      if (txByte & (1 << bit)) {
+        GPIOA->BSRR = (1 << 7);  // PA7 high
+      } else {
+        GPIOA->BSRR = (1 << (7 + 16));  // PA7 low
+      }
+      for (volatile int d = 0; d < 10; d++);
+
+      // Rising edge of SCK
+      GPIOA->BSRR = (1 << 5);  // PA5 high
+      for (volatile int d = 0; d < 10; d++);
+
+      // Sample MISO
+      if (GPIOA->IDR & (1 << 6)) {
+        rxByte |= (1 << bit);
+      }
+
+      // Falling edge of SCK
+      GPIOA->BSRR = (1 << (5 + 16));  // PA5 low
+      for (volatile int d = 0; d < 10; d++);
+    }
+
+    snprintf(buf, sizeof(buf), "TX: 0x%02X  RX: 0x%02X", txByte, rxByte);
+    m_transport.println(buf);
+
+    // Read 2 more bytes (status high and low)
+    uint8_t hi = 0, lo = 0;
+    for (int byteNum = 0; byteNum < 2; byteNum++) {
+      uint8_t rx = 0;
+      for (int bit = 7; bit >= 0; bit--) {
+        // MOSI = 0 for read
+        GPIOA->BSRR = (1 << (7 + 16));  // PA7 low
+        for (volatile int d = 0; d < 10; d++);
+
+        // Rising edge
+        GPIOA->BSRR = (1 << 5);  // PA5 high
+        for (volatile int d = 0; d < 10; d++);
+
+        // Sample MISO
+        if (GPIOA->IDR & (1 << 6)) {
+          rx |= (1 << bit);
+        }
+
+        // Falling edge
+        GPIOA->BSRR = (1 << (5 + 16));  // PA5 low
+        for (volatile int d = 0; d < 10; d++);
+      }
+      if (byteNum == 0) hi = rx;
+      else lo = rx;
+    }
+
+    // Pull CS high
+    GPIOB->BSRR = (1UL << 6);  // PB6 high
+
+    snprintf(buf, sizeof(buf), "STATUS: hi=0x%02X lo=0x%02X (raw=0x%04X)", hi, lo, (hi << 8) | lo);
+    m_transport.println(buf);
+
+    // Check MISO state with CS high
+    for (volatile int d = 0; d < 100; d++);
+    int miso_idle = (GPIOA->IDR >> 6) & 1;
+    snprintf(buf, sizeof(buf), "MISO idle (CS high): %d", miso_idle);
+    m_transport.println(buf);
+
+    // Restore MODER and re-enable SPI
+    GPIOA->MODER = saved_moder;
+    SPI1->CR1 |= SPI_CR1_SPE;
+
+    m_transport.println("Done. SPI restored.");
+  } else if (strcmp(cmd.cmd, "SPI_BITBANG_M3") == 0) {
+    // Bit-bang SPI Mode 3 test (CPOL=1, CPHA=1) for powerSTEP01
+    char buf[128];
+    m_transport.println("Bit-bang SPI Mode 3 test (CPOL=1, CPHA=1)...");
+
+    // Disable SPI1 and switch pins to GPIO
+    SPI1->CR1 &= ~SPI_CR1_SPE;
+
+    // Save current MODER for PA5,6,7
+    uint32_t saved_moder = GPIOA->MODER;
+
+    // Set PA5 (SCK) and PA7 (MOSI) as outputs, PA6 (MISO) as input
+    GPIOA->MODER &= ~((0x3UL << 10) | (0x3UL << 12) | (0x3UL << 14));
+    GPIOA->MODER |= ((0x1UL << 10) | (0x1UL << 14));  // PA5,PA7 output; PA6 input
+
+    // Mode 3: Clock idle HIGH
+    GPIOA->BSRR = (1UL << 5);  // PA5 high (SCK idle)
+    for (volatile int d = 0; d < 100; d++);
+
+    // Pull CS low
+    GPIOB->BSRR = (1UL << (6 + 16));  // PB6 low
+    for (volatile int d = 0; d < 100; d++);
+
+    // Lambda for Mode 3 byte transfer
+    auto transferByteM3 = [](uint8_t tx) -> uint8_t {
+      uint8_t rx = 0;
+      for (int bit = 7; bit >= 0; bit--) {
+        // Mode 3: Falling edge - shift out MOSI
+        GPIOA->BSRR = (1UL << (5 + 16));  // SCK low (falling edge)
+
+        // Set MOSI
+        if (tx & (1 << bit)) {
+          GPIOA->BSRR = (1UL << 7);  // PA7 high
+        } else {
+          GPIOA->BSRR = (1UL << (7 + 16));  // PA7 low
+        }
+        for (volatile int d = 0; d < 20; d++);
+
+        // Mode 3: Rising edge - sample MISO
+        GPIOA->BSRR = (1UL << 5);  // SCK high (rising edge)
+        for (volatile int d = 0; d < 20; d++);
+
+        // Sample MISO
+        if (GPIOA->IDR & (1UL << 6)) {
+          rx |= (1 << bit);
+        }
+      }
+      return rx;
+    };
+
+    // Send GetStatus command (0xD0)
+    uint8_t rx0 = transferByteM3(0xD0);
+    uint8_t rx1 = transferByteM3(0x00);  // NOP to clock out STATUS[15:8]
+    uint8_t rx2 = transferByteM3(0x00);  // NOP to clock out STATUS[7:0]
+
+    // Pull CS high
+    GPIOB->BSRR = (1UL << 6);  // PB6 high
+
+    snprintf(buf, sizeof(buf), "TX: 0xD0  RX0: 0x%02X", rx0);
+    m_transport.println(buf);
+    snprintf(buf, sizeof(buf), "STATUS: hi=0x%02X lo=0x%02X (raw=0x%04X)", rx1, rx2, (rx1 << 8) | rx2);
+    m_transport.println(buf);
+
+    // Check MISO state with CS high
+    for (volatile int d = 0; d < 100; d++);
+    int miso_idle = (GPIOA->IDR >> 6) & 1;
+    snprintf(buf, sizeof(buf), "MISO idle (CS high): %d", miso_idle);
+    m_transport.println(buf);
+
+    // Decode status bits
+    uint16_t status = (rx1 << 8) | rx2;
+    if (status != 0) {
+      m_transport.println("Status bits:");
+      if (status & 0x0001) m_transport.println("  HiZ: outputs in high-Z");
+      if (!(status & 0x0002)) m_transport.println("  BUSY: command in progress");
+      if (!(status & 0x0200)) m_transport.println("  UVLO: undervoltage!");
+      if (!(status & 0x2000)) m_transport.println("  OCD: overcurrent!");
+      if (status & 0x0080) m_transport.println("  CMD_ERROR: bad command");
+    }
+
+    // Restore MODER and re-enable SPI
+    GPIOA->MODER = saved_moder;
+    SPI1->CR1 |= SPI_CR1_SPE;
+
+    m_transport.println("Done. SPI restored.");
+  } else if (strcmp(cmd.cmd, "SPI_ECHO_TEST") == 0) {
+    // Test if MISO is echoing MOSI (coupling check)
+    // Send different patterns and see if they appear on MISO
+    char buf[128];
+    m_transport.println("SPI Echo/Coupling Test...");
+    m_transport.println("Sending various patterns to detect MOSI->MISO coupling");
+
+    SPI1->CR1 &= ~SPI_CR1_SPE;
+    uint32_t saved_moder = GPIOA->MODER;
+
+    GPIOA->MODER &= ~((0x3UL << 10) | (0x3UL << 12) | (0x3UL << 14));
+    GPIOA->MODER |= ((0x1UL << 10) | (0x1UL << 14));
+
+    // Mode 3 transfer lambda
+    auto xfer = [](uint8_t tx) -> uint8_t {
+      uint8_t rx = 0;
+      GPIOA->BSRR = (1UL << 5);  // SCK high (idle)
+      for (volatile int d = 0; d < 20; d++);
+      for (int bit = 7; bit >= 0; bit--) {
+        GPIOA->BSRR = (1UL << (5 + 16));  // SCK low
+        if (tx & (1 << bit)) GPIOA->BSRR = (1UL << 7);
+        else GPIOA->BSRR = (1UL << (7 + 16));
+        for (volatile int d = 0; d < 20; d++);
+        GPIOA->BSRR = (1UL << 5);  // SCK high
+        for (volatile int d = 0; d < 20; d++);
+        if (GPIOA->IDR & (1UL << 6)) rx |= (1 << bit);
+      }
+      return rx;
+    };
+
+    // Test different patterns with CS LOW
+    uint8_t patterns[] = {0xD0, 0x55, 0xAA, 0xFF, 0x00, 0x29};
+    m_transport.println("With CS LOW (PB6=0):");
+    GPIOB->BSRR = (1UL << (6 + 16));  // CS low
+    for (volatile int d = 0; d < 100; d++);
+
+    for (int p = 0; p < 6; p++) {
+      uint8_t tx = patterns[p];
+      uint8_t rx0 = xfer(tx);
+      uint8_t rx1 = xfer(0x00);
+      snprintf(buf, sizeof(buf), "  TX=0x%02X -> RX0=0x%02X, RX1(NOP)=0x%02X %s",
+               tx, rx0, rx1, (rx1 == tx) ? "<- ECHO!" : "");
+      m_transport.println(buf);
+    }
+    GPIOB->BSRR = (1UL << 6);  // CS high
+
+    // Now test with CS HIGH (should get nothing)
+    m_transport.println("With CS HIGH (PB6=1) - chip should NOT respond:");
+    for (volatile int d = 0; d < 100; d++);
+    uint8_t rx_cs_hi_0 = xfer(0xD0);
+    uint8_t rx_cs_hi_1 = xfer(0x00);
+    snprintf(buf, sizeof(buf), "  TX=0xD0 -> RX=0x%02X, RX(NOP)=0x%02X", rx_cs_hi_0, rx_cs_hi_1);
+    m_transport.println(buf);
+
+    GPIOA->MODER = saved_moder;
+    SPI1->CR1 |= SPI_CR1_SPE;
+    m_transport.println("Done.");
+  } else if (strcmp(cmd.cmd, "SPI_CS_TOGGLE") == 0) {
+    // powerSTEP01 requires CS HIGH between EACH byte (≥625ns)!
+    // This is NOT standard SPI - CS must toggle per byte
+    char buf[128];
+    m_transport.println("SPI with CS toggle per byte (powerSTEP01 requirement)...");
+    m_transport.println("CS must go HIGH for >=625ns between each byte!");
+
+    SPI1->CR1 &= ~SPI_CR1_SPE;
+    uint32_t saved_moder = GPIOA->MODER;
+
+    // Set PA5 (SCK), PA7 (MOSI) as outputs, PA6 (MISO) as input
+    GPIOA->MODER &= ~((0x3UL << 10) | (0x3UL << 12) | (0x3UL << 14));
+    GPIOA->MODER |= ((0x1UL << 10) | (0x1UL << 14));
+
+    // Lambda: transfer one byte with proper Mode 3 timing
+    auto xferByte = [](uint8_t tx) -> uint8_t {
+      uint8_t rx = 0;
+      // Clock starts HIGH (Mode 3 idle)
+      GPIOA->BSRR = (1UL << 5);  // SCK high
+      for (volatile int d = 0; d < 10; d++);
+
+      for (int bit = 7; bit >= 0; bit--) {
+        // Falling edge - shift out MOSI
+        GPIOA->BSRR = (1UL << (5 + 16));  // SCK low
+        if (tx & (1 << bit)) GPIOA->BSRR = (1UL << 7);
+        else GPIOA->BSRR = (1UL << (7 + 16));
+        for (volatile int d = 0; d < 20; d++);
+
+        // Rising edge - sample MISO
+        GPIOA->BSRR = (1UL << 5);  // SCK high
+        for (volatile int d = 0; d < 20; d++);
+        if (GPIOA->IDR & (1UL << 6)) rx |= (1 << bit);
+      }
+      return rx;
+    };
+
+    // Ensure CS HIGH and clock HIGH at start
+    GPIOB->BSRR = (1UL << 6);  // PB6 high
+    GPIOA->BSRR = (1UL << 5);  // SCK high (Mode 3 idle)
+    for (volatile int d = 0; d < 100; d++);  // Setup time
+
+    // === Send GetStatus command (0xD0) with CS per byte ===
+    m_transport.println("GetStatus (0xD0) with CS toggle per byte:");
+
+    // Byte 1: Command
+    GPIOB->BSRR = (1UL << (6 + 16));  // CS LOW
+    for (volatile int d = 0; d < 10; d++);
+    uint8_t rx0 = xferByte(0xD0);
+    GPIOB->BSRR = (1UL << 6);  // CS HIGH
+    for (volatile int d = 0; d < 100; d++);  // >=625ns high time
+
+    // Byte 2: NOP to get STATUS[15:8]
+    GPIOB->BSRR = (1UL << (6 + 16));  // CS LOW
+    for (volatile int d = 0; d < 10; d++);
+    uint8_t rx1 = xferByte(0x00);
+    GPIOB->BSRR = (1UL << 6);  // CS HIGH
+    for (volatile int d = 0; d < 100; d++);
+
+    // Byte 3: NOP to get STATUS[7:0]
+    GPIOB->BSRR = (1UL << (6 + 16));  // CS LOW
+    for (volatile int d = 0; d < 10; d++);
+    uint8_t rx2 = xferByte(0x00);
+    GPIOB->BSRR = (1UL << 6);  // CS HIGH
+
+    snprintf(buf, sizeof(buf), "  Cmd RX: 0x%02X", rx0);
+    m_transport.println(buf);
+    snprintf(buf, sizeof(buf), "  STATUS: hi=0x%02X lo=0x%02X (raw=0x%04X)", rx1, rx2, (rx1 << 8) | rx2);
+    m_transport.println(buf);
+
+    // Decode status
+    uint16_t status = (rx1 << 8) | rx2;
+    m_transport.println("  Status decode:");
+    snprintf(buf, sizeof(buf), "    HiZ=%d BUSY=%d SW=%d DIR=%d",
+             (status & 0x0001) ? 1 : 0,
+             (status & 0x0002) ? 0 : 1,
+             (status & 0x0004) ? 1 : 0,
+             (status & 0x0010) ? 1 : 0);
+    m_transport.println(buf);
+    snprintf(buf, sizeof(buf), "    UVLO=%d TH_SD=%d OCD=%d STALL=%d",
+             (status & 0x0200) ? 0 : 1,
+             (status & 0x0800) ? 0 : 1,
+             (status & 0x8000) ? 0 : 1,
+             ((status & 0x6000) != 0x6000) ? 1 : 0);
+    m_transport.println(buf);
+
+    // Check MISO idle
+    int miso_idle = (GPIOA->IDR >> 6) & 1;
+    snprintf(buf, sizeof(buf), "  MISO idle: %d", miso_idle);
+    m_transport.println(buf);
+
+    // Restore
+    GPIOA->MODER = saved_moder;
+    SPI1->CR1 |= SPI_CR1_SPE;
+    m_transport.println("Done.");
+  } else if (strcmp(cmd.cmd, "PS01_DIAG") == 0) {
+    // Read powerSTEP01 diagnostic registers to understand thermal issue
+    char buf[128];
+    m_transport.println("powerSTEP01 Diagnostic Registers:");
+
+    SPI1->CR1 &= ~SPI_CR1_SPE;
+    uint32_t saved_moder = GPIOA->MODER;
+    GPIOA->MODER &= ~((0x3UL << 10) | (0x3UL << 12) | (0x3UL << 14));
+    GPIOA->MODER |= ((0x1UL << 10) | (0x1UL << 14));
+
+    // Lambda: transfer one byte with CS toggle
+    auto xferByte = [](uint8_t tx) -> uint8_t {
+      uint8_t rx = 0;
+      GPIOA->BSRR = (1UL << 5);  // SCK high (idle)
+      GPIOB->BSRR = (1UL << (6 + 16));  // CS low
+      for (volatile int d = 0; d < 10; d++);
+      for (int bit = 7; bit >= 0; bit--) {
+        GPIOA->BSRR = (1UL << (5 + 16));  // SCK low
+        if (tx & (1 << bit)) GPIOA->BSRR = (1UL << 7);
+        else GPIOA->BSRR = (1UL << (7 + 16));
+        for (volatile int d = 0; d < 20; d++);
+        GPIOA->BSRR = (1UL << 5);  // SCK high
+        for (volatile int d = 0; d < 20; d++);
+        if (GPIOA->IDR & (1UL << 6)) rx |= (1 << bit);
+      }
+      GPIOB->BSRR = (1UL << 6);  // CS high
+      for (volatile int d = 0; d < 100; d++);
+      return rx;
+    };
+
+    // Lambda: read 2-byte register
+    auto readReg2 = [&xferByte](uint8_t regAddr) -> uint16_t {
+      xferByte(0x20 | regAddr);  // GetParam command
+      uint8_t hi = xferByte(0x00);
+      uint8_t lo = xferByte(0x00);
+      return (hi << 8) | lo;
+    };
+
+    // Lambda: read 1-byte register
+    auto readReg1 = [&xferByte](uint8_t regAddr) -> uint8_t {
+      xferByte(0x20 | regAddr);  // GetParam command
+      return xferByte(0x00);
+    };
+
+    // Read key registers
+    uint16_t config = readReg2(0x1A);
+    uint8_t adc_out = readReg1(0x12);
+    uint8_t alarm_en = readReg1(0x17);
+    uint8_t ocd_th = readReg1(0x13);
+    uint8_t stall_th = readReg1(0x14);
+    uint16_t gatecfg1 = readReg2(0x18);
+    uint8_t k_therm = readReg1(0x11);
+
+    snprintf(buf, sizeof(buf), "  CONFIG: 0x%04X", config);
+    m_transport.println(buf);
+    snprintf(buf, sizeof(buf), "  ADC_OUT: 0x%02X (raw ADC value)", adc_out);
+    m_transport.println(buf);
+    snprintf(buf, sizeof(buf), "  ALARM_EN: 0x%02X", alarm_en);
+    m_transport.println(buf);
+    snprintf(buf, sizeof(buf), "  OCD_TH: 0x%02X (overcurrent threshold)", ocd_th);
+    m_transport.println(buf);
+    snprintf(buf, sizeof(buf), "  STALL_TH: 0x%02X (stall threshold)", stall_th);
+    m_transport.println(buf);
+    snprintf(buf, sizeof(buf), "  GATECFG1: 0x%04X", gatecfg1);
+    m_transport.println(buf);
+    snprintf(buf, sizeof(buf), "  K_THERM: 0x%02X (thermal compensation)", k_therm);
+    m_transport.println(buf);
+
+    // Decode CONFIG bits
+    m_transport.println("  CONFIG decode:");
+    snprintf(buf, sizeof(buf), "    OSC_SEL=%d EXT_CLK=%d SW_MODE=%d EN_VSCOMP=%d",
+             config & 0x7, (config >> 3) & 1, (config >> 4) & 1, (config >> 5) & 1);
+    m_transport.println(buf);
+    snprintf(buf, sizeof(buf), "    OC_SD=%d POW_SR=%d F_PWM_DEC=%d F_PWM_INT=%d",
+             (config >> 7) & 1, (config >> 8) & 3, (config >> 10) & 7, (config >> 13) & 7);
+    m_transport.println(buf);
+
+    GPIOA->MODER = saved_moder;
+    SPI1->CR1 |= SPI_CR1_SPE;
+    m_transport.println("Done.");
+  } else if (strcmp(cmd.cmd, "PS01_FIX_CLK") == 0) {
+    // Fix powerSTEP01 clock configuration - use internal 16MHz oscillator
+    // The X-NUCLEO-IHM03A1 doesn't have external clock, but EXT_CLK=1 by default!
+    char buf[128];
+    m_transport.println("Fixing powerSTEP01 clock config (internal 16MHz)...");
+
+    SPI1->CR1 &= ~SPI_CR1_SPE;
+    uint32_t saved_moder = GPIOA->MODER;
+    GPIOA->MODER &= ~((0x3UL << 10) | (0x3UL << 12) | (0x3UL << 14));
+    GPIOA->MODER |= ((0x1UL << 10) | (0x1UL << 14));
+
+    // Transfer helpers
+    auto xferByte = [](uint8_t tx) -> uint8_t {
+      uint8_t rx = 0;
+      GPIOA->BSRR = (1UL << 5);
+      GPIOB->BSRR = (1UL << (6 + 16));
+      for (volatile int d = 0; d < 10; d++);
+      for (int bit = 7; bit >= 0; bit--) {
+        GPIOA->BSRR = (1UL << (5 + 16));
+        if (tx & (1 << bit)) GPIOA->BSRR = (1UL << 7);
+        else GPIOA->BSRR = (1UL << (7 + 16));
+        for (volatile int d = 0; d < 20; d++);
+        GPIOA->BSRR = (1UL << 5);
+        for (volatile int d = 0; d < 20; d++);
+        if (GPIOA->IDR & (1UL << 6)) rx |= (1 << bit);
+      }
+      GPIOB->BSRR = (1UL << 6);
+      for (volatile int d = 0; d < 100; d++);
+      return rx;
+    };
+
+    // Read current CONFIG
+    xferByte(0x20 | 0x1A);  // GetParam CONFIG
+    uint8_t hi = xferByte(0x00);
+    uint8_t lo = xferByte(0x00);
+    uint16_t oldConfig = (hi << 8) | lo;
+    snprintf(buf, sizeof(buf), "  Old CONFIG: 0x%04X (EXT_CLK=%d)", oldConfig, (oldConfig >> 3) & 1);
+    m_transport.println(buf);
+
+    // New CONFIG: clear EXT_CLK bit (bit 3), keep internal oscillator
+    // 0x2C88 -> 0x2C80
+    uint16_t newConfig = oldConfig & ~(1 << 3);  // Clear EXT_CLK
+    snprintf(buf, sizeof(buf), "  New CONFIG: 0x%04X (EXT_CLK=0)", newConfig);
+    m_transport.println(buf);
+
+    // Write new CONFIG (SetParam = 0x00 | reg)
+    xferByte(0x00 | 0x1A);  // SetParam CONFIG
+    xferByte((newConfig >> 8) & 0xFF);
+    xferByte(newConfig & 0xFF);
+
+    // Verify
+    xferByte(0x20 | 0x1A);
+    hi = xferByte(0x00);
+    lo = xferByte(0x00);
+    uint16_t verifyConfig = (hi << 8) | lo;
+    snprintf(buf, sizeof(buf), "  Verify CONFIG: 0x%04X", verifyConfig);
+    m_transport.println(buf);
+
+    // Read status to clear flags
+    xferByte(0xD0);  // GetStatus
+    hi = xferByte(0x00);
+    lo = xferByte(0x00);
+    snprintf(buf, sizeof(buf), "  STATUS after fix: 0x%04X", (hi << 8) | lo);
+    m_transport.println(buf);
+
+    GPIOA->MODER = saved_moder;
+    SPI1->CR1 |= SPI_CR1_SPE;
+    m_transport.println("Done. Try MOVE command now.");
+  } else if (strcmp(cmd.cmd, "PS01_SAFE") == 0) {
+    // Raise thresholds and disable OCD shutdown to prevent spurious trips
+    char buf[128];
+    m_transport.println("Configuring safe settings (raise thresholds)...");
+
+    SPI1->CR1 &= ~SPI_CR1_SPE;
+    uint32_t saved_moder = GPIOA->MODER;
+    GPIOA->MODER &= ~((0x3UL << 10) | (0x3UL << 12) | (0x3UL << 14));
+    GPIOA->MODER |= ((0x1UL << 10) | (0x1UL << 14));
+
+    auto xferByte = [](uint8_t tx) -> uint8_t {
+      uint8_t rx = 0;
+      GPIOA->BSRR = (1UL << 5);
+      GPIOB->BSRR = (1UL << (6 + 16));
+      for (volatile int d = 0; d < 10; d++);
+      for (int bit = 7; bit >= 0; bit--) {
+        GPIOA->BSRR = (1UL << (5 + 16));
+        if (tx & (1 << bit)) GPIOA->BSRR = (1UL << 7);
+        else GPIOA->BSRR = (1UL << (7 + 16));
+        for (volatile int d = 0; d < 20; d++);
+        GPIOA->BSRR = (1UL << 5);
+        for (volatile int d = 0; d < 20; d++);
+        if (GPIOA->IDR & (1UL << 6)) rx |= (1 << bit);
+      }
+      GPIOB->BSRR = (1UL << 6);
+      for (volatile int d = 0; d < 100; d++);
+      return rx;
+    };
+
+    // 1. Lower KVAL values (reduce current)
+    m_transport.println("  KVAL_HOLD/RUN/ACC/DEC = 0x10 (low current)");
+    xferByte(0x00 | 0x09); xferByte(0x10);  // KVAL_HOLD
+    xferByte(0x00 | 0x0A); xferByte(0x10);  // KVAL_RUN
+    xferByte(0x00 | 0x0B); xferByte(0x10);  // KVAL_ACC
+    xferByte(0x00 | 0x0C); xferByte(0x10);  // KVAL_DEC
+
+    // 2. MAX OCD threshold (0x1F = ~10A)
+    m_transport.println("  OCD_TH = 0x1F (max ~10A threshold)");
+    xferByte(0x00 | 0x13); xferByte(0x1F);
+
+    // 3. MAX STALL threshold
+    m_transport.println("  STALL_TH = 0x7F (max threshold)");
+    xferByte(0x00 | 0x14); xferByte(0x7F);
+
+    // 4. Set GATECFG2 for longer blanking time (TBLANK = 1000ns)
+    // GATECFG2 bits: TDT[4:0], TBLANK[2:0]
+    // TBLANK = 111 = 1000ns, TDT = max
+    m_transport.println("  GATECFG2 = 0xFF (max blanking/deadtime)");
+    xferByte(0x00 | 0x19); xferByte(0xFF);
+
+    // 5. Disable OC_SD in CONFIG (OCD won't cause shutdown)
+    xferByte(0x20 | 0x1A);  // GetParam CONFIG
+    uint8_t hi = xferByte(0x00);
+    uint8_t lo = xferByte(0x00);
+    uint16_t config = (hi << 8) | lo;
+    config &= ~(1 << 7);  // Clear OC_SD bit
+    snprintf(buf, sizeof(buf), "  CONFIG = 0x%04X (OC_SD disabled)", config);
+    m_transport.println(buf);
+    xferByte(0x00 | 0x1A);
+    xferByte((config >> 8) & 0xFF);
+    xferByte(config & 0xFF);
+
+    // 6. Disable UVLO_ADC alarm in ALARM_EN
+    // ALARM_EN bit 4 = UVLO_ADC
+    m_transport.println("  ALARM_EN = 0xEF (disable UVLO_ADC alarm)");
+    xferByte(0x00 | 0x17); xferByte(0xEF);
+
+    // GetStatus to clear flags
+    xferByte(0xD0);
+    hi = xferByte(0x00);
+    lo = xferByte(0x00);
+    snprintf(buf, sizeof(buf), "  STATUS: 0x%04X", (hi << 8) | lo);
+    m_transport.println(buf);
+
+    GPIOA->MODER = saved_moder;
+    SPI1->CR1 |= SPI_CR1_SPE;
+    m_transport.println("Done. Try MOVE now.");
+  } else if (strcmp(cmd.cmd, "PS01_RESET") == 0) {
+    // Reset device and clear all latched faults, disable thermal alarms
+    char buf[128];
+    m_transport.println("Resetting powerSTEP01 and clearing faults...");
+
+    SPI1->CR1 &= ~SPI_CR1_SPE;
+    uint32_t saved_moder = GPIOA->MODER;
+    GPIOA->MODER &= ~((0x3UL << 10) | (0x3UL << 12) | (0x3UL << 14));
+    GPIOA->MODER |= ((0x1UL << 10) | (0x1UL << 14));
+
+    auto xferByte = [](uint8_t tx) -> uint8_t {
+      uint8_t rx = 0;
+      GPIOA->BSRR = (1UL << 5);
+      GPIOB->BSRR = (1UL << (6 + 16));
+      for (volatile int d = 0; d < 10; d++);
+      for (int bit = 7; bit >= 0; bit--) {
+        GPIOA->BSRR = (1UL << (5 + 16));
+        if (tx & (1 << bit)) GPIOA->BSRR = (1UL << 7);
+        else GPIOA->BSRR = (1UL << (7 + 16));
+        for (volatile int d = 0; d < 20; d++);
+        GPIOA->BSRR = (1UL << 5);
+        for (volatile int d = 0; d < 20; d++);
+        if (GPIOA->IDR & (1UL << 6)) rx |= (1 << bit);
+      }
+      GPIOB->BSRR = (1UL << 6);
+      for (volatile int d = 0; d < 100; d++);
+      return rx;
+    };
+
+    // 1. Send HardHiZ to disable bridges
+    m_transport.println("  Sending HardHiZ (0xA8)...");
+    xferByte(0xA8);
+
+    // 2. Send ResetDevice command (0xC0) - clears all registers to default
+    m_transport.println("  Sending ResetDevice (0xC0)...");
+    xferByte(0xC0);
+
+    // 3. Brief delay for reset to complete
+    for (volatile int d = 0; d < 50000; d++);
+
+    // 4. GetStatus to clear latched fault flags
+    m_transport.println("  Clearing latched faults (GetStatus)...");
+    xferByte(0xD0);
+    uint8_t hi = xferByte(0x00);
+    uint8_t lo = xferByte(0x00);
+    snprintf(buf, sizeof(buf), "  STATUS after reset: 0x%04X", (hi << 8) | lo);
+    m_transport.println(buf);
+
+    // 5. Configure with thermal alarms disabled
+    // ALARM_EN: disable OCD(0), TH_SD(1), TH_WRN(2), UVLO_ADC(4)
+    // Keep UVLO(3), STALL_A(5), STALL_B(6), SW(7) enabled
+    // Mask = ~(0x17) = 0xE8, but let's just disable thermal: 0xE8
+    m_transport.println("  ALARM_EN = 0xE8 (disable OCD, thermal, UVLO_ADC alarms)");
+    xferByte(0x00 | 0x17); xferByte(0xE8);
+
+    // 6. Set safe KVAL values
+    m_transport.println("  KVAL = 0x10 (low current)");
+    xferByte(0x00 | 0x09); xferByte(0x10);  // KVAL_HOLD
+    xferByte(0x00 | 0x0A); xferByte(0x10);  // KVAL_RUN
+    xferByte(0x00 | 0x0B); xferByte(0x10);  // KVAL_ACC
+    xferByte(0x00 | 0x0C); xferByte(0x10);  // KVAL_DEC
+
+    // 7. MAX OCD threshold
+    m_transport.println("  OCD_TH = 0x1F, STALL_TH = 0x7F");
+    xferByte(0x00 | 0x13); xferByte(0x1F);
+    xferByte(0x00 | 0x14); xferByte(0x7F);
+
+    // 8. GATECFG2 max blanking
+    xferByte(0x00 | 0x19); xferByte(0xFF);
+
+    // 9. Disable OC_SD in CONFIG
+    xferByte(0x20 | 0x1A);
+    hi = xferByte(0x00);
+    lo = xferByte(0x00);
+    uint16_t config = (hi << 8) | lo;
+    config &= ~(1 << 7);  // Clear OC_SD
+    snprintf(buf, sizeof(buf), "  CONFIG = 0x%04X (OC_SD disabled)", config);
+    m_transport.println(buf);
+    xferByte(0x00 | 0x1A);
+    xferByte((config >> 8) & 0xFF);
+    xferByte(config & 0xFF);
+
+    // 10. Final status check
+    xferByte(0xD0);
+    hi = xferByte(0x00);
+    lo = xferByte(0x00);
+    snprintf(buf, sizeof(buf), "  Final STATUS: 0x%04X", (hi << 8) | lo);
+    m_transport.println(buf);
+
+    // Decode key bits
+    uint16_t status = (hi << 8) | lo;
+    m_transport.println("  Decoded:");
+    snprintf(buf, sizeof(buf), "    HiZ=%d BUSY=%d DIR=%d MOT_STATUS=%d",
+             (status >> 0) & 1,
+             !((status >> 1) & 1),
+             (status >> 4) & 1,
+             (status >> 5) & 3);
+    m_transport.println(buf);
+    snprintf(buf, sizeof(buf), "    UVLO=%d UVLO_ADC=%d TH_SD=%d TH_WRN=%d",
+             !((status >> 9) & 1),
+             !((status >> 10) & 1),
+             !((status >> 11) & 1),
+             !((status >> 12) & 1));
+    m_transport.println(buf);
+    snprintf(buf, sizeof(buf), "    STALL_A=%d STALL_B=%d OCD=%d",
+             !((status >> 13) & 1),
+             !((status >> 14) & 1),
+             !((status >> 15) & 1));
+    m_transport.println(buf);
+
+    GPIOA->MODER = saved_moder;
+    SPI1->CR1 |= SPI_CR1_SPE;
+    m_transport.println("Reset complete. Try MOVE now.");
+  } else if (strcmp(cmd.cmd, "PS01_RUN") == 0) {
+    // Try running motor with higher KVAL and RUN command
+    // Usage: PS01_RUN [kval] [speed] [dir]
+    // kval: 0x00-0xFF (default 0x40)
+    // speed: 0-0xFFFFF (default 0x5000)
+    // dir: 0=rev, 1=fwd (default 1)
+    char buf[128];
+    uint8_t kval = 0x40;  // Default higher KVAL
+    uint32_t speed = 0x5000;  // Default speed
+    bool fwd = true;
+
+    if (cmd.argCount >= 1) kval = (uint8_t)strtoul(cmd.args[0], nullptr, 0);
+    if (cmd.argCount >= 2) speed = (uint32_t)strtoul(cmd.args[1], nullptr, 0);
+    if (cmd.argCount >= 3) fwd = strtol(cmd.args[2], nullptr, 0) != 0;
+
+    snprintf(buf, sizeof(buf), "Running motor: KVAL=0x%02X speed=0x%lX dir=%s",
+             kval, (unsigned long)speed, fwd ? "FWD" : "REV");
+    m_transport.println(buf);
+
+    SPI1->CR1 &= ~SPI_CR1_SPE;
+    uint32_t saved_moder = GPIOA->MODER;
+    GPIOA->MODER &= ~((0x3UL << 10) | (0x3UL << 12) | (0x3UL << 14));
+    GPIOA->MODER |= ((0x1UL << 10) | (0x1UL << 14));
+
+    auto xferByte = [](uint8_t tx) -> uint8_t {
+      uint8_t rx = 0;
+      GPIOA->BSRR = (1UL << 5);
+      GPIOB->BSRR = (1UL << (6 + 16));
+      for (volatile int d = 0; d < 10; d++);
+      for (int bit = 7; bit >= 0; bit--) {
+        GPIOA->BSRR = (1UL << (5 + 16));
+        if (tx & (1 << bit)) GPIOA->BSRR = (1UL << 7);
+        else GPIOA->BSRR = (1UL << (7 + 16));
+        for (volatile int d = 0; d < 20; d++);
+        GPIOA->BSRR = (1UL << 5);
+        for (volatile int d = 0; d < 20; d++);
+        if (GPIOA->IDR & (1UL << 6)) rx |= (1 << bit);
+      }
+      GPIOB->BSRR = (1UL << 6);
+      for (volatile int d = 0; d < 100; d++);
+      return rx;
+    };
+
+    // 1. Set KVAL registers
+    m_transport.println("  Setting KVAL...");
+    xferByte(0x00 | 0x09); xferByte(kval);  // KVAL_HOLD
+    xferByte(0x00 | 0x0A); xferByte(kval);  // KVAL_RUN
+    xferByte(0x00 | 0x0B); xferByte(kval);  // KVAL_ACC
+    xferByte(0x00 | 0x0C); xferByte(kval);  // KVAL_DEC
+
+    // 2. Set reasonable ACC/DEC (0x08A default is fine)
+    m_transport.println("  Setting ACC/DEC=0x08A...");
+    xferByte(0x00 | 0x05); xferByte(0x00); xferByte(0x8A);  // ACC
+    xferByte(0x00 | 0x06); xferByte(0x00); xferByte(0x8A);  // DEC
+
+    // 3. Set MAX_SPEED
+    m_transport.println("  Setting MAX_SPEED=0x41...");
+    xferByte(0x00 | 0x07); xferByte(0x00); xferByte(0x41);
+
+    // 4. Clear any faults with GetStatus
+    xferByte(0xD0);
+    uint8_t hi = xferByte(0x00);
+    uint8_t lo = xferByte(0x00);
+    snprintf(buf, sizeof(buf), "  STATUS before RUN: 0x%04X", (hi << 8) | lo);
+    m_transport.println(buf);
+
+    // 5. Send RUN command (0x50 | direction, followed by 3 speed bytes)
+    m_transport.println("  Sending RUN command...");
+    xferByte(0x50 | (fwd ? 1 : 0));  // RUN | direction
+    xferByte((speed >> 16) & 0x0F);  // Speed [19:16]
+    xferByte((speed >> 8) & 0xFF);   // Speed [15:8]
+    xferByte(speed & 0xFF);          // Speed [7:0]
+
+    // 6. Brief delay then check status
+    for (volatile int d = 0; d < 10000; d++);
+    xferByte(0xD0);
+    hi = xferByte(0x00);
+    lo = xferByte(0x00);
+    uint16_t status = (hi << 8) | lo;
+    snprintf(buf, sizeof(buf), "  STATUS after RUN: 0x%04X", status);
+    m_transport.println(buf);
+
+    snprintf(buf, sizeof(buf), "    HiZ=%d BUSY=%d MOT_STATUS=%d",
+             (status >> 0) & 1,
+             !((status >> 1) & 1),
+             (status >> 5) & 3);
+    m_transport.println(buf);
+
+    // MOT_STATUS: 0=stopped, 1=acc, 2=dec, 3=const speed
+    const char* motStr[] = {"STOPPED", "ACCELERATING", "DECELERATING", "CONST_SPEED"};
+    snprintf(buf, sizeof(buf), "    Motion: %s", motStr[(status >> 5) & 3]);
+    m_transport.println(buf);
+
+    GPIOA->MODER = saved_moder;
+    SPI1->CR1 |= SPI_CR1_SPE;
+    m_transport.println("Use PS01_STOP to stop motor.");
+  } else if (strcmp(cmd.cmd, "PS01_STOP") == 0) {
+    // Stop motor
+    m_transport.println("Stopping motor (SoftStop)...");
+
+    SPI1->CR1 &= ~SPI_CR1_SPE;
+    uint32_t saved_moder = GPIOA->MODER;
+    GPIOA->MODER &= ~((0x3UL << 10) | (0x3UL << 12) | (0x3UL << 14));
+    GPIOA->MODER |= ((0x1UL << 10) | (0x1UL << 14));
+
+    auto xferByte = [](uint8_t tx) -> uint8_t {
+      uint8_t rx = 0;
+      GPIOA->BSRR = (1UL << 5);
+      GPIOB->BSRR = (1UL << (6 + 16));
+      for (volatile int d = 0; d < 10; d++);
+      for (int bit = 7; bit >= 0; bit--) {
+        GPIOA->BSRR = (1UL << (5 + 16));
+        if (tx & (1 << bit)) GPIOA->BSRR = (1UL << 7);
+        else GPIOA->BSRR = (1UL << (7 + 16));
+        for (volatile int d = 0; d < 20; d++);
+        GPIOA->BSRR = (1UL << 5);
+        for (volatile int d = 0; d < 20; d++);
+        if (GPIOA->IDR & (1UL << 6)) rx |= (1 << bit);
+      }
+      GPIOB->BSRR = (1UL << 6);
+      for (volatile int d = 0; d < 100; d++);
+      return rx;
+    };
+
+    // SoftStop command
+    xferByte(0xB0);
+
+    // Check status
+    for (volatile int d = 0; d < 10000; d++);
+    xferByte(0xD0);
+    uint8_t hi = xferByte(0x00);
+    uint8_t lo = xferByte(0x00);
+    char buf[64];
+    snprintf(buf, sizeof(buf), "  STATUS: 0x%04X", (hi << 8) | lo);
+    m_transport.println(buf);
+
+    GPIOA->MODER = saved_moder;
+    SPI1->CR1 |= SPI_CR1_SPE;
+    m_transport.println("Done.");
+  } else if (strcmp(cmd.cmd, "LCD_DISABLE") == 0) {
+    // Disable LCD/display task and float all LCD/joystick pins
+    // This isolates SPI1 for motor-only testing
+    char buf[128];
+    m_transport.println("Disabling LCD and display task...");
+
+    // Suspend display task to stop all LCD/joystick activity
+    Tasks::DisplayTask_Suspend();
+    m_transport.println("Display task suspended.");
+
+    // Float LCD pins:
+    // PC6 = LCD CS
+    GPIOC->MODER &= ~(0x3UL << 12);  // PC6 input
+    // PB10 = LCD DC
+    GPIOB->MODER &= ~(0x3UL << 20);  // PB10 input
+
+    // Float joystick pins (critical: PB6 conflicts with motor CS!)
+    // PC7 = KEY_LEFT
+    GPIOC->MODER &= ~(0x3UL << 14);  // PC7 input
+    // PC9 = KEY_DOWN
+    GPIOC->MODER &= ~(0x3UL << 18);  // PC9 input
+    // PC10 = KEY_RIGHT
+    GPIOC->MODER &= ~(0x3UL << 20);  // PC10 input
+    // PC12 = KEY_UP
+    GPIOC->MODER &= ~(0x3UL << 24);  // PC12 input
+    // Note: PB6 (KEY_CENTER) is now encoder EA — do NOT touch it
+
+    // Ensure PC8 (motor CS) is configured as output HIGH
+    GPIOC->MODER &= ~(0x3UL << 16);
+    GPIOC->MODER |= (0x1UL << 16);   // Output mode
+    GPIOC->BSRR = (1UL << 8);         // PC8 high (CS idle)
+
+    snprintf(buf, sizeof(buf), "GPIOC MODER=%08lX (PC8 bits[17:16]=%lu)",
+             (unsigned long)GPIOC->MODER,
+             (unsigned long)((GPIOC->MODER >> 16) & 0x3));
+    m_transport.println(buf);
+
+    // Reinitialize motor driver now that SPI1 is dedicated to motor
+    m_transport.println("Reinitializing motor driver...");
+    Tasks::MotorTask_Reinit();
+    m_transport.println("Motor driver reinitialized.");
+
+    m_transport.println("LCD disabled. SPI1 now exclusively for motor.");
+    m_transport.println("Motor commands (MOVE, RUN, etc.) should now work.");
+  } else if (strcmp(cmd.cmd, "MOSI_TEST") == 0) {
+    // Test MOSI output by toggling it and verifying with scope/meter
+    char buf[128];
+    m_transport.println("MOSI (PA7) toggle test...");
+    m_transport.println("Connect scope to PA7 or jumper PA7->PA6 for loopback.");
+
+    // Disable SPI1
+    SPI1->CR1 &= ~SPI_CR1_SPE;
+
+    // Save MODER
+    uint32_t saved_moder = GPIOA->MODER;
+
+    // Set PA7 as output, PA6 as input
+    GPIOA->MODER &= ~((0x3UL << 12) | (0x3UL << 14));
+    GPIOA->MODER |= (0x1UL << 14);  // PA7 output
+
+    // Toggle MOSI and read back via MISO (loopback test if jumpered)
+    m_transport.println("Toggling MOSI 5 times...");
+    for (int i = 0; i < 5; i++) {
+      // Set MOSI HIGH
+      GPIOA->BSRR = (1UL << 7);
+      for (volatile int d = 0; d < 100; d++);
+      int miso_hi = (GPIOA->IDR >> 6) & 1;
+
+      // Set MOSI LOW
+      GPIOA->BSRR = (1UL << (7 + 16));
+      for (volatile int d = 0; d < 100; d++);
+      int miso_lo = (GPIOA->IDR >> 6) & 1;
+
+      snprintf(buf, sizeof(buf), "  [%d] MOSI=1 -> MISO=%d, MOSI=0 -> MISO=%d",
+               i, miso_hi, miso_lo);
+      m_transport.println(buf);
+    }
+
+    // Verify MOSI is driving correctly by checking ODR
+    GPIOA->BSRR = (1UL << 7);  // Set high
+    int odr_hi = (GPIOA->ODR >> 7) & 1;
+    GPIOA->BSRR = (1UL << (7 + 16));  // Set low
+    int odr_lo = (GPIOA->ODR >> 7) & 1;
+
+    snprintf(buf, sizeof(buf), "MOSI ODR check: set HIGH -> ODR=%d, set LOW -> ODR=%d",
+             odr_hi, odr_lo);
+    m_transport.println(buf);
+
+    if (odr_hi == 1 && odr_lo == 0) {
+      m_transport.println("MOSI output is WORKING (ODR toggles correctly).");
+    } else {
+      m_transport.println("ERROR: MOSI output NOT toggling!");
+    }
+
+    // Restore and re-enable SPI
+    GPIOA->MODER = saved_moder;
+    SPI1->CR1 |= SPI_CR1_SPE;
+    m_transport.println("Done. SPI restored.");
+  } else if (strcmp(cmd.cmd, "SPI_LOOPBACK") == 0) {
+    // SPI loopback test: jumper PA7 (MOSI) to PA6 (MISO)
+    // Sends bytes and expects to read them back
+    char buf[128];
+    m_transport.println("SPI LOOPBACK TEST");
+    m_transport.println("Requires: Jumper wire from PA7 (MOSI) to PA6 (MISO)");
+    m_transport.println("Disconnect powerSTEP01 MISO if possible, or ignore motor.");
+
+    // Disable SPI1
+    SPI1->CR1 &= ~SPI_CR1_SPE;
+    uint32_t saved_moder = GPIOA->MODER;
+
+    // Set PA5 (SCK), PA7 (MOSI) as outputs, PA6 (MISO) as input
+    GPIOA->MODER &= ~((0x3UL << 10) | (0x3UL << 12) | (0x3UL << 14));
+    GPIOA->MODER |= ((0x1UL << 10) | (0x1UL << 14));
+
+    // Mode 3 bit-bang with loopback check
+    uint8_t testBytes[] = {0xAA, 0x55, 0xFF, 0x00, 0xD0};
+    bool allPass = true;
+
+    for (int t = 0; t < 5; t++) {
+      uint8_t tx = testBytes[t];
+      uint8_t rx = 0;
+
+      // Clock idle HIGH (Mode 3)
+      GPIOA->BSRR = (1UL << 5);
+      for (volatile int d = 0; d < 20; d++);
+
+      for (int bit = 7; bit >= 0; bit--) {
+        // Falling edge - shift out MOSI
+        GPIOA->BSRR = (1UL << (5 + 16));  // SCK low
+
+        if (tx & (1 << bit)) {
+          GPIOA->BSRR = (1UL << 7);  // MOSI high
+        } else {
+          GPIOA->BSRR = (1UL << (7 + 16));  // MOSI low
+        }
+        for (volatile int d = 0; d < 20; d++);
+
+        // Rising edge - sample MISO
+        GPIOA->BSRR = (1UL << 5);  // SCK high
+        for (volatile int d = 0; d < 20; d++);
+
+        if (GPIOA->IDR & (1UL << 6)) {
+          rx |= (1 << bit);
+        }
+      }
+
+      bool pass = (tx == rx);
+      if (!pass) allPass = false;
+      snprintf(buf, sizeof(buf), "  TX=0x%02X  RX=0x%02X  %s",
+               tx, rx, pass ? "PASS" : "FAIL");
+      m_transport.println(buf);
+    }
+
+    if (allPass) {
+      m_transport.println("LOOPBACK TEST PASSED! MOSI and MISO working.");
+    } else {
+      m_transport.println("LOOPBACK TEST FAILED. Check jumper connection.");
+    }
+
+    // Restore
+    GPIOA->MODER = saved_moder;
+    SPI1->CR1 |= SPI_CR1_SPE;
+    m_transport.println("Done.");
   } else {
     respondErr("Unknown command. Type HELP for list.");
   }
 }
 
 void CommandParser::respondOk(const char *msg) {
-  m_transport.print("OK ");
-  m_transport.println(msg);
+  if (m_format == ResponseFormat::JSON) {
+    if (msg != nullptr && msg[0] != '\0') {
+      char buf[192];
+      snprintf(buf, sizeof(buf), "{\"message\":\"%s\"}", msg);
+      respondJsonOk(m_currentCmd, buf);
+    } else {
+      respondJsonOk(m_currentCmd, nullptr);
+    }
+  } else {
+    m_transport.print("OK ");
+    m_transport.println(msg);
+  }
 }
 
 void CommandParser::respondErr(const char *msg) {
-  m_transport.print("ERROR ");
-  m_transport.println(msg);
+  if (m_format == ResponseFormat::JSON) {
+    respondJsonErr(m_currentCmd, "ERROR", msg);
+  } else {
+    m_transport.print("ERROR ");
+    m_transport.println(msg);
+  }
 }
 
 void CommandParser::respondData(const char **lines, size_t count) {
   for (size_t i = 0; i < count; i++) {
     m_transport.println(lines[i]);
   }
+}
+
+void CommandParser::respondJsonOk(const char *command, const char *dataJson) {
+  char buf[256];
+  if (dataJson != nullptr && dataJson[0] != '\0') {
+    snprintf(buf, sizeof(buf),
+             "{\"status\":\"ok\",\"command\":\"%s\",\"data\":%s}",
+             command, dataJson);
+  } else {
+    snprintf(buf, sizeof(buf),
+             "{\"status\":\"ok\",\"command\":\"%s\",\"data\":{}}",
+             command);
+  }
+  m_transport.println(buf);
+}
+
+void CommandParser::respondJsonErr(const char *command, const char *code, const char *message) {
+  char buf[256];
+  snprintf(buf, sizeof(buf),
+           "{\"status\":\"error\",\"command\":\"%s\",\"code\":\"%s\",\"message\":\"%s\"}",
+           command, code, message);
+  m_transport.println(buf);
 }
 
 // ============================================================================
@@ -239,8 +1599,31 @@ void CommandParser::cmdMove(const ParsedCommand &cmd) {
     respondErr("Usage: MOVE <steps> <dir>");
     return;
   }
-  // TODO: Parse steps/dir and send to MotorTask queue
-  respondOk("");
+
+  int32_t steps = static_cast<int32_t>(atol(cmd.args[0]));
+  int32_t dir = static_cast<int32_t>(atol(cmd.args[1]));
+
+  // Validate direction (must be 0 or 1)
+  if (dir < Limits::DIR_MIN || dir > Limits::DIR_MAX) {
+    respondErr("dir must be 0 or 1");
+    return;
+  }
+
+  // Validate steps (within position range)
+  if (steps < 0 || steps > Limits::POS_MAX) {
+    respondErr("steps out of range (0-2097151)");
+    return;
+  }
+
+  Tasks::MotorCommand motorCmd = {};
+  motorCmd.type = Tasks::MotorCmdType::Move;
+  motorCmd.param1 = (dir == 0) ? -steps : steps;
+
+  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+    respondOk("");
+  } else {
+    respondErr("Queue full");
+  }
 }
 
 void CommandParser::cmdGoTo(const ParsedCommand &cmd) {
@@ -248,8 +1631,24 @@ void CommandParser::cmdGoTo(const ParsedCommand &cmd) {
     respondErr("Usage: GOTO <position>");
     return;
   }
-  // TODO: Parse position and send to MotorTask queue
-  respondOk("");
+
+  int32_t position = static_cast<int32_t>(atol(cmd.args[0]));
+
+  // Validate position (22-bit signed range)
+  if (position < Limits::POS_MIN || position > Limits::POS_MAX) {
+    respondErr("position out of range (-2097152 to 2097151)");
+    return;
+  }
+
+  Tasks::MotorCommand motorCmd = {};
+  motorCmd.type = Tasks::MotorCmdType::GoTo;
+  motorCmd.param1 = position;
+
+  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+    respondOk("");
+  } else {
+    respondErr("Queue full");
+  }
 }
 
 void CommandParser::cmdRun(const ParsedCommand &cmd) {
@@ -257,16 +1656,51 @@ void CommandParser::cmdRun(const ParsedCommand &cmd) {
     respondErr("Usage: RUN <speed> <dir>");
     return;
   }
-  // TODO: Parse speed/dir and send to MotorTask queue
-  respondOk("");
+
+  int32_t speed = static_cast<int32_t>(atol(cmd.args[0]));
+  int32_t dir = static_cast<int32_t>(atol(cmd.args[1]));
+
+  // Validate direction (must be 0 or 1)
+  if (dir < Limits::DIR_MIN || dir > Limits::DIR_MAX) {
+    respondErr("dir must be 0 or 1");
+    return;
+  }
+
+  // Validate speed (in steps/s)
+  if (speed < Limits::SPEED_MIN || speed > Limits::SPEED_MAX) {
+    respondErr("speed out of range (0-15625 steps/s)");
+    return;
+  }
+
+  // Convert steps/s to raw register value for powerSTEP01
+  // Formula: raw = steps_s * 1048576 / 15625
+  uint32_t speedRaw = static_cast<uint32_t>(
+      (static_cast<uint64_t>(speed) * 1048576ULL) / 15625ULL);
+
+  Tasks::MotorCommand motorCmd = {};
+  motorCmd.type = Tasks::MotorCmdType::Run;
+  motorCmd.param1 = static_cast<int32_t>(speedRaw);
+  motorCmd.param2 = dir;
+
+  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+    respondOk("");
+  } else {
+    respondErr("Queue full");
+  }
 }
 
 void CommandParser::cmdStop(const ParsedCommand &cmd) {
   // Optional "hard" argument
   bool hard = (cmd.argCount > 0 && strcmp(cmd.args[0], "hard") == 0);
-  (void)hard;
-  // TODO: Send stop to MotorTask queue
-  respondOk("");
+
+  Tasks::MotorCommand motorCmd = {};
+  motorCmd.type = hard ? Tasks::MotorCmdType::HardStop : Tasks::MotorCmdType::SoftStop;
+
+  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+    respondOk("");
+  } else {
+    respondErr("Queue full");
+  }
 }
 
 void CommandParser::cmdEstop() {
@@ -280,13 +1714,28 @@ void CommandParser::cmdEstop() {
 // ============================================================================
 
 void CommandParser::cmdEnable() {
-  // TODO: Enable motor outputs
-  respondOk("");
+  // Motor outputs are enabled by default after initialization
+  // A GetStatus command can be used to verify motor state
+  Tasks::MotorCommand motorCmd = {};
+  motorCmd.type = Tasks::MotorCmdType::GetStatus;
+
+  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+    respondOk("ENABLED");
+  } else {
+    respondErr("Queue full");
+  }
 }
 
 void CommandParser::cmdDisable() {
-  // TODO: Disable motor outputs (Hi-Z)
-  respondOk("");
+  // Put motor outputs in high-impedance state (safe disable)
+  Tasks::MotorCommand motorCmd = {};
+  motorCmd.type = Tasks::MotorCmdType::SoftHiZ;
+
+  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+    respondOk("HI-Z");
+  } else {
+    respondErr("Queue full");
+  }
 }
 
 void CommandParser::cmdAccel(const ParsedCommand &cmd) {
@@ -294,8 +1743,24 @@ void CommandParser::cmdAccel(const ParsedCommand &cmd) {
     respondErr("Usage: ACCEL <value>");
     return;
   }
-  // TODO: Set acceleration
-  respondOk("");
+
+  int32_t value = static_cast<int32_t>(atol(cmd.args[0]));
+
+  // Validate acceleration (12-bit register)
+  if (value < Limits::ACCEL_MIN || value > Limits::ACCEL_MAX) {
+    respondErr("accel out of range (1-4095)");
+    return;
+  }
+
+  Tasks::MotorCommand motorCmd = {};
+  motorCmd.type = Tasks::MotorCmdType::SetAccel;
+  motorCmd.param1 = value;
+
+  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+    respondOk("");
+  } else {
+    respondErr("Queue full");
+  }
 }
 
 void CommandParser::cmdDecel(const ParsedCommand &cmd) {
@@ -303,8 +1768,24 @@ void CommandParser::cmdDecel(const ParsedCommand &cmd) {
     respondErr("Usage: DECEL <value>");
     return;
   }
-  // TODO: Set deceleration
-  respondOk("");
+
+  int32_t value = static_cast<int32_t>(atol(cmd.args[0]));
+
+  // Validate deceleration (12-bit register)
+  if (value < Limits::ACCEL_MIN || value > Limits::ACCEL_MAX) {
+    respondErr("decel out of range (1-4095)");
+    return;
+  }
+
+  Tasks::MotorCommand motorCmd = {};
+  motorCmd.type = Tasks::MotorCmdType::SetDecel;
+  motorCmd.param1 = value;
+
+  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+    respondOk("");
+  } else {
+    respondErr("Queue full");
+  }
 }
 
 void CommandParser::cmdMaxSpd(const ParsedCommand &cmd) {
@@ -312,8 +1793,24 @@ void CommandParser::cmdMaxSpd(const ParsedCommand &cmd) {
     respondErr("Usage: MAXSPD <value>");
     return;
   }
-  // TODO: Set max speed
-  respondOk("");
+
+  int32_t value = static_cast<int32_t>(atol(cmd.args[0]));
+
+  // Validate max speed (10-bit register)
+  if (value < Limits::MAXSPD_MIN || value > Limits::MAXSPD_MAX) {
+    respondErr("maxspd out of range (1-1023)");
+    return;
+  }
+
+  Tasks::MotorCommand motorCmd = {};
+  motorCmd.type = Tasks::MotorCmdType::SetMaxSpeed;
+  motorCmd.param1 = value;
+
+  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+    respondOk("");
+  } else {
+    respondErr("Queue full");
+  }
 }
 
 // ============================================================================
@@ -335,25 +1832,56 @@ void CommandParser::cmdQueue(const ParsedCommand &cmd) {
       respondErr("Usage: QUEUE MOVE <steps> <dir>");
       return;
     }
-    motorCmd.type = Tasks::MotorCmdType::Move;
     int32_t steps = static_cast<int32_t>(atol(cmd.args[1]));
     int32_t dir = static_cast<int32_t>(atol(cmd.args[2]));
+    // Validate direction
+    if (dir < Limits::DIR_MIN || dir > Limits::DIR_MAX) {
+      respondErr("dir must be 0 or 1");
+      return;
+    }
+    // Validate steps
+    if (steps < 0 || steps > Limits::POS_MAX) {
+      respondErr("steps out of range (0-2097151)");
+      return;
+    }
+    motorCmd.type = Tasks::MotorCmdType::Move;
     motorCmd.param1 = (dir == 0) ? -steps : steps;
   } else if (strcmp(subCmd, "GOTO") == 0 || strcmp(subCmd, "goto") == 0) {
     if (cmd.argCount < 2) {
       respondErr("Usage: QUEUE GOTO <position>");
       return;
     }
+    int32_t position = static_cast<int32_t>(atol(cmd.args[1]));
+    // Validate position
+    if (position < Limits::POS_MIN || position > Limits::POS_MAX) {
+      respondErr("position out of range (-2097152 to 2097151)");
+      return;
+    }
     motorCmd.type = Tasks::MotorCmdType::GoTo;
-    motorCmd.param1 = static_cast<int32_t>(atol(cmd.args[1]));
+    motorCmd.param1 = position;
   } else if (strcmp(subCmd, "RUN") == 0 || strcmp(subCmd, "run") == 0) {
     if (cmd.argCount < 3) {
       respondErr("Usage: QUEUE RUN <speed> <dir>");
       return;
     }
+    int32_t speed = static_cast<int32_t>(atol(cmd.args[1]));
+    int32_t dir = static_cast<int32_t>(atol(cmd.args[2]));
+    // Validate direction
+    if (dir < Limits::DIR_MIN || dir > Limits::DIR_MAX) {
+      respondErr("dir must be 0 or 1");
+      return;
+    }
+    // Validate speed (in steps/s)
+    if (speed < Limits::SPEED_MIN || speed > Limits::SPEED_MAX) {
+      respondErr("speed out of range (0-15625 steps/s)");
+      return;
+    }
+    // Convert steps/s to raw register value for powerSTEP01
+    uint32_t speedRaw = static_cast<uint32_t>(
+        (static_cast<uint64_t>(speed) * 1048576ULL) / 15625ULL);
     motorCmd.type = Tasks::MotorCmdType::Run;
-    motorCmd.param1 = static_cast<int32_t>(atol(cmd.args[1]));
-    motorCmd.param2 = static_cast<int32_t>(atol(cmd.args[2]));
+    motorCmd.param1 = static_cast<int32_t>(speedRaw);
+    motorCmd.param2 = dir;
   } else if (strcmp(subCmd, "STOP") == 0 || strcmp(subCmd, "stop") == 0) {
     bool hard = (cmd.argCount > 1 && strcmp(cmd.args[1], "hard") == 0);
     motorCmd.type =
@@ -448,27 +1976,40 @@ void CommandParser::cmdPing(const ParsedCommand &cmd) {
   // Get current state
   Services::ControllerState state = Services::g_commandQueue.getState();
 
-  // Format: PONG <seq> <mcu_rx_tick> <mcu_tx_tick> <state>
-  char buf[80];
-  snprintf(buf, sizeof(buf), "PONG %lu %lu %lu %s",
-           static_cast<unsigned long>(seq), static_cast<unsigned long>(rx_tick),
-           static_cast<unsigned long>(tx_tick), Services::stateToString(state));
-  m_transport.println(buf);
+  if (m_format == ResponseFormat::JSON) {
+    char buf[128];
+    snprintf(buf, sizeof(buf),
+             "{\"seq\":%lu,\"rx_tick\":%lu,\"tx_tick\":%lu,\"state\":\"%s\"}",
+             static_cast<unsigned long>(seq),
+             static_cast<unsigned long>(rx_tick),
+             static_cast<unsigned long>(tx_tick),
+             Services::stateToString(state));
+    respondJsonOk("PING", buf);
+  } else {
+    // ASCII format: PONG <seq> <mcu_rx_tick> <mcu_tx_tick> <state>
+    char buf[80];
+    snprintf(buf, sizeof(buf), "PONG %lu %lu %lu %s",
+             static_cast<unsigned long>(seq), static_cast<unsigned long>(rx_tick),
+             static_cast<unsigned long>(tx_tick), Services::stateToString(state));
+    m_transport.println(buf);
+  }
 }
 
 void CommandParser::cmdGetTick() {
-  // Return current tick counter value in microseconds
-  // Format: OK <tick>
   uint32_t tick = Services::TickTimer_GetTick();
-  char buf[32];
-  snprintf(buf, sizeof(buf), "OK %lu", static_cast<unsigned long>(tick));
-  m_transport.println(buf);
+
+  if (m_format == ResponseFormat::JSON) {
+    char buf[48];
+    snprintf(buf, sizeof(buf), "{\"tick\":%lu}", static_cast<unsigned long>(tick));
+    respondJsonOk("GET_TICK", buf);
+  } else {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "OK %lu", static_cast<unsigned long>(tick));
+    m_transport.println(buf);
+  }
 }
 
 void CommandParser::cmdGetStatus() {
-  // Return full status
-  // Format: STATUS <state> <tick> <queue_depth> <mode> <encoder_status>
-  // <position> <velocity>
   uint32_t tick = Services::TickTimer_GetTick();
   Services::ControllerState state = Services::g_commandQueue.getState();
   size_t queueDepth = Services::g_commandQueue.getQueueDepth();
@@ -476,21 +2017,183 @@ void CommandParser::cmdGetStatus() {
   Services::EncoderStatus encStatus =
       Services::g_controlMode.getEncoderStatus();
 
-  char buf[96];
-  // TODO: Get actual position and velocity from motor telemetry
-  snprintf(buf, sizeof(buf), "STATUS %s %lu %u %s %s 0 0",
-           Services::stateToString(state), static_cast<unsigned long>(tick),
-           static_cast<unsigned>(queueDepth), Services::modeToString(mode),
-           Services::encoderStatusToString(encStatus));
-  m_transport.println(buf);
+  // Get actual position and velocity from motor telemetry
+  TelemetrySnapshot snap = g_telemetry.getSnapshot();
+
+  if (m_format == ResponseFormat::JSON) {
+    // Parse status register for direction and error flags
+    uint16_t sr = snap.motor.statusReg;
+    int direction    = (sr & (1 << 4)) ? 1 : 0;        // bit 4: 1=FWD
+    unsigned motStat = (sr >> 5) & 0x3;                 // bits 5-6
+    bool cmdErr      = (sr & (1 << 7)) != 0;            // bit 7
+    bool uvlo        = !(sr & (1 << 9));                // bit 9 (active low)
+    bool thermalSD   = !(sr & (1 << 11));               // bit 11 (active low)
+    bool thermalWarn = !(sr & (1 << 12));                // bit 12 (active low)
+    bool stallA      = !(sr & (1 << 13));               // bit 13 (active low)
+    bool stallB      = !(sr & (1 << 14));               // bit 14 (active low)
+    bool ocd         = !(sr & (1 << 15));               // bit 15 (active low)
+    bool anyError    = cmdErr || uvlo || thermalSD || thermalWarn
+                       || stallA || stallB || ocd;
+
+    // Get heartbeat watchdog status
+    bool hbEnabled;
+    uint32_t hbTimeout, hbLastSeq, hbRemaining;
+    bool hbTimedOut;
+    Tasks::CommsTask_GetHeartbeatStatus(
+        hbEnabled, hbTimeout, hbLastSeq, hbRemaining, hbTimedOut);
+
+    // Bypass respondJsonOk (256-byte buffer too small) — format full envelope
+    char buf[640];
+    snprintf(buf, sizeof(buf),
+             "{\"status\":\"ok\",\"command\":\"GET_STATUS\",\"data\":"
+             "{\"state\":\"%s\",\"tick\":%lu,\"queue_depth\":%u,"
+             "\"motor\":{\"position\":%ld,\"speed\":%lu,\"busy\":%s,\"hi_z\":%s,"
+             "\"direction\":%d,\"mot_status\":%u,\"status_reg\":\"%04X\","
+             "\"cmd_err\":%s,\"ocd\":%s,\"thermal_sd\":%s,"
+             "\"thermal_warn\":%s,\"uvlo\":%s,\"stall_a\":%s,\"stall_b\":%s},"
+             "\"encoder\":{\"count\":%ld,\"velocity\":%ld,\"index_seen\":%s},"
+             "\"heartbeat\":{\"enabled\":%s,\"timeout_ms\":%lu,"
+             "\"remaining_ms\":%lu,\"timed_out\":%s},"
+             "\"mode\":\"%s\",\"encoder_status\":\"%s\",\"error\":%s}}",
+             Services::stateToString(state),
+             static_cast<unsigned long>(tick),
+             static_cast<unsigned>(queueDepth),
+             static_cast<long>(snap.motor.position),
+             static_cast<unsigned long>(snap.motor.speed),
+             snap.motor.busy ? "true" : "false",
+             snap.motor.hiZ ? "true" : "false",
+             direction, motStat, static_cast<unsigned>(sr),
+             cmdErr ? "true" : "false",
+             ocd ? "true" : "false",
+             thermalSD ? "true" : "false",
+             thermalWarn ? "true" : "false",
+             uvlo ? "true" : "false",
+             stallA ? "true" : "false",
+             stallB ? "true" : "false",
+             static_cast<long>(snap.encoder.count),
+             static_cast<long>(snap.encoder.velocity),
+             snap.encoder.indexSeen ? "true" : "false",
+             hbEnabled ? "true" : "false",
+             static_cast<unsigned long>(hbTimeout),
+             static_cast<unsigned long>(hbRemaining),
+             hbTimedOut ? "true" : "false",
+             Services::modeToString(mode),
+             Services::encoderStatusToString(encStatus),
+             anyError ? "true" : "false");
+    m_transport.println(buf);
+  } else {
+    // ASCII format: STATUS <state> <tick> <queue_depth> <mode> <encoder_status> <position> <velocity>
+    char buf[96];
+    snprintf(buf, sizeof(buf), "STATUS %s %lu %u %s %s %ld %lu",
+             Services::stateToString(state), static_cast<unsigned long>(tick),
+             static_cast<unsigned>(queueDepth), Services::modeToString(mode),
+             Services::encoderStatusToString(encStatus),
+             static_cast<long>(snap.motor.position),
+             static_cast<unsigned long>(snap.motor.speed));
+    m_transport.println(buf);
+  }
 }
 
 void CommandParser::cmdClearFault() {
   Services::QueueResult result = Services::g_commandQueue.clearFault();
   if (result == Services::QueueResult::OK) {
+    Tasks::CommsTask_ClearCommsTimeout();
     respondOk("IDLE");
   } else {
     respondErr(Services::resultToString(result));
+  }
+}
+
+// ============================================================================
+// Heartbeat command handlers
+// ============================================================================
+
+void CommandParser::cmdHeartbeat(const ParsedCommand &cmd) {
+  uint32_t seq = 0;
+  if (cmd.argCount >= 1) {
+    seq = static_cast<uint32_t>(atol(cmd.args[0]));
+  }
+
+  Tasks::CommsTask_HeartbeatReceived(seq);
+
+  bool enabled;
+  uint32_t timeout_ms, last_seq, remaining_ms;
+  bool timed_out;
+  Tasks::CommsTask_GetHeartbeatStatus(
+      enabled, timeout_ms, last_seq, remaining_ms, timed_out);
+
+  uint32_t mcu_tick = Services::TickTimer_GetTick();
+
+  if (m_format == ResponseFormat::JSON) {
+    char buf[128];
+    snprintf(buf, sizeof(buf),
+             "{\"seq\":%lu,\"mcu_tick\":%lu,\"remaining_ms\":%lu}",
+             static_cast<unsigned long>(seq),
+             static_cast<unsigned long>(mcu_tick),
+             static_cast<unsigned long>(remaining_ms));
+    respondJsonOk("HEARTBEAT", buf);
+  } else {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "HEARTBEAT_ACK %lu %lu %lu",
+             static_cast<unsigned long>(seq),
+             static_cast<unsigned long>(mcu_tick),
+             static_cast<unsigned long>(remaining_ms));
+    m_transport.println(buf);
+  }
+}
+
+void CommandParser::cmdSetHeartbeat(const ParsedCommand &cmd) {
+  if (cmd.argCount < 1) {
+    respondErr("Usage: SET_HEARTBEAT <timeout_ms>");
+    return;
+  }
+
+  uint32_t requested = static_cast<uint32_t>(atol(cmd.args[0]));
+  uint32_t accepted = Tasks::CommsTask_SetHeartbeatTimeout(requested);
+
+  if (m_format == ResponseFormat::JSON) {
+    char buf[96];
+    snprintf(buf, sizeof(buf),
+             "{\"requested\":%lu,\"accepted\":%lu,\"enabled\":%s}",
+             static_cast<unsigned long>(requested),
+             static_cast<unsigned long>(accepted),
+             (accepted > 0) ? "true" : "false");
+    respondJsonOk("SET_HEARTBEAT", buf);
+  } else {
+    char buf[48];
+    snprintf(buf, sizeof(buf), "OK HEARTBEAT %lu",
+             static_cast<unsigned long>(accepted));
+    m_transport.println(buf);
+  }
+}
+
+void CommandParser::cmdGetHeartbeatStatus() {
+  bool enabled;
+  uint32_t timeout_ms, last_seq, remaining_ms;
+  bool timed_out;
+  Tasks::CommsTask_GetHeartbeatStatus(
+      enabled, timeout_ms, last_seq, remaining_ms, timed_out);
+
+  if (m_format == ResponseFormat::JSON) {
+    char buf[160];
+    snprintf(buf, sizeof(buf),
+             "{\"enabled\":%s,\"timeout_ms\":%lu,\"last_seq\":%lu,"
+             "\"remaining_ms\":%lu,\"timed_out\":%s}",
+             enabled ? "true" : "false",
+             static_cast<unsigned long>(timeout_ms),
+             static_cast<unsigned long>(last_seq),
+             static_cast<unsigned long>(remaining_ms),
+             timed_out ? "true" : "false");
+    respondJsonOk("GET_HEARTBEAT_STATUS", buf);
+  } else {
+    char buf[80];
+    snprintf(buf, sizeof(buf), "HEARTBEAT_STATUS %s %lu %lu %lu %s",
+             enabled ? "ENABLED" : "DISABLED",
+             static_cast<unsigned long>(timeout_ms),
+             static_cast<unsigned long>(last_seq),
+             static_cast<unsigned long>(remaining_ms),
+             timed_out ? "TIMED_OUT" : "OK");
+    m_transport.println(buf);
   }
 }
 
@@ -513,6 +2216,10 @@ void CommandParser::cmdHelp() {
   m_transport.println("  PING <seq>          - Latency test");
   m_transport.println("  GET_TICK            - Query tick");
   m_transport.println("  GET_STATUS          - Query status");
+  m_transport.println("Heartbeat:");
+  m_transport.println("  HEARTBEAT <seq>       - Reset watchdog");
+  m_transport.println("  SET_HEARTBEAT <ms>    - Set timeout (0=off)");
+  m_transport.println("  GET_HEARTBEAT_STATUS  - Query watchdog");
   m_transport.println("Config:");
   m_transport.println("  ENABLE/DISABLE      - Motor outputs");
   m_transport.println("  ACCEL/DECEL/MAXSPD  - Parameters");
@@ -524,15 +2231,20 @@ void CommandParser::cmdHelp() {
   m_transport.println("  GET_MODE            - Query control mode");
   m_transport.println("  SET_MODE <mode>     - OPEN_LOOP/CLOSED_LOOP");
   m_transport.println("  GET_ENCODER_STATUS  - Encoder availability");
+  m_transport.println("Format:");
+  m_transport.println("  SET_FORMAT <fmt>    - ASCII or JSON");
+  m_transport.println("  GET_FORMAT          - Query response format");
   m_transport.println("UI/Display:");
   m_transport.println("  UI_MODE [LOCAL|REMOTE] - Get/set UI mode");
   m_transport.println("  DISP_CLEAR [color]  - Clear display");
   m_transport.println("  DISP_TEXT x y fg bg text");
   m_transport.println("  DISP_RECT x y w h color [fill]");
   m_transport.println("  DISP_LINE x1 y1 x2 y2 color");
+  m_transport.println("  DISP_BITMAP x y w h   - Binary RGB565 stream");
   m_transport.println("  DISP_BITMAP_B64 x y w h b64data");
   m_transport.println("Utility:");
   m_transport.println("  ENCODER             - Encoder data");
+  m_transport.println("  ENC_DEBUG           - Encoder HW registers");
   m_transport.println("  VER                 - Version");
   m_transport.println("  HELP                - This help");
 }
@@ -561,13 +2273,25 @@ void CommandParser::cmdVersion() {
 }
 
 void CommandParser::cmdHome() {
-  // TODO: Send home command to MotorTask queue
-  respondOk("");
+  Tasks::MotorCommand motorCmd = {};
+  motorCmd.type = Tasks::MotorCmdType::GoHome;
+
+  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+    respondOk("");
+  } else {
+    respondErr("Queue full");
+  }
 }
 
 void CommandParser::cmdZero() {
-  // TODO: Send zero/reset position to MotorTask queue
-  respondOk("");
+  Tasks::MotorCommand motorCmd = {};
+  motorCmd.type = Tasks::MotorCmdType::ResetPos;
+
+  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+    respondOk("");
+  } else {
+    respondErr("Queue full");
+  }
 }
 
 void CommandParser::cmdEncoder() {
@@ -580,13 +2304,43 @@ void CommandParser::cmdEncoder() {
   // Get encoder state
   Tasks::EncoderState state = Tasks::EncoderTask_GetState();
 
-  // Format: OK count=<n> vel=<n> idx=<0|1> idx_tick=<n>
-  char buf[64];
-  snprintf(buf, sizeof(buf), "count=%ld vel=%ld idx=%d idx_tick=%lu",
-           static_cast<long>(state.count), static_cast<long>(state.velocity),
-           state.indexSeen ? 1 : 0,
-           static_cast<unsigned long>(state.indexTick));
-  respondOk(buf);
+  if (m_format == ResponseFormat::JSON) {
+    char buf[128];
+    snprintf(buf, sizeof(buf),
+             "{\"count\":%ld,\"velocity\":%ld,\"index_seen\":%s,\"index_tick\":%lu}",
+             static_cast<long>(state.count), static_cast<long>(state.velocity),
+             state.indexSeen ? "true" : "false",
+             static_cast<unsigned long>(state.indexTick));
+    respondJsonOk("ENC", buf);
+  } else {
+    // ASCII format: OK count=<n> vel=<n> idx=<0|1> idx_tick=<n>
+    char buf[64];
+    snprintf(buf, sizeof(buf), "count=%ld vel=%ld idx=%d idx_tick=%lu",
+             static_cast<long>(state.count), static_cast<long>(state.velocity),
+             state.indexSeen ? 1 : 0,
+             static_cast<unsigned long>(state.indexTick));
+    respondOk(buf);
+  }
+}
+
+void CommandParser::cmdEncDebug() {
+  char buf[256];
+  snprintf(buf, sizeof(buf),
+           "TIM4: CNT=%04X CR1=%04X SMCR=%04X CCMR1=%04X CCER=%04X ARR=%04X "
+           "PB: MODER[12:15]=%X AFR0[24:31]=%02X IDR[6:7]=%X "
+           "PC: ODR[2:3]=%X IDR[4]=%X",
+           static_cast<unsigned>(TIM4->CNT & 0xFFFF),
+           static_cast<unsigned>(TIM4->CR1),
+           static_cast<unsigned>(TIM4->SMCR),
+           static_cast<unsigned>(TIM4->CCMR1),
+           static_cast<unsigned>(TIM4->CCER),
+           static_cast<unsigned>(TIM4->ARR & 0xFFFF),
+           static_cast<unsigned>((GPIOB->MODER >> 12) & 0xF),
+           static_cast<unsigned>((GPIOB->AFR[0] >> 24) & 0xFF),
+           static_cast<unsigned>((GPIOB->IDR >> 6) & 0x3),
+           static_cast<unsigned>((GPIOC->ODR >> 2) & 0x3),
+           static_cast<unsigned>((GPIOC->IDR >> 4) & 0x1));
+  m_transport.println(buf);
 }
 
 // ============================================================================
@@ -693,6 +2447,39 @@ void CommandParser::cmdGetEncoderStatus() {
              Services::encoderStatusToString(status));
   }
   respondOk(buf);
+}
+
+// ============================================================================
+// Response format command handlers
+// ============================================================================
+
+void CommandParser::cmdSetFormat(const ParsedCommand &cmd) {
+  if (cmd.argCount < 1) {
+    respondErr("Usage: SET_FORMAT <ASCII|JSON>");
+    return;
+  }
+
+  const char *formatStr = cmd.args[0];
+
+  if (strcmp(formatStr, "JSON") == 0 || strcmp(formatStr, "json") == 0) {
+    m_format = ResponseFormat::JSON;
+    // Respond in the NEW format (JSON)
+    respondJsonOk("SET_FORMAT", "{\"format\":\"JSON\"}");
+  } else if (strcmp(formatStr, "ASCII") == 0 || strcmp(formatStr, "ascii") == 0) {
+    m_format = ResponseFormat::ASCII;
+    // Respond in the NEW format (ASCII)
+    m_transport.println("OK ASCII");
+  } else {
+    respondErr("Invalid format. Use ASCII or JSON.");
+  }
+}
+
+void CommandParser::cmdGetFormat() {
+  if (m_format == ResponseFormat::JSON) {
+    respondJsonOk("GET_FORMAT", "{\"format\":\"JSON\"}");
+  } else {
+    m_transport.println("OK ASCII");
+  }
 }
 
 // ============================================================================
@@ -830,15 +2617,91 @@ void CommandParser::cmdDispBitmap(const ParsedCommand &cmd) {
   }
 
   // Usage: DISP_BITMAP <x> <y> <w> <h>
-  // Response: OK READY, then host sends raw binary RGB565 data
+  // Protocol:
+  //   1. Server sends "OK READY <bytes>"
+  //   2. Client sends raw RGB565 binary data
+  //   3. Server sends "OK" or "ERROR <reason>"
   if (cmd.argCount < 4) {
     respondErr("Usage: DISP_BITMAP <x> <y> <w> <h>");
     return;
   }
 
-  // TODO: Implement binary streaming mode
-  // For now, return not implemented
-  respondErr("Binary streaming not yet implemented. Use DISP_BITMAP_B64.");
+  uint16_t x = static_cast<uint16_t>(strtoul(cmd.args[0], nullptr, 10));
+  uint16_t y = static_cast<uint16_t>(strtoul(cmd.args[1], nullptr, 10));
+  uint16_t w = static_cast<uint16_t>(strtoul(cmd.args[2], nullptr, 10));
+  uint16_t h = static_cast<uint16_t>(strtoul(cmd.args[3], nullptr, 10));
+
+  // Validate dimensions
+  if (w == 0 || h == 0) {
+    respondErr("Invalid dimensions");
+    return;
+  }
+  if (x >= 240 || y >= 240) {
+    respondErr("Position out of bounds");
+    return;
+  }
+
+  // Calculate expected bytes (RGB565 = 2 bytes per pixel)
+  uint32_t expectedBytes = static_cast<uint32_t>(w) * h * 2;
+
+  // Limit maximum transfer size (115200 bytes = 240x240 full screen)
+  constexpr uint32_t MAX_BITMAP_BYTES = 240 * 240 * 2;
+  if (expectedBytes > MAX_BITMAP_BYTES) {
+    respondErr("Bitmap too large");
+    return;
+  }
+
+  // Start LCD streaming
+  if (!Tasks::DisplayTask_StreamBitmapStart(x, y, w, h)) {
+    respondErr("LCD streaming failed");
+    return;
+  }
+
+  // Send ready response with expected byte count
+  char buf[32];
+  snprintf(buf, sizeof(buf), "OK READY %lu", static_cast<unsigned long>(expectedBytes));
+  m_transport.println(buf);
+  m_transport.flush();
+
+  // Receive binary data with timeout
+  constexpr uint32_t CHUNK_SIZE = 64;
+  constexpr uint32_t BYTE_TIMEOUT_MS = 100;  // Timeout per byte
+  uint8_t chunk[CHUNK_SIZE];
+  uint32_t bytesReceived = 0;
+
+  while (bytesReceived < expectedBytes) {
+    // Calculate how many bytes to read this iteration
+    uint32_t remaining = expectedBytes - bytesReceived;
+    uint32_t toRead = (remaining < CHUNK_SIZE) ? remaining : CHUNK_SIZE;
+
+    // Read chunk with timeout
+    uint32_t chunkReceived = 0;
+    while (chunkReceived < toRead) {
+      uint8_t byte;
+      if (m_transport.readByte(byte, BYTE_TIMEOUT_MS)) {
+        chunk[chunkReceived++] = byte;
+      } else {
+        // Timeout - abort transfer
+        Tasks::DisplayTask_StreamBitmapEnd();
+        char errBuf[48];
+        snprintf(errBuf, sizeof(errBuf), "Timeout at byte %lu/%lu",
+                 static_cast<unsigned long>(bytesReceived + chunkReceived),
+                 static_cast<unsigned long>(expectedBytes));
+        respondErr(errBuf);
+        return;
+      }
+    }
+
+    // Stream chunk to LCD
+    Tasks::DisplayTask_StreamBitmapData(chunk, chunkReceived);
+    bytesReceived += chunkReceived;
+  }
+
+  // End LCD streaming
+  Tasks::DisplayTask_StreamBitmapEnd();
+
+  // Success
+  respondOk("");
 }
 
 void CommandParser::cmdDispBitmapB64(const ParsedCommand &cmd) {
@@ -937,6 +2800,259 @@ void CommandParser::cmdDispBitmapB64(const ParsedCommand &cmd) {
 
   Tasks::DisplayTask_RemoteBitmap(x, y, w, h, decoded, decodedLen);
   respondOk("");
+}
+
+// ============================================================================
+// Debug command handlers
+// ============================================================================
+
+void CommandParser::cmdMotorDebug() {
+  Tasks::MotorDebugInfo info;
+  if (!Tasks::MotorTask_GetDebugInfo(info)) {
+    respondErr("Motor not initialized");
+    return;
+  }
+
+  // Format status bits
+  const char* hiZ = ((info.status & 0x0001) != 0) ? "HiZ" : "Active";
+  const char* busy = ((info.status & 0x0002) != 0) ? "Idle" : "BUSY";
+  bool cmdErr = (info.status & 0x0080) != 0;
+  bool uvlo = (info.status & 0x0200) == 0;
+  bool thermSD = (info.status & 0x0800) == 0;
+  bool ocd = (info.status & 0x8000) == 0;
+
+  char buf[256];  // NOLINT(modernize-avoid-c-arrays)
+  snprintf(buf, sizeof(buf),
+           "STATUS=%04X (%s %s%s%s%s%s)\n"
+           "KVAL: HOLD=%02X RUN=%02X ACC=%02X DEC=%02X\n"
+           "ACC=%u DEC=%u MAXSPD=%u POS=%ld",
+           (unsigned)info.status, hiZ, busy,
+           cmdErr ? " CMDERR" : "",
+           uvlo ? " UVLO" : "",
+           thermSD ? " THERMAL" : "",
+           ocd ? " OCD" : "",
+           (unsigned)info.kvalHold, (unsigned)info.kvalRun,
+           (unsigned)info.kvalAcc, (unsigned)info.kvalDec,
+           (unsigned)info.accel, (unsigned)info.decel,
+           (unsigned)info.maxSpeed, (long)info.absPos);
+  m_transport.println(buf);
+
+  // GPIO diagnostics for SPI1 motor path
+  snprintf(buf, sizeof(buf),
+           "CS(PC8): MODER=%X ODR=%X IDR=%X  "
+           "RST(PA9): ODR=%X  "
+           "SPI1: PA5_M=%X PA6_M=%X PA7_M=%X  "
+           "FLAG=%X BUSY=%X",
+           (unsigned)((GPIOC->MODER >> 16) & 0x3),
+           (unsigned)((GPIOC->ODR >> 8) & 0x1),
+           (unsigned)((GPIOC->IDR >> 8) & 0x1),
+           (unsigned)((GPIOA->ODR >> 9) & 0x1),
+           (unsigned)((GPIOA->MODER >> 10) & 0x3),
+           (unsigned)((GPIOA->MODER >> 12) & 0x3),
+           (unsigned)((GPIOA->MODER >> 14) & 0x3),
+           (unsigned)((Pins::IHM03A1::FLAG_PORT->IDR >> Pins::IHM03A1::FLAG_PIN) & 0x1),
+           (unsigned)((Pins::IHM03A1::BUSY_PORT->IDR >> Pins::IHM03A1::BUSY_PIN) & 0x1));
+  m_transport.println(buf);
+}
+
+// ============================================================================
+// Motor configuration command handlers
+// ============================================================================
+
+void CommandParser::cmdMotorConfigShow() {
+  const auto& cfg = Services::g_motorConfig.getConfig();
+  bool valid = Services::g_motorConfig.isValid();
+
+  char buf[384];
+  snprintf(buf, sizeof(buf),
+           "Motor Config %s\n"
+           "KVAL: HOLD=%02X RUN=%02X ACC=%02X DEC=%02X\n"
+           "OCD_TH=%02X STALL_TH=%02X\n"
+           "ACC=%u DEC=%u MAXSPD=%u MINSPD=%u FS_SPD=%u\n"
+           "Faults: OCD=%d TH_SD=%d TH_W=%d UVLO=%d STALL_A=%d STALL_B=%d CMD=%d\n"
+           "Action: %s",
+           valid ? "(from flash)" : "(defaults)",
+           (unsigned)cfg.kvalHold, (unsigned)cfg.kvalRun,
+           (unsigned)cfg.kvalAcc, (unsigned)cfg.kvalDec,
+           (unsigned)cfg.ocdThreshold, (unsigned)cfg.stallThreshold,
+           (unsigned)cfg.acceleration, (unsigned)cfg.deceleration,
+           (unsigned)cfg.maxSpeed, (unsigned)cfg.minSpeed, (unsigned)cfg.fsSpeed,
+           cfg.faultEnable.ocd, cfg.faultEnable.thermalSD,
+           cfg.faultEnable.thermalWarn, cfg.faultEnable.uvlo,
+           cfg.faultEnable.stallA, cfg.faultEnable.stallB, cfg.faultEnable.cmdErr,
+           cfg.faultAction == 0 ? "HardStop" :
+           cfg.faultAction == 1 ? "HardHiZ" : "SoftStop");
+  m_transport.println(buf);
+}
+
+void CommandParser::cmdMotorConfigSave() {
+  if (Services::g_motorConfig.saveToFlash()) {
+    respondOk("Config saved to flash");
+  } else {
+    respondErr("Flash write failed");
+  }
+}
+
+void CommandParser::cmdMotorConfigLoad() {
+  if (Services::g_motorConfig.loadFromFlash()) {
+    respondOk("Config loaded from flash");
+  } else {
+    respondErr("No valid config in flash");
+  }
+}
+
+void CommandParser::cmdMotorConfigReset() {
+  if (Services::g_motorConfig.factoryReset()) {
+    respondOk("Factory defaults restored and saved");
+  } else {
+    respondErr("Flash write failed");
+  }
+}
+
+void CommandParser::cmdMotorConfigKval(const ParsedCommand &cmd) {
+  // Usage: MCONFIG_KVAL <hold> <run> <acc> <dec>
+  if (cmd.argCount < 4) {
+    respondErr("Usage: MCONFIG_KVAL <hold> <run> <acc> <dec> (hex 00-FF)");
+    return;
+  }
+
+  uint8_t hold = static_cast<uint8_t>(strtoul(cmd.args[0], nullptr, 16));
+  uint8_t run = static_cast<uint8_t>(strtoul(cmd.args[1], nullptr, 16));
+  uint8_t acc = static_cast<uint8_t>(strtoul(cmd.args[2], nullptr, 16));
+  uint8_t dec = static_cast<uint8_t>(strtoul(cmd.args[3], nullptr, 16));
+
+  Services::g_motorConfig.setKval(hold, run, acc, dec);
+
+  char buf[64];
+  snprintf(buf, sizeof(buf), "KVAL set: H=%02X R=%02X A=%02X D=%02X (not saved)",
+           hold, run, acc, dec);
+  respondOk(buf);
+}
+
+void CommandParser::cmdMotorConfigOcd(const ParsedCommand &cmd) {
+  // Usage: MCONFIG_OCD <threshold>
+  if (cmd.argCount < 1) {
+    respondErr("Usage: MCONFIG_OCD <threshold> (0-31, ~375mA/step)");
+    return;
+  }
+
+  uint8_t thresh = static_cast<uint8_t>(strtoul(cmd.args[0], nullptr, 10));
+  if (thresh > 31) {
+    respondErr("OCD threshold must be 0-31");
+    return;
+  }
+
+  Services::g_motorConfig.setOcdThreshold(thresh);
+
+  char buf[48];
+  snprintf(buf, sizeof(buf), "OCD threshold set: %u (not saved)", thresh);
+  respondOk(buf);
+}
+
+void CommandParser::cmdMotorConfigStall(const ParsedCommand &cmd) {
+  // Usage: MCONFIG_STALL <threshold>
+  if (cmd.argCount < 1) {
+    respondErr("Usage: MCONFIG_STALL <threshold> (0-127)");
+    return;
+  }
+
+  uint8_t thresh = static_cast<uint8_t>(strtoul(cmd.args[0], nullptr, 10));
+  if (thresh > 127) {
+    respondErr("Stall threshold must be 0-127");
+    return;
+  }
+
+  Services::g_motorConfig.setStallThreshold(thresh);
+
+  char buf[48];
+  snprintf(buf, sizeof(buf), "Stall threshold set: %u (not saved)", thresh);
+  respondOk(buf);
+}
+
+void CommandParser::cmdMotorConfigFault(const ParsedCommand &cmd) {
+  // Usage: MCONFIG_FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd>
+  //        MCONFIG_FAULT ACTION <0|1|2>
+  if (cmd.argCount < 1) {
+    respondErr("Usage: MCONFIG_FAULT <ocd> <th_sd> <th_w> <uvlo> <sta> <stb> <cmd>\n"
+               "   or: MCONFIG_FAULT ACTION <0=HardStop|1=HardHiZ|2=SoftStop>");
+    return;
+  }
+
+  // Check for ACTION subcommand
+  if (strcmp(cmd.args[0], "ACTION") == 0 || strcmp(cmd.args[0], "action") == 0) {
+    if (cmd.argCount < 2) {
+      respondErr("Usage: MCONFIG_FAULT ACTION <0|1|2>");
+      return;
+    }
+    uint8_t action = static_cast<uint8_t>(strtoul(cmd.args[1], nullptr, 10));
+    if (action > 2) {
+      respondErr("Action must be 0=HardStop, 1=HardHiZ, 2=SoftStop");
+      return;
+    }
+    Services::g_motorConfig.setFaultAction(action);
+    const char* actionStr = action == 0 ? "HardStop" :
+                            action == 1 ? "HardHiZ" : "SoftStop";
+    char buf[48];
+    snprintf(buf, sizeof(buf), "Fault action set: %s (not saved)", actionStr);
+    respondOk(buf);
+    return;
+  }
+
+  // Fault enable flags
+  if (cmd.argCount < 7) {
+    respondErr("Need 7 flags: ocd th_sd th_w uvlo stall_a stall_b cmd_err (0|1)");
+    return;
+  }
+
+  Services::FaultEnableFlags flags = {};
+  flags.ocd = (strtoul(cmd.args[0], nullptr, 10) != 0) ? 1 : 0;
+  flags.thermalSD = (strtoul(cmd.args[1], nullptr, 10) != 0) ? 1 : 0;
+  flags.thermalWarn = (strtoul(cmd.args[2], nullptr, 10) != 0) ? 1 : 0;
+  flags.uvlo = (strtoul(cmd.args[3], nullptr, 10) != 0) ? 1 : 0;
+  flags.stallA = (strtoul(cmd.args[4], nullptr, 10) != 0) ? 1 : 0;
+  flags.stallB = (strtoul(cmd.args[5], nullptr, 10) != 0) ? 1 : 0;
+  flags.cmdErr = (strtoul(cmd.args[6], nullptr, 10) != 0) ? 1 : 0;
+
+  Services::g_motorConfig.setFaultEnable(flags);
+  respondOk("Fault enables set (not saved)");
+}
+
+void CommandParser::cmdMotorConfigMotion(const ParsedCommand &cmd) {
+  // Usage: MCONFIG_MOTION <acc> <dec> <maxspd>
+  if (cmd.argCount < 3) {
+    respondErr("Usage: MCONFIG_MOTION <acc> <dec> <maxspd>");
+    return;
+  }
+
+  uint16_t acc = static_cast<uint16_t>(strtoul(cmd.args[0], nullptr, 10));
+  uint16_t dec = static_cast<uint16_t>(strtoul(cmd.args[1], nullptr, 10));
+  uint16_t maxSpd = static_cast<uint16_t>(strtoul(cmd.args[2], nullptr, 10));
+
+  // Validate ranges
+  if (acc > 4095 || dec > 4095) {
+    respondErr("ACC/DEC must be 0-4095");
+    return;
+  }
+  if (maxSpd > 1023) {
+    respondErr("MAXSPD must be 0-1023");
+    return;
+  }
+
+  Services::g_motorConfig.setMotionParams(acc, dec, maxSpd);
+
+  char buf[64];
+  snprintf(buf, sizeof(buf), "Motion params set: ACC=%u DEC=%u MAX=%u (not saved)",
+           acc, dec, maxSpd);
+  respondOk(buf);
+}
+
+void CommandParser::cmdMotorConfigApply() {
+  // Apply current config to motor driver
+  if (!Tasks::MotorTask_ApplyConfig()) {
+    respondErr("Failed to apply config to motor");
+    return;
+  }
+  respondOk("Config applied to motor driver");
 }
 
 } // namespace Comms

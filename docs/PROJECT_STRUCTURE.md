@@ -34,6 +34,11 @@ StepperMotorController/
 |   |   |   +-- command_queue.hpp     # Thread-safe command queue
 |   |   |   +-- device_config.hpp     # Persistent device configuration
 |   |   |   +-- control_mode.hpp      # Control mode management
+|   |   +-- ui/                       # UI framework
+|   |   |   +-- ui_mode.hpp           # LOCAL/REMOTE mode manager
+|   |   |   +-- screen.hpp            # IScreen interface
+|   |   |   +-- menu_screen.hpp       # Menu navigation screen
+|   |   |   +-- terminal_screen.hpp   # Scrolling text console
 |   |   +-- FreeRTOSConfig.h          # FreeRTOS configuration
 |   |   +-- [other peripheral headers]
 |   +-- Src/
@@ -53,7 +58,10 @@ StepperMotorController/
 |       |   +-- command_queue.cpp
 |       |   +-- device_config.cpp
 |       |   +-- control_mode.cpp
-|       +-- legacy/                   # Deprecated files (not built)
+|       +-- ui/                       # UI implementations
+|       |   +-- ui_mode.cpp
+|       |   +-- menu_screen.cpp
+|       |   +-- terminal_screen.cpp
 |       +-- main.cpp                  # Application entry point
 |       +-- [other source files]
 +-- Drivers/
@@ -127,7 +135,7 @@ include_directories(
 | `drivers/lcd_st7789.hpp` | ST7789 240x240 LCD driver |
 | `drivers/flash_nor.hpp` | SPI NOR flash for storage |
 | `drivers/joystick.hpp` | 5-way joystick input |
-| `drivers/encoder.hpp` | Quadrature encoder (placeholder) |
+| `drivers/encoder.hpp` | Quadrature encoder with optional index pulse |
 | `drivers/spi_bus.hpp` | RTOS-safe SPI bus with mutex |
 
 ### Tasks
@@ -157,6 +165,15 @@ include_directories(
 | `services/command_queue.hpp` | Thread-safe command queue for inter-task communication |
 | `services/device_config.hpp` | Persistent device configuration in SPI NOR flash |
 | `services/control_mode.hpp` | Control mode (OPEN_LOOP/CLOSED_LOOP) and encoder status management |
+
+### UI
+
+| File | Purpose |
+|------|---------|
+| `ui/ui_mode.hpp` | UI mode enum (LOCAL/REMOTE) and mode manager |
+| `ui/screen.hpp` | IScreen interface for screen abstractions |
+| `ui/menu_screen.hpp` | List-based menu navigation screen |
+| `ui/terminal_screen.hpp` | Scrolling text console screen |
 
 ## Migration Notes
 

@@ -61,6 +61,14 @@ enum class ControllerState : uint8_t {
 };
 
 /**
+ * @brief Response format selection
+ */
+enum class ResponseFormat : uint8_t {
+  ASCII, // Traditional OK/ERR format (default)
+  JSON   // JSON structured responses
+};
+
+/**
  * @brief Parsed command structure
  */
 struct ParsedCommand {
@@ -90,13 +98,13 @@ public:
   void process();
 
   /**
-   * @brief Send OK response
-   * @param msg Response message
+   * @brief Send OK response (format-aware)
+   * @param msg Response message (ignored in JSON mode)
    */
   void respondOk(const char *msg);
 
   /**
-   * @brief Send error response
+   * @brief Send error response (format-aware)
    * @param msg Error message
    */
   void respondErr(const char *msg);
@@ -108,10 +116,37 @@ public:
    */
   void respondData(const char **lines, size_t count);
 
+  /**
+   * @brief Send JSON success response
+   * @param command Echoed command name
+   * @param dataJson JSON object string for data field (or nullptr)
+   */
+  void respondJsonOk(const char *command, const char *dataJson = nullptr);
+
+  /**
+   * @brief Send JSON error response
+   * @param command Echoed command name
+   * @param code Error code string
+   * @param message Human-readable error message
+   */
+  void respondJsonErr(const char *command, const char *code, const char *message);
+
+  /**
+   * @brief Get current response format
+   */
+  ResponseFormat getFormat() const { return m_format; }
+
+  /**
+   * @brief Set response format
+   */
+  void setFormat(ResponseFormat format) { m_format = format; }
+
 private:
   ITransport &m_transport;
   char m_buffer[CMD_BUFFER_SIZE];
   size_t m_bufIndex;
+  ResponseFormat m_format;       // Current response format (ASCII or JSON)
+  char m_currentCmd[32];         // Current command being processed (for JSON echo)
 
   /**
    * @brief Parse command line into ParsedCommand
@@ -153,12 +188,18 @@ private:
   void cmdGetStatus();
   void cmdClearFault();
 
+  // Heartbeat command handlers
+  void cmdHeartbeat(const ParsedCommand &cmd);
+  void cmdSetHeartbeat(const ParsedCommand &cmd);
+  void cmdGetHeartbeatStatus();
+
   // Utility command handlers
   void cmdHelp();
   void cmdVersion();
   void cmdHome();
   void cmdZero();
   void cmdEncoder();
+  void cmdEncDebug();
 
   // Device identification command handlers
   void cmdGetDeviceId();
@@ -169,6 +210,10 @@ private:
   void cmdGetMode();
   void cmdSetMode(const ParsedCommand &cmd);
   void cmdGetEncoderStatus();
+
+  // Response format command handlers
+  void cmdSetFormat(const ParsedCommand &cmd);
+  void cmdGetFormat();
 
   // UI mode command handlers
   void cmdUIMode(const ParsedCommand &cmd);
@@ -181,6 +226,21 @@ private:
   void cmdDispLine(const ParsedCommand &cmd);
   void cmdDispBitmap(const ParsedCommand &cmd);
   void cmdDispBitmapB64(const ParsedCommand &cmd);
+
+  // Debug command handlers
+  void cmdMotorDebug();
+
+  // Motor configuration command handlers
+  void cmdMotorConfigShow();
+  void cmdMotorConfigSave();
+  void cmdMotorConfigLoad();
+  void cmdMotorConfigReset();
+  void cmdMotorConfigKval(const ParsedCommand &cmd);
+  void cmdMotorConfigOcd(const ParsedCommand &cmd);
+  void cmdMotorConfigStall(const ParsedCommand &cmd);
+  void cmdMotorConfigFault(const ParsedCommand &cmd);
+  void cmdMotorConfigMotion(const ParsedCommand &cmd);
+  void cmdMotorConfigApply();
 };
 
 } // namespace Comms

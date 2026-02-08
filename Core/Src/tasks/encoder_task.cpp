@@ -26,6 +26,11 @@ static volatile EncoderState s_state = {};
 // Previous count for velocity calculation
 static int32_t s_prevCount = 0;
 
+// Moving average filter for velocity (reduces noise from step jitter)
+static constexpr int VELOCITY_FILTER_SIZE = 4;
+static int32_t s_velocityBuf[VELOCITY_FILTER_SIZE] = {};
+static int s_velocityIdx = 0;
+
 // Task handle for self-suspension
 static TaskHandle_t s_taskHandle = nullptr;
 
@@ -76,8 +81,17 @@ void vEncoderTask(void* pvParameters)
 
         // Calculate velocity (counts per second)
         int32_t delta = count - s_prevCount;
-        int32_t velocity = (delta * 1000) / ENCODER_SAMPLE_PERIOD_MS;
+        int32_t rawVelocity = (delta * 1000) / static_cast<int32_t>(ENCODER_SAMPLE_PERIOD_MS);
         s_prevCount = count;
+
+        // 4-sample moving average to smooth step jitter
+        s_velocityBuf[s_velocityIdx] = rawVelocity;
+        s_velocityIdx = (s_velocityIdx + 1) % VELOCITY_FILTER_SIZE;
+        int32_t velocity = 0;
+        for (int i = 0; i < VELOCITY_FILTER_SIZE; i++) {
+            velocity += s_velocityBuf[i];
+        }
+        velocity /= VELOCITY_FILTER_SIZE;
 
         // Get index pulse status
         bool indexSeen = s_encoder.isIndexSeen();
@@ -184,45 +198,56 @@ bool Encoder::init()
 bool Encoder::initGPIO()
 {
     // Enable GPIO clocks
-    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_GPIOCEN;
+    RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN | RCC_AHB1ENR_GPIOCEN;
 
     // Brief delay for clock to stabilize
     volatile uint32_t dummy = RCC->AHB1ENR;
     (void)dummy;
 
-    // Configure EA (PA0) and EB (PA1) as alternate function for TIM2
-    // PA0 = TIM2_CH1, PA1 = TIM2_CH2, both AF1
-    GPIOA->MODER &= ~(GPIO_MODER_MODER0 | GPIO_MODER_MODER1);
-    GPIOA->MODER |= (0x2 << GPIO_MODER_MODER0_Pos) | (0x2 << GPIO_MODER_MODER1_Pos);
-    GPIOA->AFR[0] &= ~(GPIO_AFRL_AFRL0 | GPIO_AFRL_AFRL1);
-    GPIOA->AFR[0] |= (Pins::Encoder::EA_AF << GPIO_AFRL_AFRL0_Pos) |
-                     (Pins::Encoder::EB_AF << GPIO_AFRL_AFRL1_Pos);
+    // Configure EA (PB6) and EB (PB7) as alternate function for TIM4
+    // PB6 = TIM4_CH1, PB7 = TIM4_CH2, both AF2
+    GPIOB->MODER &= ~(GPIO_MODER_MODER6 | GPIO_MODER_MODER7);
+    GPIOB->MODER |= (0x2 << GPIO_MODER_MODER6_Pos) | (0x2 << GPIO_MODER_MODER7_Pos);
+    GPIOB->AFR[0] &= ~(GPIO_AFRL_AFRL6 | GPIO_AFRL_AFRL7);
+    GPIOB->AFR[0] |= (Pins::Encoder::EA_AF << GPIO_AFRL_AFRL6_Pos) |
+                     (Pins::Encoder::EB_AF << GPIO_AFRL_AFRL7_Pos);
 
     // Configure EZ (PC4) as input with pull-up for index pulse
     GPIOC->MODER &= ~GPIO_MODER_MODER4;  // Input
     GPIOC->PUPDR &= ~GPIO_PUPDR_PUPDR4;
     GPIOC->PUPDR |= GPIO_PUPDR_PUPDR4_0;  // Pull-up
 
+    // Enable AM26LV32EIDR line receiver: G (PC3) = HIGH, nG (PC2) = LOW
+    // PC2 (nG): output, drive low
+    GPIOC->MODER &= ~GPIO_MODER_MODER2;
+    GPIOC->MODER |= (0x1 << GPIO_MODER_MODER2_Pos);  // Output
+    GPIOC->BSRR = (1U << 18);  // Reset PC2 (low)
+
+    // PC3 (G): output, drive high
+    GPIOC->MODER &= ~GPIO_MODER_MODER3;
+    GPIOC->MODER |= (0x1 << GPIO_MODER_MODER3_Pos);  // Output
+    GPIOC->BSRR = (1U << 3);   // Set PC3 (high)
+
     return true;
 }
 
 bool Encoder::initTimer()
 {
-    // Enable TIM2 clock
-    RCC->APB1ENR |= RCC_APB1ENR_TIM2EN;
+    // Enable TIM4 clock
+    RCC->APB1ENR |= RCC_APB1ENR_TIM4EN;
 
     // Brief delay for clock to stabilize
     volatile uint32_t dummy = RCC->APB1ENR;
     (void)dummy;
 
-    // Configure TIM2 in encoder mode
-    TIM2->CR1 = 0;  // Stop timer during config
-    TIM2->SMCR = TIM_SMCR_SMS_0 | TIM_SMCR_SMS_1;  // Encoder mode 3 (count on both edges)
-    TIM2->CCMR1 = TIM_CCMR1_CC1S_0 | TIM_CCMR1_CC2S_0;  // IC1 = TI1, IC2 = TI2
-    TIM2->CCER = 0;  // Rising edge, non-inverted
-    TIM2->ARR = 0xFFFFFFFF;  // Full 32-bit range
-    TIM2->CNT = 0;  // Reset counter
-    TIM2->CR1 = TIM_CR1_CEN;  // Enable counter
+    // Configure TIM4 in encoder mode (16-bit timer, ARR max 0xFFFF)
+    TIM4->CR1 = 0;  // Stop timer during config
+    TIM4->SMCR = TIM_SMCR_SMS_0 | TIM_SMCR_SMS_1;  // Encoder mode 3 (count on both edges)
+    TIM4->CCMR1 = TIM_CCMR1_CC1S_0 | TIM_CCMR1_CC2S_0;  // IC1 = TI1, IC2 = TI2
+    TIM4->CCER = 0;  // Rising edge, non-inverted
+    TIM4->ARR = 0xFFFF;  // Full 16-bit range
+    TIM4->CNT = 0;  // Reset counter
+    TIM4->CR1 = TIM_CR1_CEN;  // Enable counter
 
     return true;
 }

@@ -55,6 +55,7 @@ include_directories(
     Core/Inc/drivers
     Core/Inc/tasks
     Core/Inc/services
+    Core/Inc/ui
     Drivers/CMSIS
     Drivers/CMSIS/Device/ST/STM32F4xx/Include
     Drivers/CMSIS/Include
@@ -133,6 +134,17 @@ set(SERVICE_SOURCES
     Core/Src/services/command_queue.cpp
     Core/Src/services/device_config.cpp
     Core/Src/services/control_mode.cpp
+    Core/Src/services/motor_config.cpp
+)
+
+# UI sources
+set(UI_SOURCES
+    Core/Src/ui/ui_mode.cpp
+)
+
+# Driver sources
+set(DRIVER_SOURCES
+    Core/Src/drivers/spi_manager.cpp
 )
 
 set(CXX_SOURCES
@@ -140,6 +152,8 @@ set(CXX_SOURCES
     ${COMMS_SOURCES}
     ${TASK_SOURCES}
     ${SERVICE_SOURCES}
+    ${UI_SOURCES}
+    ${DRIVER_SOURCES}
 )
 
 set(ASM_SOURCES

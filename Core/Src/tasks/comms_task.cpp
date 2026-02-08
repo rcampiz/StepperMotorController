@@ -9,6 +9,7 @@
 #include "comms/rtt_transport.hpp"
 #include "comms/command_parser.hpp"
 #include "comms/telemetry.hpp"
+#include "services/command_queue.hpp"
 #include "ui/ui_mode.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -57,6 +58,12 @@ static Comms::CommandParser* s_parser = nullptr;
 // Telemetry publishing state
 static bool s_telemetryEnabled = false;
 static TickType_t s_lastTelemetryTime = 0;
+
+// Heartbeat watchdog state (all accessed from CommsTask context only)
+static uint32_t s_heartbeatTimeoutMs = 0;   // 0 = disabled
+static TickType_t s_lastHeartbeatTick = 0;  // FreeRTOS tick of last HEARTBEAT rx
+static uint32_t s_lastHeartbeatSeq = 0;
+static bool s_commsTimedOut = false;
 
 bool CommsTask_Init(TransportType transport)
 {
@@ -121,6 +128,15 @@ void vCommsTask(void* pvParameters)
             if ((now - s_lastTelemetryTime) >= pdMS_TO_TICKS(TELEMETRY_PERIOD_MS)) {
                 s_lastTelemetryTime = now;
                 publishTelemetry();
+            }
+        }
+
+        // Check heartbeat watchdog
+        if (s_heartbeatTimeoutMs > 0 && !s_commsTimedOut) {
+            TickType_t elapsed = xTaskGetTickCount() - s_lastHeartbeatTick;
+            if (elapsed >= pdMS_TO_TICKS(s_heartbeatTimeoutMs)) {
+                s_commsTimedOut = true;
+                Services::g_commandQueue.emergencyStop();
             }
         }
 
@@ -196,6 +212,64 @@ static void joyEventCallback(const UI::JoyEvent& event)
 void CommsTask_RegisterJoyCallback()
 {
     UI::g_uiMode.setJoyEventCallback(joyEventCallback);
+}
+
+// =========================================================================
+// Heartbeat watchdog API
+// =========================================================================
+
+void CommsTask_HeartbeatReceived(uint32_t seq)
+{
+    s_lastHeartbeatTick = xTaskGetTickCount();
+    s_lastHeartbeatSeq = seq;
+}
+
+uint32_t CommsTask_SetHeartbeatTimeout(uint32_t timeout_ms)
+{
+    if (timeout_ms == 0) {
+        s_heartbeatTimeoutMs = 0;
+        s_commsTimedOut = false;
+        return 0;
+    }
+    if (timeout_ms < HEARTBEAT_TIMEOUT_MIN_MS) {
+        timeout_ms = HEARTBEAT_TIMEOUT_MIN_MS;
+    }
+    if (timeout_ms > HEARTBEAT_TIMEOUT_MAX_MS) {
+        timeout_ms = HEARTBEAT_TIMEOUT_MAX_MS;
+    }
+    s_heartbeatTimeoutMs = timeout_ms;
+    s_lastHeartbeatTick = xTaskGetTickCount();
+    s_commsTimedOut = false;
+    return timeout_ms;
+}
+
+void CommsTask_GetHeartbeatStatus(
+    bool& out_enabled, uint32_t& out_timeout_ms,
+    uint32_t& out_last_seq, uint32_t& out_remaining_ms,
+    bool& out_timed_out)
+{
+    out_enabled = (s_heartbeatTimeoutMs > 0);
+    out_timeout_ms = s_heartbeatTimeoutMs;
+    out_last_seq = s_lastHeartbeatSeq;
+    out_timed_out = s_commsTimedOut;
+
+    if (s_heartbeatTimeoutMs > 0 && !s_commsTimedOut) {
+        TickType_t elapsed = xTaskGetTickCount() - s_lastHeartbeatTick;
+        uint32_t elapsed_ms = static_cast<uint32_t>(elapsed);
+        if (elapsed_ms < s_heartbeatTimeoutMs) {
+            out_remaining_ms = s_heartbeatTimeoutMs - elapsed_ms;
+        } else {
+            out_remaining_ms = 0;
+        }
+    } else {
+        out_remaining_ms = 0;
+    }
+}
+
+void CommsTask_ClearCommsTimeout()
+{
+    s_commsTimedOut = false;
+    s_heartbeatTimeoutMs = 0;
 }
 
 } // namespace Tasks

@@ -14,9 +14,6 @@
 #include "task.h"
 #include <stdint.h>
 
-// Forward declaration
-class SPIBus;
-
 namespace Tasks {
 
 // Task configuration
@@ -63,12 +60,12 @@ struct MotorCommand {
  * @brief Initialize motor task resources
  *
  * Creates command queue and initializes powerSTEP01 driver.
+ * Uses g_spiManager for SPI communication.
  * Call before vTaskStartScheduler().
  *
- * @param spi Reference to shared SPI bus (SPI1)
  * @return true on success
  */
-bool MotorTask_Init(SPIBus& spi);
+bool MotorTask_Init();
 
 /**
  * @brief Motor task entry point
@@ -98,8 +95,62 @@ bool MotorTask_Move(int32_t steps);
  */
 bool MotorTask_Stop(bool hard = false);
 
+/**
+ * @brief Debug info from powerSTEP01 registers
+ */
+struct MotorDebugInfo {
+    uint16_t status;      // STATUS register
+    uint8_t kvalHold;     // KVAL_HOLD
+    uint8_t kvalRun;      // KVAL_RUN
+    uint8_t kvalAcc;      // KVAL_ACC
+    uint8_t kvalDec;      // KVAL_DEC
+    uint16_t accel;       // ACC register
+    uint16_t decel;       // DEC register
+    uint16_t maxSpeed;    // MAX_SPEED register
+    int32_t absPos;       // ABS_POS register
+};
+
+/**
+ * @brief Read debug info from powerSTEP01
+ * @param info Output structure
+ * @return true if successful
+ */
+bool MotorTask_GetDebugInfo(MotorDebugInfo& info);
+
+/**
+ * @brief Suspend motor task (for SPI debug commands)
+ */
+void MotorTask_Suspend();
+
+/**
+ * @brief Resume motor task after suspend
+ */
+void MotorTask_Resume();
+
+/**
+ * @brief Reinitialize motor driver
+ *
+ * Call after LCD_DISABLE to reinitialize powerSTEP01 with correct settings.
+ * This ensures proper SPI communication and register configuration.
+ */
+void MotorTask_Reinit();
+
+/**
+ * @brief Apply motor configuration to powerSTEP01 driver
+ *
+ * Reads the current configuration from g_motorConfig and applies
+ * all settings to the powerSTEP01 registers (KVAL, thresholds,
+ * motion params, alarm enables).
+ *
+ * @return true if successful
+ */
+bool MotorTask_ApplyConfig();
+
 // Command queue handle (for direct access if needed)
 extern QueueHandle_t g_motorCmdQueue;
+
+// Task handle (for suspend/resume)
+extern TaskHandle_t g_motorTaskHandle;
 
 } // namespace Tasks
 

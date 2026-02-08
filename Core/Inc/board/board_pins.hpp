@@ -47,7 +47,7 @@ namespace SPI2_Bus {
 // X-NUCLEO-IHM03A1 (powerSTEP01 Stepper Driver)
 // ============================================================================
 namespace IHM03A1 {
-    // Chip select - MODIFIED: moved to PC8 (CN10-2)
+    // Chip select - PC8 (CN10-P2, rework from default PB6 to free encoder/joystick)
     static GPIO_TypeDef* const CS_PORT = GPIOC;
     static constexpr uint8_t CS_PIN = 8;
 
@@ -71,21 +71,21 @@ namespace IHM03A1 {
 // X-NUCLEO-GFX01M2 - LCD (SPI Display)
 // ============================================================================
 namespace GFX_LCD {
-    // Chip select - MODIFIED: SPIA_NCS reassigned to PB8 (CN10-3)
-    static GPIO_TypeDef* const CS_PORT = GPIOB;
-    static constexpr uint8_t CS_PIN = 8;
+    // Chip select - SPIA_NCS on PC6 (CN10-4)
+    static GPIO_TypeDef* const CS_PORT = GPIOC;
+    static constexpr uint8_t CS_PIN = 6;
 
-    // Display Tearing Effect output - PC15 (CN7-27)
+    // Display Tearing Effect output - PC15 (CN7-28)
     static GPIO_TypeDef* const TE_PORT = GPIOC;
     static constexpr uint8_t TE_PIN = 15;
 
-    // Display Reset (active low) - PH0 (CN7-29)
+    // Display Reset (active low) - PH1 (CN7-30)
     static GPIO_TypeDef* const NRESET_PORT = GPIOH;
-    static constexpr uint8_t NRESET_PIN = 0;
+    static constexpr uint8_t NRESET_PIN = 1;
 
-    // Data/Command select (directly from board D/C#) - PA8 (D7)
-    static GPIO_TypeDef* const DC_PORT = GPIOA;
-    static constexpr uint8_t DC_PIN = 8;
+    // Data/Command select - SPIA_DCX on PB10 (CN10-25)
+    static GPIO_TypeDef* const DC_PORT = GPIOB;
+    static constexpr uint8_t DC_PIN = 10;
 
     // Directly uses SPI1_Bus for SCK/MISO/MOSI
 }
@@ -94,9 +94,9 @@ namespace GFX_LCD {
 // X-NUCLEO-GFX01M2 - NOR Flash (SPIB)
 // ============================================================================
 namespace GFX_Flash {
-    // Chip select for flash - PC6 (CN10-4)
-    static GPIO_TypeDef* const CS_PORT = GPIOC;
-    static constexpr uint8_t CS_PIN = 6;
+    // Chip select for flash - SPIB_NCS on PA8 (CN10-23)
+    static GPIO_TypeDef* const CS_PORT = GPIOA;
+    static constexpr uint8_t CS_PIN = 8;
 
     // Directly uses SPI2_Bus for SCK/MISO/MOSI
 }
@@ -128,22 +128,23 @@ namespace Joystick {
 }
 
 // ============================================================================
-// Encoder Interface (TIM2 hardware encoder mode)
-// Uses TIM2_CH1/CH2 for quadrature counting, EXTI for index pulse
+// Encoder Interface (TIM4 hardware encoder mode)
+// Uses TIM4_CH1/CH2 for quadrature counting, EXTI for index pulse
+// Note: TIM4 is 16-bit (ARR max 0xFFFF). Wired to CN10-P17 / CN7-P21.
 // ============================================================================
 namespace Encoder {
     // Timer instance for hardware encoder mode
-    static TIM_TypeDef* const TIMER = TIM2;
+    static TIM_TypeDef* const TIMER = TIM4;
 
-    // Quadrature A - PA0 (TIM2_CH1)
-    static GPIO_TypeDef* const EA_PORT = GPIOA;
-    static constexpr uint8_t EA_PIN = 0;
-    static constexpr uint8_t EA_AF = 1;          // AF1 for TIM2
+    // Quadrature A - PB6 (TIM4_CH1) - CN10 P-17
+    static GPIO_TypeDef* const EA_PORT = GPIOB;
+    static constexpr uint8_t EA_PIN = 6;
+    static constexpr uint8_t EA_AF = 2;          // AF2 for TIM4
 
-    // Quadrature B - PA1 (TIM2_CH2)
-    static GPIO_TypeDef* const EB_PORT = GPIOA;
-    static constexpr uint8_t EB_PIN = 1;
-    static constexpr uint8_t EB_AF = 1;          // AF1 for TIM2
+    // Quadrature B - PB7 (TIM4_CH2) - CN7 P-21
+    static GPIO_TypeDef* const EB_PORT = GPIOB;
+    static constexpr uint8_t EB_PIN = 7;
+    static constexpr uint8_t EB_AF = 2;          // AF2 for TIM4
 
     // Index pulse - PC4 (GPIO input, EXTI4 for interrupt)
     // Note: PC4 is not TIM2-capable, use EXTI for index detection

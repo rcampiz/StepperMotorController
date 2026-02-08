@@ -47,7 +47,7 @@ public:
         s.right  = !(Pins::Joystick::RIGHT_PORT->IDR  & (1 << Pins::Joystick::RIGHT_PIN));
         s.up     = !(Pins::Joystick::UP_PORT->IDR     & (1 << Pins::Joystick::UP_PIN));
         s.down   = !(Pins::Joystick::DOWN_PORT->IDR   & (1 << Pins::Joystick::DOWN_PIN));
-        s.center = !(Pins::Joystick::CENTER_PORT->IDR & (1 << Pins::Joystick::CENTER_PIN));
+        s.center = false;  // PB6 reassigned to encoder EA
         return s;
     }
 
@@ -65,7 +65,7 @@ public:
     bool right()  const { return !(Pins::Joystick::RIGHT_PORT->IDR  & (1 << Pins::Joystick::RIGHT_PIN)); }
     bool up()     const { return !(Pins::Joystick::UP_PORT->IDR     & (1 << Pins::Joystick::UP_PIN)); }
     bool down()   const { return !(Pins::Joystick::DOWN_PORT->IDR   & (1 << Pins::Joystick::DOWN_PIN)); }
-    bool center() const { return !(Pins::Joystick::CENTER_PORT->IDR & (1 << Pins::Joystick::CENTER_PIN)); }
+    bool center() const { return false; }  // PB6 reassigned to encoder EA
 
     const char* directionName(Direction d) const {
         switch (d) {
@@ -86,7 +86,7 @@ private:
         configureInput(Pins::Joystick::RIGHT_PORT,  Pins::Joystick::RIGHT_PIN);
         configureInput(Pins::Joystick::UP_PORT,     Pins::Joystick::UP_PIN);
         configureInput(Pins::Joystick::DOWN_PORT,   Pins::Joystick::DOWN_PIN);
-        configureInput(Pins::Joystick::CENTER_PORT, Pins::Joystick::CENTER_PIN);
+        // NOTE: CENTER (PB6) skipped — pin reassigned to encoder EA (TIM4_CH1)
     }
 
     void configureInput(GPIO_TypeDef* port, uint8_t pin) {

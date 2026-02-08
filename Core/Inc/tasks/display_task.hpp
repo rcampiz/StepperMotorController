@@ -14,10 +14,10 @@
 
 #include "FreeRTOS.h"
 #include "task.h"
+#include <stddef.h>
 #include <stdint.h>
 
 // Forward declarations
-class SPIBus;
 class LCD;
 
 namespace Tasks {
@@ -42,12 +42,12 @@ enum class DisplayPage : uint8_t {
  * @brief Initialize display task resources
  *
  * Initializes LCD driver, UI mode manager, clears screen.
+ * Uses g_spiManager for SPI communication.
  * Call before vTaskStartScheduler().
  *
- * @param spi Reference to shared SPI bus (SPI1)
  * @return true on success
  */
-bool DisplayTask_Init(SPIBus& spi);
+bool DisplayTask_Init();
 
 /**
  * @brief Display task entry point
@@ -126,6 +126,68 @@ void DisplayTask_RemoteBitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
  * @return Pointer to LCD instance, or nullptr if not initialized
  */
 LCD* DisplayTask_GetLCD();
+
+// =============================================================================
+// Bitmap Streaming API (for binary transfer)
+// =============================================================================
+
+/**
+ * @brief Start streaming bitmap data to display
+ *
+ * Sets up the LCD window for receiving raw RGB565 data.
+ * Must call DisplayTask_StreamBitmapData() to send data,
+ * and DisplayTask_StreamBitmapEnd() when done.
+ *
+ * @param x, y Top-left position
+ * @param w, h Bitmap dimensions
+ * @return true if streaming started, false if LCD not initialized or already streaming
+ */
+bool DisplayTask_StreamBitmapStart(uint16_t x, uint16_t y, uint16_t w, uint16_t h);
+
+/**
+ * @brief Stream bitmap data chunk
+ *
+ * Must be called between Start and End.
+ *
+ * @param data Pointer to raw RGB565 byte data
+ * @param len Number of bytes to transfer
+ */
+void DisplayTask_StreamBitmapData(const uint8_t* data, size_t len);
+
+/**
+ * @brief End bitmap streaming
+ *
+ * Releases LCD resources held by Start.
+ */
+void DisplayTask_StreamBitmapEnd();
+
+/**
+ * @brief Check if bitmap streaming is active
+ * @return true if currently streaming
+ */
+bool DisplayTask_IsStreaming();
+
+// =============================================================================
+// Task Control API
+// =============================================================================
+
+/**
+ * @brief Display task handle (for suspend/resume)
+ */
+extern TaskHandle_t g_displayTaskHandle;
+
+/**
+ * @brief Suspend display task
+ *
+ * Stops all LCD updates and joystick reads.
+ * Useful for isolating SPI1 for motor-only testing.
+ */
+void DisplayTask_Suspend();
+
+/**
+ * @brief Resume display task
+ */
+void DisplayTask_Resume();
 
 } // namespace Tasks
 

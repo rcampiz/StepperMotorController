@@ -102,14 +102,23 @@ public:
 
 ### Format
 
-ASCII line-based protocol for human readability and easy debugging:
+Commands are ASCII line-based. Responses support two formats:
 
+**ASCII Mode (default):**
 ```
 Command:  <CMD> [ARG1] [ARG2] ... <CR><LF>
-Response: OK: <message><CR><LF>
-       or ERR: <message><CR><LF>
-       or DATA:<CR><LF><lines...><CR><LF><blank line>
+Response: OK <message><CR><LF>
+       or ERROR <message><CR><LF>
 ```
+
+**JSON Mode:**
+```
+Command:  <CMD> [ARG1] [ARG2] ... <CR><LF>
+Response: {"status":"ok","command":"CMD","data":{...}}<CR><LF>
+       or {"status":"error","command":"CMD","code":"ERROR_CODE","message":"..."}<CR><LF>
+```
+
+Switch modes with `SET_FORMAT ASCII` or `SET_FORMAT JSON`. Query with `GET_FORMAT`.
 
 ### Command Reference
 
@@ -153,6 +162,13 @@ Response: OK: <message><CR><LF>
 | `ACCEL` | `<value>` | Set acceleration |
 | `DECEL` | `<value>` | Set deceleration |
 | `MAXSPD` | `<value>` | Set maximum speed |
+
+#### Response Format Commands
+
+| Command | Arguments | Description |
+|---------|-----------|-------------|
+| `SET_FORMAT` | `<ASCII\|JSON>` | Set response format |
+| `GET_FORMAT` | - | Query current response format |
 
 #### Query Commands
 
@@ -347,9 +363,10 @@ ser = serial.Serial('COM3', 115200, timeout=1)  # Windows
 | Component | Status |
 |-----------|--------|
 | `ITransport` interface | **Complete** |
-| `UartTransport` | *Scaffolded* - init/transfer stubs, USART2 config TBD |
+| `UartTransport` | **Complete** - interrupt RX, polling TX, 256-byte ring buffer |
 | `RttTransport` | **Complete** - SEGGER RTT integrated |
 | `CommandParser` | **Complete** - all commands parsed and dispatched |
+| Command dispatch to MotorTask | **Complete** - Phase 10 wired all motion/config commands |
 | `TelemetryManager` | **Complete** |
 | `CommsTask` | **Complete** - task framework with transport selection |
 | Tick timer service | **Complete** - TIM5 @ 1MHz |
@@ -358,15 +375,16 @@ ser = serial.Serial('COM3', 115200, timeout=1)  # Windows
 | PING/PONG timestamps | **Complete** - RX/TX tick capture |
 | Device identification | **Complete** - NOR flash storage |
 | Control modes | **Complete** - OPEN_LOOP/CLOSED_LOOP |
-| Motor command execution | *Scaffolded* - parser complete, powerSTEP01 TBD |
-| Telemetry output | *Scaffolded* - data collected, formatting TBD |
+| Motor task (powerSTEP01) | **Complete** - all commands wired to driver |
+| Telemetry output | **Complete** - formatted output via transport |
+| UI mode commands | **Complete** - LOCAL/REMOTE switching |
+| Display commands | **Complete** - DISP_CLEAR/TEXT/RECT/LINE/BITMAP_B64 (binary DISP_BITMAP TBD) |
+| JSON response mode | **Complete** - SET_FORMAT/GET_FORMAT, JSON responses for key commands |
 
 ## Next Steps
 
-1. **Implement UartTransport** - USART2 initialization and interrupt/DMA handling
-2. **Implement powerSTEP01 driver** - SPI command sequences for motor control
-3. **Wire motor dispatch** - Connect CommandParser to powerSTEP01 driver
-4. **Format telemetry output** - Implement telemetry stream formatting
+1. **Closed-loop control** - PID control using encoder feedback
+2. **Multi-controller testing** - Synchronized start across 4 controllers
 
 ## References
 
