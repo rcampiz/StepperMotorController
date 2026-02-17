@@ -122,6 +122,14 @@ arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/control_mode.cpp -o build/cont
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile control_mode.cpp & exit /b 1)
 arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/motor_config.cpp -o build/motor_config.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile motor_config.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/motion_service.cpp -o build/motion_service.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile motion_service.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/safety_service.cpp -o build/safety_service.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile safety_service.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/config_service.cpp -o build/config_service.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile config_service.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/trace.cpp -o build/trace.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile trace.cpp & exit /b 1)
 
 echo [17/25] Compiling UI sources...
 arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/ui/ui_mode.cpp -o build/ui_mode.o
@@ -145,7 +153,7 @@ set "OBJS=%OBJS% build/timers.o build/event_groups.o build/stream_buffer.o build
 set "OBJS=%OBJS% build/SEGGER_RTT.o build/SEGGER_RTT_printf.o build/SEGGER_SYSVIEW.o build/SEGGER_SYSVIEW_Config_FreeRTOS.o build/SEGGER_SYSVIEW_FreeRTOS.o"
 set "OBJS=%OBJS% build/main.o build/uart_transport.o build/rtt_transport.o build/command_parser.o build/telemetry.o"
 set "OBJS=%OBJS% build/motor_task.o build/encoder_task.o build/display_task.o build/comms_task.o build/bringup_task.o"
-set "OBJS=%OBJS% build/tick_timer.o build/command_queue.o build/device_config.o build/control_mode.o build/motor_config.o"
+set "OBJS=%OBJS% build/tick_timer.o build/command_queue.o build/device_config.o build/control_mode.o build/motor_config.o build/motion_service.o build/safety_service.o build/config_service.o build/trace.o"
 set "OBJS=%OBJS% build/ui_mode.o build/menu_screen.o build/terminal_screen.o"
 set "OBJS=%OBJS% build/spi_manager.o"
 set "OBJS=%OBJS% build/startup_stm32f401xe.o"

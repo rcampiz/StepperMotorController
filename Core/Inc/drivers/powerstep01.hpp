@@ -79,11 +79,14 @@ public:
         bool stckMod()   const { return raw & (1 << 8); }
         bool uvlo()      const { return !(raw & (1 << 9)); }
         bool uvloADC()   const { return !(raw & (1 << 10)); }
-        bool thermalSD() const { return !(raw & (1 << 11)); }
-        bool thermalWarn() const { return !(raw & (1 << 12)); }
-        bool stallA()    const { return !(raw & (1 << 13)); }
-        bool stallB()    const { return !(raw & (1 << 14)); }
-        bool ocd()       const { return !(raw & (1 << 15)); }
+        // Bits 11-12: TH_STATUS 2-bit field
+        // 00=Normal, 01=Warning, 10=Bridge shutdown, 11=Device shutdown
+        uint8_t thStatus() const { return (raw >> 11) & 0x3; }
+        bool thermalWarn() const { return thStatus() >= 1; }
+        bool thermalSD()   const { return thStatus() >= 2; }
+        bool ocd()       const { return !(raw & (1 << 13)); }
+        bool stallA()    const { return !(raw & (1 << 14)); }
+        bool stallB()    const { return !(raw & (1 << 15)); }
     };
 
     PowerSTEP01(SPIBus& spi) : m_spi(spi) {

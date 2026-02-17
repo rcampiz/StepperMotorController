@@ -38,7 +38,8 @@ public:
   };
 
   Encoder()
-      : m_status(Status::NOT_INITIALIZED), m_indexSeen(false), m_indexTick(0) {}
+      : m_status(Status::NOT_INITIALIZED), m_indexSeen(false), m_indexTick(0),
+        m_revolutions(0), m_lastIndexUs(0), m_indexPeriodUs(0) {}
 
   /**
    * @brief Initialize encoder hardware
@@ -96,15 +97,29 @@ public:
   /**
    * @brief Index pulse ISR callback
    *
-   * Called from EXTI4_IRQHandler when index pulse detected.
+   * Called from EXTI9_5_IRQHandler when index pulse detected on PC9.
    * Sets indexSeen flag and records tick time.
    *
    * @param tick Current FreeRTOS tick count
    */
-  void indexISR(uint32_t tick) {
+  void indexISR(uint32_t tick, uint32_t tickUs) {
     m_indexSeen = true;
     m_indexTick = tick;
+    // Track revolution count (direction from TIM4 DIR bit: 0=up/CW, 1=down/CCW)
+    if (TIM4->CR1 & (1U << 4)) {  // DIR bit: 0=upcounting, 1=downcounting
+      m_revolutions--;
+    } else {
+      m_revolutions++;
+    }
+    // Compute period between successive index pulses
+    if (m_lastIndexUs != 0) {
+      m_indexPeriodUs = tickUs - m_lastIndexUs;
+    }
+    m_lastIndexUs = tickUs;
   }
+
+  int32_t getRevolutions() const { return m_revolutions; }
+  uint32_t getIndexPeriodUs() const { return m_indexPeriodUs; }
 
   /**
    * @brief Enable index pulse interrupt
@@ -122,6 +137,9 @@ private:
   Status m_status;
   volatile bool m_indexSeen;
   volatile uint32_t m_indexTick;
+  volatile int32_t m_revolutions;
+  volatile uint32_t m_lastIndexUs;
+  volatile uint32_t m_indexPeriodUs;
 
   /**
    * @brief Initialize GPIO pins for encoder

@@ -12,7 +12,14 @@ if exist "%PROJECT_ROOT%\client\.venv\Scripts\activate.bat" (
 )
 
 pushd "%CLIENT_SRC%"
-python gui_main.py --debug
+python gui_main.py --debug 2> gui_crash.log
+if errorlevel 1 (
+    echo.
+    echo === CRASH LOG ===
+    type gui_crash.log
+    echo.
+)
 popd
 
 endlocal
+pause

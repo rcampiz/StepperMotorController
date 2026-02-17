@@ -27,7 +27,7 @@ namespace Comms {
 constexpr size_t CMD_BUFFER_SIZE = 128;
 
 // Maximum number of arguments
-constexpr size_t MAX_ARGS = 6;
+constexpr size_t MAX_ARGS = 8;
 
 // Command queue depth
 constexpr size_t CMD_QUEUE_DEPTH = 8;
@@ -72,7 +72,7 @@ enum class ResponseFormat : uint8_t {
  * @brief Parsed command structure
  */
 struct ParsedCommand {
-  char cmd[16];            // Command word (uppercase)
+  char cmd[24];            // Command word (uppercase) - sized for SCPI names (e.g. "UI:DISP:BITMAP:B64")
   char args[MAX_ARGS][32]; // Arguments as strings
   uint8_t argCount;        // Number of arguments
   bool valid;              // Parse succeeded
@@ -161,6 +161,18 @@ private:
    */
   void dispatch(const ParsedCommand &cmd);
 
+  // Namespace dispatch handlers (SCPI two-level dispatch)
+  void dispatchMotion(const char *suffix, const ParsedCommand &cmd);
+  void dispatchSystem(const char *suffix, const ParsedCommand &cmd);
+  void dispatchSync(const char *suffix, const ParsedCommand &cmd);
+  void dispatchDiag(const char *suffix, const ParsedCommand &cmd);
+  void dispatchCtrl(const char *suffix, const ParsedCommand &cmd);
+  void dispatchDevice(const char *suffix, const ParsedCommand &cmd);
+  void dispatchUI(const char *suffix, const ParsedCommand &cmd);
+  void dispatchDebug(const char *suffix, const ParsedCommand &cmd);
+  void dispatchDriver(const char *suffix, const ParsedCommand &cmd);
+  void dispatchLegacy(const ParsedCommand &cmd);
+
   // Motion command handlers
   void cmdMove(const ParsedCommand &cmd);
   void cmdGoTo(const ParsedCommand &cmd);
@@ -171,9 +183,12 @@ private:
   // Configuration command handlers
   void cmdEnable();
   void cmdDisable();
-  void cmdAccel(const ParsedCommand &cmd);
-  void cmdDecel(const ParsedCommand &cmd);
-  void cmdMaxSpd(const ParsedCommand &cmd);
+  void cmdAccel(const ParsedCommand &cmd);       // Legacy: raw register values
+  void cmdDecel(const ParsedCommand &cmd);       // Legacy: raw register values
+  void cmdMaxSpd(const ParsedCommand &cmd);      // Legacy: raw register values
+  void cmdAccelPhysical(const ParsedCommand &cmd);  // SCPI: steps/s^2
+  void cmdDecelPhysical(const ParsedCommand &cmd);  // SCPI: steps/s^2
+  void cmdMaxSpdPhysical(const ParsedCommand &cmd); // SCPI: steps/s
 
   // Synchronization command handlers
   void cmdQueue(const ParsedCommand &cmd);
@@ -187,6 +202,7 @@ private:
   void cmdGetTick();
   void cmdGetStatus();
   void cmdClearFault();
+  void cmdForceClearFault();
 
   // Heartbeat command handlers
   void cmdHeartbeat(const ParsedCommand &cmd);
@@ -229,6 +245,10 @@ private:
 
   // Debug command handlers
   void cmdMotorDebug();
+
+  // Trace command handlers
+  void cmdTraceDump();
+  void cmdTraceReset();
 
   // Motor configuration command handlers
   void cmdMotorConfigShow();

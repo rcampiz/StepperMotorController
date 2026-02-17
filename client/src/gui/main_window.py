@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QStatusBar,
     QMessageBox,
+    QTabWidget,
 )
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QAction, QCloseEvent
@@ -25,6 +26,9 @@ log = logging.getLogger("main_window")
 from gui.connection_panel import ConnectionPanel
 from gui.motor_panel import MotorControlPanel
 from gui.telemetry_panel import TelemetryPanel
+from gui.driver_panel import DriverPanel
+from gui.protection_panel import ProtectionPanel
+from gui.graph_panel import GraphPanel
 from gui.serial_worker import SerialThread, QueuedCommand, CommandTag
 from protocol import MotorClient, ResponseFormat
 from transport import VcpTransport
@@ -67,7 +71,7 @@ class MainWindow(QMainWindow):
         self._connection_panel = ConnectionPanel()
         main_layout.addWidget(self._connection_panel)
 
-        # Splitter for control and telemetry
+        # Splitter for control and telemetry/graphs
         splitter = QSplitter(Qt.Horizontal)
 
         # Motor control panel (left)
@@ -75,12 +79,25 @@ class MainWindow(QMainWindow):
         self._motor_panel.setEnabled(False)
         splitter.addWidget(self._motor_panel)
 
-        # Telemetry panel (right)
-        self._telemetry_panel = TelemetryPanel()
-        splitter.addWidget(self._telemetry_panel)
+        # Tabbed right panel (Dashboard + Graphs)
+        self._right_tabs = QTabWidget()
 
-        # Set initial splitter sizes (60% control, 40% telemetry)
-        splitter.setSizes([480, 320])
+        self._telemetry_panel = TelemetryPanel()
+        self._right_tabs.addTab(self._telemetry_panel, "Dashboard")
+
+        self._driver_panel = DriverPanel()
+        self._right_tabs.addTab(self._driver_panel, "Driver")
+
+        self._protection_panel = ProtectionPanel()
+        self._right_tabs.addTab(self._protection_panel, "Protection")
+
+        self._graph_panel = GraphPanel()
+        self._right_tabs.addTab(self._graph_panel, "Telemetry Graphs")
+
+        splitter.addWidget(self._right_tabs)
+
+        # Set initial splitter sizes (50% control, 50% tabs)
+        splitter.setSizes([480, 400])
 
         main_layout.addWidget(splitter, 1)
 
@@ -150,6 +167,14 @@ class MainWindow(QMainWindow):
         self._open_log_action.triggered.connect(self._open_log_file)
         debug_menu.addAction(self._open_log_action)
 
+        debug_menu.addSeparator()
+        self._reinit_motor_action = QAction("&Reinit Motor Driver", self)
+        self._reinit_motor_action.setToolTip(
+            "Re-initialize powerSTEP01 after motor power cycle")
+        self._reinit_motor_action.setEnabled(False)
+        self._reinit_motor_action.triggered.connect(self._on_reinit_motor)
+        debug_menu.addAction(self._reinit_motor_action)
+
         # Help menu
         help_menu = menubar.addMenu("&Help")
 
@@ -166,10 +191,20 @@ class MainWindow(QMainWindow):
         # Motor panel commands
         self._motor_panel.command_requested.connect(self._send_command)
 
-        # Telemetry panel refresh and parameter apply
-        self._telemetry_panel.refresh_requested.connect(self._on_refresh_params)
-        self._telemetry_panel.kval_apply_requested.connect(self._on_kval_apply)
-        self._telemetry_panel.param_apply_requested.connect(self._on_param_apply)
+        # Driver panel refresh and parameter apply
+        self._driver_panel.refresh_requested.connect(self._on_refresh_params)
+        self._driver_panel.kval_apply_requested.connect(self._on_kval_apply)
+        self._driver_panel.param_apply_requested.connect(self._on_param_apply)
+        self._driver_panel.maxspd_changed.connect(self._motor_panel.set_max_speed)
+
+        # Protection panel
+        self._protection_panel.protection_apply_requested.connect(
+            self._on_protection_apply)
+        self._protection_panel.refresh_requested.connect(self._on_refresh_params)
+
+        # Dashboard clear fault button
+        self._telemetry_panel.clear_fault_requested.connect(
+            lambda: self._send_command("CLEAR_FAULT"))
 
         # Window signals
         self.connected.connect(self._on_connected)
@@ -311,8 +346,14 @@ class MainWindow(QMainWindow):
         self._motor_panel.setEnabled(True)
         self._connect_action.setEnabled(False)
         self._disconnect_action.setEnabled(True)
+        self._reinit_motor_action.setEnabled(True)
 
         if self._serial_thread:
+            # Clear any latched faults (e.g. comms timeout from previous
+            # session where heartbeat watchdog fired after USB disconnect)
+            self._serial_thread.worker.queue_command(
+                QueuedCommand("CLEAR_FAULT", CommandTag.CLEAR_FAULT))
+
             # Request initial parameter refresh via worker
             self._serial_thread.queue_refresh()
 
@@ -340,9 +381,13 @@ class MainWindow(QMainWindow):
         self._motor_panel.setEnabled(False)
         self._connect_action.setEnabled(True)
         self._disconnect_action.setEnabled(False)
+        self._reinit_motor_action.setEnabled(False)
 
-        # Clear telemetry
+        # Clear telemetry, driver, and graphs
         self._telemetry_panel.clear()
+        self._driver_panel.clear()
+        self._protection_panel.clear()
+        self._graph_panel.clear()
 
     @Slot(str)
     def _send_command(self, command: str):
@@ -354,6 +399,9 @@ class MainWindow(QMainWindow):
         if command == "CLEAR_FAULT":
             self._serial_thread.worker.queue_command(
                 QueuedCommand("CLEAR_FAULT", CommandTag.CLEAR_FAULT))
+        elif command == "FORCE_CLEAR_FAULT":
+            self._serial_thread.worker.queue_command(
+                QueuedCommand("FORCE_CLEAR_FAULT", CommandTag.CLEAR_FAULT))
         else:
             self._serial_thread.send_command(command)
 
@@ -365,10 +413,12 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def _on_kval_apply(self, cmd_str: str):
-        """Send MCONFIG_KVAL command via worker."""
+        """Send MCONFIG_KVAL + MCONFIG_APPLY to update config and push to hardware."""
         if self._serial_thread:
             self._serial_thread.worker.queue_command(
                 QueuedCommand(cmd_str, CommandTag.APPLY_KVAL))
+            self._serial_thread.worker.queue_command(
+                QueuedCommand("MCONFIG_APPLY", CommandTag.APPLY_KVAL))
 
     @Slot(list)
     def _on_param_apply(self, commands: list):
@@ -378,6 +428,23 @@ class MainWindow(QMainWindow):
         for cmd in commands:
             self._serial_thread.worker.queue_command(
                 QueuedCommand(cmd, CommandTag.APPLY_PARAMS))
+
+    @Slot(list)
+    def _on_protection_apply(self, commands: list):
+        """Send protection parameter commands (OCD, STALL, FAULT, APPLY) via worker.
+
+        Intermediate commands are tagged GENERIC so they don't trigger
+        auto-refresh. Only the final MCONFIG_APPLY is tagged
+        APPLY_PROTECTION, which clears the dirty flag and refreshes.
+        """
+        if not self._serial_thread:
+            return
+        for cmd in commands[:-1]:
+            self._serial_thread.worker.queue_command(
+                QueuedCommand(cmd, CommandTag.GENERIC))
+        if commands:
+            self._serial_thread.worker.queue_command(
+                QueuedCommand(commands[-1], CommandTag.APPLY_PROTECTION))
 
     @Slot(str, str, object)
     def _on_response_received(self, tag: str, command: str, response):
@@ -395,10 +462,14 @@ class MainWindow(QMainWindow):
             if tag == CommandTag.REFRESH_ENC.name:
                 self._telemetry_panel.update_encoder_data(
                     None, response.error_message)
+            # Show CLEAR_FAULT failure prominently on motor panel
+            if tag == CommandTag.CLEAR_FAULT.name:
+                self._motor_panel.show_fault_error(
+                    f"Cannot clear: {response.error_message}")
             return
 
         if tag == CommandTag.REFRESH_MOTOR_DEBUG.name:
-            self._telemetry_panel.update_driver_params(response.raw)
+            self._driver_panel.update_driver_params(response.raw)
             self._telemetry_panel.show_raw_response("MOTOR_DEBUG", response.raw)
             self._status_bar.showMessage("Parameters refreshed", 2000)
 
@@ -407,6 +478,7 @@ class MainWindow(QMainWindow):
 
         elif tag == CommandTag.REFRESH_MCONFIG.name:
             self._telemetry_panel.update_motor_config(response.raw)
+            self._protection_panel.update_protection_params(response.raw)
 
         elif tag == CommandTag.SET_FORMAT.name:
             self._status_bar.showMessage("Format set", 2000)
@@ -418,6 +490,13 @@ class MainWindow(QMainWindow):
 
         elif tag == CommandTag.APPLY_PARAMS.name:
             self._status_bar.showMessage("Parameters applied", 2000)
+            if self._serial_thread:
+                self._serial_thread.queue_refresh()
+
+        elif tag == CommandTag.APPLY_PROTECTION.name:
+            self._status_bar.showMessage("Protection config applied", 2000)
+            # Clear dirty flag so the upcoming refresh updates the panel
+            self._protection_panel._dirty = False
             if self._serial_thread:
                 self._serial_thread.queue_refresh()
 
@@ -434,12 +513,20 @@ class MainWindow(QMainWindow):
     def _on_telemetry_updated(self, data: dict):
         """Handle telemetry data from worker polling."""
         self._telemetry_panel.update_data(data)
+        self._graph_panel.update_data(data)
         self.status_updated.emit(data)
 
         # Update motor panel state from telemetry
         state = data.get("state")
         if state:
             self._motor_panel.update_state(state)
+
+        # Update motor panel Hi-Z state (gates motion buttons)
+        motor = data.get("motor", {})
+        if isinstance(motor, dict):
+            hiz = motor.get("hi_z", motor.get("hiz"))
+            if hiz is not None:
+                self._motor_panel.update_hiz(hiz)
 
     @Slot(str)
     def _on_connection_lost(self, error: str):
@@ -501,6 +588,21 @@ class MainWindow(QMainWindow):
             root.setLevel(logging.INFO)
             log.info("Debug logging DISABLED")
             self._status_bar.showMessage("Debug logging OFF", 3000)
+
+    @Slot()
+    def _on_reinit_motor(self):
+        """Re-initialize the powerSTEP01 after a motor power cycle.
+
+        Sends MOTOR_REINIT which re-runs the driver init sequence and
+        re-applies the saved motor config, then refreshes all panels.
+        """
+        if not self._serial_thread:
+            return
+        self._status_bar.showMessage("Re-initializing motor driver...", 3000)
+        self._serial_thread.worker.queue_command(
+            QueuedCommand("MOTOR_REINIT", CommandTag.GENERIC))
+        # Refresh all panels to pick up the restored config
+        self._serial_thread.queue_refresh()
 
     def _open_log_file(self):
         """Open the debug log file in the system editor."""

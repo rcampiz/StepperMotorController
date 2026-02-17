@@ -1,7 +1,8 @@
 """
 Motor control panel widget.
 
-Provides controls for motor motion, speed, and configuration.
+Provides controls for motor motion, speed, and configuration
+with vertical fader sliders matching the Driver tab aesthetic.
 """
 
 from PySide6.QtWidgets import (
@@ -14,8 +15,6 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QSlider,
     QGroupBox,
-    QFrame,
-    QComboBox,
 )
 from PySide6.QtCore import Qt, Signal, Slot
 from PySide6.QtGui import QFont
@@ -30,6 +29,32 @@ _STATE_COLORS = {
     "ESTOP": "#ff3333",
 }
 
+FADER_STYLE = """
+    QSlider::groove:vertical {
+        background: #2d2d2d;
+        width: 22px;
+        border-radius: 6px;
+    }
+    QSlider::handle:vertical {
+        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+            stop:0 #888, stop:0.5 #ccc, stop:1 #888);
+        border: 1px solid #666;
+        height: 22px;
+        margin: 0 -6px;
+        border-radius: 4px;
+    }
+    QSlider::add-page:vertical {
+        background: #4a9eff;
+        border-radius: 6px;
+    }
+    QSlider::sub-page:vertical {
+        background: #2d2d2d;
+        border-radius: 6px;
+    }
+"""
+
+FADER_STYLE_ORANGE = FADER_STYLE.replace('#4a9eff', '#ff9900')
+
 
 class MotorControlPanel(QWidget):
     """Panel for motor control."""
@@ -40,6 +65,8 @@ class MotorControlPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._motion_buttons = []  # Buttons disabled during FAULT/ESTOP
+        self._motor_enabled = False  # Track Hi-Z state from telemetry
+        self._is_fault = False
         self._setup_ui()
 
     def _setup_ui(self):
@@ -47,28 +74,23 @@ class MotorControlPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setSpacing(12)
 
-        # State indicator + CLEAR_FAULT
         layout.addWidget(self._create_state_group())
-
-        # Motion controls
-        layout.addWidget(self._create_motion_group())
-
-        # Speed/Rate controls
         layout.addWidget(self._create_speed_group())
-
-        # Configuration controls
+        layout.addWidget(self._create_motion_group())
         layout.addWidget(self._create_config_group())
-
-        # Emergency stop (prominent)
         layout.addWidget(self._create_estop_group())
-
         layout.addStretch()
+
+    # =========================================================================
+    # Controller State
+    # =========================================================================
 
     def _create_state_group(self) -> QGroupBox:
         """Create state indicator with CLEAR_FAULT button."""
         group = QGroupBox("Controller State")
-        layout = QHBoxLayout(group)
+        outer = QVBoxLayout(group)
 
+        row = QHBoxLayout()
         self._state_label = QLabel("---")
         self._state_label.setFont(QFont("Consolas", 14, QFont.Bold))
         self._state_label.setAlignment(Qt.AlignCenter)
@@ -77,9 +99,9 @@ class MotorControlPanel(QWidget):
             "background-color: #333; color: #888; "
             "padding: 8px 16px; border-radius: 6px;"
         )
-        layout.addWidget(self._state_label)
+        row.addWidget(self._state_label)
 
-        layout.addStretch()
+        row.addStretch()
 
         self._clear_fault_btn = QPushButton("CLEAR FAULT")
         self._clear_fault_btn.setStyleSheet(
@@ -89,178 +111,292 @@ class MotorControlPanel(QWidget):
         self._clear_fault_btn.setToolTip("Clear fault state and return to IDLE")
         self._clear_fault_btn.clicked.connect(self._on_clear_fault)
         self._clear_fault_btn.setVisible(False)
-        layout.addWidget(self._clear_fault_btn)
+        row.addWidget(self._clear_fault_btn)
+
+        self._force_clear_btn = QPushButton("FORCE CLEAR")
+        self._force_clear_btn.setStyleSheet(
+            "background-color: #996600; color: white; "
+            "font-weight: bold; padding: 8px 16px;"
+        )
+        self._force_clear_btn.setToolTip(
+            "Force clear fault even if hardware faults are still active (bench/dev use)")
+        self._force_clear_btn.clicked.connect(self._on_force_clear_fault)
+        self._force_clear_btn.setVisible(False)
+        row.addWidget(self._force_clear_btn)
+        outer.addLayout(row)
+
+        self._fault_error_label = QLabel("")
+        self._fault_error_label.setFont(QFont("Consolas", 9))
+        self._fault_error_label.setWordWrap(True)
+        self._fault_error_label.setStyleSheet(
+            "background-color: #4d1a1a; color: #ff6666; "
+            "padding: 6px 8px; border-radius: 4px;"
+        )
+        self._fault_error_label.setVisible(False)
+        outer.addWidget(self._fault_error_label)
 
         return group
 
-    def _create_motion_group(self) -> QGroupBox:
-        """Create motion control group."""
-        group = QGroupBox("Motion Control")
-        layout = QGridLayout(group)
+    def show_fault_error(self, message: str):
+        """Show a persistent fault error message."""
+        self._fault_error_label.setText(message)
+        self._fault_error_label.setVisible(True)
 
-        # Jog controls
-        layout.addWidget(QLabel("Jog:"), 0, 0)
+    def clear_fault_error(self):
+        """Hide the fault error message."""
+        self._fault_error_label.setText("")
+        self._fault_error_label.setVisible(False)
 
-        self._jog_ccw_btn = QPushButton("CCW")
-        self._jog_ccw_btn.setToolTip("Jog counter-clockwise")
-        self._jog_ccw_btn.pressed.connect(lambda: self._start_jog(0))
-        self._jog_ccw_btn.released.connect(self._stop_jog)
-        layout.addWidget(self._jog_ccw_btn, 0, 1)
+    # =========================================================================
+    # Speed & Run — vertical fader
+    # =========================================================================
 
-        self._jog_cw_btn = QPushButton("CW")
-        self._jog_cw_btn.setToolTip("Jog clockwise")
-        self._jog_cw_btn.pressed.connect(lambda: self._start_jog(1))
-        self._jog_cw_btn.released.connect(self._stop_jog)
-        layout.addWidget(self._jog_cw_btn, 0, 2)
+    def _create_speed_group(self) -> QGroupBox:
+        """Create speed control with vertical fader and run buttons."""
+        group = QGroupBox("Speed & Run")
+        main_layout = QHBoxLayout(group)
 
-        # Stop button
+        # Left: vertical fader column
+        fader_col = QVBoxLayout()
+        fader_col.setSpacing(4)
+
+        speed_lbl = QLabel("SPEED")
+        speed_lbl.setAlignment(Qt.AlignCenter)
+        speed_lbl.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        fader_col.addWidget(speed_lbl)
+
+        self._speed_slider = QSlider(Qt.Vertical)
+        self._speed_slider.setRange(0, 15609)
+        self._speed_slider.setValue(500)
+        self._speed_slider.setTickPosition(QSlider.TicksBothSides)
+        self._speed_slider.setTickInterval(2500)
+        self._speed_slider.setMinimumHeight(120)
+        self._speed_slider.setFixedWidth(60)
+        self._speed_slider.setStyleSheet(FADER_STYLE_ORANGE)
+        fader_col.addWidget(self._speed_slider, alignment=Qt.AlignHCenter)
+
+        self._speed_spin = QSpinBox()
+        self._speed_spin.setRange(0, 15609)
+        self._speed_spin.setValue(500)
+        self._speed_spin.setSuffix(" steps/s")
+        self._speed_spin.setAlignment(Qt.AlignCenter)
+        self._speed_spin.setFont(QFont("Consolas", 9))
+        self._speed_spin.setMinimumWidth(90)
+        fader_col.addWidget(self._speed_spin)
+
+        self._maxspd_note = QLabel("Max: 15609 (from MAX SPD)")
+        self._maxspd_note.setAlignment(Qt.AlignCenter)
+        self._maxspd_note.setStyleSheet("font-size: 8px; color: #888;")
+        fader_col.addWidget(self._maxspd_note)
+
+        # Bidirectional sync
+        self._speed_slider.valueChanged.connect(self._speed_spin.setValue)
+        self._speed_spin.valueChanged.connect(self._speed_slider.setValue)
+
+        main_layout.addLayout(fader_col)
+
+        # Right: Run buttons and STOP
+        btn_col = QVBoxLayout()
+        btn_col.addStretch()
+
+        run_row = QHBoxLayout()
+        self._run_ccw_btn = QPushButton("Run CCW")
+        self._run_ccw_btn.setToolTip("Continuous rotation CCW")
+        self._run_ccw_btn.setMinimumWidth(90)
+        self._run_ccw_btn.clicked.connect(lambda: self._on_run(0))
+        run_row.addWidget(self._run_ccw_btn)
+
+        self._run_cw_btn = QPushButton("Run CW")
+        self._run_cw_btn.setToolTip("Continuous rotation CW")
+        self._run_cw_btn.setMinimumWidth(90)
+        self._run_cw_btn.clicked.connect(lambda: self._on_run(1))
+        run_row.addWidget(self._run_cw_btn)
+        btn_col.addLayout(run_row)
+
         self._stop_btn = QPushButton("STOP")
         self._stop_btn.setToolTip("Stop motion (soft stop)")
-        self._stop_btn.setStyleSheet("background-color: #ffcc00; font-weight: bold;")
+        self._stop_btn.setStyleSheet(
+            "background-color: #ffcc00; font-weight: bold;")
         self._stop_btn.clicked.connect(self._on_stop)
-        layout.addWidget(self._stop_btn, 0, 3)
+        btn_col.addWidget(self._stop_btn)
 
-        # Relative move
-        layout.addWidget(QLabel("Move:"), 1, 0)
+        btn_col.addStretch()
+        main_layout.addLayout(btn_col)
+
+        self._motion_buttons = [self._run_ccw_btn, self._run_cw_btn]
+
+        return group
+
+    @Slot(int)
+    def set_max_speed(self, value: int):
+        """Update speed fader range from Driver panel's MAX SPD."""
+        value = max(1, value)
+        current = self._speed_spin.value()
+        self._speed_slider.setRange(0, value)
+        self._speed_spin.setRange(0, value)
+        if current > value:
+            self._speed_spin.setValue(value)
+        self._maxspd_note.setText(f"Max: {value} (from MAX SPD)")
+
+    # =========================================================================
+    # Motion Control — step fader + buttons
+    # =========================================================================
+
+    def _create_motion_group(self) -> QGroupBox:
+        """Create motion control with step count fader and buttons."""
+        group = QGroupBox("Motion Control")
+        main_layout = QHBoxLayout(group)
+
+        # Left: step count fader
+        fader_col = QVBoxLayout()
+        fader_col.setSpacing(4)
+
+        steps_lbl = QLabel("STEPS")
+        steps_lbl.setAlignment(Qt.AlignCenter)
+        steps_lbl.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        fader_col.addWidget(steps_lbl)
+
+        self._move_slider = QSlider(Qt.Vertical)
+        self._move_slider.setRange(1, 100000)
+        self._move_slider.setValue(1000)
+        self._move_slider.setTickPosition(QSlider.TicksBothSides)
+        self._move_slider.setTickInterval(20000)
+        self._move_slider.setMinimumHeight(120)
+        self._move_slider.setFixedWidth(60)
+        self._move_slider.setStyleSheet(FADER_STYLE)
+        fader_col.addWidget(self._move_slider, alignment=Qt.AlignHCenter)
 
         self._move_steps = QSpinBox()
         self._move_steps.setRange(1, 2097151)
         self._move_steps.setValue(1000)
-        self._move_steps.setToolTip("Steps to move")
-        layout.addWidget(self._move_steps, 1, 1)
+        self._move_steps.setSuffix(" steps")
+        self._move_steps.setAlignment(Qt.AlignCenter)
+        self._move_steps.setFont(QFont("Consolas", 9))
+        self._move_steps.setMinimumWidth(90)
+        fader_col.addWidget(self._move_steps)
 
-        self._move_ccw_btn = QPushButton("Move CCW")
+        desc_lbl = QLabel("Relative\nmove")
+        desc_lbl.setAlignment(Qt.AlignCenter)
+        desc_lbl.setStyleSheet("font-size: 9px; color: #888;")
+        fader_col.addWidget(desc_lbl)
+
+        # Bidirectional sync (slider range is capped at 100k, spinbox goes to 2M)
+        self._move_slider.valueChanged.connect(self._move_steps.setValue)
+        self._move_steps.valueChanged.connect(
+            lambda v: self._move_slider.setValue(min(v, 100000)))
+
+        main_layout.addLayout(fader_col)
+
+        # Right: button grid
+        btn_col = QVBoxLayout()
+
+        # Jog row
+        jog_row = QHBoxLayout()
+        jog_lbl = QLabel("Jog:")
+        jog_lbl.setFixedWidth(35)
+        jog_row.addWidget(jog_lbl)
+        self._jog_ccw_btn = QPushButton("CCW")
+        self._jog_ccw_btn.setToolTip("Jog counter-clockwise")
+        self._jog_ccw_btn.pressed.connect(lambda: self._start_jog(0))
+        self._jog_ccw_btn.released.connect(self._stop_jog)
+        jog_row.addWidget(self._jog_ccw_btn)
+        self._jog_cw_btn = QPushButton("CW")
+        self._jog_cw_btn.setToolTip("Jog clockwise")
+        self._jog_cw_btn.pressed.connect(lambda: self._start_jog(1))
+        self._jog_cw_btn.released.connect(self._stop_jog)
+        jog_row.addWidget(self._jog_cw_btn)
+        btn_col.addLayout(jog_row)
+
+        # Move row
+        move_row = QHBoxLayout()
+        move_lbl = QLabel("Move:")
+        move_lbl.setFixedWidth(35)
+        move_row.addWidget(move_lbl)
+        self._move_ccw_btn = QPushButton("CCW")
+        self._move_ccw_btn.setToolTip("Move counter-clockwise by step count")
         self._move_ccw_btn.clicked.connect(lambda: self._on_move(0))
-        layout.addWidget(self._move_ccw_btn, 1, 2)
-
-        self._move_cw_btn = QPushButton("Move CW")
+        move_row.addWidget(self._move_ccw_btn)
+        self._move_cw_btn = QPushButton("CW")
+        self._move_cw_btn.setToolTip("Move clockwise by step count")
         self._move_cw_btn.clicked.connect(lambda: self._on_move(1))
-        layout.addWidget(self._move_cw_btn, 1, 3)
+        move_row.addWidget(self._move_cw_btn)
+        btn_col.addLayout(move_row)
 
-        # Absolute move
-        layout.addWidget(QLabel("GoTo:"), 2, 0)
-
+        # GoTo row
+        goto_row = QHBoxLayout()
+        goto_lbl = QLabel("GoTo:")
+        goto_lbl.setFixedWidth(35)
+        goto_row.addWidget(goto_lbl)
         self._goto_pos = QSpinBox()
         self._goto_pos.setRange(-2097152, 2097151)
         self._goto_pos.setValue(0)
         self._goto_pos.setToolTip("Target position")
-        layout.addWidget(self._goto_pos, 2, 1)
-
-        self._goto_btn = QPushButton("Go To Position")
+        goto_row.addWidget(self._goto_pos)
+        self._goto_btn = QPushButton("Go")
+        self._goto_btn.setToolTip("Go to absolute position")
         self._goto_btn.clicked.connect(self._on_goto)
-        layout.addWidget(self._goto_btn, 2, 2, 1, 2)
+        self._goto_btn.setFixedWidth(50)
+        goto_row.addWidget(self._goto_btn)
+        btn_col.addLayout(goto_row)
 
-        # Home and Zero
+        # Home / Zero row
+        home_row = QHBoxLayout()
+        home_row.addWidget(QLabel(""))  # spacer matching label width
         self._home_btn = QPushButton("Home")
         self._home_btn.setToolTip("Go to home position")
         self._home_btn.clicked.connect(self._on_home)
-        layout.addWidget(self._home_btn, 3, 1)
-
+        home_row.addWidget(self._home_btn)
         self._zero_btn = QPushButton("Zero")
         self._zero_btn.setToolTip("Set current position as zero")
         self._zero_btn.clicked.connect(self._on_zero)
-        layout.addWidget(self._zero_btn, 3, 2)
+        home_row.addWidget(self._zero_btn)
+        btn_col.addLayout(home_row)
+
+        # Hold toggle button
+        hold_row = QHBoxLayout()
+        hold_row.addWidget(QLabel(""))  # spacer matching label width
+        self._hold_toggle_btn = QPushButton("Hold")
+        self._hold_toggle_btn.setToolTip(
+            "Toggle: energize motor to hold position / release to Hi-Z")
+        self._hold_toggle_btn.clicked.connect(self._on_hold_toggle)
+        hold_row.addWidget(self._hold_toggle_btn)
+        btn_col.addLayout(hold_row)
+
+        main_layout.addLayout(btn_col)
 
         # Track motion buttons for state-aware enable/disable
-        self._motion_buttons = [
+        self._motion_buttons.extend([
             self._jog_ccw_btn, self._jog_cw_btn,
             self._move_ccw_btn, self._move_cw_btn,
             self._goto_btn, self._home_btn, self._zero_btn,
-        ]
+        ])
 
         return group
 
-    def _create_speed_group(self) -> QGroupBox:
-        """Create speed control group."""
-        group = QGroupBox("Speed Control")
-        layout = QGridLayout(group)
-
-        # Speed slider
-        layout.addWidget(QLabel("Speed:"), 0, 0)
-
-        self._speed_slider = QSlider(Qt.Horizontal)
-        self._speed_slider.setRange(0, 15625)  # Max 15625 steps/s per powerSTEP01
-        self._speed_slider.setValue(500)
-        self._speed_slider.setTickPosition(QSlider.TicksBelow)
-        self._speed_slider.setTickInterval(3000)
-        self._speed_slider.valueChanged.connect(self._on_speed_slider_changed)
-        layout.addWidget(self._speed_slider, 0, 1)
-
-        self._speed_spin = QSpinBox()
-        self._speed_spin.setRange(0, 15625)  # Max 15625 steps/s per powerSTEP01
-        self._speed_spin.setValue(500)
-        self._speed_spin.setSuffix(" steps/s")
-        self._speed_spin.valueChanged.connect(self._on_speed_spin_changed)
-        layout.addWidget(self._speed_spin, 0, 2)
-
-        # Continuous run
-        layout.addWidget(QLabel("Run:"), 1, 0)
-
-        self._run_ccw_btn = QPushButton("Run CCW")
-        self._run_ccw_btn.setToolTip("Continuous rotation CCW")
-        self._run_ccw_btn.clicked.connect(lambda: self._on_run(0))
-        layout.addWidget(self._run_ccw_btn, 1, 1)
-
-        self._run_cw_btn = QPushButton("Run CW")
-        self._run_cw_btn.setToolTip("Continuous rotation CW")
-        self._run_cw_btn.clicked.connect(lambda: self._on_run(1))
-        layout.addWidget(self._run_cw_btn, 1, 2)
-
-        # Add run buttons to motion buttons list
-        self._motion_buttons.extend([self._run_ccw_btn, self._run_cw_btn])
-
-        return group
+    # =========================================================================
+    # Output (Enable/Disable)
+    # =========================================================================
 
     def _create_config_group(self) -> QGroupBox:
-        """Create configuration group."""
-        group = QGroupBox("Configuration")
-        layout = QGridLayout(group)
+        """Create configuration group (enable/disable motor outputs)."""
+        group = QGroupBox("Output")
+        layout = QHBoxLayout(group)
 
-        # Acceleration
-        layout.addWidget(QLabel("Accel:"), 0, 0)
-        self._accel_spin = QSpinBox()
-        self._accel_spin.setRange(1, 4095)
-        self._accel_spin.setValue(100)
-        layout.addWidget(self._accel_spin, 0, 1)
-
-        self._accel_btn = QPushButton("Set")
-        self._accel_btn.clicked.connect(self._on_set_accel)
-        layout.addWidget(self._accel_btn, 0, 2)
-
-        # Deceleration
-        layout.addWidget(QLabel("Decel:"), 1, 0)
-        self._decel_spin = QSpinBox()
-        self._decel_spin.setRange(1, 4095)
-        self._decel_spin.setValue(100)
-        layout.addWidget(self._decel_spin, 1, 1)
-
-        self._decel_btn = QPushButton("Set")
-        self._decel_btn.clicked.connect(self._on_set_decel)
-        layout.addWidget(self._decel_btn, 1, 2)
-
-        # Max speed
-        layout.addWidget(QLabel("Max Spd:"), 2, 0)
-        self._maxspd_spin = QSpinBox()
-        self._maxspd_spin.setRange(1, 1023)
-        self._maxspd_spin.setValue(500)
-        layout.addWidget(self._maxspd_spin, 2, 1)
-
-        self._maxspd_btn = QPushButton("Set")
-        self._maxspd_btn.clicked.connect(self._on_set_maxspd)
-        layout.addWidget(self._maxspd_btn, 2, 2)
-
-        # Enable/Disable
         self._enable_btn = QPushButton("Enable")
         self._enable_btn.setToolTip("Enable motor outputs")
         self._enable_btn.clicked.connect(self._on_enable)
-        layout.addWidget(self._enable_btn, 3, 0, 1, 2)
+        layout.addWidget(self._enable_btn)
 
         self._disable_btn = QPushButton("Disable (Hi-Z)")
         self._disable_btn.setToolTip("Disable motor outputs")
         self._disable_btn.clicked.connect(self._on_disable)
-        layout.addWidget(self._disable_btn, 3, 2)
+        layout.addWidget(self._disable_btn)
 
         return group
+
+    # =========================================================================
+    # Emergency Stop
+    # =========================================================================
 
     def _create_estop_group(self) -> QGroupBox:
         """Create emergency stop group."""
@@ -279,9 +415,9 @@ class MotorControlPanel(QWidget):
 
         return group
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # State management
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     @Slot(str)
     def update_state(self, state: str):
@@ -294,20 +430,49 @@ class MotorControlPanel(QWidget):
             "padding: 8px 16px; border-radius: 6px; font-weight: bold;"
         )
 
-        # Show CLEAR_FAULT only in fault states
-        is_fault = state in ("FAULT", "ESTOP")
-        self._clear_fault_btn.setVisible(is_fault)
+        # Show CLEAR_FAULT / FORCE CLEAR only in fault states
+        self._is_fault = state in ("FAULT", "ESTOP")
+        self._clear_fault_btn.setVisible(self._is_fault)
+        self._force_clear_btn.setVisible(self._is_fault)
+        if not self._is_fault:
+            self.clear_fault_error()
 
-        # Disable motion buttons in fault states
+        self._update_motion_buttons()
+
+    @Slot(bool)
+    def update_hiz(self, hiz: bool):
+        """Update motor enabled state from telemetry Hi-Z flag."""
+        self._motor_enabled = not hiz
+        self._update_motion_buttons()
+
+        # Visual feedback on enable/disable and hold toggle buttons
+        if self._motor_enabled:
+            self._enable_btn.setStyleSheet(
+                "background-color: #2a7a2a; color: white; font-weight: bold;")
+            self._disable_btn.setStyleSheet("")
+            self._hold_toggle_btn.setText("Release")
+            self._hold_toggle_btn.setStyleSheet(
+                "background-color: #2a7a2a; color: white; font-weight: bold;")
+        else:
+            self._enable_btn.setStyleSheet("")
+            self._disable_btn.setStyleSheet(
+                "background-color: #7a2a2a; color: white; font-weight: bold;")
+            self._hold_toggle_btn.setText("Hold")
+            self._hold_toggle_btn.setStyleSheet("")
+
+    def _update_motion_buttons(self):
+        """Enable/disable motion buttons based on fault and Hi-Z state."""
+        # Motion requires: not in fault AND motor enabled (not Hi-Z)
+        can_move = not self._is_fault and self._motor_enabled
         for btn in self._motion_buttons:
-            btn.setEnabled(not is_fault)
+            btn.setEnabled(can_move)
 
-        # Enable/disable based on state
-        self._enable_btn.setEnabled(not is_fault)
+        # Enable button: available unless in fault
+        self._enable_btn.setEnabled(not self._is_fault)
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # Command handlers
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     def _start_jog(self, direction: int):
         """Start jogging in direction."""
@@ -324,19 +489,19 @@ class MotorControlPanel(QWidget):
         self.command_requested.emit("STOP")
 
     def _on_move(self, direction: int):
-        """Execute relative move."""
+        """Execute relative move.  Speed governed by MAX SPD on Driver tab."""
         steps = self._move_steps.value()
         self.command_requested.emit(f"MOVE {steps} {direction}")
 
     @Slot()
     def _on_goto(self):
-        """Execute absolute move."""
+        """Execute absolute move.  Speed governed by MAX SPD on Driver tab."""
         pos = self._goto_pos.value()
         self.command_requested.emit(f"GOTO {pos}")
 
     @Slot()
     def _on_home(self):
-        """Go to home position."""
+        """Go to home position.  Speed governed by MAX SPD on Driver tab."""
         self.command_requested.emit("HOME")
 
     @Slot()
@@ -350,22 +515,12 @@ class MotorControlPanel(QWidget):
         self.command_requested.emit(f"RUN {speed} {direction}")
 
     @Slot()
-    def _on_set_accel(self):
-        """Set acceleration."""
-        val = self._accel_spin.value()
-        self.command_requested.emit(f"ACCEL {val}")
-
-    @Slot()
-    def _on_set_decel(self):
-        """Set deceleration."""
-        val = self._decel_spin.value()
-        self.command_requested.emit(f"DECEL {val}")
-
-    @Slot()
-    def _on_set_maxspd(self):
-        """Set max speed."""
-        val = self._maxspd_spin.value()
-        self.command_requested.emit(f"MAXSPD {val}")
+    def _on_hold_toggle(self):
+        """Toggle between hold (enable) and release (Hi-Z)."""
+        if self._motor_enabled:
+            self.command_requested.emit("DISABLE")
+        else:
+            self.command_requested.emit("ENABLE")
 
     @Slot()
     def _on_enable(self):
@@ -387,16 +542,7 @@ class MotorControlPanel(QWidget):
         """Clear fault state."""
         self.command_requested.emit("CLEAR_FAULT")
 
-    @Slot(int)
-    def _on_speed_slider_changed(self, value: int):
-        """Sync spinner with slider."""
-        self._speed_spin.blockSignals(True)
-        self._speed_spin.setValue(value)
-        self._speed_spin.blockSignals(False)
-
-    @Slot(int)
-    def _on_speed_spin_changed(self, value: int):
-        """Sync slider with spinner."""
-        self._speed_slider.blockSignals(True)
-        self._speed_slider.setValue(value)
-        self._speed_slider.blockSignals(False)
+    @Slot()
+    def _on_force_clear_fault(self):
+        """Force clear fault state, bypassing hardware fault check."""
+        self.command_requested.emit("FORCE_CLEAR_FAULT")

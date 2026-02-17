@@ -9,6 +9,7 @@
 #include "tasks/encoder_task.hpp"
 #include "drivers/encoder.hpp"
 #include "services/control_mode.hpp"
+#include "services/tick_timer.hpp"
 #include "comms/telemetry.hpp"
 #include "stm32f401xe.h"
 #include "core_cm4.h"
@@ -23,13 +24,20 @@ static Encoder s_encoder;
 // Encoder state (protected by critical section)
 static volatile EncoderState s_state = {};
 
-// Previous count for velocity calculation
-static int32_t s_prevCount = 0;
+// Position + timestamp ring buffer for velocity calculation
+// Uses hardware timer (TIM5 microseconds) for RTOS-independent accuracy
+struct PosSample {
+    int32_t count;
+    uint32_t tickUs;  // Services::TickTimer_GetTick() — microseconds
+};
+static constexpr int POS_BUF_SIZE = 5;
+static PosSample s_posBuf[POS_BUF_SIZE] = {};
+static int s_posHead = 0;
+static int s_posCount = 0;
 
-// Moving average filter for velocity (reduces noise from step jitter)
-static constexpr int VELOCITY_FILTER_SIZE = 4;
-static int32_t s_velocityBuf[VELOCITY_FILTER_SIZE] = {};
-static int s_velocityIdx = 0;
+// 64-bit accumulator for wrap-free position tracking
+static int64_t s_accumulatedCount = 0;
+static uint16_t s_lastRawCount = 0;
 
 // Task handle for self-suspension
 static TaskHandle_t s_taskHandle = nullptr;
@@ -51,7 +59,12 @@ bool EncoderTask_Init()
     s_state.velocity = 0;
     s_state.indexSeen = false;
     s_state.indexTick = 0;
-    s_prevCount = 0;
+    s_state.revolutions = 0;
+    s_state.indexPeriodUs = 0;
+    s_accumulatedCount = 0;
+    s_lastRawCount = static_cast<uint16_t>(TIM4->CNT & 0xFFFF);
+    s_posHead = 0;
+    s_posCount = 0;
 
     // Encoder ready
     Services::g_controlMode.setEncoderStatus(Services::EncoderStatus::READY);
@@ -76,41 +89,64 @@ void vEncoderTask(void* pvParameters)
     TickType_t lastWakeTime = xTaskGetTickCount();
 
     while (true) {
-        // Read current count from encoder
-        int32_t count = s_encoder.getCount();
+        // Read current raw count and hardware timestamp (RTOS-independent)
+        uint16_t rawCount = static_cast<uint16_t>(TIM4->CNT & 0xFFFF);
+        uint32_t tickUs = Services::TickTimer_GetTick();
 
-        // Calculate velocity (counts per second)
-        int32_t delta = count - s_prevCount;
-        int32_t rawVelocity = (delta * 1000) / static_cast<int32_t>(ENCODER_SAMPLE_PERIOD_MS);
-        s_prevCount = count;
+        // Accumulate 64-bit position: delta handles 16-bit wrap correctly
+        int16_t delta = static_cast<int16_t>(rawCount - s_lastRawCount);
+        s_accumulatedCount += delta;
+        s_lastRawCount = rawCount;
 
-        // 4-sample moving average to smooth step jitter
-        s_velocityBuf[s_velocityIdx] = rawVelocity;
-        s_velocityIdx = (s_velocityIdx + 1) % VELOCITY_FILTER_SIZE;
+        // Use raw 16-bit count for velocity ring buffer (wrap-aware subtraction)
+        int32_t count = static_cast<int32_t>(static_cast<int16_t>(rawCount));
+
+        // Store position + timestamp in ring buffer
+        s_posBuf[s_posHead] = {count, tickUs};
+        s_posHead = (s_posHead + 1) % POS_BUF_SIZE;
+        if (s_posCount < POS_BUF_SIZE) s_posCount++;
+
+        // Compute velocity over full window using actual elapsed time
+        // Uses uint16_t subtraction to handle TIM4 16-bit counter wrap
         int32_t velocity = 0;
-        for (int i = 0; i < VELOCITY_FILTER_SIZE; i++) {
-            velocity += s_velocityBuf[i];
+        if (s_posCount >= 2) {
+            int oldestIdx = (s_posCount < POS_BUF_SIZE) ? 0 : s_posHead;
+            uint32_t dtUs = tickUs - s_posBuf[oldestIdx].tickUs;
+            if (dtUs > 0) {
+                int16_t delta = static_cast<int16_t>(
+                    static_cast<uint16_t>(count) -
+                    static_cast<uint16_t>(s_posBuf[oldestIdx].count));
+                velocity = static_cast<int32_t>(delta) * 1000000 /
+                           static_cast<int32_t>(dtUs);
+            }
         }
-        velocity /= VELOCITY_FILTER_SIZE;
 
         // Get index pulse status
         bool indexSeen = s_encoder.isIndexSeen();
         uint32_t indexTick = s_encoder.getIndexTick();
 
+        // Get revolution data from encoder driver
+        int32_t revolutions = s_encoder.getRevolutions();
+        uint32_t indexPeriodUs = s_encoder.getIndexPeriodUs();
+
         // Update state (critical section for thread safety)
         taskENTER_CRITICAL();
-        s_state.count = count;
+        s_state.count = s_accumulatedCount;
         s_state.velocity = velocity;
         s_state.indexSeen = indexSeen;
         s_state.indexTick = indexTick;
+        s_state.revolutions = revolutions;
+        s_state.indexPeriodUs = indexPeriodUs;
         taskEXIT_CRITICAL();
 
         // Update telemetry
         Comms::EncoderTelemetry telem = {};
-        telem.count = count;
+        telem.count = s_accumulatedCount;
         telem.velocity = velocity;
         telem.indexSeen = indexSeen;
         telem.indexTick = indexTick;
+        telem.revolutions = revolutions;
+        telem.indexPeriodUs = indexPeriodUs;
         Comms::g_telemetry.updateEncoder(telem);
 
         // Wait for next sample period
@@ -126,6 +162,8 @@ EncoderState EncoderTask_GetState()
     state.velocity = s_state.velocity;
     state.indexSeen = s_state.indexSeen;
     state.indexTick = s_state.indexTick;
+    state.revolutions = s_state.revolutions;
+    state.indexPeriodUs = s_state.indexPeriodUs;
     taskEXIT_CRITICAL();
     return state;
 }
@@ -151,14 +189,18 @@ void EncoderTask_ResetCount()
     s_encoder.reset();
     taskENTER_CRITICAL();
     s_state.count = 0;
-    s_prevCount = 0;
+    s_accumulatedCount = 0;
+    s_lastRawCount = 0;
+    s_posHead = 0;
+    s_posCount = 0;
     taskEXIT_CRITICAL();
 }
 
 void EncoderTask_IndexISR()
 {
     // Called from EXTI4_IRQHandler
-    s_encoder.indexISR(xTaskGetTickCountFromISR());
+    uint32_t tickUs = Services::TickTimer_GetTick();
+    s_encoder.indexISR(xTaskGetTickCountFromISR(), tickUs);
 }
 
 bool EncoderTask_IsAvailable()
@@ -191,6 +233,9 @@ bool Encoder::init()
 
     m_indexSeen = false;
     m_indexTick = 0;
+    m_revolutions = 0;
+    m_lastIndexUs = 0;
+    m_indexPeriodUs = 0;
     m_status = Status::READY;
     return true;
 }
@@ -212,10 +257,10 @@ bool Encoder::initGPIO()
     GPIOB->AFR[0] |= (Pins::Encoder::EA_AF << GPIO_AFRL_AFRL6_Pos) |
                      (Pins::Encoder::EB_AF << GPIO_AFRL_AFRL7_Pos);
 
-    // Configure EZ (PC4) as input with pull-up for index pulse
-    GPIOC->MODER &= ~GPIO_MODER_MODER4;  // Input
-    GPIOC->PUPDR &= ~GPIO_PUPDR_PUPDR4;
-    GPIOC->PUPDR |= GPIO_PUPDR_PUPDR4_0;  // Pull-up
+    // Configure EZ (PC9) as input with pull-up for index pulse
+    GPIOC->MODER &= ~(3U << (9 * 2));   // Input mode
+    GPIOC->PUPDR &= ~(3U << (9 * 2));   // Clear pull
+    GPIOC->PUPDR |=  (1U << (9 * 2));   // Pull-up
 
     // Enable AM26LV32EIDR line receiver: G (PC3) = HIGH, nG (PC2) = LOW
     // PC2 (nG): output, drive low
@@ -257,33 +302,37 @@ void Encoder::enableIndexInterrupt()
     // Enable SYSCFG clock for EXTI
     RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
 
-    // Map EXTI4 to PC4
-    SYSCFG->EXTICR[1] &= ~SYSCFG_EXTICR2_EXTI4;
-    SYSCFG->EXTICR[1] |= SYSCFG_EXTICR2_EXTI4_PC;
+    // Clock stabilization delay (same pattern as initGPIO)
+    volatile uint32_t dummy = RCC->APB2ENR;
+    (void)dummy;
 
-    // Configure EXTI4 for falling edge (index pulse is active low)
-    EXTI->IMR |= EXTI_IMR_MR4;   // Unmask interrupt
-    EXTI->FTSR |= EXTI_FTSR_TR4; // Falling edge trigger
+    // Map EXTI9 to PC9: EXTICR[2] bits 7:4 select source for EXTI9
+    // 0x2 = Port C (RM0368 Table 40)
+    SYSCFG->EXTICR[2] = (SYSCFG->EXTICR[2] & ~(0xFU << 4)) | (0x2U << 4);
 
-    // Enable EXTI4 interrupt in NVIC
-    NVIC_SetPriority(EXTI4_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
-    NVIC_EnableIRQ(EXTI4_IRQn);
+    // Configure EXTI9 for falling edge (index pulse is active low)
+    EXTI->IMR  |= (1U << 9);   // Unmask line 9
+    EXTI->FTSR |= (1U << 9);   // Falling edge trigger
+
+    // Enable EXTI9_5 interrupt in NVIC
+    NVIC_SetPriority(EXTI9_5_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+    NVIC_EnableIRQ(EXTI9_5_IRQn);
 }
 
 void Encoder::disableIndexInterrupt()
 {
-    EXTI->IMR &= ~EXTI_IMR_MR4;  // Mask interrupt
-    NVIC_DisableIRQ(EXTI4_IRQn);
+    EXTI->IMR &= ~(1U << 9);  // Mask line 9
+    NVIC_DisableIRQ(EXTI9_5_IRQn);
 }
 
 // ============================================================================
-// EXTI4 interrupt handler
+// EXTI9_5 interrupt handler (shared for EXTI lines 5-9)
 // ============================================================================
 
-extern "C" void EXTI4_IRQHandler(void)
+extern "C" void EXTI9_5_IRQHandler(void)
 {
-    if (EXTI->PR & EXTI_PR_PR4) {
-        EXTI->PR = EXTI_PR_PR4;  // Clear pending
+    if (EXTI->PR & (1U << 9)) {
+        EXTI->PR = (1U << 9);  // Clear pending (write-1-to-clear)
         Tasks::EncoderTask_IndexISR();
     }
 }

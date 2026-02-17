@@ -3,7 +3,7 @@
  * @brief Encoder reading task using TIM4 hardware encoder mode
  *
  * Configures TIM4 for quadrature encoder counting on PB6/PB7.
- * TIM4 is 16-bit (wraps at 65535); position sign-extended to int32_t.
+ * TIM4 is 16-bit (wraps at 65535); accumulated to int64_t in software.
  * Monitors PC4 (EZ) for index pulse via EXTI.
  * Priority: Medium (tskIDLE_PRIORITY + 2)
  */
@@ -26,10 +26,12 @@ constexpr TickType_t ENCODER_SAMPLE_PERIOD_MS = 10; // 100 Hz sampling
  * @brief Encoder state snapshot
  */
 struct EncoderState {
-  int32_t count;      // Current encoder count (from TIM2->CNT)
-  int32_t velocity;   // Calculated velocity (counts/sec)
-  bool indexSeen;     // Index pulse seen since last clear
-  uint32_t indexTick; // Tick when index was last seen
+  int64_t count;          // Accumulated encoder count (64-bit, no wrap)
+  int32_t velocity;       // Calculated velocity (counts/sec)
+  bool indexSeen;         // Index pulse seen since last clear
+  uint32_t indexTick;     // Tick when index was last seen
+  int32_t revolutions;    // Revolution count from index pulses (signed)
+  uint32_t indexPeriodUs; // Microseconds between last two index pulses
 };
 
 /**
@@ -81,7 +83,7 @@ void EncoderTask_ClearIndexFlag();
 void EncoderTask_ResetCount();
 
 /**
- * @brief Index pulse ISR handler (call from EXTI4_IRQHandler)
+ * @brief Index pulse ISR handler (call from EXTI9_5_IRQHandler)
  *
  * Sets indexSeen flag and records tick time.
  */

@@ -108,6 +108,11 @@ struct MotorDebugInfo {
     uint16_t decel;       // DEC register
     uint16_t maxSpeed;    // MAX_SPEED register
     int32_t absPos;       // ABS_POS register
+    uint8_t ocdTh;        // OCD_TH register (readback from chip)
+    uint8_t stallTh;      // STALL_TH register (readback from chip)
+    uint16_t config;      // CONFIG register
+    uint8_t alarmEn;      // ALARM_EN register
+    uint16_t fsSpd;       // FS_SPD register
 };
 
 /**

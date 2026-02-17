@@ -146,12 +146,11 @@ namespace Encoder {
     static constexpr uint8_t EB_PIN = 7;
     static constexpr uint8_t EB_AF = 2;          // AF2 for TIM4
 
-    // Index pulse - PC4 (GPIO input, EXTI4 for interrupt)
-    // Note: PC4 is not TIM2-capable, use EXTI for index detection
+    // Index pulse - PC9 (GPIO input, EXTI9 for interrupt)
     static GPIO_TypeDef* const EZ_PORT = GPIOC;
-    static constexpr uint8_t EZ_PIN = 4;
-    static constexpr uint8_t EZ_EXTI_LINE = 4;
-    static constexpr IRQn_Type EZ_EXTI_IRQn = EXTI4_IRQn;
+    static constexpr uint8_t EZ_PIN = 9;
+    static constexpr uint8_t EZ_EXTI_LINE = 9;
+    static constexpr IRQn_Type EZ_EXTI_IRQn = EXTI9_5_IRQn;
 
     // Configuration pins (directly from board directly from board directly from board from encoder module directly from board)
     static GPIO_TypeDef* const NG_PORT = GPIOC;  // nG (active low config)

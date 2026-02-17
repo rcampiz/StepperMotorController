@@ -9,12 +9,15 @@
 #include "comms/command_parser.hpp"
 #include "comms/telemetry.hpp"
 #include "services/command_queue.hpp"
+#include "services/config_service.hpp"
 #include "services/control_mode.hpp"
 #include "services/device_config.hpp"
+#include "services/motion_service.hpp"
 #include "services/motor_config.hpp"
+#include "services/safety_service.hpp"
 #include "services/tick_timer.hpp"
+#include "services/trace.hpp"
 #include "tasks/display_task.hpp"
-#include "tasks/comms_task.hpp"
 #include "tasks/encoder_task.hpp"
 #include "tasks/motor_task.hpp"
 #include "ui/ui_mode.hpp"
@@ -22,6 +25,24 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+// newlib-nano doesn't support %lld — manual int64_t to string
+static void i64toa(int64_t val, char* buf, size_t bufSize) {
+    if (bufSize == 0) return;
+    if (val == 0) { buf[0] = '0'; buf[1] = '\0'; return; }
+    char tmp[21];
+    int i = 0;
+    bool neg = (val < 0);
+    uint64_t uval = neg ? static_cast<uint64_t>(-val) : static_cast<uint64_t>(val);
+    while (uval > 0 && i < 20) {
+        tmp[i++] = '0' + static_cast<char>(uval % 10);
+        uval /= 10;
+    }
+    size_t j = 0;
+    if (neg && j < bufSize - 1) buf[j++] = '-';
+    while (i > 0 && j < bufSize - 1) buf[j++] = tmp[--i];
+    buf[j] = '\0';
+}
 
 namespace Comms {
 
@@ -146,21 +167,289 @@ ParsedCommand CommandParser::parse(const char *line) {
 }
 
 void CommandParser::dispatch(const ParsedCommand &cmd) {
+  TRACE_ENTRY("CMD:RX");
+
   // Store current command for JSON echo
   strncpy(m_currentCmd, cmd.cmd, sizeof(m_currentCmd) - 1);
   m_currentCmd[sizeof(m_currentCmd) - 1] = '\0';
 
-  // Response format commands (handle first for immediate effect)
-  if (strcmp(cmd.cmd, "SET_FORMAT") == 0) {
-    cmdSetFormat(cmd);
-    return;
-  } else if (strcmp(cmd.cmd, "GET_FORMAT") == 0) {
-    cmdGetFormat();
-    return;
+  // --- Two-level SCPI namespace dispatch ---
+  // Find first ':' to split prefix from suffix
+  const char *colon = strchr(cmd.cmd, ':');
+
+  if (colon != nullptr) {
+    // SCPI-style command with namespace prefix
+    char prefix[8] = {};
+    size_t prefixLen = static_cast<size_t>(colon - cmd.cmd);
+    if (prefixLen >= sizeof(prefix)) prefixLen = sizeof(prefix) - 1;
+    memcpy(prefix, cmd.cmd, prefixLen);
+    prefix[prefixLen] = '\0';
+
+    const char *suffix = colon + 1;  // everything after first ':'
+
+    if (strcmp(prefix, "MOT") == 0) {
+      dispatchMotion(suffix, cmd);
+    } else if (strcmp(prefix, "SYST") == 0) {
+      dispatchSystem(suffix, cmd);
+    } else if (strcmp(prefix, "SYNC") == 0) {
+      dispatchSync(suffix, cmd);
+    } else if (strcmp(prefix, "DIAG") == 0) {
+      dispatchDiag(suffix, cmd);
+    } else if (strcmp(prefix, "CTRL") == 0) {
+      dispatchCtrl(suffix, cmd);
+    } else if (strcmp(prefix, "DEV") == 0) {
+      dispatchDevice(suffix, cmd);
+    } else if (strcmp(prefix, "FMT") == 0) {
+      // FMT is a leaf — no suffix expected, but handle FMT:xxx just in case
+      respondErr("Unknown FMT command");
+    } else if (strcmp(prefix, "UI") == 0) {
+      dispatchUI(suffix, cmd);
+    } else if (strcmp(prefix, "DBG") == 0) {
+      dispatchDebug(suffix, cmd);
+    } else if (strcmp(prefix, "DRV") == 0) {
+      dispatchDriver(suffix, cmd);
+    } else {
+      respondErr("Unknown namespace prefix");
+    }
+  } else {
+    // No colon — could be *IDN?, FMT, FMT?, or a legacy flat command
+    if (strcmp(cmd.cmd, "*IDN?") == 0) {
+      cmdVersion();
+    } else if (strcmp(cmd.cmd, "FMT") == 0) {
+      cmdSetFormat(cmd);
+    } else if (strcmp(cmd.cmd, "FMT?") == 0) {
+      cmdGetFormat();
+    } else {
+      dispatchLegacy(cmd);
+    }
   }
 
+  TRACE_EXIT("CMD:RX");
+}
+
+// ============================================================================
+// SCPI Namespace Dispatch Handlers
+// ============================================================================
+
+// --- MOT: Motion commands ---
+void CommandParser::dispatchMotion(const char *suffix, const ParsedCommand &cmd) {
+  // MOT:MOVE, MOT:GOTO, MOT:RUN, MOT:STOP, MOT:EN, MOT:DIS, MOT:HOME, MOT:ZERO
+  if (strcmp(suffix, "MOVE") == 0) {
+    cmdMove(cmd);
+  } else if (strcmp(suffix, "GOTO") == 0) {
+    cmdGoTo(cmd);
+  } else if (strcmp(suffix, "RUN") == 0) {
+    cmdRun(cmd);
+  } else if (strcmp(suffix, "STOP") == 0) {
+    cmdStop(cmd);
+  } else if (strcmp(suffix, "EN") == 0) {
+    cmdEnable();
+  } else if (strcmp(suffix, "DIS") == 0) {
+    cmdDisable();
+  } else if (strcmp(suffix, "HOME") == 0) {
+    cmdHome();
+  } else if (strcmp(suffix, "ZERO") == 0) {
+    cmdZero();
+  }
+  // MOT:CFG:ACCEL, MOT:CFG:DECEL, MOT:CFG:MAXSPD (physical units — steps/s^2, steps/s)
+  else if (strcmp(suffix, "CFG:ACCEL") == 0) {
+    cmdAccelPhysical(cmd);
+  } else if (strcmp(suffix, "CFG:DECEL") == 0) {
+    cmdDecelPhysical(cmd);
+  } else if (strcmp(suffix, "CFG:MAXSPD") == 0) {
+    cmdMaxSpdPhysical(cmd);
+  } else {
+    respondErr("Unknown MOT command");
+  }
+}
+
+// --- SYST: System commands ---
+void CommandParser::dispatchSystem(const char *suffix, const ParsedCommand &cmd) {
+  // SYST:ESTOP
+  if (strcmp(suffix, "ESTOP") == 0) {
+    cmdEstop();
+  }
+  // SYST:FAULT:CLEAR, SYST:FAULT:STAT?
+  else if (strncmp(suffix, "FAULT:", 6) == 0) {
+    const char *faultSuffix = suffix + 6;
+    if (strcmp(faultSuffix, "CLEAR") == 0) {
+      cmdClearFault();
+    } else if (strcmp(faultSuffix, "FORCE") == 0) {
+      cmdForceClearFault();
+    } else if (strcmp(faultSuffix, "STAT?") == 0) {
+      // TODO: dedicated fault status query (currently use GET_STATUS)
+      cmdGetStatus();
+    } else {
+      respondErr("Unknown SYST:FAULT command");
+    }
+  }
+  // SYST:TICK?
+  else if (strcmp(suffix, "TICK?") == 0) {
+    cmdGetTick();
+  }
+  // SYST:HB <seq> (heartbeat)
+  else if (strcmp(suffix, "HB") == 0) {
+    cmdHeartbeat(cmd);
+  }
+  // SYST:HB:TIMEOUT <ms>
+  else if (strcmp(suffix, "HB:TIMEOUT") == 0) {
+    cmdSetHeartbeat(cmd);
+  }
+  // SYST:HB:STAT?
+  else if (strcmp(suffix, "HB:STAT?") == 0) {
+    cmdGetHeartbeatStatus();
+  }
+  // SYST:VER?
+  else if (strcmp(suffix, "VER?") == 0) {
+    cmdVersion();
+  } else {
+    respondErr("Unknown SYST command");
+  }
+}
+
+// --- SYNC: Synchronization commands ---
+void CommandParser::dispatchSync(const char *suffix, const ParsedCommand &cmd) {
+  if (strcmp(suffix, "QUEUE") == 0) {
+    cmdQueue(cmd);
+  } else if (strcmp(suffix, "ARM") == 0) {
+    cmdArm();
+  } else if (strcmp(suffix, "START") == 0) {
+    cmdStart();
+  } else if (strcmp(suffix, "START:AT") == 0) {
+    cmdStartAt(cmd);
+  } else if (strcmp(suffix, "CLEAR") == 0) {
+    cmdClearQueue();
+  } else {
+    respondErr("Unknown SYNC command");
+  }
+}
+
+// --- DIAG: Diagnostics commands ---
+void CommandParser::dispatchDiag(const char *suffix, const ParsedCommand &cmd) {
+  if (strcmp(suffix, "PING") == 0) {
+    cmdPing(cmd);
+  } else if (strcmp(suffix, "STAT?") == 0) {
+    cmdGetStatus();
+  } else {
+    respondErr("Unknown DIAG command");
+  }
+}
+
+// --- CTRL: Control mode commands ---
+void CommandParser::dispatchCtrl(const char *suffix, const ParsedCommand &cmd) {
+  if (strcmp(suffix, "MODE?") == 0) {
+    cmdGetMode();
+  } else if (strcmp(suffix, "MODE") == 0) {
+    cmdSetMode(cmd);
+  } else if (strcmp(suffix, "ENC:STAT?") == 0) {
+    cmdGetEncoderStatus();
+  } else if (strcmp(suffix, "ENC?") == 0) {
+    cmdEncoder();
+  } else if (strcmp(suffix, "ENC:DBG?") == 0) {
+    cmdEncDebug();
+  } else {
+    respondErr("Unknown CTRL command");
+  }
+}
+
+// --- DEV: Device identity commands ---
+void CommandParser::dispatchDevice(const char *suffix, const ParsedCommand &cmd) {
+  if (strcmp(suffix, "ID?") == 0) {
+    cmdGetDeviceId();
+  } else if (strcmp(suffix, "ID") == 0) {
+    cmdSetDeviceId(cmd);
+  } else if (strcmp(suffix, "ROLE") == 0) {
+    cmdSetRole(cmd);
+  } else if (strcmp(suffix, "ROLE?") == 0) {
+    cmdGetDeviceId();  // returns ID + role
+  } else {
+    respondErr("Unknown DEV command");
+  }
+}
+
+// --- UI: Display / UI commands ---
+void CommandParser::dispatchUI(const char *suffix, const ParsedCommand &cmd) {
+  if (strcmp(suffix, "MODE") == 0) {
+    cmdUIMode(cmd);
+  } else if (strcmp(suffix, "MODE?") == 0) {
+    cmdUIGetMode();
+  }
+  // UI:DISP:* display rendering commands
+  else if (strncmp(suffix, "DISP:", 5) == 0) {
+    const char *dispSuffix = suffix + 5;
+    if (strcmp(dispSuffix, "CLEAR") == 0) {
+      cmdDispClear(cmd);
+    } else if (strcmp(dispSuffix, "TEXT") == 0) {
+      cmdDispText(cmd);
+    } else if (strcmp(dispSuffix, "RECT") == 0) {
+      cmdDispRect(cmd);
+    } else if (strcmp(dispSuffix, "LINE") == 0) {
+      cmdDispLine(cmd);
+    } else if (strcmp(dispSuffix, "BITMAP") == 0) {
+      cmdDispBitmap(cmd);
+    } else if (strcmp(dispSuffix, "BITMAP:B64") == 0) {
+      cmdDispBitmapB64(cmd);
+    } else {
+      respondErr("Unknown UI:DISP command");
+    }
+  } else {
+    respondErr("Unknown UI command");
+  }
+}
+
+// --- DBG: Debug commands (bringup diagnostics — not stable contract) ---
+void CommandParser::dispatchDebug(const char *suffix, const ParsedCommand &cmd) {
+  (void)cmd;
+  if (strcmp(suffix, "MOTOR") == 0) {
+    cmdMotorDebug();
+  } else if (strcmp(suffix, "TRACE:DUMP") == 0) {
+    cmdTraceDump();
+  } else if (strcmp(suffix, "TRACE:RESET") == 0) {
+    cmdTraceReset();
+  } else {
+    respondErr("Unknown DBG command");
+  }
+}
+
+// --- DRV: Driver configuration commands (powerSTEP01 registers) ---
+void CommandParser::dispatchDriver(const char *suffix, const ParsedCommand &cmd) {
+  if (strcmp(suffix, "CFG?") == 0) {
+    cmdMotorConfigShow();
+  } else if (strcmp(suffix, "CFG:SAVE") == 0) {
+    cmdMotorConfigSave();
+  } else if (strcmp(suffix, "CFG:LOAD") == 0) {
+    cmdMotorConfigLoad();
+  } else if (strcmp(suffix, "CFG:RESET") == 0) {
+    cmdMotorConfigReset();
+  } else if (strcmp(suffix, "CFG:KVAL") == 0) {
+    cmdMotorConfigKval(cmd);
+  } else if (strcmp(suffix, "CFG:OCD") == 0) {
+    cmdMotorConfigOcd(cmd);
+  } else if (strcmp(suffix, "CFG:STALL") == 0) {
+    cmdMotorConfigStall(cmd);
+  } else if (strcmp(suffix, "CFG:FAULT") == 0) {
+    cmdMotorConfigFault(cmd);
+  } else if (strcmp(suffix, "CFG:MOTION") == 0) {
+    cmdMotorConfigMotion(cmd);
+  } else if (strcmp(suffix, "CFG:APPLY") == 0) {
+    cmdMotorConfigApply();
+  } else {
+    respondErr("Unknown DRV command");
+  }
+}
+
+// ============================================================================
+// Legacy flat-command dispatch (backward compatibility)
+// ============================================================================
+void CommandParser::dispatchLegacy(const ParsedCommand &cmd) {
+  // Response format commands
+  if (strcmp(cmd.cmd, "SET_FORMAT") == 0) {
+    cmdSetFormat(cmd);
+  } else if (strcmp(cmd.cmd, "GET_FORMAT") == 0) {
+    cmdGetFormat();
+  }
   // Motion commands
-  if (strcmp(cmd.cmd, "MOVE") == 0) {
+  else if (strcmp(cmd.cmd, "MOVE") == 0) {
     cmdMove(cmd);
   } else if (strcmp(cmd.cmd, "GOTO") == 0) {
     cmdGoTo(cmd);
@@ -195,6 +484,11 @@ void CommandParser::dispatch(const ParsedCommand &cmd) {
   } else if (strcmp(cmd.cmd, "CLEAR_QUEUE") == 0) {
     cmdClearQueue();
   }
+  // Motor driver reinit (power-cycle recovery)
+  else if (strcmp(cmd.cmd, "MOTOR_REINIT") == 0) {
+    Tasks::MotorTask_Reinit();
+    respondOk("Motor driver reinitialized and config applied");
+  }
   // Timing/diagnostics commands
   else if (strcmp(cmd.cmd, "PING") == 0) {
     cmdPing(cmd);
@@ -204,6 +498,8 @@ void CommandParser::dispatch(const ParsedCommand &cmd) {
     cmdGetStatus();
   } else if (strcmp(cmd.cmd, "CLEAR_FAULT") == 0) {
     cmdClearFault();
+  } else if (strcmp(cmd.cmd, "FORCE_CLEAR_FAULT") == 0) {
+    cmdForceClearFault();
   }
   // Heartbeat commands
   else if (strcmp(cmd.cmd, "HEARTBEAT") == 0) {
@@ -734,6 +1030,8 @@ void CommandParser::dispatch(const ParsedCommand &cmd) {
       if (!(status & 0x0002)) m_transport.println("  BUSY: command in progress");
       if (!(status & 0x0200)) m_transport.println("  UVLO: undervoltage!");
       if (!(status & 0x2000)) m_transport.println("  OCD: overcurrent!");
+      if (!(status & 0x4000)) m_transport.println("  STEP_LOSS_A: stall bridge A!");
+      if (!(status & 0x8000)) m_transport.println("  STEP_LOSS_B: stall bridge B!");
       if (status & 0x0080) m_transport.println("  CMD_ERROR: bad command");
     }
 
@@ -1615,14 +1913,12 @@ void CommandParser::cmdMove(const ParsedCommand &cmd) {
     return;
   }
 
-  Tasks::MotorCommand motorCmd = {};
-  motorCmd.type = Tasks::MotorCmdType::Move;
-  motorCmd.param1 = (dir == 0) ? -steps : steps;
-
-  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+  int32_t signedSteps = (dir == 0) ? -steps : steps;
+  auto result = Services::Motion::move(signedSteps);
+  if (result == Services::Motion::Result::OK) {
     respondOk("");
   } else {
-    respondErr("Queue full");
+    respondErr(Services::Motion::resultToString(result));
   }
 }
 
@@ -1640,14 +1936,11 @@ void CommandParser::cmdGoTo(const ParsedCommand &cmd) {
     return;
   }
 
-  Tasks::MotorCommand motorCmd = {};
-  motorCmd.type = Tasks::MotorCmdType::GoTo;
-  motorCmd.param1 = position;
-
-  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+  auto result = Services::Motion::goTo(position);
+  if (result == Services::Motion::Result::OK) {
     respondOk("");
   } else {
-    respondErr("Queue full");
+    respondErr(Services::Motion::resultToString(result));
   }
 }
 
@@ -1672,20 +1965,11 @@ void CommandParser::cmdRun(const ParsedCommand &cmd) {
     return;
   }
 
-  // Convert steps/s to raw register value for powerSTEP01
-  // Formula: raw = steps_s * 1048576 / 15625
-  uint32_t speedRaw = static_cast<uint32_t>(
-      (static_cast<uint64_t>(speed) * 1048576ULL) / 15625ULL);
-
-  Tasks::MotorCommand motorCmd = {};
-  motorCmd.type = Tasks::MotorCmdType::Run;
-  motorCmd.param1 = static_cast<int32_t>(speedRaw);
-  motorCmd.param2 = dir;
-
-  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+  auto result = Services::Motion::run(static_cast<uint32_t>(speed), dir == 1);
+  if (result == Services::Motion::Result::OK) {
     respondOk("");
   } else {
-    respondErr("Queue full");
+    respondErr(Services::Motion::resultToString(result));
   }
 }
 
@@ -1693,19 +1977,16 @@ void CommandParser::cmdStop(const ParsedCommand &cmd) {
   // Optional "hard" argument
   bool hard = (cmd.argCount > 0 && strcmp(cmd.args[0], "hard") == 0);
 
-  Tasks::MotorCommand motorCmd = {};
-  motorCmd.type = hard ? Tasks::MotorCmdType::HardStop : Tasks::MotorCmdType::SoftStop;
-
-  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+  auto result = Services::Motion::stop(hard);
+  if (result == Services::Motion::Result::OK) {
     respondOk("");
   } else {
-    respondErr("Queue full");
+    respondErr(Services::Motion::resultToString(result));
   }
 }
 
 void CommandParser::cmdEstop() {
-  // Emergency stop - halt motion, disable outputs, set ESTOP state
-  Services::g_commandQueue.emergencyStop();
+  Services::Safety::emergencyStop();
   respondOk("ESTOP");
 }
 
@@ -1714,27 +1995,20 @@ void CommandParser::cmdEstop() {
 // ============================================================================
 
 void CommandParser::cmdEnable() {
-  // Motor outputs are enabled by default after initialization
-  // A GetStatus command can be used to verify motor state
-  Tasks::MotorCommand motorCmd = {};
-  motorCmd.type = Tasks::MotorCmdType::GetStatus;
-
-  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+  auto result = Services::Motion::enable();
+  if (result == Services::Motion::Result::OK) {
     respondOk("ENABLED");
   } else {
-    respondErr("Queue full");
+    respondErr(Services::Motion::resultToString(result));
   }
 }
 
 void CommandParser::cmdDisable() {
-  // Put motor outputs in high-impedance state (safe disable)
-  Tasks::MotorCommand motorCmd = {};
-  motorCmd.type = Tasks::MotorCmdType::SoftHiZ;
-
-  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+  auto result = Services::Motion::disable();
+  if (result == Services::Motion::Result::OK) {
     respondOk("HI-Z");
   } else {
-    respondErr("Queue full");
+    respondErr(Services::Motion::resultToString(result));
   }
 }
 
@@ -1746,20 +2020,17 @@ void CommandParser::cmdAccel(const ParsedCommand &cmd) {
 
   int32_t value = static_cast<int32_t>(atol(cmd.args[0]));
 
-  // Validate acceleration (12-bit register)
+  // Validate acceleration (12-bit register, raw units for legacy command)
   if (value < Limits::ACCEL_MIN || value > Limits::ACCEL_MAX) {
     respondErr("accel out of range (1-4095)");
     return;
   }
 
-  Tasks::MotorCommand motorCmd = {};
-  motorCmd.type = Tasks::MotorCmdType::SetAccel;
-  motorCmd.param1 = value;
-
-  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+  auto result = Services::Config::setAccelRaw(static_cast<uint16_t>(value));
+  if (result == Services::Config::Result::OK) {
     respondOk("");
   } else {
-    respondErr("Queue full");
+    respondErr(Services::Config::resultToString(result));
   }
 }
 
@@ -1771,20 +2042,17 @@ void CommandParser::cmdDecel(const ParsedCommand &cmd) {
 
   int32_t value = static_cast<int32_t>(atol(cmd.args[0]));
 
-  // Validate deceleration (12-bit register)
+  // Validate deceleration (12-bit register, raw units for legacy command)
   if (value < Limits::ACCEL_MIN || value > Limits::ACCEL_MAX) {
     respondErr("decel out of range (1-4095)");
     return;
   }
 
-  Tasks::MotorCommand motorCmd = {};
-  motorCmd.type = Tasks::MotorCmdType::SetDecel;
-  motorCmd.param1 = value;
-
-  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+  auto result = Services::Config::setDecelRaw(static_cast<uint16_t>(value));
+  if (result == Services::Config::Result::OK) {
     respondOk("");
   } else {
-    respondErr("Queue full");
+    respondErr(Services::Config::resultToString(result));
   }
 }
 
@@ -1796,20 +2064,87 @@ void CommandParser::cmdMaxSpd(const ParsedCommand &cmd) {
 
   int32_t value = static_cast<int32_t>(atol(cmd.args[0]));
 
-  // Validate max speed (10-bit register)
+  // Validate max speed (10-bit register, raw units for legacy command)
   if (value < Limits::MAXSPD_MIN || value > Limits::MAXSPD_MAX) {
     respondErr("maxspd out of range (1-1023)");
     return;
   }
 
-  Tasks::MotorCommand motorCmd = {};
-  motorCmd.type = Tasks::MotorCmdType::SetMaxSpeed;
-  motorCmd.param1 = value;
-
-  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+  auto result = Services::Config::setMaxSpeedRaw(static_cast<uint16_t>(value));
+  if (result == Services::Config::Result::OK) {
     respondOk("");
   } else {
-    respondErr("Queue full");
+    respondErr(Services::Config::resultToString(result));
+  }
+}
+
+// ============================================================================
+// Physical-unit configuration commands (SCPI: MOT:CFG:*)
+// ============================================================================
+
+void CommandParser::cmdAccelPhysical(const ParsedCommand &cmd) {
+  if (cmd.argCount < 1) {
+    respondErr("Usage: MOT:CFG:ACCEL <steps/s^2>");
+    return;
+  }
+
+  int32_t value = static_cast<int32_t>(atol(cmd.args[0]));
+  if (value <= 0) {
+    respondErr("accel must be positive");
+    return;
+  }
+
+  auto result = Services::Config::setAccelPhysical(static_cast<uint32_t>(value));
+  if (result == Services::Config::Result::OK) {
+    respondOk("");
+  } else if (result == Services::Config::Result::INVALID_PARAM) {
+    respondErr("accel out of range (1-59590 steps/s^2)");
+  } else {
+    respondErr(Services::Config::resultToString(result));
+  }
+}
+
+void CommandParser::cmdDecelPhysical(const ParsedCommand &cmd) {
+  if (cmd.argCount < 1) {
+    respondErr("Usage: MOT:CFG:DECEL <steps/s^2>");
+    return;
+  }
+
+  int32_t value = static_cast<int32_t>(atol(cmd.args[0]));
+  if (value <= 0) {
+    respondErr("decel must be positive");
+    return;
+  }
+
+  auto result = Services::Config::setDecelPhysical(static_cast<uint32_t>(value));
+  if (result == Services::Config::Result::OK) {
+    respondOk("");
+  } else if (result == Services::Config::Result::INVALID_PARAM) {
+    respondErr("decel out of range (1-59590 steps/s^2)");
+  } else {
+    respondErr(Services::Config::resultToString(result));
+  }
+}
+
+void CommandParser::cmdMaxSpdPhysical(const ParsedCommand &cmd) {
+  if (cmd.argCount < 1) {
+    respondErr("Usage: MOT:CFG:MAXSPD <steps/s>");
+    return;
+  }
+
+  int32_t value = static_cast<int32_t>(atol(cmd.args[0]));
+  if (value <= 0) {
+    respondErr("maxspd must be positive");
+    return;
+  }
+
+  auto result = Services::Config::setMaxSpeedPhysical(static_cast<uint32_t>(value));
+  if (result == Services::Config::Result::OK) {
+    respondOk("");
+  } else if (result == Services::Config::Result::INVALID_PARAM) {
+    respondErr("maxspd out of range (1-15609 steps/s)");
+  } else {
+    respondErr(Services::Config::resultToString(result));
   }
 }
 
@@ -2027,23 +2362,43 @@ void CommandParser::cmdGetStatus() {
     unsigned motStat = (sr >> 5) & 0x3;                 // bits 5-6
     bool cmdErr      = (sr & (1 << 7)) != 0;            // bit 7
     bool uvlo        = !(sr & (1 << 9));                // bit 9 (active low)
-    bool thermalSD   = !(sr & (1 << 11));               // bit 11 (active low)
-    bool thermalWarn = !(sr & (1 << 12));                // bit 12 (active low)
-    bool stallA      = !(sr & (1 << 13));               // bit 13 (active low)
-    bool stallB      = !(sr & (1 << 14));               // bit 14 (active low)
-    bool ocd         = !(sr & (1 << 15));               // bit 15 (active low)
-    bool anyError    = cmdErr || uvlo || thermalSD || thermalWarn
-                       || stallA || stallB || ocd;
+    // Bits 11-12: TH_STATUS 2-bit field
+    // 00=Normal, 01=Warning, 10=Bridge shutdown, 11=Device shutdown
+    uint8_t thStatus = (sr >> 11) & 0x3;
+    bool thermalWarn = (thStatus >= 1);
+    bool thermalSD   = (thStatus >= 2);
+    bool ocd         = !(sr & (1 << 13));               // bit 13 (active low)
+    bool stallA      = !(sr & (1 << 14));               // bit 14 (active low)
+    bool stallB      = !(sr & (1 << 15));               // bit 15 (active low)
+
+    // Filter faults against ALARM_EN config — only report faults the user
+    // has enabled. STATUS register always reflects raw hardware state, but
+    // disabled faults (e.g. OCD noise) should not cause GUI error state.
+    const auto& faultEn = Services::g_motorConfig.getFaultEnable();
+    bool ocdEn       = ocd && faultEn.ocd;
+    bool thermalSDEn = thermalSD && faultEn.thermalSD;
+    bool thermalWarnEn = thermalWarn && faultEn.thermalWarn;
+    bool uvloEn      = uvlo && faultEn.uvlo;
+    bool stallAEn    = stallA && faultEn.stallA && snap.motor.speed > 0;
+    bool stallBEn    = stallB && faultEn.stallB && snap.motor.speed > 0;
+    bool cmdErrEn    = cmdErr && faultEn.cmdErr;
+    bool anyError    = cmdErrEn || uvloEn || thermalSDEn || thermalWarnEn
+                       || stallAEn || stallBEn || ocdEn;
 
     // Get heartbeat watchdog status
-    bool hbEnabled;
-    uint32_t hbTimeout, hbLastSeq, hbRemaining;
-    bool hbTimedOut;
-    Tasks::CommsTask_GetHeartbeatStatus(
-        hbEnabled, hbTimeout, hbLastSeq, hbRemaining, hbTimedOut);
+    Services::Safety::HeartbeatStatus hbStatus;
+    Services::Safety::getHeartbeatStatus(hbStatus);
+    bool hbEnabled = hbStatus.enabled;
+    uint32_t hbTimeout = hbStatus.timeoutMs;
+    uint32_t hbRemaining = hbStatus.remainingMs;
+    bool hbTimedOut = hbStatus.timedOut;
 
     // Bypass respondJsonOk (256-byte buffer too small) — format full envelope
-    char buf[640];
+    // newlib-nano: no %lld — pre-format int64_t as string
+    char encCountStr[24];
+    i64toa(snap.encoder.count, encCountStr, sizeof(encCountStr));
+
+    char buf[700];
     snprintf(buf, sizeof(buf),
              "{\"status\":\"ok\",\"command\":\"GET_STATUS\",\"data\":"
              "{\"state\":\"%s\",\"tick\":%lu,\"queue_depth\":%u,"
@@ -2051,7 +2406,8 @@ void CommandParser::cmdGetStatus() {
              "\"direction\":%d,\"mot_status\":%u,\"status_reg\":\"%04X\","
              "\"cmd_err\":%s,\"ocd\":%s,\"thermal_sd\":%s,"
              "\"thermal_warn\":%s,\"uvlo\":%s,\"stall_a\":%s,\"stall_b\":%s},"
-             "\"encoder\":{\"count\":%ld,\"velocity\":%ld,\"index_seen\":%s},"
+             "\"encoder\":{\"count\":%s,\"velocity\":%ld,\"index_seen\":%s,"
+             "\"revolutions\":%ld,\"index_period_us\":%lu},"
              "\"heartbeat\":{\"enabled\":%s,\"timeout_ms\":%lu,"
              "\"remaining_ms\":%lu,\"timed_out\":%s},"
              "\"mode\":\"%s\",\"encoder_status\":\"%s\",\"error\":%s}}",
@@ -2063,16 +2419,18 @@ void CommandParser::cmdGetStatus() {
              snap.motor.busy ? "true" : "false",
              snap.motor.hiZ ? "true" : "false",
              direction, motStat, static_cast<unsigned>(sr),
-             cmdErr ? "true" : "false",
-             ocd ? "true" : "false",
-             thermalSD ? "true" : "false",
-             thermalWarn ? "true" : "false",
-             uvlo ? "true" : "false",
-             stallA ? "true" : "false",
-             stallB ? "true" : "false",
-             static_cast<long>(snap.encoder.count),
+             cmdErrEn ? "true" : "false",
+             ocdEn ? "true" : "false",
+             thermalSDEn ? "true" : "false",
+             thermalWarnEn ? "true" : "false",
+             uvloEn ? "true" : "false",
+             stallAEn ? "true" : "false",
+             stallBEn ? "true" : "false",
+             encCountStr,
              static_cast<long>(snap.encoder.velocity),
              snap.encoder.indexSeen ? "true" : "false",
+             static_cast<long>(snap.encoder.revolutions),
+             static_cast<unsigned long>(snap.encoder.indexPeriodUs),
              hbEnabled ? "true" : "false",
              static_cast<unsigned long>(hbTimeout),
              static_cast<unsigned long>(hbRemaining),
@@ -2095,12 +2453,23 @@ void CommandParser::cmdGetStatus() {
 }
 
 void CommandParser::cmdClearFault() {
-  Services::QueueResult result = Services::g_commandQueue.clearFault();
-  if (result == Services::QueueResult::OK) {
-    Tasks::CommsTask_ClearCommsTimeout();
+  char faultBuf[80] = {};
+  auto result = Services::Safety::clearFault(faultBuf, sizeof(faultBuf));
+  if (result == Services::Safety::Result::OK) {
+    respondOk("IDLE");
+  } else if (result == Services::Safety::Result::FAULT_ACTIVE) {
+    respondErr(faultBuf);
+  } else {
+    respondErr("Not in fault/estop state");
+  }
+}
+
+void CommandParser::cmdForceClearFault() {
+  auto result = Services::Safety::forceClearFault();
+  if (result == Services::Safety::Result::OK) {
     respondOk("IDLE");
   } else {
-    respondErr(Services::resultToString(result));
+    respondErr("Not in fault/estop state");
   }
 }
 
@@ -2114,13 +2483,10 @@ void CommandParser::cmdHeartbeat(const ParsedCommand &cmd) {
     seq = static_cast<uint32_t>(atol(cmd.args[0]));
   }
 
-  Tasks::CommsTask_HeartbeatReceived(seq);
+  Services::Safety::heartbeatReceived(seq);
 
-  bool enabled;
-  uint32_t timeout_ms, last_seq, remaining_ms;
-  bool timed_out;
-  Tasks::CommsTask_GetHeartbeatStatus(
-      enabled, timeout_ms, last_seq, remaining_ms, timed_out);
+  Services::Safety::HeartbeatStatus hb;
+  Services::Safety::getHeartbeatStatus(hb);
 
   uint32_t mcu_tick = Services::TickTimer_GetTick();
 
@@ -2130,14 +2496,14 @@ void CommandParser::cmdHeartbeat(const ParsedCommand &cmd) {
              "{\"seq\":%lu,\"mcu_tick\":%lu,\"remaining_ms\":%lu}",
              static_cast<unsigned long>(seq),
              static_cast<unsigned long>(mcu_tick),
-             static_cast<unsigned long>(remaining_ms));
+             static_cast<unsigned long>(hb.remainingMs));
     respondJsonOk("HEARTBEAT", buf);
   } else {
     char buf[64];
     snprintf(buf, sizeof(buf), "HEARTBEAT_ACK %lu %lu %lu",
              static_cast<unsigned long>(seq),
              static_cast<unsigned long>(mcu_tick),
-             static_cast<unsigned long>(remaining_ms));
+             static_cast<unsigned long>(hb.remainingMs));
     m_transport.println(buf);
   }
 }
@@ -2149,7 +2515,7 @@ void CommandParser::cmdSetHeartbeat(const ParsedCommand &cmd) {
   }
 
   uint32_t requested = static_cast<uint32_t>(atol(cmd.args[0]));
-  uint32_t accepted = Tasks::CommsTask_SetHeartbeatTimeout(requested);
+  uint32_t accepted = Services::Safety::setHeartbeatTimeout(requested);
 
   if (m_format == ResponseFormat::JSON) {
     char buf[96];
@@ -2168,31 +2534,28 @@ void CommandParser::cmdSetHeartbeat(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdGetHeartbeatStatus() {
-  bool enabled;
-  uint32_t timeout_ms, last_seq, remaining_ms;
-  bool timed_out;
-  Tasks::CommsTask_GetHeartbeatStatus(
-      enabled, timeout_ms, last_seq, remaining_ms, timed_out);
+  Services::Safety::HeartbeatStatus hb;
+  Services::Safety::getHeartbeatStatus(hb);
 
   if (m_format == ResponseFormat::JSON) {
     char buf[160];
     snprintf(buf, sizeof(buf),
              "{\"enabled\":%s,\"timeout_ms\":%lu,\"last_seq\":%lu,"
              "\"remaining_ms\":%lu,\"timed_out\":%s}",
-             enabled ? "true" : "false",
-             static_cast<unsigned long>(timeout_ms),
-             static_cast<unsigned long>(last_seq),
-             static_cast<unsigned long>(remaining_ms),
-             timed_out ? "true" : "false");
+             hb.enabled ? "true" : "false",
+             static_cast<unsigned long>(hb.timeoutMs),
+             static_cast<unsigned long>(hb.lastSeq),
+             static_cast<unsigned long>(hb.remainingMs),
+             hb.timedOut ? "true" : "false");
     respondJsonOk("GET_HEARTBEAT_STATUS", buf);
   } else {
     char buf[80];
     snprintf(buf, sizeof(buf), "HEARTBEAT_STATUS %s %lu %lu %lu %s",
-             enabled ? "ENABLED" : "DISABLED",
-             static_cast<unsigned long>(timeout_ms),
-             static_cast<unsigned long>(last_seq),
-             static_cast<unsigned long>(remaining_ms),
-             timed_out ? "TIMED_OUT" : "OK");
+             hb.enabled ? "ENABLED" : "DISABLED",
+             static_cast<unsigned long>(hb.timeoutMs),
+             static_cast<unsigned long>(hb.lastSeq),
+             static_cast<unsigned long>(hb.remainingMs),
+             hb.timedOut ? "TIMED_OUT" : "OK");
     m_transport.println(buf);
   }
 }
@@ -2273,24 +2636,20 @@ void CommandParser::cmdVersion() {
 }
 
 void CommandParser::cmdHome() {
-  Tasks::MotorCommand motorCmd = {};
-  motorCmd.type = Tasks::MotorCmdType::GoHome;
-
-  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+  auto result = Services::Motion::home();
+  if (result == Services::Motion::Result::OK) {
     respondOk("");
   } else {
-    respondErr("Queue full");
+    respondErr(Services::Motion::resultToString(result));
   }
 }
 
 void CommandParser::cmdZero() {
-  Tasks::MotorCommand motorCmd = {};
-  motorCmd.type = Tasks::MotorCmdType::ResetPos;
-
-  if (Tasks::MotorTask_SendCommand(motorCmd)) {
+  auto result = Services::Motion::zero();
+  if (result == Services::Motion::Result::OK) {
     respondOk("");
   } else {
-    respondErr("Queue full");
+    respondErr(Services::Motion::resultToString(result));
   }
 }
 
@@ -2304,21 +2663,31 @@ void CommandParser::cmdEncoder() {
   // Get encoder state
   Tasks::EncoderState state = Tasks::EncoderTask_GetState();
 
+  // newlib-nano: no %lld — pre-format int64_t as string
+  char countStr[24];
+  i64toa(state.count, countStr, sizeof(countStr));
+
   if (m_format == ResponseFormat::JSON) {
-    char buf[128];
+    char buf[192];
     snprintf(buf, sizeof(buf),
-             "{\"count\":%ld,\"velocity\":%ld,\"index_seen\":%s,\"index_tick\":%lu}",
-             static_cast<long>(state.count), static_cast<long>(state.velocity),
+             "{\"count\":%s,\"velocity\":%ld,\"index_seen\":%s,\"index_tick\":%lu,"
+             "\"revolutions\":%ld,\"index_period_us\":%lu}",
+             countStr,
+             static_cast<long>(state.velocity),
              state.indexSeen ? "true" : "false",
-             static_cast<unsigned long>(state.indexTick));
+             static_cast<unsigned long>(state.indexTick),
+             static_cast<long>(state.revolutions),
+             static_cast<unsigned long>(state.indexPeriodUs));
     respondJsonOk("ENC", buf);
   } else {
-    // ASCII format: OK count=<n> vel=<n> idx=<0|1> idx_tick=<n>
-    char buf[64];
-    snprintf(buf, sizeof(buf), "count=%ld vel=%ld idx=%d idx_tick=%lu",
-             static_cast<long>(state.count), static_cast<long>(state.velocity),
+    // ASCII format: OK count=<n> vel=<n> idx=<0|1> idx_tick=<n> rev=<n>
+    char buf[96];
+    snprintf(buf, sizeof(buf), "count=%s vel=%ld idx=%d idx_tick=%lu rev=%ld",
+             countStr,
+             static_cast<long>(state.velocity),
              state.indexSeen ? 1 : 0,
-             static_cast<unsigned long>(state.indexTick));
+             static_cast<unsigned long>(state.indexTick),
+             static_cast<long>(state.revolutions));
     respondOk(buf);
   }
 }
@@ -2813,28 +3182,40 @@ void CommandParser::cmdMotorDebug() {
     return;
   }
 
-  // Format status bits
+  // Format status bits (powerSTEP01 layout)
   const char* hiZ = ((info.status & 0x0001) != 0) ? "HiZ" : "Active";
   const char* busy = ((info.status & 0x0002) != 0) ? "Idle" : "BUSY";
   bool cmdErr = (info.status & 0x0080) != 0;
-  bool uvlo = (info.status & 0x0200) == 0;
-  bool thermSD = (info.status & 0x0800) == 0;
-  bool ocd = (info.status & 0x8000) == 0;
+  bool uvlo = (info.status & 0x0200) == 0;          // bit 9, active low
+  uint8_t thStatus = (info.status >> 11) & 0x3;      // bits 11-12: TH_STATUS
+  bool ocd = (info.status & 0x2000) == 0;             // bit 13, active low
+  bool stepLossA = (info.status & 0x4000) == 0;       // bit 14, active low
+  bool stepLossB = (info.status & 0x8000) == 0;       // bit 15, active low
 
   char buf[256];  // NOLINT(modernize-avoid-c-arrays)
   snprintf(buf, sizeof(buf),
-           "STATUS=%04X (%s %s%s%s%s%s)\n"
+           "STATUS=%04X (%s %s%s%s%s%s%s%s)\n"
            "KVAL: HOLD=%02X RUN=%02X ACC=%02X DEC=%02X\n"
            "ACC=%u DEC=%u MAXSPD=%u POS=%ld",
            (unsigned)info.status, hiZ, busy,
            cmdErr ? " CMDERR" : "",
            uvlo ? " UVLO" : "",
-           thermSD ? " THERMAL" : "",
+           thStatus >= 2 ? " TH_SD" : (thStatus >= 1 ? " TH_WARN" : ""),
            ocd ? " OCD" : "",
+           stepLossA ? " STALL_A" : "",
+           stepLossB ? " STALL_B" : "",
            (unsigned)info.kvalHold, (unsigned)info.kvalRun,
            (unsigned)info.kvalAcc, (unsigned)info.kvalDec,
            (unsigned)info.accel, (unsigned)info.decel,
            (unsigned)info.maxSpeed, (long)info.absPos);
+  m_transport.println(buf);
+
+  // Register readback (verify writes took effect)
+  snprintf(buf, sizeof(buf),
+           "CHIP REGS: OCD_TH=%02X STALL_TH=%02X CONFIG=%04X ALARM_EN=%02X FS_SPD=%03X",
+           (unsigned)info.ocdTh, (unsigned)info.stallTh,
+           (unsigned)info.config, (unsigned)info.alarmEn,
+           (unsigned)info.fsSpd);
   m_transport.println(buf);
 
   // GPIO diagnostics for SPI1 motor path
@@ -2853,6 +3234,34 @@ void CommandParser::cmdMotorDebug() {
            (unsigned)((Pins::IHM03A1::FLAG_PORT->IDR >> Pins::IHM03A1::FLAG_PIN) & 0x1),
            (unsigned)((Pins::IHM03A1::BUSY_PORT->IDR >> Pins::IHM03A1::BUSY_PIN) & 0x1));
   m_transport.println(buf);
+}
+
+// ============================================================================
+// Trace command handlers
+// ============================================================================
+
+void CommandParser::cmdTraceDump() {
+  size_t count = Trace::getCount();
+  char buf[80];
+  snprintf(buf, sizeof(buf), "TRACE: %u entries", static_cast<unsigned>(count));
+  m_transport.println(buf);
+
+  Trace::Entry e;
+  for (size_t i = 0; i < count; i++) {
+    if (!Trace::getEntry(i, e)) break;
+    snprintf(buf, sizeof(buf), "[%3u] T=%lu %c %s %lu",
+             static_cast<unsigned>(i),
+             static_cast<unsigned long>(e.tick),
+             (e.dir == Trace::ENTRY) ? '>' : '<',
+             e.tag,
+             static_cast<unsigned long>(e.arg0));
+    m_transport.println(buf);
+  }
+}
+
+void CommandParser::cmdTraceReset() {
+  Trace::reset();
+  respondOk("Trace cleared");
 }
 
 // ============================================================================
@@ -2951,14 +3360,15 @@ void CommandParser::cmdMotorConfigOcd(const ParsedCommand &cmd) {
 
 void CommandParser::cmdMotorConfigStall(const ParsedCommand &cmd) {
   // Usage: MCONFIG_STALL <threshold>
+  // powerSTEP01 STALL_TH is 5-bit (0-31), NOT 7-bit like L6470
   if (cmd.argCount < 1) {
-    respondErr("Usage: MCONFIG_STALL <threshold> (0-127)");
+    respondErr("Usage: MCONFIG_STALL <threshold> (0-31, ~31.25mV/step BEMF)");
     return;
   }
 
   uint8_t thresh = static_cast<uint8_t>(strtoul(cmd.args[0], nullptr, 10));
-  if (thresh > 127) {
-    respondErr("Stall threshold must be 0-127");
+  if (thresh > 31) {
+    respondErr("Stall threshold must be 0-31");
     return;
   }
 
@@ -3052,7 +3462,25 @@ void CommandParser::cmdMotorConfigApply() {
     respondErr("Failed to apply config to motor");
     return;
   }
-  respondOk("Config applied to motor driver");
+
+  // Persist to flash so config survives reboot
+  if (!Services::g_motorConfig.saveToFlash()) {
+    respondErr("Applied but flash write failed");
+    return;
+  }
+
+  // Readback chip registers to verify writes actually reached the powerSTEP01
+  Tasks::MotorDebugInfo info;
+  if (Tasks::MotorTask_GetDebugInfo(info)) {
+    char buf[128];
+    snprintf(buf, sizeof(buf),
+             "Config applied. CHIP: OCD_TH=%02X STALL_TH=%02X ALARM_EN=%02X CONFIG=%04X FS_SPD=%03X",
+             (unsigned)info.ocdTh, (unsigned)info.stallTh,
+             (unsigned)info.alarmEn, (unsigned)info.config, (unsigned)info.fsSpd);
+    respondOk(buf);
+  } else {
+    respondOk("Config applied and saved to flash");
+  }
 }
 
 } // namespace Comms

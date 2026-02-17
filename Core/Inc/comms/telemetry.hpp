@@ -31,10 +31,12 @@ struct MotorTelemetry {
  * @brief Encoder telemetry data
  */
 struct EncoderTelemetry {
-    int32_t count;           // Raw encoder count
+    int64_t count;           // Accumulated encoder count (64-bit)
     int32_t velocity;        // Counts per second
     bool indexSeen;          // Index pulse detected since last clear
     uint32_t indexTick;      // Tick count when index last seen
+    int32_t revolutions;     // Revolution count from index pulses (signed)
+    uint32_t indexPeriodUs;  // Microseconds between last two index pulses
 };
 
 /**

@@ -255,6 +255,13 @@ bool MotorTask_GetDebugInfo(MotorDebugInfo& info)
         info.absPos = static_cast<int32_t>(rawPos);
     }
 
+    // Readback protection/config registers for verification
+    info.ocdTh = static_cast<uint8_t>(s_motor->getParam(PowerSTEP01::Reg::OCD_TH));
+    info.stallTh = static_cast<uint8_t>(s_motor->getParam(PowerSTEP01::Reg::STALL_TH));
+    info.config = static_cast<uint16_t>(s_motor->getParam(PowerSTEP01::Reg::CONFIG));
+    info.alarmEn = static_cast<uint8_t>(s_motor->getParam(PowerSTEP01::Reg::ALARM_EN));
+    info.fsSpd = static_cast<uint16_t>(s_motor->getParam(PowerSTEP01::Reg::FS_SPD));
+
     return true;
 }
 
@@ -285,30 +292,34 @@ bool MotorTask_ApplyConfig()
 
     // Build ALARM_EN register based on fault enable flags
     // ALARM_EN bits: 0=OCD, 1=TH_SD, 2=TH_WRN, 3=UVLO, 4=UVLO_ADC, 5=STALL_A, 6=STALL_B, 7=CMD_ERR
-    uint8_t alarmEn = 0xFF;  // Start with all disabled (1=disabled in ALARM_EN)
+    // powerSTEP01: bit=1 enables alarm on FLAG pin, bit=0 disables
+    uint8_t alarmEn = 0x00;  // Start with all disabled
     if (cfg.faultEnable.ocd) {
-        alarmEn &= ~(1 << 0);
+        alarmEn |= (1 << 0);
     }
     if (cfg.faultEnable.thermalSD) {
-        alarmEn &= ~(1 << 1);
+        alarmEn |= (1 << 1);
     }
     if (cfg.faultEnable.thermalWarn) {
-        alarmEn &= ~(1 << 2);
+        alarmEn |= (1 << 2);
     }
     if (cfg.faultEnable.uvlo) {
-        alarmEn &= ~(1 << 3);
+        alarmEn |= (1 << 3);
     }
     // Bit 4 = UVLO_ADC - keep disabled (floating ADCIN causes false trips)
     if (cfg.faultEnable.stallA) {
-        alarmEn &= ~(1 << 5);
+        alarmEn |= (1 << 5);
     }
     if (cfg.faultEnable.stallB) {
-        alarmEn &= ~(1 << 6);
+        alarmEn |= (1 << 6);
     }
     if (cfg.faultEnable.cmdErr) {
-        alarmEn &= ~(1 << 7);
+        alarmEn |= (1 << 7);
     }
     s_motor->setParam(PowerSTEP01::Reg::ALARM_EN, alarmEn);
+
+    // Clear any latched fault bits from the register write sequence
+    s_motor->getStatus();
 
     return true;
 }

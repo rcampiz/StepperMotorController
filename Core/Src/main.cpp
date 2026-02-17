@@ -317,6 +317,14 @@ int main(void)
     SEGGER_SYSVIEW_Start();
 #endif
 
+    // Power-on safe defaults:
+    // - Motor state: IDLE (no motion)
+    // - Motor outputs: HiZ (high-impedance, bridges disabled)
+    // - Heartbeat watchdog: disabled until client sends SET_HEARTBEAT
+    // - ESTOP latch: inactive
+    // These defaults ensure the system is safe at power-on and requires
+    // explicit client action to enable motor outputs.
+
     EarlyDebug::println("Starting scheduler...");
     EarlyDebug::println("===================");
 

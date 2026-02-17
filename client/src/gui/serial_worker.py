@@ -25,6 +25,7 @@ class CommandTag(Enum):
     HEARTBEAT = auto()
     APPLY_KVAL = auto()
     APPLY_PARAMS = auto()
+    APPLY_PROTECTION = auto()
     CLEAR_FAULT = auto()
 
 
@@ -55,7 +56,7 @@ class SerialWorker(QObject):
         self._running = False
         self._command_queue = queue.Queue()
         self._poll_telemetry = False
-        self._poll_interval = 0.5  # seconds
+        self._poll_interval = 0.1  # seconds (100ms = 10 Hz graph updates)
 
         # Heartbeat state
         self._heartbeat_enabled = False
