@@ -1,10 +1,9 @@
 /**
  * @file spi_bus.hpp
- * @brief SPI bus wrapper for bit-banged SPI manager
+ * @brief SPI bus wrapper for ISPIBus implementations
  *
- * This provides the same interface as the old hardware SPI driver,
- * but uses the bit-banged SPI implementation from SPIManager.
- * Allows PowerSTEP01 and LCD drivers to work unchanged.
+ * Provides the PowerSTEP01/LCD driver interface on top of any ISPIBus
+ * implementation (hardware SPI or bit-banged SPI).
  */
 
 #ifndef SPI_BUS_HPP
@@ -14,17 +13,17 @@
 #include <stddef.h>
 #include "FreeRTOS.h"
 #include "semphr.h"
-#include "drivers/spi_bitbang.hpp"
+#include "drivers/ispi_bus.hpp"
 
 /**
- * @brief SPI bus wrapper that delegates to SPIBitBang
+ * @brief SPI bus wrapper that delegates to an ISPIBus implementation
  *
- * Provides the same interface as the old hardware SPI driver
- * for compatibility with existing device drivers.
+ * Provides a compatibility interface for existing device drivers
+ * (PowerSTEP01, LCD) that works with either hardware or bit-banged SPI.
  */
 class SPIBus {
 public:
-    // Prescaler kept for API compatibility (ignored - bit-bang uses cycle timing)
+    // Prescaler kept for API compatibility (ignored - backend handles timing)
     enum class Prescaler : uint8_t {
         Div2 = 0,
         Div4 = 1,
@@ -52,12 +51,12 @@ public:
     };
 
     /**
-     * @brief Construct SPIBus wrapper around SPIBitBang instance
+     * @brief Construct SPIBus wrapper around any ISPIBus implementation
      *
-     * @param bitbang Reference to bit-banged SPI instance
+     * @param bus Reference to ISPIBus (SPIBitBang or SPIHardware)
      */
-    explicit SPIBus(SPIBitBang& bitbang)
-        : m_spi(bitbang)
+    explicit SPIBus(ISPIBus& bus)
+        : m_spi(bus)
     {
     }
 
@@ -127,7 +126,7 @@ public:
     }
 
 private:
-    SPIBitBang& m_spi;
+    ISPIBus& m_spi;
 };
 
 #endif // SPI_BUS_HPP

@@ -33,11 +33,11 @@ void bringupTask(void* pvParameters) {
     usb->println("\r\n=== Hardware Bring-up ===\r\n");
 
     // -------------------------------------------------------------------------
-    // Get SPI buses from global manager (bit-banged)
+    // Get SPI buses from global manager
     // -------------------------------------------------------------------------
-    usb->println("[SPI] Using bit-banged SPI from g_spiManager...");
-    SPIBus spi1(*g_spiManager.getSPI1());  // SPI1: Motor + LCD
-    SPIBus spi2(*g_spiManager.getSPI2());  // SPI2: Flash
+    usb->println("[SPI] Using SPI from g_spiManager...");
+    SPIBus spi1(*g_spiManager.getSPI1());  // SPI1: Motor + LCD (hardware SPI)
+    SPIBus spi2(*g_spiManager.getSPI2());  // SPI2: Flash (bit-bang)
 
     // -------------------------------------------------------------------------
     // Initialize and test powerSTEP01

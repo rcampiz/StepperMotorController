@@ -34,9 +34,9 @@ bool MotorTask_Init()
         return false;
     }
 
-    // Create SPIBus wrapper around the bit-banged SPI1 from manager
+    // Create SPIBus wrapper around SPI1 from manager
     // Motor driver (powerSTEP01) uses SPI1 with Mode3
-    SPIBitBang* spi1 = g_spiManager.getSPI1();
+    ISPIBus* spi1 = g_spiManager.getSPI1();
     if (spi1 == nullptr) {
         return false;
     }

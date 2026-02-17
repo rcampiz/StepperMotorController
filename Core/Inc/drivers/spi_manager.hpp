@@ -7,7 +7,7 @@
  *   - SPI2: NOR Flash only
  *
  * All transactions are atomic - complete read/write finishes before
- * mutex is released. Uses bit-banged SPI for debugging flexibility.
+ * mutex is released. SPI1 uses hardware peripheral, SPI2 uses bit-bang.
  */
 
 #ifndef SPI_MANAGER_HPP
@@ -21,6 +21,7 @@
 #include "semphr.h"
 #include "task.h"
 #include "stm32f401xe.h"
+#include "drivers/spi_hardware.hpp"
 #include "drivers/spi_bitbang.hpp"
 #include "board/board_pins.hpp"
 
@@ -118,7 +119,7 @@ struct SPITransaction {
  * @brief Unified SPI Manager
  *
  * Manages both SPI1 and SPI2 buses with proper mutex protection.
- * Each bus has its own bit-banged SPI instance and mutex.
+ * SPI1 uses hardware peripheral, SPI2 uses bit-bang.
  */
 class SPIManager {
 public:
@@ -132,16 +133,17 @@ public:
     /**
      * @brief Initialize the SPI manager
      *
-     * Creates bit-banged SPI instances for both buses.
+     * Creates hardware SPI for SPI1 and bit-banged SPI for SPI2.
      * Must be called before scheduler starts.
      *
-     * @param spi1ClockHz Target clock for SPI1 (default 1 MHz)
+     * @param spi1ClockHz Target clock for SPI1 (ignored — prescaler sets ~1.3 MHz)
      * @param spi2ClockHz Target clock for SPI2 (default 1 MHz)
      * @return true if successful
      */
     bool init(uint32_t spi1ClockHz = 1000000, uint32_t spi2ClockHz = 1000000) {
-        // Disable hardware SPI peripherals - we're using bit-bang
-        RCC->APB2ENR &= ~RCC_APB2ENR_SPI1EN;
+        (void)spi1ClockHz;  // Hardware SPI uses prescaler, not arbitrary Hz
+
+        // Disable SPI2 hardware — we're bit-banging SPI2
         RCC->APB1ENR &= ~RCC_APB1ENR_SPI2EN;
 
         // Create mutexes
@@ -157,16 +159,20 @@ public:
             return false;
         }
 
-        // Create bit-banged SPI instances
-        // SPI1: PA5 (SCK), PA6 (MISO), PA7 (MOSI)
-        m_spi1 = new SPIBitBang(
-            Pins::SPI1_Bus::PORT, Pins::SPI1_Bus::SCK_PIN,
-            Pins::SPI1_Bus::PORT, Pins::SPI1_Bus::MISO_PIN,
-            Pins::SPI1_Bus::PORT, Pins::SPI1_Bus::MOSI_PIN,
-            SPIMode::Mode3, spi1ClockHz
+        // SPI1: Hardware SPI peripheral on PA5 (SCK), PA6 (MISO), PA7 (MOSI)
+        // Prescaler 5 = /64 → 84 MHz / 64 = 1.3125 MHz
+        m_spi1 = new SPIHardware(
+            SPI1,
+            Pins::SPI1_Bus::PORT,
+            Pins::SPI1_Bus::SCK_PIN,
+            Pins::SPI1_Bus::MISO_PIN,
+            Pins::SPI1_Bus::MOSI_PIN,
+            Pins::SPI1_Bus::AF,
+            SPIMode::Mode3,
+            5  // BR = /64
         );
 
-        // SPI2: PB13 (SCK), PB14 (MISO), PB15 (MOSI)
+        // SPI2: Bit-banged on PB13 (SCK), PB14 (MISO), PB15 (MOSI)
         m_spi2 = new SPIBitBang(
             Pins::SPI2_Bus::PORT, Pins::SPI2_Bus::SCK_PIN,
             Pins::SPI2_Bus::PORT, Pins::SPI2_Bus::MISO_PIN,
@@ -202,7 +208,7 @@ public:
 
         uint8_t bus = getDeviceBus(txn.device);
         SemaphoreHandle_t mutex = (bus == 1) ? m_mutex1 : m_mutex2;
-        SPIBitBang* spi = (bus == 1) ? m_spi1 : m_spi2;
+        ISPIBus* spi = (bus == 1) ? m_spi1 : m_spi2;
 
         // Acquire bus mutex
         if (xSemaphoreTake(mutex, portMAX_DELAY) != pdTRUE) {
@@ -355,16 +361,16 @@ public:
     /**
      * @brief Get SPI1 instance for direct access (use with care)
      */
-    SPIBitBang* getSPI1() { return m_spi1; }
+    ISPIBus* getSPI1() { return m_spi1; }
 
     /**
      * @brief Get SPI2 instance for direct access (use with care)
      */
-    SPIBitBang* getSPI2() { return m_spi2; }
+    ISPIBus* getSPI2() { return m_spi2; }
 
 private:
-    SPIBitBang* m_spi1;
-    SPIBitBang* m_spi2;
+    ISPIBus* m_spi1;
+    ISPIBus* m_spi2;
     SemaphoreHandle_t m_mutex1;
     SemaphoreHandle_t m_mutex2;
     QueueHandle_t m_queue;

@@ -44,9 +44,9 @@ bool DisplayTask_Init()
         return false;
     }
 
-    // Create SPIBus wrapper around the bit-banged SPI1 from manager
+    // Create SPIBus wrapper around SPI1 from manager
     // LCD (ST7789) uses SPI1 with Mode0
-    SPIBitBang* spi1 = g_spiManager.getSPI1();
+    ISPIBus* spi1 = g_spiManager.getSPI1();
     if (spi1 == nullptr) {
         return false;
     }
