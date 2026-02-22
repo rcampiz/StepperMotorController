@@ -114,10 +114,10 @@ static const uint8_t FONT_5X7[][5] = {
 class LCD {
 public:
     static constexpr uint16_t WIDTH = 240;
-    static constexpr uint16_t HEIGHT = 240;
+    static constexpr uint16_t HEIGHT = 320;
 
-    // Row offset: 240x240 panel maps to rows 80-319 of the 320-row ST7789 RAM
-    static constexpr uint16_t ROW_OFFSET = 80;
+    // Row offset: GFX01M2 is 240x320, uses full ST7789 RAM (no offset)
+    static constexpr uint16_t ROW_OFFSET = 0;
 
     // Font dimensions
     static constexpr uint8_t CHAR_WIDTH = 6;   // 5 pixels + 1 spacing
@@ -150,12 +150,12 @@ public:
         delayMs(120);
 
         writeCmd(0x36);  // MADCTL
-        writeData(0x08); // BGR subpixel order for GFX01M2 panel
+        writeData(0x48); // MX (column mirror) + BGR subpixel order
 
         writeCmd(0x3A);  // Color mode
         writeData(0x55); // 16-bit RGB565
 
-        writeCmd(0x21);  // Inversion on (for correct colors)
+        writeCmd(0x21);  // Inversion on (required for IPS panel driving)
 
         writeCmd(0x29);  // Display on
         delayMs(20);
@@ -197,8 +197,10 @@ public:
     void fillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) {
         setWindow(x, y, x + w - 1, y + h - 1);
 
-        uint8_t hi = color >> 8;
-        uint8_t lo = color & 0xFF;
+        // Compensate for INVON (required for IPS panel, inverts pixel data)
+        uint16_t c = ~color;
+        uint8_t hi = c >> 8;
+        uint8_t lo = c & 0xFF;
 
         m_spi.lock();
         m_spi.setMode(SPIBus::Mode::Mode0);
@@ -218,24 +220,124 @@ public:
         if (x >= WIDTH || y >= HEIGHT) return;
         setWindow(x, y, x, y);
 
+        uint16_t c = ~color;  // INVON compensation
         m_spi.lock();
         m_spi.setMode(SPIBus::Mode::Mode0);
         csLow();
         dcHigh();
-        m_spi.transfer(color >> 8);
-        m_spi.transfer(color & 0xFF);
+        m_spi.transfer(c >> 8);
+        m_spi.transfer(c & 0xFF);
         csHigh();
         m_spi.unlock();
     }
 
-    void drawTestPattern() {
-        // Draw color bars
-        uint16_t barWidth = WIDTH / 8;
-        uint16_t colors[] = {WHITE, YELLOW, CYAN, GREEN, MAGENTA, RED, BLUE, BLACK};
+    /**
+     * @brief RGB565 gray from 8-bit intensity
+     */
+    static constexpr uint16_t rgb565Gray(uint8_t v) {
+        return (static_cast<uint16_t>(v >> 3) << 11)
+             | (static_cast<uint16_t>(v >> 2) << 5)
+             | (v >> 3);
+    }
 
-        for (int i = 0; i < 8; i++) {
-            fillRect(i * barWidth, 0, barWidth, HEIGHT, colors[i]);
+    /**
+     * @brief Comprehensive display diagnostic pattern
+     *
+     * Layout (240x320):
+     *   Rows   0-139  Color bars (SMPTE 7-bar)
+     *   Rows 140-159  Reverse castellations
+     *   Rows 160-179  Red channel gradient
+     *   Rows 180-199  Green channel gradient
+     *   Rows 200-219  Blue channel gradient
+     *   Rows 220-251  16-step grayscale ramp
+     *   Rows 252-283  Sharpness: checkerboard + 1px line pairs
+     *   Rows 284-319  Info text + PLUGE near-black patches
+     *   + 1px white border + center crosshair
+     */
+    void drawTestPattern() {
+        // --- Constants ---
+        constexpr uint16_t bw = WIDTH / 7;          // 34px per color bar
+        constexpr uint16_t bwLast = WIDTH - 6 * bw;  // last bar absorbs remainder
+        constexpr int gSteps = 16;
+        constexpr uint16_t gStepW = WIDTH / gSteps;  // 15px per gradient step
+
+        // === 1. SMPTE 75% color bars (0-139) ===
+        constexpr uint16_t s1H = 140;
+        const uint16_t s1[] = {WHITE, YELLOW, CYAN, GREEN, MAGENTA, RED, BLUE};
+        for (int i = 0; i < 7; i++) {
+            fillRect(i * bw, 0, (i == 6) ? bwLast : bw, s1H, s1[i]);
         }
+
+        // === 2. Reverse castellations (140-159) ===
+        constexpr uint16_t s2Y = 140, s2H = 20;
+        const uint16_t s2[] = {BLUE, BLACK, MAGENTA, BLACK, CYAN, BLACK, WHITE};
+        for (int i = 0; i < 7; i++) {
+            fillRect(i * bw, s2Y, (i == 6) ? bwLast : bw, s2H, s2[i]);
+        }
+
+        // === 3. Individual RGB channel gradients (160-219, 20px each) ===
+        constexpr uint16_t s3Y = 160, chanH = 20;
+
+        // Red gradient
+        for (int i = 0; i < gSteps; i++) {
+            uint16_t r = static_cast<uint16_t>(i * 31 / (gSteps - 1));
+            fillRect(i * gStepW, s3Y, gStepW, chanH, r << 11);
+        }
+        // Green gradient
+        for (int i = 0; i < gSteps; i++) {
+            uint16_t g = static_cast<uint16_t>(i * 63 / (gSteps - 1));
+            fillRect(i * gStepW, s3Y + chanH, gStepW, chanH, g << 5);
+        }
+        // Blue gradient
+        for (int i = 0; i < gSteps; i++) {
+            uint16_t b = static_cast<uint16_t>(i * 31 / (gSteps - 1));
+            fillRect(i * gStepW, s3Y + 2 * chanH, gStepW, chanH, b);
+        }
+
+        // === 4. 16-step grayscale ramp (220-251) ===
+        constexpr uint16_t s4Y = 220, s4H = 32;
+        for (int i = 0; i < gSteps; i++) {
+            uint8_t v = static_cast<uint8_t>(i * 255 / (gSteps - 1));
+            fillRect(i * gStepW, s4Y, gStepW, s4H, rgb565Gray(v));
+        }
+
+        // === 5. Sharpness test (252-283) ===
+        constexpr uint16_t s5Y = 252, s5H = 32;
+
+        // Left half: 8x8 checkerboard
+        for (uint16_t y = 0; y < s5H; y += 8) {
+            for (uint16_t x = 0; x < WIDTH / 2; x += 8) {
+                bool white = ((x / 8) + (y / 8)) % 2 == 0;
+                fillRect(x, s5Y + y, 8, 8, white ? WHITE : BLACK);
+            }
+        }
+        // Right half: alternating 1px horizontal lines
+        for (uint16_t y = 0; y < s5H; y++) {
+            fillRect(WIDTH / 2, s5Y + y, WIDTH / 2, 1, (y % 2) ? BLACK : WHITE);
+        }
+
+        // === 6. Info text + PLUGE (284-319) ===
+        constexpr uint16_t s6Y = 284, s6H = HEIGHT - s6Y;
+
+        fillRect(0, s6Y, WIDTH, s6H, BLACK);
+
+        drawString(4, s6Y + 4,  "240x320 ST7789 IPS", WHITE, BLACK);
+        drawString(4, s6Y + 14, "BGR INVON  SPI1 Mode0", WHITE, BLACK);
+        drawString(4, s6Y + 26, "X-NUCLEO-GFX01M2", GRAY, BLACK);
+
+        // PLUGE near-black calibration bars (right side)
+        constexpr uint16_t pX = 180, pW = 15;
+        fillRect(pX,          s6Y, pW, s6H, BLACK);           //  0%
+        fillRect(pX + pW,     s6Y, pW, s6H, rgb565Gray(13));  //  5%
+        fillRect(pX + 2 * pW, s6Y, pW, s6H, rgb565Gray(26));  // 10%
+        fillRect(pX + 3 * pW, s6Y, pW, s6H, WHITE);           // 100%
+
+        // === Geometry overlays ===
+        drawRect(0, 0, WIDTH, HEIGHT, WHITE);
+
+        constexpr uint16_t cx = WIDTH / 2, cy = HEIGHT / 2;
+        drawHLine(cx - 15, cy, 31, WHITE);
+        drawVLine(cx, cy - 15, 31, WHITE);
     }
 
     void drawHLine(uint16_t x, uint16_t y, uint16_t w, uint16_t color) {
@@ -424,7 +526,7 @@ public:
 
         for (uint16_t row = 0; row < drawH; row++) {
             for (uint16_t col = 0; col < drawW; col++) {
-                uint16_t pixel = data[(row * w) + col];
+                uint16_t pixel = ~data[(row * w) + col];  // INVON compensation
                 m_spi.transfer(pixel >> 8);
                 m_spi.transfer(pixel & 0xFF);
             }
@@ -457,11 +559,11 @@ public:
         csLow();
         dcHigh();
 
-        // Transfer raw bytes directly
+        // Transfer raw bytes with INVON compensation (invert each byte)
         size_t maxBytes = static_cast<size_t>(drawW) * drawH * 2;
         size_t transferLen = len < maxBytes ? len : maxBytes;
         for (size_t i = 0; i < transferLen; i++) {
-            m_spi.transfer(data[i]);
+            m_spi.transfer(~data[i]);
         }
 
         csHigh();
@@ -507,7 +609,7 @@ public:
             return;
         }
         for (size_t i = 0; i < len; i++) {
-            m_spi.transfer(data[i]);
+            m_spi.transfer(~data[i]);  // INVON compensation
         }
     }
 

@@ -62,8 +62,8 @@ bool DisplayTask_Init()
     }
     s_lcd->init();
 
-    // Simple test: solid red screen
-    s_lcd->fillScreen(LCD::RED);
+    // Startup: draw color bar test pattern
+    s_lcd->drawTestPattern();
 
     // Initialize joystick
     s_joystick = new Joystick();
