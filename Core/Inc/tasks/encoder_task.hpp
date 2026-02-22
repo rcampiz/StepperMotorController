@@ -83,6 +83,20 @@ void EncoderTask_ClearIndexFlag();
 void EncoderTask_ResetCount();
 
 /**
+ * @brief Set encoder velocity filter type and parameter
+ * @param type 0=NONE (raw), 1=EMA, 2=SMA
+ * @param param EMA: alpha (0-255, higher=smoother), SMA: window size (2-32)
+ */
+void EncoderTask_SetFilter(uint8_t type, uint8_t param);
+
+/**
+ * @brief Get current encoder velocity filter settings
+ * @param[out] type Current filter type (0=NONE, 1=EMA, 2=SMA)
+ * @param[out] param Current filter parameter
+ */
+void EncoderTask_GetFilter(uint8_t &type, uint8_t &param);
+
+/**
  * @brief Index pulse ISR handler (call from EXTI9_5_IRQHandler)
  *
  * Sets indexSeen flag and records tick time.

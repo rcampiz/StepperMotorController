@@ -2,12 +2,12 @@
  * @file joystick.hpp
  * @brief 5-way joystick driver for X-NUCLEO-GFX01M2
  *
- * Pin assignments (directly active low with internal pull-ups):
- *   KEY_LEFT   - PC7  (CN10 area, D9)
- *   KEY_CENTER - PB6  (CN10 area, D10)
- *   KEY_DOWN   - PC9  (CN10-1)
- *   KEY_RIGHT  - PC10 (CN7-1)
- *   KEY_UP     - PC12 (CN7-3)
+ * Pin assignments (active low with internal pull-ups):
+ *   KEY_LEFT   - PC5
+ *   KEY_CENTER - PA12
+ *   KEY_DOWN   - PB4
+ *   KEY_RIGHT  - PB0
+ *   KEY_UP     - PC0
  */
 
 #ifndef JOYSTICK_HPP
@@ -47,7 +47,7 @@ public:
         s.right  = !(Pins::Joystick::RIGHT_PORT->IDR  & (1 << Pins::Joystick::RIGHT_PIN));
         s.up     = !(Pins::Joystick::UP_PORT->IDR     & (1 << Pins::Joystick::UP_PIN));
         s.down   = !(Pins::Joystick::DOWN_PORT->IDR   & (1 << Pins::Joystick::DOWN_PIN));
-        s.center = false;  // PB6 reassigned to encoder EA
+        s.center = !(Pins::Joystick::CENTER_PORT->IDR & (1 << Pins::Joystick::CENTER_PIN));
         return s;
     }
 
@@ -65,7 +65,7 @@ public:
     bool right()  const { return !(Pins::Joystick::RIGHT_PORT->IDR  & (1 << Pins::Joystick::RIGHT_PIN)); }
     bool up()     const { return !(Pins::Joystick::UP_PORT->IDR     & (1 << Pins::Joystick::UP_PIN)); }
     bool down()   const { return !(Pins::Joystick::DOWN_PORT->IDR   & (1 << Pins::Joystick::DOWN_PIN)); }
-    bool center() const { return false; }  // PB6 reassigned to encoder EA
+    bool center() const { return !(Pins::Joystick::CENTER_PORT->IDR & (1 << Pins::Joystick::CENTER_PIN)); }
 
     const char* directionName(Direction d) const {
         switch (d) {
@@ -80,13 +80,13 @@ public:
 
 private:
     void initPins() {
-        RCC->AHB1ENR |= RCC_AHB1ENR_GPIOBEN | RCC_AHB1ENR_GPIOCEN;
+        RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_GPIOBEN | RCC_AHB1ENR_GPIOCEN;
 
         configureInput(Pins::Joystick::LEFT_PORT,   Pins::Joystick::LEFT_PIN);
         configureInput(Pins::Joystick::RIGHT_PORT,  Pins::Joystick::RIGHT_PIN);
         configureInput(Pins::Joystick::UP_PORT,     Pins::Joystick::UP_PIN);
         configureInput(Pins::Joystick::DOWN_PORT,   Pins::Joystick::DOWN_PIN);
-        // NOTE: CENTER (PB6) skipped — pin reassigned to encoder EA (TIM4_CH1)
+        configureInput(Pins::Joystick::CENTER_PORT, Pins::Joystick::CENTER_PIN);
     }
 
     void configureInput(GPIO_TypeDef* port, uint8_t pin) {

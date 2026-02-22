@@ -76,10 +76,15 @@ struct MotorConfig {
     // Fault enables
     FaultEnableFlags faultEnable;
     uint8_t faultAction;    // 0=HardStop, 1=HardHiZ, 2=SoftStop
-    uint8_t reserved4[2];
+    uint8_t stepMode;       // STEP_MODE[2:0]: 0=full, 1=half, ... 7=1/128
+    uint8_t reserved4;
+
+    // Encoder velocity filter (persisted across reboots)
+    uint8_t encFilterType;    // 0=NONE, 1=EMA, 2=SMA
+    uint8_t encFilterParam;   // EMA: alpha 0-255, SMA: window 2-32
 
     // Padding to 64 bytes
-    uint8_t reserved5[28];
+    uint8_t reserved5[26];
 
     uint32_t crc32;         // Data integrity check
 };
@@ -127,6 +132,9 @@ public:
     uint16_t getDeceleration() const { return m_config.deceleration; }
     uint16_t getMaxSpeed() const { return m_config.maxSpeed; }
     FaultEnableFlags getFaultEnable() const { return m_config.faultEnable; }
+    uint8_t getStepMode() const { return m_config.stepMode > 7 ? 7 : m_config.stepMode; }
+    uint8_t getEncFilterType() const { return m_config.encFilterType; }
+    uint8_t getEncFilterParam() const { return m_config.encFilterParam; }
 
     // Setters (modify RAM, call saveToFlash() to persist)
     void setKval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec);
@@ -135,6 +143,8 @@ public:
     void setMotionParams(uint16_t acc, uint16_t dec, uint16_t maxSpd);
     void setFaultEnable(FaultEnableFlags flags);
     void setFaultAction(uint8_t action);
+    void setStepMode(uint8_t mode);
+    void setEncFilter(uint8_t type, uint8_t param);
 
     /**
      * @brief Save current configuration to flash

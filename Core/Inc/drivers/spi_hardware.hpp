@@ -7,6 +7,9 @@
  *
  * Supports mode switching (Mode 0 for LCD, Mode 3 for powerSTEP01)
  * on the shared SPI1 bus.
+ *
+ * Locking is provided by an externally injected ILock.
+ * No RTOS headers appear in this file.
  */
 
 #ifndef SPI_HARDWARE_HPP
@@ -14,11 +17,9 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include "FreeRTOS.h"
-#include "semphr.h"
-#include "task.h"
 #include "stm32f401xe.h"
 #include "drivers/ispi_bus.hpp"
+#include "platform/ilock.hpp"
 
 /**
  * @brief Hardware SPI implementation using STM32 SPI peripheral
@@ -38,43 +39,33 @@ public:
      * @param mosiPin   Pin number for MOSI (0-15)
      * @param af        Alternate function number (5 for SPI1/SPI2 on F401)
      * @param mode      SPI mode (default Mode3 for powerSTEP01)
-     * @param prescaler BR[2:0] prescaler value (0=/2 .. 7=/256, default 5=/64 → ~1.3 MHz)
+     * @param prescaler BR[2:0] prescaler value (0=/2 .. 7=/256, default 5=/64)
+     * @param lock      External lock for bus arbitration
      */
     SPIHardware(SPI_TypeDef* spi,
                 GPIO_TypeDef* gpioPort, uint8_t sckPin, uint8_t misoPin, uint8_t mosiPin,
                 uint8_t af,
-                SPIMode mode = SPIMode::Mode3,
-                uint8_t prescaler = 5)
-        : m_spi(spi), m_mode(mode), m_mutex(nullptr)
+                SPIMode mode,
+                uint8_t prescaler,
+                ILock& lock)
+        : m_spi(spi), m_mode(mode), m_lock(lock)
     {
-        m_mutex = xSemaphoreCreateMutex();
-        configASSERT(m_mutex != nullptr);
-
         initGPIO(gpioPort, sckPin, misoPin, mosiPin, af);
         initSPI(prescaler);
     }
 
-    ~SPIHardware() {
-        if (m_mutex) {
-            vSemaphoreDelete(m_mutex);
-        }
-    }
-
     /**
-     * @brief Acquire bus lock with timeout
+     * @brief Acquire bus lock (blocks until available)
      */
-    bool lock(TickType_t timeout = portMAX_DELAY) override {
-        if (!m_mutex) return false;
-        return xSemaphoreTake(m_mutex, timeout) == pdTRUE;
+    void lock() override {
+        m_lock.acquire();
     }
 
     /**
      * @brief Release bus lock
      */
     void unlock() override {
-        if (m_mutex) {
-            xSemaphoreGive(m_mutex);
-        }
+        m_lock.release();
     }
 
     /**
@@ -143,7 +134,7 @@ public:
 private:
     SPI_TypeDef* m_spi;
     SPIMode m_mode;
-    SemaphoreHandle_t m_mutex;
+    ILock& m_lock;
 
     /**
      * @brief Configure GPIO pins for SPI alternate function
@@ -186,11 +177,12 @@ private:
      */
     void initSPI(uint8_t prescaler) {
         // Enable SPI clock
-        // Detect which SPI and enable appropriate clock
         if (m_spi == SPI1) {
             RCC->APB2ENR |= RCC_APB2ENR_SPI1EN;
         } else if (m_spi == SPI2) {
             RCC->APB1ENR |= RCC_APB1ENR_SPI2EN;
+        } else if (m_spi == SPI3) {
+            RCC->APB1ENR |= RCC_APB1ENR_SPI3EN;
         }
 
         // Reset and configure SPI
@@ -206,8 +198,6 @@ private:
         uint8_t mval = static_cast<uint8_t>(m_mode);
         if (mval & 2) cr1 |= SPI_CR1_CPOL;
         if (mval & 1) cr1 |= SPI_CR1_CPHA;
-
-        // DFF=0 (8-bit), LSBFIRST=0 (MSB first) — both default 0
 
         m_spi->CR1 = cr1;
 

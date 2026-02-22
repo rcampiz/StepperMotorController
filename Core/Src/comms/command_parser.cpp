@@ -9,6 +9,8 @@
 #include "comms/command_parser.hpp"
 #include "comms/telemetry.hpp"
 #include "services/command_queue.hpp"
+#include "services/event_service.hpp"
+#include "tasks/comms_task.hpp"
 #include "services/config_service.hpp"
 #include "services/control_mode.hpp"
 #include "services/device_config.hpp"
@@ -247,7 +249,7 @@ void CommandParser::dispatchMotion(const char *suffix, const ParsedCommand &cmd)
   } else if (strcmp(suffix, "DIS") == 0) {
     cmdDisable();
   } else if (strcmp(suffix, "HOME") == 0) {
-    cmdHome();
+    cmdHome(cmd);
   } else if (strcmp(suffix, "ZERO") == 0) {
     cmdZero();
   }
@@ -302,6 +304,22 @@ void CommandParser::dispatchSystem(const char *suffix, const ParsedCommand &cmd)
   // SYST:VER?
   else if (strcmp(suffix, "VER?") == 0) {
     cmdVersion();
+  }
+  // SYST:EVT:EN [mask]
+  else if (strcmp(suffix, "EVT:EN") == 0) {
+    cmdEventEnable(cmd);
+  }
+  // SYST:EVT:DIS
+  else if (strcmp(suffix, "EVT:DIS") == 0) {
+    cmdEventDisable();
+  }
+  // SYST:EVT:STAT?
+  else if (strcmp(suffix, "EVT:STAT?") == 0) {
+    cmdEventStatus();
+  }
+  // SYST:ZERO (combined motor + encoder zero)
+  else if (strcmp(suffix, "ZERO") == 0) {
+    cmdZeroAll();
   } else {
     respondErr("Unknown SYST command");
   }
@@ -345,8 +363,12 @@ void CommandParser::dispatchCtrl(const char *suffix, const ParsedCommand &cmd) {
     cmdGetEncoderStatus();
   } else if (strcmp(suffix, "ENC?") == 0) {
     cmdEncoder();
+  } else if (strcmp(suffix, "ENC:ZERO") == 0) {
+    cmdEncoderZero();
   } else if (strcmp(suffix, "ENC:DBG?") == 0) {
     cmdEncDebug();
+  } else if (strcmp(suffix, "ENC:FILT") == 0 || strcmp(suffix, "ENC:FILT?") == 0) {
+    cmdEncFilter(cmd);
   } else {
     respondErr("Unknown CTRL command");
   }
@@ -431,6 +453,8 @@ void CommandParser::dispatchDriver(const char *suffix, const ParsedCommand &cmd)
     cmdMotorConfigFault(cmd);
   } else if (strcmp(suffix, "CFG:MOTION") == 0) {
     cmdMotorConfigMotion(cmd);
+  } else if (strcmp(suffix, "CFG:STEPMODE") == 0) {
+    cmdMotorConfigStepMode(cmd);
   } else if (strcmp(suffix, "CFG:APPLY") == 0) {
     cmdMotorConfigApply();
   } else {
@@ -509,15 +533,29 @@ void CommandParser::dispatchLegacy(const ParsedCommand &cmd) {
   } else if (strcmp(cmd.cmd, "GET_HEARTBEAT_STATUS") == 0) {
     cmdGetHeartbeatStatus();
   }
+  // Event commands (legacy aliases)
+  else if (strcmp(cmd.cmd, "EVENT_ENABLE") == 0) {
+    cmdEventEnable(cmd);
+  } else if (strcmp(cmd.cmd, "EVENT_DISABLE") == 0) {
+    cmdEventDisable();
+  } else if (strcmp(cmd.cmd, "EVENT_STATUS") == 0) {
+    cmdEventStatus();
+  }
   // Utility commands
   else if (strcmp(cmd.cmd, "HELP") == 0 || strcmp(cmd.cmd, "?") == 0) {
     cmdHelp();
   } else if (strcmp(cmd.cmd, "VER") == 0 || strcmp(cmd.cmd, "VERSION") == 0) {
     cmdVersion();
   } else if (strcmp(cmd.cmd, "HOME") == 0) {
-    cmdHome();
+    cmdHome(cmd);
   } else if (strcmp(cmd.cmd, "ZERO") == 0) {
     cmdZero();
+  } else if (strcmp(cmd.cmd, "ENC_ZERO") == 0) {
+    cmdEncoderZero();
+  } else if (strcmp(cmd.cmd, "ZERO_ALL") == 0) {
+    cmdZeroAll();
+  } else if (strcmp(cmd.cmd, "ENC_FILTER") == 0) {
+    cmdEncFilter(cmd);
   } else if (strcmp(cmd.cmd, "ENCODER") == 0 || strcmp(cmd.cmd, "ENC") == 0) {
     cmdEncoder();
   } else if (strcmp(cmd.cmd, "ENC_DEBUG") == 0) {
@@ -589,6 +627,8 @@ void CommandParser::dispatchLegacy(const ParsedCommand &cmd) {
     cmdMotorConfigFault(cmd);
   } else if (strcmp(cmd.cmd, "MCONFIG_MOTION") == 0) {
     cmdMotorConfigMotion(cmd);
+  } else if (strcmp(cmd.cmd, "MCONFIG_STEPMODE") == 0) {
+    cmdMotorConfigStepMode(cmd);
   } else if (strcmp(cmd.cmd, "MCONFIG_APPLY") == 0) {
     cmdMotorConfigApply();
 
@@ -1914,7 +1954,19 @@ void CommandParser::cmdMove(const ParsedCommand &cmd) {
   }
 
   int32_t signedSteps = (dir == 0) ? -steps : steps;
-  auto result = Services::Motion::move(signedSteps);
+
+  // Optional speed override (steps/s) — temporarily sets MAX_SPEED for this move
+  uint32_t speedOverride = 0;
+  if (cmd.argCount >= 3) {
+    int32_t spd = static_cast<int32_t>(atol(cmd.args[2]));
+    if (spd < 1 || spd > Limits::SPEED_MAX) {
+      respondErr("speed out of range (1-15625 steps/s)");
+      return;
+    }
+    speedOverride = static_cast<uint32_t>(spd);
+  }
+
+  auto result = Services::Motion::move(signedSteps, speedOverride);
   if (result == Services::Motion::Result::OK) {
     respondOk("");
   } else {
@@ -1924,7 +1976,7 @@ void CommandParser::cmdMove(const ParsedCommand &cmd) {
 
 void CommandParser::cmdGoTo(const ParsedCommand &cmd) {
   if (cmd.argCount < 1) {
-    respondErr("Usage: GOTO <position>");
+    respondErr("Usage: GOTO <position> [speed_steps_s]");
     return;
   }
 
@@ -1936,7 +1988,18 @@ void CommandParser::cmdGoTo(const ParsedCommand &cmd) {
     return;
   }
 
-  auto result = Services::Motion::goTo(position);
+  // Optional speed override (steps/s) — temporarily sets MAX_SPEED for this move
+  uint32_t speedOverride = 0;
+  if (cmd.argCount >= 2) {
+    int32_t spd = static_cast<int32_t>(atol(cmd.args[1]));
+    if (spd < 1 || spd > Limits::SPEED_MAX) {
+      respondErr("speed out of range (1-15625 steps/s)");
+      return;
+    }
+    speedOverride = static_cast<uint32_t>(spd);
+  }
+
+  auto result = Services::Motion::goTo(position, speedOverride);
   if (result == Services::Motion::Result::OK) {
     respondOk("");
   } else {
@@ -2635,8 +2698,19 @@ void CommandParser::cmdVersion() {
   m_transport.println(buf);
 }
 
-void CommandParser::cmdHome() {
-  auto result = Services::Motion::home();
+void CommandParser::cmdHome(const ParsedCommand &cmd) {
+  // Optional speed override (steps/s) — temporarily sets MAX_SPEED for this move
+  uint32_t speedOverride = 0;
+  if (cmd.argCount >= 1) {
+    int32_t spd = static_cast<int32_t>(atol(cmd.args[0]));
+    if (spd < 1 || spd > Limits::SPEED_MAX) {
+      respondErr("speed out of range (1-15625 steps/s)");
+      return;
+    }
+    speedOverride = static_cast<uint32_t>(spd);
+  }
+
+  auto result = Services::Motion::home(speedOverride);
   if (result == Services::Motion::Result::OK) {
     respondOk("");
   } else {
@@ -2648,6 +2722,21 @@ void CommandParser::cmdZero() {
   auto result = Services::Motion::zero();
   if (result == Services::Motion::Result::OK) {
     respondOk("");
+  } else {
+    respondErr(Services::Motion::resultToString(result));
+  }
+}
+
+void CommandParser::cmdEncoderZero() {
+  Tasks::EncoderTask_ResetCount();
+  respondOk("ENCODER_ZEROED");
+}
+
+void CommandParser::cmdZeroAll() {
+  auto result = Services::Motion::zero();
+  Tasks::EncoderTask_ResetCount();
+  if (result == Services::Motion::Result::OK) {
+    respondOk("ALL_ZEROED");
   } else {
     respondErr(Services::Motion::resultToString(result));
   }
@@ -2710,6 +2799,91 @@ void CommandParser::cmdEncDebug() {
            static_cast<unsigned>((GPIOC->ODR >> 2) & 0x3),
            static_cast<unsigned>((GPIOC->IDR >> 4) & 0x1));
   m_transport.println(buf);
+}
+
+// Apply encoder filter and persist to flash
+static void applyAndPersistFilter(uint8_t type, uint8_t param) {
+  Tasks::EncoderTask_SetFilter(type, param);
+  Services::g_motorConfig.setEncFilter(type, param);
+  Services::g_motorConfig.saveToFlash();
+}
+
+void CommandParser::cmdEncFilter(const ParsedCommand &cmd) {
+  // Query mode: no arguments
+  if (cmd.argCount < 1) {
+    uint8_t type = 0, param = 0;
+    Tasks::EncoderTask_GetFilter(type, param);
+    char buf[64];
+    if (m_format == ResponseFormat::JSON) {
+      const char *typeName = (type == 1) ? "EMA" : (type == 2) ? "SMA" : "NONE";
+      snprintf(buf, sizeof(buf),
+               "{\"filter_type\":\"%s\",\"param\":%u}", typeName, (unsigned)param);
+      respondJsonOk(m_currentCmd, buf);
+    } else {
+      if (type == 1) {
+        snprintf(buf, sizeof(buf), "EMA alpha=%u", (unsigned)param);
+      } else if (type == 2) {
+        snprintf(buf, sizeof(buf), "SMA window=%u", (unsigned)param);
+      } else {
+        snprintf(buf, sizeof(buf), "NONE");
+      }
+      respondOk(buf);
+    }
+    return;
+  }
+
+  // Check if first arg is a filter type name
+  if (strcmp(cmd.args[0], "NONE") == 0) {
+    applyAndPersistFilter(0, 0);
+    respondOk("NONE");
+    return;
+  }
+
+  if (strcmp(cmd.args[0], "EMA") == 0) {
+    if (cmd.argCount < 2) {
+      respondErr("EMA requires alpha (0-255)");
+      return;
+    }
+    long val = strtol(cmd.args[1], nullptr, 10);
+    if (val < 0 || val > 255) {
+      respondErr("EMA alpha must be 0-255");
+      return;
+    }
+    applyAndPersistFilter(1, static_cast<uint8_t>(val));
+    char buf[48];
+    snprintf(buf, sizeof(buf), "EMA alpha=%u", (unsigned)val);
+    respondOk(buf);
+    return;
+  }
+
+  if (strcmp(cmd.args[0], "SMA") == 0) {
+    if (cmd.argCount < 2) {
+      respondErr("SMA requires window size (2-32)");
+      return;
+    }
+    long val = strtol(cmd.args[1], nullptr, 10);
+    if (val < 2 || val > 32) {
+      respondErr("SMA window must be 2-32");
+      return;
+    }
+    applyAndPersistFilter(2, static_cast<uint8_t>(val));
+    char buf[48];
+    snprintf(buf, sizeof(buf), "SMA window=%u", (unsigned)val);
+    respondOk(buf);
+    return;
+  }
+
+  // Legacy: bare number treated as EMA alpha (backward compatible)
+  long val = strtol(cmd.args[0], nullptr, 10);
+  if (val < 0 || val > 255) {
+    respondErr("Unknown filter type or alpha out of range (0-255)");
+    return;
+  }
+
+  Tasks::EncoderTask_SetFilter(1, static_cast<uint8_t>(val));
+  char buf[48];
+  snprintf(buf, sizeof(buf), "EMA alpha=%u", (unsigned)val);
+  respondOk(buf);
 }
 
 // ============================================================================
@@ -3279,7 +3453,8 @@ void CommandParser::cmdMotorConfigShow() {
            "OCD_TH=%02X STALL_TH=%02X\n"
            "ACC=%u DEC=%u MAXSPD=%u MINSPD=%u FS_SPD=%u\n"
            "Faults: OCD=%d TH_SD=%d TH_W=%d UVLO=%d STALL_A=%d STALL_B=%d CMD=%d\n"
-           "Action: %s",
+           "Action: %s\n"
+           "StepMode: %u (1/%u)",
            valid ? "(from flash)" : "(defaults)",
            (unsigned)cfg.kvalHold, (unsigned)cfg.kvalRun,
            (unsigned)cfg.kvalAcc, (unsigned)cfg.kvalDec,
@@ -3290,7 +3465,8 @@ void CommandParser::cmdMotorConfigShow() {
            cfg.faultEnable.thermalWarn, cfg.faultEnable.uvlo,
            cfg.faultEnable.stallA, cfg.faultEnable.stallB, cfg.faultEnable.cmdErr,
            cfg.faultAction == 0 ? "HardStop" :
-           cfg.faultAction == 1 ? "HardHiZ" : "SoftStop");
+           cfg.faultAction == 1 ? "HardHiZ" : "SoftStop",
+           (unsigned)(cfg.stepMode & 0x07), 1U << (cfg.stepMode & 0x07));
   m_transport.println(buf);
 }
 
@@ -3456,6 +3632,45 @@ void CommandParser::cmdMotorConfigMotion(const ParsedCommand &cmd) {
   respondOk(buf);
 }
 
+void CommandParser::cmdMotorConfigStepMode(const ParsedCommand &cmd) {
+  // Usage: MCONFIG_STEPMODE <mode>
+  // mode: 0=full, 1=half, 2=1/4, 3=1/8, 4=1/16, 5=1/32, 6=1/64, 7=1/128
+  // Also accepts microstep counts: 1,2,4,8,16,32,64,128
+  if (cmd.argCount < 1) {
+    respondErr("Usage: MCONFIG_STEPMODE <mode> (0-7 or 1/2/4/8/16/32/64/128)");
+    return;
+  }
+
+  unsigned long val = strtoul(cmd.args[0], nullptr, 10);
+  uint8_t mode;
+
+  // Values 0-7: raw register value (STEP_SEL field)
+  // Values 8,16,32,64,128: microstep denominator
+  if (val <= 7) {
+    mode = static_cast<uint8_t>(val);
+  } else if (val == 8) {
+    mode = 3;
+  } else if (val == 16) {
+    mode = 4;
+  } else if (val == 32) {
+    mode = 5;
+  } else if (val == 64) {
+    mode = 6;
+  } else if (val == 128) {
+    mode = 7;
+  } else {
+    respondErr("Invalid mode. Use 0-7 or microstep count (8/16/32/64/128)");
+    return;
+  }
+
+  Services::g_motorConfig.setStepMode(mode);
+
+  char buf[64];
+  snprintf(buf, sizeof(buf), "Step mode set: %u (1/%u microstep, not saved)",
+           (unsigned)mode, 1U << mode);
+  respondOk(buf);
+}
+
 void CommandParser::cmdMotorConfigApply() {
   // Apply current config to motor driver
   if (!Tasks::MotorTask_ApplyConfig()) {
@@ -3480,6 +3695,75 @@ void CommandParser::cmdMotorConfigApply() {
     respondOk(buf);
   } else {
     respondOk("Config applied and saved to flash");
+  }
+}
+
+// ============================================================================
+// Event command handlers
+// ============================================================================
+
+void CommandParser::cmdEventEnable(const ParsedCommand &cmd) {
+  // Parse optional mask argument (default: all events)
+  uint8_t mask = EVT_MASK_ALL;
+  if (cmd.argCount >= 1) {
+    char* endp = nullptr;
+    long val = strtol(cmd.args[0], &endp, 0);  // base 0: auto-detect dec/hex
+    if (endp == cmd.args[0] || val < 0 || val > 0xFF) {
+      respondErr("Invalid mask (0-255)");
+      return;
+    }
+    mask = static_cast<uint8_t>(val) & EVT_MASK_ALL;
+  }
+
+  // Read current motor status for snapshot-on-enable
+  Comms::TelemetrySnapshot snap = Comms::g_telemetry.getSnapshot();
+  uint16_t currentStatus = snap.motor.statusReg;
+
+  Services::Event::enable(mask, currentStatus);
+
+  if (m_format == ResponseFormat::JSON) {
+    char dataBuf[32];
+    snprintf(dataBuf, sizeof(dataBuf), "{\"mask\":%u}", static_cast<unsigned>(mask));
+    respondJsonOk(m_currentCmd, dataBuf);
+  } else {
+    char msg[32];
+    snprintf(msg, sizeof(msg), "mask=%u", static_cast<unsigned>(mask));
+    respondOk(msg);
+  }
+}
+
+void CommandParser::cmdEventDisable() {
+  Services::Event::disable();
+  respondOk("");
+}
+
+void CommandParser::cmdEventStatus() {
+  Services::Event::Stats st = Services::Event::getStats();
+  uint32_t lastSeq = Tasks::CommsTask_GetLastEventSeq();
+
+  if (m_format == ResponseFormat::JSON) {
+    char buf[192];
+    snprintf(buf, sizeof(buf),
+             "{\"mask\":%u,\"sent\":%lu,\"lost_critical\":%lu,\"lost_info\":%lu,"
+             "\"last_seq\":%lu,\"depth\":%u}",
+             static_cast<unsigned>(st.enableMask),
+             static_cast<unsigned long>(st.sent),
+             static_cast<unsigned long>(st.lostCritical),
+             static_cast<unsigned long>(st.lostInfo),
+             static_cast<unsigned long>(lastSeq),
+             static_cast<unsigned>(st.queueDepth));
+    respondJsonOk(m_currentCmd, buf);
+  } else {
+    char buf[128];
+    snprintf(buf, sizeof(buf),
+             "EVENT_STATUS mask=%u sent=%lu lost_critical=%lu lost_info=%lu last_seq=%lu depth=%u",
+             static_cast<unsigned>(st.enableMask),
+             static_cast<unsigned long>(st.sent),
+             static_cast<unsigned long>(st.lostCritical),
+             static_cast<unsigned long>(st.lostInfo),
+             static_cast<unsigned long>(lastSeq),
+             static_cast<unsigned>(st.queueDepth));
+    m_transport.println(buf);
   }
 }
 

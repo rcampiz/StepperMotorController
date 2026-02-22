@@ -224,31 +224,87 @@ class DriverPanel(QWidget):
         legend.setParentItem(pi)
         graph_tabs.addTab(self._kval_profile_plot, "Drive Profile")
 
-        # --- Tab 2: PWM Waveform ---
-        self._kval_pwm_plot = self._create_mini_plot()
-        self._kval_pwm_plot.setYRange(-5, 130)
-        self._kval_pwm_curve = self._kval_pwm_plot.plot(
+        # --- Tab 2: Coil Waveform (Phase A & B for CCW) ---
+        self._coil_layout = pg.GraphicsLayoutWidget()
+        self._coil_layout.setBackground('#1e1e1e')
+
+        # Phase A plot (top)
+        self._coil_a_plot = self._coil_layout.addPlot(row=0, col=0)
+        self._coil_a_plot.setMouseEnabled(x=False, y=False)
+        self._coil_a_plot.hideButtons()
+        self._coil_a_plot.setMenuEnabled(False)
+        self._coil_a_plot.setLabel('left', 'A', units=None,
+                                    **{'font-size': '9pt', 'color': '#ffcc00'})
+        self._coil_a_plot.getAxis('left').setWidth(28)
+        self._coil_a_plot.getAxis('left').setStyle(
+            tickFont=QFont("Consolas", 7), showValues=False)
+        self._coil_a_plot.getAxis('left').setPen('#555')
+        self._coil_a_plot.getAxis('bottom').setStyle(
+            tickFont=QFont("Consolas", 7))
+        self._coil_a_plot.getAxis('bottom').setPen('#555')
+        self._coil_a_plot.showGrid(x=False, y=True, alpha=0.15)
+        self._coil_a_curve = self._coil_a_plot.plot(
             pen=pg.mkPen(color='#ffcc00', width=1.5))
-        self._kval_pwm_fill = self._kval_pwm_plot.plot(
-            pen=pg.mkPen(None), brush=pg.mkBrush(255, 204, 0, 30), fillLevel=0)
-        self._kval_avg_curve = self._kval_pwm_plot.plot(
-            pen=pg.mkPen(color='#ff6600', width=2, style=Qt.DashLine))
-        self._kval_pwm_plot.addItem(
-            pg.InfiniteLine(pos=0, angle=0, pen=pg.mkPen('#333', width=1)))
-        self._kval_pwm_labels = []
-        self._kval_pwm_separators = []
+        self._coil_a_fill = self._coil_a_plot.plot(
+            pen=pg.mkPen(None), brush=pg.mkBrush(255, 204, 0, 25),
+            fillLevel=0)
+        # Zero line
+        self._coil_a_plot.addItem(
+            pg.InfiniteLine(pos=0, angle=0,
+                            pen=pg.mkPen('#444', width=1)))
+
+        # Phase B plot (bottom)
+        self._coil_b_plot = self._coil_layout.addPlot(row=1, col=0)
+        self._coil_b_plot.setMouseEnabled(x=False, y=False)
+        self._coil_b_plot.hideButtons()
+        self._coil_b_plot.setMenuEnabled(False)
+        self._coil_b_plot.setLabel('left', 'B', units=None,
+                                    **{'font-size': '9pt', 'color': '#3399ff'})
+        self._coil_b_plot.getAxis('left').setWidth(28)
+        self._coil_b_plot.getAxis('left').setStyle(
+            tickFont=QFont("Consolas", 7), showValues=False)
+        self._coil_b_plot.getAxis('left').setPen('#555')
+        self._coil_b_plot.getAxis('bottom').setStyle(
+            tickFont=QFont("Consolas", 7))
+        self._coil_b_plot.getAxis('bottom').setPen('#555')
+        self._coil_b_plot.showGrid(x=False, y=True, alpha=0.15)
+        self._coil_b_curve = self._coil_b_plot.plot(
+            pen=pg.mkPen(color='#3399ff', width=1.5))
+        self._coil_b_fill = self._coil_b_plot.plot(
+            pen=pg.mkPen(None), brush=pg.mkBrush(51, 153, 255, 25),
+            fillLevel=0)
+        self._coil_b_plot.addItem(
+            pg.InfiniteLine(pos=0, angle=0,
+                            pen=pg.mkPen('#444', width=1)))
+
+        # Link X axes so they scroll together
+        self._coil_b_plot.setXLink(self._coil_a_plot)
+
+        # Phase labels & separators (added to both plots)
+        self._coil_phase_labels_a = []
+        self._coil_phase_labels_b = []
+        self._coil_separators_a = []
+        self._coil_separators_b = []
         for text in ("HOLD", "ACC", "RUN", "DEC"):
-            lbl = pg.TextItem(text, color='#888', anchor=(0.5, 1))
-            self._kval_pwm_plot.addItem(lbl)
-            self._kval_pwm_labels.append(lbl)
+            la = pg.TextItem(text, color='#aaa', anchor=(0.5, 1))
+            la.setFont(QFont("Segoe UI", 8, QFont.Bold))
+            self._coil_a_plot.addItem(la)
+            self._coil_phase_labels_a.append(la)
+            lb = pg.TextItem(text, color='#aaa', anchor=(0.5, 1))
+            lb.setFont(QFont("Segoe UI", 8, QFont.Bold))
+            self._coil_b_plot.addItem(lb)
+            self._coil_phase_labels_b.append(lb)
         for _ in range(3):
-            sep = pg.InfiniteLine(pos=0, angle=90,
-                                  pen=pg.mkPen('#444', width=1, style=Qt.DotLine))
-            self._kval_pwm_plot.addItem(sep)
-            self._kval_pwm_separators.append(sep)
-        self._kval_avg_label = pg.TextItem("avg", color='#ff6600', anchor=(0, 0))
-        self._kval_pwm_plot.addItem(self._kval_avg_label)
-        graph_tabs.addTab(self._kval_pwm_plot, "PWM Waveform")
+            sa = pg.InfiniteLine(pos=0, angle=90,
+                                  pen=pg.mkPen('#555', width=1, style=Qt.DotLine))
+            self._coil_a_plot.addItem(sa)
+            self._coil_separators_a.append(sa)
+            sb = pg.InfiniteLine(pos=0, angle=90,
+                                  pen=pg.mkPen('#555', width=1, style=Qt.DotLine))
+            self._coil_b_plot.addItem(sb)
+            self._coil_separators_b.append(sb)
+
+        graph_tabs.addTab(self._coil_layout, "Coil Waveform")
 
         main_layout.addWidget(graph_tabs)
 
@@ -256,10 +312,10 @@ class DriverPanel(QWidget):
         for slider in (self._kval_hold_slider, self._kval_run_slider,
                         self._kval_acc_slider, self._kval_dec_slider):
             slider.valueChanged.connect(self._update_kval_profile)
-            slider.valueChanged.connect(self._update_kval_pwm)
+            slider.valueChanged.connect(self._update_coil_waveform)
 
         self._update_kval_profile()
-        self._update_kval_pwm()
+        self._update_coil_waveform()
 
         return group
 
@@ -418,59 +474,107 @@ class DriverPanel(QWidget):
         self._kval_profile_plot.setYRange(0, 115)
         self._kval_profile_plot.setXRange(0, t5 * 1.02)
 
-    def _update_kval_pwm(self):
-        """Redraw PWM waveform showing all 4 phases with average current."""
-        phases = [
-            ("HOLD", self._kval_hold_slider.value()),
-            ("ACC",  self._kval_acc_slider.value()),
-            ("RUN",  self._kval_run_slider.value()),
-            ("DEC",  self._kval_dec_slider.value()),
-        ]
+    def _update_coil_waveform(self, _value=None):
+        """Redraw Phase A/B rectangular waveforms for CCW full-step drive.
 
-        cycles_per_phase = 3
-        period = 5
-        phase_width = cycles_per_phase * period
-        total_width = phase_width * len(phases)
+        Both coils produce +/-KVAL square waves. Phase B leads Phase A
+        by 90 degrees (one quarter electrical cycle).
 
-        pwm_x, pwm_y = [], []
-        avg_x, avg_y = [], []
+        Full-step pattern per electrical cycle (CCW):
+          A: [+KVAL, -KVAL, -KVAL, +KVAL]
+          B: [+KVAL, +KVAL, -KVAL, -KVAL]
 
-        for pi, (name, duty) in enumerate(phases):
-            phase_start = pi * phase_width
-            phase_end = phase_start + phase_width
-            high_time = duty / 100.0 * period
+        Step period varies by phase: static HOLD, ramping ACC/DEC,
+        constant RUN.
+        """
+        kval_hold = self._kval_hold_slider.value()   # 0-100 %
+        kval_acc = self._kval_acc_slider.value()
+        kval_run = self._kval_run_slider.value()
+        kval_dec = self._kval_dec_slider.value()
 
-            avg_x.extend([phase_start, phase_end])
-            avg_y.extend([duty, duty])
+        # Full-step sign pattern per electrical cycle (CCW)
+        sign_a = [+1, -1, -1, +1]
+        sign_b = [+1, +1, -1, -1]
 
-            for c in range(cycles_per_phase):
-                t0 = phase_start + c * period
-                if duty <= 0:
-                    pwm_x.extend([t0, t0 + period])
-                    pwm_y.extend([0, 0])
-                elif duty >= 100:
-                    pwm_x.extend([t0, t0 + period])
-                    pwm_y.extend([100, 100])
-                else:
-                    pwm_x.extend([t0, t0, t0 + high_time, t0 + high_time])
-                    pwm_y.extend([0, 100, 100, 0])
-                    if c < cycles_per_phase - 1 or pi < len(phases) - 1:
-                        pwm_x.append(t0 + period)
-                        pwm_y.append(0)
+        a_x, a_y = [], []
+        b_x, b_y = [], []
+        phase_boundaries = []
+        phase_centers = []
+        t = 0.0
+        step_idx = 0  # running index into full-step pattern
 
-            cx = phase_start + phase_width / 2
-            self._kval_pwm_labels[pi].setPos(cx, 120)
+        def add_step(period, kval):
+            """Advance one full step and draw a constant segment."""
+            nonlocal t, step_idx
+            a_val = kval * sign_a[step_idx % 4]
+            b_val = kval * sign_b[step_idx % 4]
+            a_x.extend([t, t + period])
+            a_y.extend([a_val, a_val])
+            b_x.extend([t, t + period])
+            b_y.extend([b_val, b_val])
+            t += period
+            step_idx += 1
 
-        for si in range(3):
-            self._kval_pwm_separators[si].setValue((si + 1) * phase_width)
+        # --- HOLD: motor stationary, coils energized at fixed step ---
+        hold_start = t
+        hold_duration = 3.0
+        a_val = kval_hold * sign_a[step_idx % 4]
+        b_val = kval_hold * sign_b[step_idx % 4]
+        a_x.extend([t, t + hold_duration])
+        a_y.extend([a_val, a_val])
+        b_x.extend([t, t + hold_duration])
+        b_y.extend([b_val, b_val])
+        t += hold_duration
+        phase_centers.append((hold_start + t) / 2)
+        phase_boundaries.append(t)
 
-        self._kval_pwm_curve.setData(pwm_x, pwm_y)
-        self._kval_pwm_fill.setData(pwm_x, pwm_y)
-        self._kval_avg_curve.setData(avg_x, avg_y)
-        self._kval_avg_label.setPos(total_width - 10,
-                                     max(p[1] for p in phases) + 5)
-        self._kval_pwm_plot.setXRange(0, total_width)
-        self._kval_pwm_plot.setYRange(-5, 130)
+        # --- ACC: step period decreasing (speeding up) ---
+        acc_start = t
+        acc_steps = 12
+        for i in range(acc_steps):
+            frac = i / max(acc_steps - 1, 1)
+            period = 0.8 - 0.5 * frac   # 0.8 -> 0.3
+            add_step(period, kval_acc)
+        phase_centers.append((acc_start + t) / 2)
+        phase_boundaries.append(t)
+
+        # --- RUN: constant step period ---
+        run_start = t
+        run_steps = 16
+        for _ in range(run_steps):
+            add_step(0.3, kval_run)
+        phase_centers.append((run_start + t) / 2)
+        phase_boundaries.append(t)
+
+        # --- DEC: step period increasing (slowing down) ---
+        dec_start = t
+        dec_steps = 12
+        for i in range(dec_steps):
+            frac = i / max(dec_steps - 1, 1)
+            period = 0.3 + 0.5 * frac   # 0.3 -> 0.8
+            add_step(period, kval_dec)
+        phase_centers.append((dec_start + t) / 2)
+
+        # Update curves
+        self._coil_a_curve.setData(a_x, a_y)
+        self._coil_a_fill.setData(a_x, a_y)
+        self._coil_b_curve.setData(b_x, b_y)
+        self._coil_b_fill.setData(b_x, b_y)
+
+        # Y range
+        y_max = max(kval_hold, kval_acc, kval_run, kval_dec, 10)
+        y_lim = y_max * 1.15
+        self._coil_a_plot.setYRange(-y_lim, y_lim)
+        self._coil_b_plot.setYRange(-y_lim, y_lim)
+        self._coil_a_plot.setXRange(0, t)
+
+        # Phase labels & separators
+        for i, cx in enumerate(phase_centers):
+            self._coil_phase_labels_a[i].setPos(cx, y_lim * 0.92)
+            self._coil_phase_labels_b[i].setPos(cx, y_lim * 0.92)
+        for i, bx in enumerate(phase_boundaries):
+            self._coil_separators_a[i].setValue(bx)
+            self._coil_separators_b[i].setValue(bx)
 
     def _update_motion_profile(self):
         """Redraw the trapezoidal speed profile."""

@@ -16,8 +16,12 @@ from PySide6.QtWidgets import (
     QSlider,
     QGroupBox,
 )
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import Qt, Signal, Slot, QTimer
 from PySide6.QtGui import QFont
+import logging
+import time
+
+log = logging.getLogger("motor_panel")
 
 
 # State color mapping
@@ -62,11 +66,26 @@ class MotorControlPanel(QWidget):
     # Signal emitted when a command should be sent
     command_requested = Signal(str)
 
+    # Minimum jog duration (ms) — ensures each tap produces visible motion
+    # even if the button press/release is very quick.
+    # Set to 500ms to account for command queue delay (~100ms worst case)
+    # so the motor gets at least ~400ms of actual run time.
+    MIN_JOG_DURATION_MS = 500
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._motion_buttons = []  # Buttons disabled during FAULT/ESTOP
         self._motor_enabled = False  # Track Hi-Z state from telemetry
         self._is_fault = False
+
+        # Jog minimum-duration timer
+        self._jog_timer = QTimer(self)
+        self._jog_timer.setSingleShot(True)
+        self._jog_timer.timeout.connect(self._on_jog_timer_expired)
+        self._jog_release_pending = False
+        self._jog_active = False
+        self._jog_start_time = 0.0
+
         self._setup_ui()
 
     def _setup_ui(self):
@@ -339,18 +358,31 @@ class MotorControlPanel(QWidget):
         goto_row.addWidget(self._goto_btn)
         btn_col.addLayout(goto_row)
 
-        # Home / Zero row
+        # Home / Zero Motor row
         home_row = QHBoxLayout()
         home_row.addWidget(QLabel(""))  # spacer matching label width
         self._home_btn = QPushButton("Home")
         self._home_btn.setToolTip("Go to home position")
         self._home_btn.clicked.connect(self._on_home)
         home_row.addWidget(self._home_btn)
-        self._zero_btn = QPushButton("Zero")
-        self._zero_btn.setToolTip("Set current position as zero")
+        self._zero_btn = QPushButton("Zero Motor")
+        self._zero_btn.setToolTip("Reset motor ABS_POS to zero")
         self._zero_btn.clicked.connect(self._on_zero)
         home_row.addWidget(self._zero_btn)
         btn_col.addLayout(home_row)
+
+        # Zero Encoder / Zero All row
+        zero_row = QHBoxLayout()
+        zero_row.addWidget(QLabel(""))  # spacer matching label width
+        self._zero_enc_btn = QPushButton("Zero Encoder")
+        self._zero_enc_btn.setToolTip("Reset encoder count to zero")
+        self._zero_enc_btn.clicked.connect(self._on_zero_encoder)
+        zero_row.addWidget(self._zero_enc_btn)
+        self._zero_all_btn = QPushButton("Zero All")
+        self._zero_all_btn.setToolTip("Reset both motor position and encoder count")
+        self._zero_all_btn.clicked.connect(self._on_zero_all)
+        zero_row.addWidget(self._zero_all_btn)
+        btn_col.addLayout(zero_row)
 
         # Hold toggle button
         hold_row = QHBoxLayout()
@@ -369,6 +401,7 @@ class MotorControlPanel(QWidget):
             self._jog_ccw_btn, self._jog_cw_btn,
             self._move_ccw_btn, self._move_cw_btn,
             self._goto_btn, self._home_btn, self._zero_btn,
+            self._zero_enc_btn, self._zero_all_btn,
         ])
 
         return group
@@ -475,13 +508,53 @@ class MotorControlPanel(QWidget):
     # =========================================================================
 
     def _start_jog(self, direction: int):
-        """Start jogging in direction."""
+        """Start jogging in direction.
+
+        Uses a minimum duration timer to ensure each tap produces
+        visible motion even if the button press is very brief.
+        """
+        if self._jog_active:
+            log.debug("Jog already active — ignoring repeated press")
+            return
         speed = self._speed_spin.value()
+        self._jog_active = True
+        self._jog_release_pending = False
+        self._jog_start_time = time.monotonic()
+        log.debug("Jog START: RUN %d dir=%d (min %dms)",
+                  speed, direction, self.MIN_JOG_DURATION_MS)
         self.command_requested.emit(f"RUN {speed} {direction}")
+        self._jog_timer.start(self.MIN_JOG_DURATION_MS)
 
     def _stop_jog(self):
-        """Stop jogging."""
-        self.command_requested.emit("STOP")
+        """Stop jogging (on button release).
+
+        If the minimum jog duration hasn't elapsed, defer the STOP
+        until the timer fires. Otherwise send STOP immediately.
+        """
+        elapsed_ms = (time.monotonic() - self._jog_start_time) * 1000
+        if self._jog_timer.isActive():
+            # Button released before minimum time — defer STOP
+            self._jog_release_pending = True
+            log.debug("Jog release at %.0fms — deferred (timer has %dms left)",
+                      elapsed_ms, self._jog_timer.remainingTime())
+        else:
+            log.debug("Jog release at %.0fms — sending STOP now", elapsed_ms)
+            self._jog_active = False
+            self.command_requested.emit("STOP")
+
+    def _on_jog_timer_expired(self):
+        """Minimum jog duration elapsed."""
+        elapsed_ms = (time.monotonic() - self._jog_start_time) * 1000
+        if self._jog_release_pending:
+            # Button was already released — send deferred STOP
+            self._jog_release_pending = False
+            self._jog_active = False
+            log.debug("Jog timer expired at %.0fms — sending deferred STOP",
+                      elapsed_ms)
+            self.command_requested.emit("STOP")
+        else:
+            log.debug("Jog timer expired at %.0fms — button still held",
+                      elapsed_ms)
 
     @Slot()
     def _on_stop(self):
@@ -489,25 +562,47 @@ class MotorControlPanel(QWidget):
         self.command_requested.emit("STOP")
 
     def _on_move(self, direction: int):
-        """Execute relative move.  Speed governed by MAX SPD on Driver tab."""
+        """Execute relative move at the current speed fader value."""
+        speed = self._speed_spin.value()
         steps = self._move_steps.value()
-        self.command_requested.emit(f"MOVE {steps} {direction}")
+        if speed > 0:
+            self.command_requested.emit(f"MOVE {steps} {direction} {speed}")
+        else:
+            self.command_requested.emit(f"MOVE {steps} {direction}")
 
     @Slot()
     def _on_goto(self):
-        """Execute absolute move.  Speed governed by MAX SPD on Driver tab."""
+        """Execute absolute move at the current speed fader value."""
+        speed = self._speed_spin.value()
         pos = self._goto_pos.value()
-        self.command_requested.emit(f"GOTO {pos}")
+        if speed > 0:
+            self.command_requested.emit(f"GOTO {pos} {speed}")
+        else:
+            self.command_requested.emit(f"GOTO {pos}")
 
     @Slot()
     def _on_home(self):
-        """Go to home position.  Speed governed by MAX SPD on Driver tab."""
-        self.command_requested.emit("HOME")
+        """Go to home position at the current speed fader value."""
+        speed = self._speed_spin.value()
+        if speed > 0:
+            self.command_requested.emit(f"HOME {speed}")
+        else:
+            self.command_requested.emit("HOME")
 
     @Slot()
     def _on_zero(self):
-        """Set current position as zero."""
+        """Reset motor ABS_POS to zero."""
         self.command_requested.emit("ZERO")
+
+    @Slot()
+    def _on_zero_encoder(self):
+        """Reset encoder count to zero."""
+        self.command_requested.emit("ENC_ZERO")
+
+    @Slot()
+    def _on_zero_all(self):
+        """Reset both motor position and encoder count."""
+        self.command_requested.emit("ZERO_ALL")
 
     def _on_run(self, direction: int):
         """Start continuous run."""

@@ -39,6 +39,25 @@ static int s_posCount = 0;
 static int64_t s_accumulatedCount = 0;
 static uint16_t s_lastRawCount = 0;
 
+// Velocity filter — supports NONE, EMA, SMA
+enum class VelFilterType : uint8_t {
+    NONE = 0,
+    EMA  = 1,
+    SMA  = 2,
+};
+
+static VelFilterType s_filterType = VelFilterType::NONE;
+static uint8_t s_filterParam = 0;  // alpha for EMA, window for SMA
+
+// EMA state
+static int32_t s_filteredVelocity = 0;
+
+// SMA (Simple Moving Average) state
+static constexpr int SMA_MAX_WINDOW = 32;
+static int32_t s_smaBuf[SMA_MAX_WINDOW] = {};
+static int s_smaHead = 0;
+static int s_smaCount = 0;
+
 // Task handle for self-suspension
 static TaskHandle_t s_taskHandle = nullptr;
 
@@ -69,6 +88,37 @@ bool EncoderTask_Init()
     // Encoder ready
     Services::g_controlMode.setEncoderStatus(Services::EncoderStatus::READY);
     return true;
+}
+
+// Apply velocity filter (dispatches by type)
+static int32_t applyVelocityFilter(int32_t raw)
+{
+    switch (s_filterType) {
+    case VelFilterType::NONE:
+        s_filteredVelocity = raw;
+        break;
+    case VelFilterType::EMA:
+        if (s_filterParam == 0) {
+            s_filteredVelocity = raw;
+        } else {
+            int32_t weight = 256 - static_cast<int32_t>(s_filterParam);
+            s_filteredVelocity += (raw - s_filteredVelocity) * weight / 256;
+        }
+        break;
+    case VelFilterType::SMA: {
+        int window = static_cast<int>(s_filterParam);
+        if (window < 2) { window = 2; }
+        if (window > SMA_MAX_WINDOW) { window = SMA_MAX_WINDOW; }
+        s_smaBuf[s_smaHead] = raw;
+        s_smaHead = (s_smaHead + 1) % window;
+        if (s_smaCount < window) { s_smaCount++; }
+        int32_t sum = 0;
+        for (int i = 0; i < s_smaCount; i++) { sum += s_smaBuf[i]; }
+        s_filteredVelocity = sum / s_smaCount;
+        break;
+    }
+    }
+    return s_filteredVelocity;
 }
 
 void vEncoderTask(void* pvParameters)
@@ -121,6 +171,9 @@ void vEncoderTask(void* pvParameters)
             }
         }
 
+        // Apply velocity filter (NONE / EMA / SMA)
+        applyVelocityFilter(velocity);
+
         // Get index pulse status
         bool indexSeen = s_encoder.isIndexSeen();
         uint32_t indexTick = s_encoder.getIndexTick();
@@ -132,7 +185,7 @@ void vEncoderTask(void* pvParameters)
         // Update state (critical section for thread safety)
         taskENTER_CRITICAL();
         s_state.count = s_accumulatedCount;
-        s_state.velocity = velocity;
+        s_state.velocity = s_filteredVelocity;
         s_state.indexSeen = indexSeen;
         s_state.indexTick = indexTick;
         s_state.revolutions = revolutions;
@@ -142,7 +195,7 @@ void vEncoderTask(void* pvParameters)
         // Update telemetry
         Comms::EncoderTelemetry telem = {};
         telem.count = s_accumulatedCount;
-        telem.velocity = velocity;
+        telem.velocity = s_filteredVelocity;
         telem.indexSeen = indexSeen;
         telem.indexTick = indexTick;
         telem.revolutions = revolutions;
@@ -193,7 +246,27 @@ void EncoderTask_ResetCount()
     s_lastRawCount = 0;
     s_posHead = 0;
     s_posCount = 0;
+    s_filteredVelocity = 0;
+    // Reset SMA ring buffer
+    s_smaHead = 0;
+    s_smaCount = 0;
     taskEXIT_CRITICAL();
+}
+
+void EncoderTask_SetFilter(uint8_t type, uint8_t param)
+{
+    s_filterType = static_cast<VelFilterType>(type > 2 ? 0 : type);
+    s_filterParam = param;
+    // Reset filter state on type/param change
+    s_filteredVelocity = 0;
+    s_smaHead = 0;
+    s_smaCount = 0;
+}
+
+void EncoderTask_GetFilter(uint8_t &type, uint8_t &param)
+{
+    type = static_cast<uint8_t>(s_filterType);
+    param = s_filterParam;
 }
 
 void EncoderTask_IndexISR()

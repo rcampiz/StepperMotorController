@@ -12,6 +12,14 @@ from dataclasses import dataclass, field
 from transport.interface import ITransport, TransportError
 
 
+class FrameType(Enum):
+    """Classification of a received line from the device."""
+    RESPONSE = "RESPONSE"      # OK, ERROR, PONG, STATUS, JSON responses
+    EVENT = "EVENT"            # Async event (!FAULT, {"kind":"event",...})
+    ECHO = "ECHO"              # Command echo
+    TELEMETRY = "TELEMETRY"    # TELEM: or EVENT JOY lines
+
+
 class ResponseFormat(Enum):
     """Response format mode."""
     ASCII = "ASCII"
@@ -69,6 +77,7 @@ class MotorClient:
         self._format = ResponseFormat.ASCII
         self._timeout_ms = self.DEFAULT_TIMEOUT_MS
         self._stream_chunk = self.DEFAULT_STREAM_CHUNK
+        self._event_buffer: list[str] = []
 
     @property
     def transport(self) -> ITransport:
@@ -91,6 +100,81 @@ class MotorClient:
     def is_connected(self) -> bool:
         """Check if connected."""
         return self._transport.is_connected()
+
+    # -------------------------------------------------------------------------
+    # Frame classification and event-aware response reading
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _classify_line(line: str, sent_command: str = "") -> FrameType:
+        """
+        Single point of line classification (per protocol contract).
+
+        Classification order:
+          1. ECHO — if it exactly matches the command just sent
+          2. EVENT — if it starts with '!' (ASCII) or is JSON with "kind":"event"
+          3. TELEMETRY — if it starts with 'TELEM:' or 'EVENT JOY'
+          4. RESPONSE — everything else
+        """
+        stripped = line.strip()
+        # Echo detection
+        if sent_command and stripped == sent_command.strip():
+            return FrameType.ECHO
+        # Event detection
+        if stripped.startswith("!"):
+            return FrameType.EVENT
+        if stripped.startswith("{") and '"kind":"event"' in stripped:
+            return FrameType.EVENT
+        # Telemetry detection
+        if stripped.startswith("TELEM:") or stripped.startswith("EVENT JOY"):
+            return FrameType.TELEMETRY
+        # Everything else is a response
+        return FrameType.RESPONSE
+
+    def _recv_response(self, command: str, timeout_ms: int) -> Optional[str]:
+        """
+        Read lines until we get a RESPONSE, buffering events along the way.
+
+        Skips ECHO and TELEMETRY frames silently.
+        Buffers EVENT frames into _event_buffer.
+
+        Returns:
+            The first RESPONSE line, or None on timeout.
+        """
+        max_skip = 16  # Safety: don't loop forever on non-response lines
+        for _ in range(max_skip):
+            line = self._transport.recv_line(timeout_ms=timeout_ms)
+            if line is None:
+                return None
+            frame_type = self._classify_line(line, command)
+            if frame_type == FrameType.RESPONSE:
+                return line
+            elif frame_type == FrameType.EVENT:
+                self._event_buffer.append(line.strip())
+            # ECHO and TELEMETRY are silently skipped
+        return None  # Too many non-response lines
+
+    def pop_events(self) -> list[str]:
+        """Return and clear buffered event lines."""
+        events = self._event_buffer[:]
+        self._event_buffer.clear()
+        return events
+
+    def _drain_pending(self) -> None:
+        """
+        Non-blocking drain: read all pending lines, buffer events, discard rest.
+
+        Replaces destructive flush_input() at the protocol layer so that
+        async event frames arriving between commands are preserved.
+        Transport layer remains unchanged (flush_input still exists for
+        connection-time use).
+        """
+        while self._transport.available() > 0:
+            line = self._transport.recv_line(timeout_ms=10)
+            if line is None:
+                break
+            if self._classify_line(line) == FrameType.EVENT:
+                self._event_buffer.append(line.strip())
 
     def set_format(self, fmt: ResponseFormat) -> Response:
         """
@@ -135,22 +219,16 @@ class MotorClient:
 
         timeout = timeout_ms or self._timeout_ms
 
-        # Clear any pending input
-        self._transport.flush_input()
+        # Drain pending input, preserving any buffered events
+        self._drain_pending()
 
         # Send command
         self._transport.send_line(command)
 
-        # Read response
-        line = self._transport.recv_line(timeout_ms=timeout)
+        # Read response (skips echoes, telemetry; buffers events)
+        line = self._recv_response(command, timeout)
         if line is None:
             raise ProtocolError(f"No response to command: {command}")
-
-        # Skip command echo if present (firmware echoes typed characters)
-        if line.strip() == command.strip():
-            line = self._transport.recv_line(timeout_ms=timeout)
-            if line is None:
-                raise ProtocolError(f"No response to command: {command}")
 
         # Parse based on current format
         return self._parse_response(line, command)
@@ -180,27 +258,29 @@ class MotorClient:
 
         timeout = timeout_ms or self._timeout_ms
 
-        # Clear any pending input
-        self._transport.flush_input()
+        # Drain pending input, preserving any buffered events
+        self._drain_pending()
 
         # Send command
         self._transport.send_line(command)
 
-        # Collect all response lines
+        # Collect all response lines (skip echoes, telemetry; buffer events)
         lines = []
         short_timeout = min(250, timeout)  # Timeout for subsequent lines
 
         for i in range(max_lines):
             # Use full timeout for first line, shorter timeout for subsequent
-            line_timeout = timeout if i == 0 else short_timeout
+            line_timeout = timeout if len(lines) == 0 else short_timeout
             line = self._transport.recv_line(timeout_ms=line_timeout)
             if line is None:
                 break
-            stripped = line.strip()
-            # Skip command echo if present
-            if i == 0 and stripped == command:
+            frame_type = self._classify_line(line, command)
+            if frame_type == FrameType.ECHO or frame_type == FrameType.TELEMETRY:
                 continue
-            lines.append(stripped)
+            if frame_type == FrameType.EVENT:
+                self._event_buffer.append(line.strip())
+                continue
+            lines.append(line.strip())
 
         if not lines:
             raise ProtocolError(f"No response to command: {command}")
@@ -491,7 +571,7 @@ class MotorClient:
             raise TransportError("Not connected")
 
         timeout = timeout_ms or self._timeout_ms
-        self._transport.flush_input()
+        self._drain_pending()
 
         # Step 1: request streaming
         self._transport.send_line(f"DISP_BITMAP {x} {y} {w} {h}")

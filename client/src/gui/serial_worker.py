@@ -8,6 +8,7 @@ from PySide6.QtCore import QObject, QThread, Signal, Slot
 from typing import Optional
 from dataclasses import dataclass
 from enum import Enum, auto
+import json
 import logging
 import queue
 import time
@@ -49,6 +50,7 @@ class SerialWorker(QObject):
     telemetry_updated = Signal(dict)
     heartbeat_ack_received = Signal(dict)
     heartbeat_timeout = Signal()
+    event_received = Signal(str, dict)  # (event_type, data_dict)
 
     def __init__(self, client):
         super().__init__()
@@ -133,6 +135,9 @@ class SerialWorker(QObject):
                 if now - self._last_heartbeat_send_time >= self._heartbeat_interval:
                     self._last_heartbeat_send_time = now
                     self._send_heartbeat()
+
+            # Drain any buffered async events from protocol layer
+            self._drain_events()
 
             # Poll telemetry if enabled and due
             if self._poll_telemetry and self._client and self._client.is_connected():
@@ -230,6 +235,44 @@ class SerialWorker(QObject):
             if not self._client.is_connected():
                 self.connection_error.emit(str(e))
                 self._running = False
+
+    def _drain_events(self):
+        """Drain buffered async events from MotorClient and emit signals."""
+        if not self._client or not self._client.is_connected():
+            return
+        for raw_line in self._client.pop_events():
+            evt_type, evt_data = self._parse_event(raw_line)
+            if evt_type:
+                self.event_received.emit(evt_type, evt_data)
+
+    @staticmethod
+    def _parse_event(line: str) -> tuple:
+        """
+        Parse an event line (JSON or ASCII) into (type, data) tuple.
+
+        JSON: {"kind":"event","type":"FAULT","seq":1,"ts_ms":123,"data":{...}}
+        ASCII: !FAULT status=0x1234 detail=OCD
+
+        Returns:
+            (event_type, data_dict) or (None, None) on parse failure.
+        """
+        if line.startswith("{"):
+            try:
+                obj = json.loads(line)
+                return (obj.get("type", ""), obj.get("data", {}))
+            except json.JSONDecodeError:
+                return (None, None)
+        elif line.startswith("!"):
+            parts = line[1:].split(None, 1)
+            evt_type = parts[0] if parts else ""
+            data = {}
+            if len(parts) > 1:
+                for kv in parts[1].split():
+                    if "=" in kv:
+                        k, v = kv.split("=", 1)
+                        data[k] = v
+            return (evt_type, data)
+        return (None, None)
 
     @Slot()
     def stop(self):

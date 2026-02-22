@@ -107,6 +107,12 @@ void CommsTask_GetHeartbeatStatus(
  */
 void CommsTask_ClearCommsTimeout();
 
+/**
+ * @brief Get the last event wire sequence number (for EVENT_STATUS)
+ * @return Most recently assigned event seq (0 if no events sent)
+ */
+uint32_t CommsTask_GetLastEventSeq();
+
 } // namespace Tasks
 
 #endif // COMMS_TASK_HPP

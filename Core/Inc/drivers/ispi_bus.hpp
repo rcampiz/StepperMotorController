@@ -4,6 +4,9 @@
  *
  * Allows switching between hardware SPI and bit-banged SPI implementations.
  * Both PowerSTEP01 (Mode 3) and LCD (Mode 0) can use the same interface.
+ *
+ * Locking is provided by an ILock injected at construction time.
+ * No RTOS types appear in this interface.
  */
 
 #ifndef ISPI_BUS_HPP
@@ -11,7 +14,6 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include "FreeRTOS.h"
 
 /**
  * @brief SPI clock polarity and phase modes
@@ -39,11 +41,9 @@ public:
     virtual ~ISPIBus() = default;
 
     /**
-     * @brief Acquire bus lock with timeout
-     * @param timeout Ticks to wait (portMAX_DELAY for infinite)
-     * @return true if lock acquired
+     * @brief Acquire bus lock (blocks until available)
      */
-    virtual bool lock(TickType_t timeout = portMAX_DELAY) = 0;
+    virtual void lock() = 0;
 
     /**
      * @brief Release bus lock

@@ -30,10 +30,15 @@
 #include "services/command_queue.hpp"
 #include "services/device_config.hpp"
 #include "services/control_mode.hpp"
+#include "services/event_service.hpp"
+#include "services/motor_config.hpp"
 
 // Drivers
 #include "drivers/spi_manager.hpp"
 #include "drivers/flash_nor.hpp"
+
+// Platform (FreeRTOS is only referenced here — the composition root)
+#include "platform/freertos_lock.hpp"
 
 // Task headers
 #include "tasks/motor_task.hpp"
@@ -188,11 +193,20 @@ int main(void)
     }
     EarlyDebug::println("OK");
 
-    // Initialize SPI manager (bit-banged SPI for both buses)
-    // SPI1: Motor (Mode3) + LCD (Mode0), ~1 MHz
-    // SPI2: NOR Flash (Mode0), ~1 MHz
+    // Create platform locks for SPI bus arbitration
+    // These are the ONLY FreeRTOS mutex instances — injected into drivers below.
+    static FreeRTOSMutex spi1Lock;
+    static FreeRTOSMutex spi2Lock;
+    if (!spi1Lock.valid() || !spi2Lock.valid()) {
+        EarlyDebug::println("SPI locks: FAIL!");
+        while (1) {}
+    }
+
+    // Initialize SPI manager
+    // SPI1: Hardware SPI on PA5/6/7 — Motor (Mode3) + LCD (Mode0), ~1.3 MHz
+    // SPI3: Hardware SPI on PC10/11/12 — NOR Flash (Mode0), ~1.3 MHz
     EarlyDebug::print("SPI Manager init... ");
-    if (!g_spiManager.init(1000000, 1000000)) {
+    if (!g_spiManager.init(spi1Lock, spi2Lock)) {
         // SPI manager init failed - halt
         EarlyDebug::println("FAIL!");
         while (1) {}
@@ -220,6 +234,10 @@ int main(void)
     Comms::g_telemetry.init();
     EarlyDebug::println("Telemetry: OK");
 
+    // Event service (async event queue for fault/stall/motion_done)
+    Services::Event::init();
+    EarlyDebug::println("EventService: OK");
+
     // Command queue for ARM/START synchronization
     EarlyDebug::print("CommandQueue init... ");
     if (!Services::g_commandQueue.init()) {
@@ -244,6 +262,12 @@ int main(void)
         while (1) {}
     }
     EarlyDebug::println("OK");
+
+    // Apply saved encoder filter settings from motor_config (flash)
+    if (encoderAvailable) {
+        const auto &cfg = Services::g_motorConfig.getConfig();
+        Tasks::EncoderTask_SetFilter(cfg.encFilterType, cfg.encFilterParam);
+    }
 
     // DisplayTask: Initializes LCD driver, uses g_spiManager
     EarlyDebug::print("DisplayTask init... ");

@@ -4,6 +4,7 @@
  */
 
 #include "services/motion_service.hpp"
+#include "services/config_service.hpp"
 #include "services/trace.hpp"
 #include "tasks/motor_task.hpp"
 
@@ -27,6 +28,15 @@ static Result sendCmd(Tasks::MotorCmdType type, int32_t p1 = 0, int32_t p2 = 0) 
     return Tasks::MotorTask_SendCommand(cmd) ? Result::OK : Result::QUEUE_FULL;
 }
 
+// Convert steps/s to raw MAX_SPEED register value (10-bit, 0 = no override)
+static int32_t speedOverrideRaw(uint32_t stepsPerSec) {
+    if (stepsPerSec == 0) return 0;
+    uint16_t raw = Config::maxSpeedPhysicalToRaw(stepsPerSec);
+    if (raw < 1) raw = 1;
+    if (raw > 1023) raw = 1023;
+    return static_cast<int32_t>(raw);
+}
+
 Result run(uint32_t stepsPerSec, bool forward) {
     TRACE_ENTRY("MOT:RUN", stepsPerSec);
     // Convert steps/s to raw register value for powerSTEP01
@@ -40,16 +50,18 @@ Result run(uint32_t stepsPerSec, bool forward) {
     return r;
 }
 
-Result move(int32_t steps) {
+Result move(int32_t steps, uint32_t maxSpeedStepsPerSec) {
     TRACE_ENTRY("MOT:MOVE", static_cast<uint32_t>(steps));
-    Result r = sendCmd(Tasks::MotorCmdType::Move, steps);
+    Result r = sendCmd(Tasks::MotorCmdType::Move, steps,
+                       speedOverrideRaw(maxSpeedStepsPerSec));
     TRACE_EXIT("MOT:MOVE", static_cast<uint32_t>(r));
     return r;
 }
 
-Result goTo(int32_t position) {
+Result goTo(int32_t position, uint32_t maxSpeedStepsPerSec) {
     TRACE_ENTRY("MOT:GOTO", static_cast<uint32_t>(position));
-    Result r = sendCmd(Tasks::MotorCmdType::GoTo, position);
+    Result r = sendCmd(Tasks::MotorCmdType::GoTo, position,
+                       speedOverrideRaw(maxSpeedStepsPerSec));
     TRACE_EXIT("MOT:GOTO", static_cast<uint32_t>(r));
     return r;
 }
@@ -81,9 +93,10 @@ Result disable() {
     return r;
 }
 
-Result home() {
+Result home(uint32_t maxSpeedStepsPerSec) {
     TRACE_ENTRY("MOT:HOME");
-    Result r = sendCmd(Tasks::MotorCmdType::GoHome);
+    Result r = sendCmd(Tasks::MotorCmdType::GoHome, 0,
+                       speedOverrideRaw(maxSpeedStepsPerSec));
     TRACE_EXIT("MOT:HOME", static_cast<uint32_t>(r));
     return r;
 }

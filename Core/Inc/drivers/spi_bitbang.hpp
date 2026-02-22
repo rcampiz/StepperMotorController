@@ -11,7 +11,9 @@
  *   Mode 2 (CPOL=1, CPHA=0): Clock idle HIGH, shift rising,  sample falling
  *   Mode 3 (CPOL=1, CPHA=1): Clock idle HIGH, shift falling, sample rising
  *
- * Uses FreeRTOS mutex for thread safety and DWT cycle counter for precise timing.
+ * Locking is provided by an externally injected ILock.
+ * Interrupt masking for bit-bang timing uses InterruptGuard (CMSIS PRIMASK).
+ * No RTOS headers appear in this file.
  */
 
 #ifndef SPI_BITBANG_HPP
@@ -19,11 +21,13 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include "FreeRTOS.h"
-#include "semphr.h"
-#include "task.h"
 #include "stm32f401xe.h"
 #include "drivers/ispi_bus.hpp"
+#include "platform/ilock.hpp"
+#include "platform/interrupt_guard.hpp"
+
+// CMSIS standard variable (defined in system_stm32f4xx.c)
+extern uint32_t SystemCoreClock;
 
 // DWT (Data Watchpoint and Trace) cycle counter for precise timing
 // These are defined in core_cm4.h but we provide fallbacks for compatibility
@@ -77,20 +81,19 @@ public:
      * @param mosiPin  Pin number for MOSI (0-15)
      * @param mode     SPI mode (default Mode3 for powerSTEP01)
      * @param clockHz  Target SPI clock frequency in Hz (default 1 MHz)
+     * @param lock     External lock for bus arbitration
      */
     SPIBitBang(GPIO_TypeDef* sckPort, uint8_t sckPin,
                GPIO_TypeDef* misoPort, uint8_t misoPin,
                GPIO_TypeDef* mosiPort, uint8_t mosiPin,
-               Mode mode = Mode::Mode3,
-               uint32_t clockHz = 1000000)
+               Mode mode,
+               uint32_t clockHz,
+               ILock& lock)
         : m_sckPort(sckPort), m_sckPin(sckPin),
           m_misoPort(misoPort), m_misoPin(misoPin),
           m_mosiPort(mosiPort), m_mosiPin(mosiPin),
-          m_mode(mode), m_mutex(nullptr), m_halfPeriodCycles(0)
+          m_mode(mode), m_lock(lock), m_halfPeriodCycles(0)
     {
-        m_mutex = xSemaphoreCreateMutex();
-        configASSERT(m_mutex != nullptr);  // FreeRTOS assertion
-
         // Calculate cycles for half clock period
         // At 84 MHz, 1 MHz SPI = 84 cycles per bit, 42 cycles per half-period
         m_halfPeriodCycles = (SystemCoreClock / clockHz) / 2;
@@ -100,12 +103,6 @@ public:
 
         initDWT();
         init();
-    }
-
-    ~SPIBitBang() {
-        if (m_mutex) {
-            vSemaphoreDelete(m_mutex);
-        }
     }
 
     /**
@@ -132,7 +129,7 @@ public:
      * @brief Switch SPI mode
      * @param mode New SPI mode
      */
-    void setMode(Mode mode) {
+    void setMode(Mode mode) override {
         m_mode = mode;
         setClockIdle();
     }
@@ -140,7 +137,7 @@ public:
     /**
      * @brief Get current SPI mode
      */
-    Mode getMode() const { return m_mode; }
+    Mode getMode() const override { return m_mode; }
 
     /**
      * @brief Set target clock frequency
@@ -161,22 +158,17 @@ public:
     }
 
     /**
-     * @brief Acquire bus lock with timeout
-     * @param timeout Ticks to wait (portMAX_DELAY for infinite)
-     * @return true if lock acquired
+     * @brief Acquire bus lock (blocks until available)
      */
-    bool lock(TickType_t timeout = portMAX_DELAY) {
-        if (!m_mutex) return false;
-        return xSemaphoreTake(m_mutex, timeout) == pdTRUE;
+    void lock() override {
+        m_lock.acquire();
     }
 
     /**
      * @brief Release bus lock
      */
-    void unlock() {
-        if (m_mutex) {
-            xSemaphoreGive(m_mutex);
-        }
+    void unlock() override {
+        m_lock.release();
     }
 
     /**
@@ -187,15 +179,15 @@ public:
      * @param data Byte to send
      * @return Byte received
      */
-    uint8_t transfer(uint8_t data) {
+    uint8_t transfer(uint8_t data) override {
         uint8_t rx = 0;
 
         // Get CPOL and CPHA from mode
         bool cpol = (static_cast<uint8_t>(m_mode) & 0x02) != 0;  // Bit 1
         bool cpha = (static_cast<uint8_t>(m_mode) & 0x01) != 0;  // Bit 0
 
-        // Enter critical section to prevent interrupt jitter during transfer
-        taskENTER_CRITICAL();
+        // RAII interrupt guard prevents jitter during bit-bang timing
+        InterruptGuard guard;
 
         for (int bit = 7; bit >= 0; bit--) {
             if (cpha == 0) {
@@ -236,8 +228,6 @@ public:
             }
         }
 
-        taskEXIT_CRITICAL();
-
         return rx;
     }
 
@@ -247,7 +237,7 @@ public:
      * Note: Each byte transfer is in a critical section, but there may be
      * gaps between bytes. For continuous streaming, use transferContinuous().
      */
-    void transfer(const uint8_t* txBuf, uint8_t* rxBuf, size_t len) {
+    void transfer(const uint8_t* txBuf, uint8_t* rxBuf, size_t len) override {
         for (size_t i = 0; i < len; i++) {
             uint8_t tx = txBuf ? txBuf[i] : 0xFF;
             uint8_t rx = transfer(tx);
@@ -264,7 +254,7 @@ public:
      * Warning: Long transfers will block interrupts!
      */
     void transferContinuous(const uint8_t* txBuf, uint8_t* rxBuf, size_t len) {
-        taskENTER_CRITICAL();
+        InterruptGuard guard;
 
         for (size_t i = 0; i < len; i++) {
             uint8_t tx = txBuf ? txBuf[i] : 0xFF;
@@ -273,22 +263,6 @@ public:
                 rxBuf[i] = rx;
             }
         }
-
-        taskEXIT_CRITICAL();
-    }
-
-    /**
-     * @brief Write multiple bytes (ignore received data)
-     */
-    void write(const uint8_t* data, size_t len) {
-        transfer(data, nullptr, len);
-    }
-
-    /**
-     * @brief Read multiple bytes (send 0xFF)
-     */
-    void read(uint8_t* data, size_t len) {
-        transfer(nullptr, data, len);
     }
 
     /**
@@ -313,7 +287,7 @@ private:
     GPIO_TypeDef* m_mosiPort;
     uint8_t m_mosiPin;
     Mode m_mode;
-    SemaphoreHandle_t m_mutex;
+    ILock& m_lock;
     uint32_t m_halfPeriodCycles;
 
     /**

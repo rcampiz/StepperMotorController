@@ -10,6 +10,7 @@
 #include "drivers/spi_manager.hpp"
 #include "comms/telemetry.hpp"
 #include "services/motor_config.hpp"
+#include "services/event_service.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
@@ -25,6 +26,23 @@ TaskHandle_t g_motorTaskHandle = nullptr;
 // Motor driver instance (created in init)
 static SPIBus* s_spi = nullptr;
 static PowerSTEP01* s_motor = nullptr;
+
+// Temporary MAX_SPEED override for GOTO/MOVE/HOME with speed parameter
+static uint32_t s_savedMaxSpeed = 0;
+static bool s_speedOverrideActive = false;
+
+static void applySpeedOverride(uint32_t rawMaxSpeed) {
+    s_savedMaxSpeed = s_motor->getParam(PowerSTEP01::Reg::MAX_SPEED);
+    s_motor->setParam(PowerSTEP01::Reg::MAX_SPEED, rawMaxSpeed);
+    s_speedOverrideActive = true;
+}
+
+static void restoreSpeedIfOverridden() {
+    if (s_speedOverrideActive) {
+        s_motor->setParam(PowerSTEP01::Reg::MAX_SPEED, s_savedMaxSpeed);
+        s_speedOverrideActive = false;
+    }
+}
 
 bool MotorTask_Init()
 {
@@ -74,6 +92,10 @@ void vMotorTask(void* pvParameters)
     // Wait for system startup
     vTaskDelay(pdMS_TO_TICKS(100));
 
+    // Edge detection state for async events
+    uint16_t prevStatusReg = 0xFFFF;  // all-ones = no faults (active-low)
+    bool prevBusy = false;
+
     MotorCommand cmd;
     TickType_t lastStatusUpdate = 0;
     constexpr TickType_t STATUS_UPDATE_PERIOD = pdMS_TO_TICKS(50);
@@ -94,11 +116,17 @@ void vMotorTask(void* pvParameters)
                     } else {
                         steps = static_cast<uint32_t>(-cmd.param1);
                     }
+                    if (cmd.param2 != 0) {
+                        applySpeedOverride(static_cast<uint32_t>(cmd.param2));
+                    }
                     s_motor->move(forward, steps);
                     break;
                 }
 
                 case MotorCmdType::GoTo:
+                    if (cmd.param2 != 0) {
+                        applySpeedOverride(static_cast<uint32_t>(cmd.param2));
+                    }
                     s_motor->goTo(cmd.param1);
                     break;
 
@@ -112,6 +140,7 @@ void vMotorTask(void* pvParameters)
 
                 case MotorCmdType::HardStop:
                     s_motor->hardStop();
+                    restoreSpeedIfOverridden();
                     break;
 
                 case MotorCmdType::SoftHiZ:
@@ -120,9 +149,13 @@ void vMotorTask(void* pvParameters)
 
                 case MotorCmdType::HardHiZ:
                     s_motor->hardHiZ();
+                    restoreSpeedIfOverridden();
                     break;
 
                 case MotorCmdType::GoHome:
+                    if (cmd.param2 != 0) {
+                        applySpeedOverride(static_cast<uint32_t>(cmd.param2));
+                    }
                     s_motor->goHome();
                     break;
 
@@ -190,6 +223,45 @@ void vMotorTask(void* pvParameters)
             telem.stalled = status.stallA() || status.stallB();
 
             Comms::g_telemetry.updateMotor(telem);
+
+            // Edge detection for async events
+            // Fault: OCD (bit13, active-low), UVLO (bit9, active-low), TH_SD (bits 11-12 >= 2)
+            bool curFault  = status.ocd() || status.uvlo() || status.thermalSD();
+            bool prevFault = (prevStatusReg & (1 << 13)) == 0
+                          || (prevStatusReg & (1 << 9)) == 0
+                          || ((prevStatusReg >> 11) & 0x03) >= 2;
+
+            // Stall: STALL_A (bit14, active-low), STALL_B (bit15, active-low)
+            bool curStall  = status.stallA() || status.stallB();
+            bool prevStall = (prevStatusReg & (1 << 14)) == 0
+                          || (prevStatusReg & (1 << 15)) == 0;
+
+            bool curBusy = status.busy();
+
+            // Assertion edges
+            if (!prevFault && curFault) {
+                Services::Event::post(EventType::FAULT, status.raw);
+            }
+            if (!prevStall && curStall) {
+                Services::Event::post(EventType::STALL, status.raw);
+            }
+
+            // Deassertion edges (CLEAR)
+            if (prevFault && !curFault) {
+                Services::Event::post(EventType::FAULT_CLEAR, status.raw);
+            }
+            if (prevStall && !curStall) {
+                Services::Event::post(EventType::STALL_CLEAR, status.raw);
+            }
+
+            // Motion complete: busy -> idle transition
+            if (prevBusy && !curBusy) {
+                restoreSpeedIfOverridden();
+                Services::Event::post(EventType::MOTION_DONE, status.raw);
+            }
+
+            prevStatusReg = status.raw;
+            prevBusy = curBusy;
         }
     }
 }
@@ -261,6 +333,7 @@ bool MotorTask_GetDebugInfo(MotorDebugInfo& info)
     info.config = static_cast<uint16_t>(s_motor->getParam(PowerSTEP01::Reg::CONFIG));
     info.alarmEn = static_cast<uint8_t>(s_motor->getParam(PowerSTEP01::Reg::ALARM_EN));
     info.fsSpd = static_cast<uint16_t>(s_motor->getParam(PowerSTEP01::Reg::FS_SPD));
+    info.stepMode = static_cast<uint8_t>(s_motor->getParam(PowerSTEP01::Reg::STEP_MODE)) & 0x07;
 
     return true;
 }
@@ -317,6 +390,11 @@ bool MotorTask_ApplyConfig()
         alarmEn |= (1 << 7);
     }
     s_motor->setParam(PowerSTEP01::Reg::ALARM_EN, alarmEn);
+
+    // Apply microstep mode (read-modify-write to preserve CM_VM and SYNC bits)
+    uint32_t stepMode = s_motor->getParam(PowerSTEP01::Reg::STEP_MODE);
+    stepMode = (stepMode & 0xF8) | (cfg.stepMode & 0x07);
+    s_motor->setParam(PowerSTEP01::Reg::STEP_MODE, stepMode);
 
     // Clear any latched fault bits from the register write sequence
     s_motor->getStatus();

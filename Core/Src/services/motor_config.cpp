@@ -84,6 +84,11 @@ void MotorConfigManager::applyDefaults() {
     m_config.faultEnable.cmdErr = 0;
 
     m_config.faultAction = 1;  // HardHiZ - safest option
+    m_config.stepMode = 7;     // 1/128 microstep (powerSTEP01 power-on default)
+
+    // Encoder velocity filter - disabled by default
+    m_config.encFilterType = 0;   // NONE
+    m_config.encFilterParam = 0;
 }
 
 void MotorConfigManager::setKval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec) {
@@ -115,12 +120,25 @@ void MotorConfigManager::setFaultAction(uint8_t action) {
     m_config.faultAction = action;
 }
 
+void MotorConfigManager::setStepMode(uint8_t mode) {
+    m_config.stepMode = mode & 0x07;  // 3-bit, 0-7
+}
+
+void MotorConfigManager::setEncFilter(uint8_t type, uint8_t param) {
+    m_config.encFilterType = type;
+    m_config.encFilterParam = param;
+}
+
 bool MotorConfigManager::loadFromFlash() {
     // Read config from flash
     const MotorConfig* flashConfig = reinterpret_cast<const MotorConfig*>(MOTOR_CONFIG_FLASH_ADDR);
 
     if (validateConfig(*flashConfig)) {
         m_config = *flashConfig;
+        // Clamp stepMode to valid range (0-7)
+        if (m_config.stepMode > 7) {
+            m_config.stepMode = 7;
+        }
         return true;
     }
 

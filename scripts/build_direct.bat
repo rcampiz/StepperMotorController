@@ -98,6 +98,8 @@ arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/comms/command_parser.cpp -o build/comma
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile command_parser.cpp & exit /b 1)
 arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/comms/telemetry.cpp -o build/telemetry.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile telemetry.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/comms/event_codec.cpp -o build/event_codec.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile event_codec.cpp & exit /b 1)
 
 echo [15/24] Compiling task sources...
 arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/tasks/motor_task.cpp -o build/motor_task.o
@@ -130,6 +132,8 @@ arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/config_service.cpp -o build/co
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile config_service.cpp & exit /b 1)
 arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/trace.cpp -o build/trace.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile trace.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/event_service.cpp -o build/event_service.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile event_service.cpp & exit /b 1)
 
 echo [17/25] Compiling UI sources...
 arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/ui/ui_mode.cpp -o build/ui_mode.o
@@ -151,9 +155,9 @@ echo [20/26] Collecting object files...
 set "OBJS=build/system_stm32f4xx.o build/syscalls.o build/tasks.o build/queue.o build/list.o"
 set "OBJS=%OBJS% build/timers.o build/event_groups.o build/stream_buffer.o build/heap_4.o build/port.o"
 set "OBJS=%OBJS% build/SEGGER_RTT.o build/SEGGER_RTT_printf.o build/SEGGER_SYSVIEW.o build/SEGGER_SYSVIEW_Config_FreeRTOS.o build/SEGGER_SYSVIEW_FreeRTOS.o"
-set "OBJS=%OBJS% build/main.o build/uart_transport.o build/rtt_transport.o build/command_parser.o build/telemetry.o"
+set "OBJS=%OBJS% build/main.o build/uart_transport.o build/rtt_transport.o build/command_parser.o build/telemetry.o build/event_codec.o"
 set "OBJS=%OBJS% build/motor_task.o build/encoder_task.o build/display_task.o build/comms_task.o build/bringup_task.o"
-set "OBJS=%OBJS% build/tick_timer.o build/command_queue.o build/device_config.o build/control_mode.o build/motor_config.o build/motion_service.o build/safety_service.o build/config_service.o build/trace.o"
+set "OBJS=%OBJS% build/tick_timer.o build/command_queue.o build/device_config.o build/control_mode.o build/motor_config.o build/motion_service.o build/safety_service.o build/config_service.o build/trace.o build/event_service.o"
 set "OBJS=%OBJS% build/ui_mode.o build/menu_screen.o build/terminal_screen.o"
 set "OBJS=%OBJS% build/spi_manager.o"
 set "OBJS=%OBJS% build/startup_stm32f401xe.o"

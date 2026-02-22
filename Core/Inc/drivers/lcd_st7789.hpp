@@ -116,6 +116,9 @@ public:
     static constexpr uint16_t WIDTH = 240;
     static constexpr uint16_t HEIGHT = 240;
 
+    // Row offset: 240x240 panel maps to rows 80-319 of the 320-row ST7789 RAM
+    static constexpr uint16_t ROW_OFFSET = 80;
+
     // Font dimensions
     static constexpr uint8_t CHAR_WIDTH = 6;   // 5 pixels + 1 spacing
     static constexpr uint8_t CHAR_HEIGHT = 8;  // 7 pixels + 1 spacing
@@ -147,7 +150,7 @@ public:
         delayMs(120);
 
         writeCmd(0x36);  // MADCTL
-        writeData(0x00);
+        writeData(0x08); // BGR subpixel order for GFX01M2 panel
 
         writeCmd(0x3A);  // Color mode
         writeData(0x55); // 16-bit RGB565
@@ -175,11 +178,14 @@ public:
         writeData(x1 >> 8);
         writeData(x1 & 0xFF);
 
+        // Apply row offset for 240x240 panel in 240x320 controller RAM
+        uint16_t r0 = y0 + ROW_OFFSET;
+        uint16_t r1 = y1 + ROW_OFFSET;
         writeCmd(0x2B);  // Row address set
-        writeData(y0 >> 8);
-        writeData(y0 & 0xFF);
-        writeData(y1 >> 8);
-        writeData(y1 & 0xFF);
+        writeData(r0 >> 8);
+        writeData(r0 & 0xFF);
+        writeData(r1 >> 8);
+        writeData(r1 & 0xFF);
 
         writeCmd(0x2C);  // Memory write
     }
@@ -531,7 +537,7 @@ private:
 
     void initPins() {
         RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_GPIOBEN
-                     | RCC_AHB1ENR_GPIOCEN | RCC_AHB1ENR_GPIOHEN;
+                     | RCC_AHB1ENR_GPIOCEN;
 
         // CS - output
         configureOutput(Pins::GFX_LCD::CS_PORT, Pins::GFX_LCD::CS_PIN);

@@ -33,14 +33,16 @@ namespace SPI1_Bus {
 }
 
 // ============================================================================
-// SPI2 - GFX01M2 NOR Flash (SPIB)
+// SPI3 - GFX01M2 NOR Flash (hardware SPI on APB1, 42 MHz)
+// SPI2 pins (PB13-15) not usable — PB15 unavailable for SPIB MOSI.
+// SPI3 on PC10-12 (AF6) provides clean hardware SPI for the NOR flash.
 // ============================================================================
-namespace SPI2_Bus {
-    static GPIO_TypeDef* const PORT = GPIOB;
-    static constexpr uint8_t SCK_PIN  = 13;  // PB13 - CN10-30
-    static constexpr uint8_t MISO_PIN = 14;  // PB14 - CN10-28
-    static constexpr uint8_t MOSI_PIN = 15;  // PB15 - CN10-26
-    static constexpr uint8_t AF = 5;         // AF5 for SPI2
+namespace SPI3_Bus {
+    static GPIO_TypeDef* const PORT = GPIOC;
+    static constexpr uint8_t SCK_PIN  = 10;  // PC10 - CN7-1
+    static constexpr uint8_t MISO_PIN = 11;  // PC11 - CN7-2
+    static constexpr uint8_t MOSI_PIN = 12;  // PC12 - CN7-3
+    static constexpr uint8_t AF = 6;         // AF6 for SPI3
 }
 
 // ============================================================================
@@ -63,8 +65,9 @@ namespace IHM03A1 {
     static constexpr uint8_t FLAG_PIN = 10;      // D2
 
     // BUSY output (directly from powerSTEP01, active low)
+    // PB5 - D4 on IHM03A1 (GFX01M2 SPIB_MOSI trace cut to resolve conflict)
     static GPIO_TypeDef* const BUSY_PORT = GPIOB;
-    static constexpr uint8_t BUSY_PIN = 4;       // D5
+    static constexpr uint8_t BUSY_PIN = 5;
 }
 
 // ============================================================================
@@ -75,12 +78,12 @@ namespace GFX_LCD {
     static GPIO_TypeDef* const CS_PORT = GPIOC;
     static constexpr uint8_t CS_PIN = 6;
 
-    // Display Tearing Effect output - PC15 (CN7-28)
-    static GPIO_TypeDef* const TE_PORT = GPIOC;
-    static constexpr uint8_t TE_PIN = 15;
+    // Display Tearing Effect output - PA0
+    static GPIO_TypeDef* const TE_PORT = GPIOA;
+    static constexpr uint8_t TE_PIN = 0;
 
-    // Display Reset (active low) - PH1 (CN7-30)
-    static GPIO_TypeDef* const NRESET_PORT = GPIOH;
+    // Display Reset (active low) - PA1
+    static GPIO_TypeDef* const NRESET_PORT = GPIOA;
     static constexpr uint8_t NRESET_PIN = 1;
 
     // Data/Command select - SPIA_DCX on PB10 (CN10-25)
@@ -98,7 +101,7 @@ namespace GFX_Flash {
     static GPIO_TypeDef* const CS_PORT = GPIOA;
     static constexpr uint8_t CS_PIN = 8;
 
-    // Directly uses SPI2_Bus for SCK/MISO/MOSI
+    // Directly uses SPI3_Bus for SCK/MISO/MOSI
 }
 
 // ============================================================================
@@ -106,25 +109,25 @@ namespace GFX_Flash {
 // Active low inputs with internal pull-ups
 // ============================================================================
 namespace Joystick {
-    // KEY_LEFT - PC7 (CN10 area, D9)
+    // KEY_LEFT - PC5
     static GPIO_TypeDef* const LEFT_PORT = GPIOC;
-    static constexpr uint8_t LEFT_PIN = 7;
+    static constexpr uint8_t LEFT_PIN = 5;
 
-    // KEY_CENTER - PB6 (CN10 area, D10)
-    static GPIO_TypeDef* const CENTER_PORT = GPIOB;
-    static constexpr uint8_t CENTER_PIN = 6;
+    // KEY_CENTER - PA12
+    static GPIO_TypeDef* const CENTER_PORT = GPIOA;
+    static constexpr uint8_t CENTER_PIN = 12;
 
-    // KEY_DOWN - PC9 (CN10-1)
-    static GPIO_TypeDef* const DOWN_PORT = GPIOC;
-    static constexpr uint8_t DOWN_PIN = 9;
+    // KEY_DOWN - PB4
+    static GPIO_TypeDef* const DOWN_PORT = GPIOB;
+    static constexpr uint8_t DOWN_PIN = 4;
 
-    // KEY_RIGHT - PC10 (CN7-1)
-    static GPIO_TypeDef* const RIGHT_PORT = GPIOC;
-    static constexpr uint8_t RIGHT_PIN = 10;
+    // KEY_RIGHT - PB0
+    static GPIO_TypeDef* const RIGHT_PORT = GPIOB;
+    static constexpr uint8_t RIGHT_PIN = 0;
 
-    // KEY_UP - PC12 (CN7-3)
+    // KEY_UP - PC0
     static GPIO_TypeDef* const UP_PORT = GPIOC;
-    static constexpr uint8_t UP_PIN = 12;
+    static constexpr uint8_t UP_PIN = 0;
 }
 
 // ============================================================================

@@ -212,10 +212,13 @@ private:
   // Utility command handlers
   void cmdHelp();
   void cmdVersion();
-  void cmdHome();
+  void cmdHome(const ParsedCommand &cmd);
   void cmdZero();
+  void cmdEncoderZero();
+  void cmdZeroAll();
   void cmdEncoder();
   void cmdEncDebug();
+  void cmdEncFilter(const ParsedCommand &cmd);
 
   // Device identification command handlers
   void cmdGetDeviceId();
@@ -260,7 +263,13 @@ private:
   void cmdMotorConfigStall(const ParsedCommand &cmd);
   void cmdMotorConfigFault(const ParsedCommand &cmd);
   void cmdMotorConfigMotion(const ParsedCommand &cmd);
+  void cmdMotorConfigStepMode(const ParsedCommand &cmd);
   void cmdMotorConfigApply();
+
+  // Event command handlers (see docs/PROTOCOL_EVENTS_V1.md)
+  void cmdEventEnable(const ParsedCommand &cmd);
+  void cmdEventDisable();
+  void cmdEventStatus();
 };
 
 } // namespace Comms

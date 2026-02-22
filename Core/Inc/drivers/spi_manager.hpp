@@ -1,13 +1,16 @@
 /**
  * @file spi_manager.hpp
- * @brief Unified SPI manager for multiple buses with transaction queuing
+ * @brief Unified SPI manager for multiple buses
  *
  * Manages two SPI buses:
  *   - SPI1: Shared between Motor (powerSTEP01) and LCD (ST7789)
  *   - SPI2: NOR Flash only
  *
  * All transactions are atomic - complete read/write finishes before
- * mutex is released. SPI1 uses hardware peripheral, SPI2 uses bit-bang.
+ * the bus lock is released. SPI1 uses hardware peripheral, SPI2 uses bit-bang.
+ *
+ * Locking is delegated to the ISPIBus implementations via injected ILock.
+ * No RTOS headers appear in this file.
  */
 
 #ifndef SPI_MANAGER_HPP
@@ -16,14 +19,10 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
-#include "FreeRTOS.h"
-#include "queue.h"
-#include "semphr.h"
-#include "task.h"
 #include "stm32f401xe.h"
 #include "drivers/spi_hardware.hpp"
-#include "drivers/spi_bitbang.hpp"
 #include "board/board_pins.hpp"
+#include "platform/ilock.hpp"
 
 /**
  * @brief Maximum transaction data size
@@ -34,7 +33,7 @@ constexpr size_t SPI_MAX_TXN_SIZE = 64;
  * @brief SPI device identifier (determines bus and CS)
  */
 enum class SPIDevice : uint8_t {
-    Motor,      // SPI1, Mode 3, CS=PB6
+    Motor,      // SPI1, Mode 3, CS=PC8
     LCD,        // SPI1, Mode 0, CS=PC6
     NORFlash    // SPI2, Mode 0, CS=PA8
 };
@@ -92,7 +91,6 @@ struct SPITransaction {
     uint8_t txData[SPI_MAX_TXN_SIZE];
     uint8_t rxData[SPI_MAX_TXN_SIZE];
     size_t length;
-    SemaphoreHandle_t completionSem;
     bool success;
 
     void init(SPIDevice dev, const uint8_t* tx, size_t len) {
@@ -105,7 +103,6 @@ struct SPITransaction {
             memset(txData, 0xFF, length);
         }
         memset(rxData, 0, length);
-        completionSem = nullptr;
         success = false;
     }
 
@@ -118,15 +115,14 @@ struct SPITransaction {
 /**
  * @brief Unified SPI Manager
  *
- * Manages both SPI1 and SPI2 buses with proper mutex protection.
+ * Manages both SPI1 and SPI2 buses with proper lock protection.
  * SPI1 uses hardware peripheral, SPI2 uses bit-bang.
+ * Locking is delegated to the ISPIBus implementations.
  */
 class SPIManager {
 public:
     SPIManager()
-        : m_spi1(nullptr), m_spi2(nullptr),
-          m_mutex1(nullptr), m_mutex2(nullptr),
-          m_queue(nullptr), m_initialized(false)
+        : m_spi1(nullptr), m_spi2(nullptr), m_initialized(false)
     {
     }
 
@@ -136,29 +132,11 @@ public:
      * Creates hardware SPI for SPI1 and bit-banged SPI for SPI2.
      * Must be called before scheduler starts.
      *
-     * @param spi1ClockHz Target clock for SPI1 (ignored — prescaler sets ~1.3 MHz)
-     * @param spi2ClockHz Target clock for SPI2 (default 1 MHz)
+     * @param spi1Lock Lock for SPI1 bus arbitration (shared by Motor + LCD)
+     * @param spi2Lock Lock for SPI2 bus arbitration (NOR Flash)
      * @return true if successful
      */
-    bool init(uint32_t spi1ClockHz = 1000000, uint32_t spi2ClockHz = 1000000) {
-        (void)spi1ClockHz;  // Hardware SPI uses prescaler, not arbitrary Hz
-
-        // Disable SPI2 hardware — we're bit-banging SPI2
-        RCC->APB1ENR &= ~RCC_APB1ENR_SPI2EN;
-
-        // Create mutexes
-        m_mutex1 = xSemaphoreCreateMutex();
-        m_mutex2 = xSemaphoreCreateMutex();
-        if (m_mutex1 == nullptr || m_mutex2 == nullptr) {
-            return false;
-        }
-
-        // Create transaction queue
-        m_queue = xQueueCreate(16, sizeof(SPITransaction));
-        if (m_queue == nullptr) {
-            return false;
-        }
-
+    bool init(ILock& spi1Lock, ILock& spi2Lock) {
         // SPI1: Hardware SPI peripheral on PA5 (SCK), PA6 (MISO), PA7 (MOSI)
         // Prescaler 5 = /64 → 84 MHz / 64 = 1.3125 MHz
         m_spi1 = new SPIHardware(
@@ -169,15 +147,22 @@ public:
             Pins::SPI1_Bus::MOSI_PIN,
             Pins::SPI1_Bus::AF,
             SPIMode::Mode3,
-            5  // BR = /64
+            5,  // BR = /64
+            spi1Lock
         );
 
-        // SPI2: Bit-banged on PB13 (SCK), PB14 (MISO), PB15 (MOSI)
-        m_spi2 = new SPIBitBang(
-            Pins::SPI2_Bus::PORT, Pins::SPI2_Bus::SCK_PIN,
-            Pins::SPI2_Bus::PORT, Pins::SPI2_Bus::MISO_PIN,
-            Pins::SPI2_Bus::PORT, Pins::SPI2_Bus::MOSI_PIN,
-            SPIMode::Mode0, spi2ClockHz
+        // SPI3: Hardware SPI on PC10 (SCK), PC11 (MISO), PC12 (MOSI)
+        // Prescaler 4 = /32 → 42 MHz / 32 = 1.3125 MHz (APB1)
+        m_spi2 = new SPIHardware(
+            SPI3,
+            Pins::SPI3_Bus::PORT,
+            Pins::SPI3_Bus::SCK_PIN,
+            Pins::SPI3_Bus::MISO_PIN,
+            Pins::SPI3_Bus::MOSI_PIN,
+            Pins::SPI3_Bus::AF,
+            SPIMode::Mode0,
+            4,  // BR = /32
+            spi2Lock
         );
 
         if (m_spi1 == nullptr || m_spi2 == nullptr) {
@@ -197,6 +182,9 @@ public:
      * This is the primary API for most use cases. The entire transaction
      * completes atomically before returning.
      *
+     * Locking is handled by the ISPIBus::lock()/unlock() which delegates
+     * to the injected ILock. No RTOS calls here.
+     *
      * @param txn Transaction to execute (rxData filled on return)
      * @return true if successful
      */
@@ -207,17 +195,10 @@ public:
         }
 
         uint8_t bus = getDeviceBus(txn.device);
-        SemaphoreHandle_t mutex = (bus == 1) ? m_mutex1 : m_mutex2;
         ISPIBus* spi = (bus == 1) ? m_spi1 : m_spi2;
 
-        // Acquire bus mutex
-        if (xSemaphoreTake(mutex, portMAX_DELAY) != pdTRUE) {
-            txn.success = false;
-            return false;
-        }
-
-        // Execute atomically in critical section
-        taskENTER_CRITICAL();
+        // Acquire bus lock (blocks until available)
+        spi->lock();
 
         // Set mode for this device
         spi->setMode(txn.mode);
@@ -240,49 +221,10 @@ public:
         // Deassert CS
         cs.port->BSRR = (1UL << cs.pin);  // High = deselected
 
-        taskEXIT_CRITICAL();
-
-        // Release bus mutex
-        xSemaphoreGive(mutex);
+        // Release bus lock
+        spi->unlock();
 
         txn.success = true;
-        return true;
-    }
-
-    /**
-     * @brief Queue transaction for background processing
-     *
-     * @param txn Transaction to queue
-     * @param timeout Ticks to wait if queue full
-     * @return true if queued
-     */
-    bool submit(const SPITransaction& txn, TickType_t timeout = 0) {
-        if (m_queue == nullptr) {
-            return false;
-        }
-        return xQueueSend(m_queue, &txn, timeout) == pdTRUE;
-    }
-
-    /**
-     * @brief Process one queued transaction
-     *
-     * Call from a dedicated SPI task.
-     *
-     * @param timeout Ticks to wait for transaction
-     * @return true if processed
-     */
-    bool processOne(TickType_t timeout = portMAX_DELAY) {
-        SPITransaction txn;
-        if (xQueueReceive(m_queue, &txn, timeout) != pdTRUE) {
-            return false;
-        }
-
-        execute(txn);
-
-        if (txn.completionSem != nullptr) {
-            xSemaphoreGive(txn.completionSem);
-        }
-
         return true;
     }
 
@@ -350,7 +292,7 @@ public:
      * @brief Read MISO pin state for SPI2
      */
     bool readMISO2() const {
-        return (Pins::SPI2_Bus::PORT->IDR & (1UL << Pins::SPI2_Bus::MISO_PIN)) != 0;
+        return (Pins::SPI3_Bus::PORT->IDR & (1UL << Pins::SPI3_Bus::MISO_PIN)) != 0;
     }
 
     /**
@@ -371,21 +313,22 @@ public:
 private:
     ISPIBus* m_spi1;
     ISPIBus* m_spi2;
-    SemaphoreHandle_t m_mutex1;
-    SemaphoreHandle_t m_mutex2;
-    QueueHandle_t m_queue;
     bool m_initialized;
 
     void initCSPins() {
         // Enable GPIO clocks
         RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_GPIOBEN | RCC_AHB1ENR_GPIOCEN;
 
-        // Motor CS (PB6)
+        // Motor CS (PC8)
         configureCS(getDeviceCS(SPIDevice::Motor));
         // LCD CS (PC6)
         configureCS(getDeviceCS(SPIDevice::LCD));
         // NOR Flash CS (PA8)
         configureCS(getDeviceCS(SPIDevice::NORFlash));
+
+        // PB15: formerly SPI2 MOSI, now unused — force input, no pull
+        GPIOB->MODER &= ~(0x3UL << (15 * 2));   // Input mode (00)
+        GPIOB->PUPDR &= ~(0x3UL << (15 * 2));   // No pull-up/pull-down (00)
     }
 
     void configureCS(const CSPin& cs) {

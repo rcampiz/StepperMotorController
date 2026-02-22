@@ -9,7 +9,9 @@
 #include "comms/rtt_transport.hpp"
 #include "comms/command_parser.hpp"
 #include "comms/telemetry.hpp"
+#include "comms/event_codec.hpp"
 #include "services/command_queue.hpp"
+#include "services/event_service.hpp"
 #include "ui/ui_mode.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -64,6 +66,9 @@ static uint32_t s_heartbeatTimeoutMs = 0;   // 0 = disabled
 static TickType_t s_lastHeartbeatTick = 0;  // FreeRTOS tick of last HEARTBEAT rx
 static uint32_t s_lastHeartbeatSeq = 0;
 static bool s_commsTimedOut = false;
+
+// Async event send state (accessed from CommsTask context only)
+static uint32_t s_eventSeq = 0;  // monotonic wire sequence number
 
 bool CommsTask_Init(TransportType transport)
 {
@@ -128,6 +133,20 @@ void vCommsTask(void* pvParameters)
             if ((now - s_lastTelemetryTime) >= pdMS_TO_TICKS(TELEMETRY_PERIOD_MS)) {
                 s_lastTelemetryTime = now;
                 publishTelemetry();
+            }
+        }
+
+        // Drain and send async events
+        if (s_transport != nullptr && s_parser != nullptr) {
+            AsyncEvent evt;
+            while (Services::Event::receive(evt)) {
+                s_eventSeq++;
+                uint32_t ts_ms = static_cast<uint32_t>(xTaskGetTickCount());
+                if (s_parser->getFormat() == Comms::ResponseFormat::JSON) {
+                    Comms::EventCodec::formatJson(*s_transport, evt, s_eventSeq, ts_ms);
+                } else {
+                    Comms::EventCodec::formatAscii(*s_transport, evt, s_eventSeq);
+                }
             }
         }
 
@@ -270,6 +289,15 @@ void CommsTask_ClearCommsTimeout()
 {
     s_commsTimedOut = false;
     s_heartbeatTimeoutMs = 0;
+}
+
+// =========================================================================
+// Async event wire sequence accessor
+// =========================================================================
+
+uint32_t CommsTask_GetLastEventSeq()
+{
+    return s_eventSeq;
 }
 
 } // namespace Tasks

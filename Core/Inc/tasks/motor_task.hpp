@@ -113,6 +113,7 @@ struct MotorDebugInfo {
     uint16_t config;      // CONFIG register
     uint8_t alarmEn;      // ALARM_EN register
     uint16_t fsSpd;       // FS_SPD register
+    uint8_t stepMode;     // STEP_MODE register (bits [2:0])
 };
 
 /**

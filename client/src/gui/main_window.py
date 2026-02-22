@@ -28,6 +28,7 @@ from gui.motor_panel import MotorControlPanel
 from gui.telemetry_panel import TelemetryPanel
 from gui.driver_panel import DriverPanel
 from gui.protection_panel import ProtectionPanel
+from gui.stepmode_panel import StepModePanel
 from gui.graph_panel import GraphPanel
 from gui.serial_worker import SerialThread, QueuedCommand, CommandTag
 from protocol import MotorClient, ResponseFormat
@@ -90,6 +91,9 @@ class MainWindow(QMainWindow):
 
         self._protection_panel = ProtectionPanel()
         self._right_tabs.addTab(self._protection_panel, "Protection")
+
+        self._stepmode_panel = StepModePanel()
+        self._right_tabs.addTab(self._stepmode_panel, "Step Mode")
 
         self._graph_panel = GraphPanel()
         self._right_tabs.addTab(self._graph_panel, "Telemetry Graphs")
@@ -202,6 +206,15 @@ class MainWindow(QMainWindow):
             self._on_protection_apply)
         self._protection_panel.refresh_requested.connect(self._on_refresh_params)
 
+        # Step mode panel
+        self._stepmode_panel.stepmode_apply_requested.connect(
+            self._on_stepmode_apply)
+        self._stepmode_panel.refresh_requested.connect(self._on_refresh_params)
+
+        # Graph panel firmware filter
+        self._graph_panel.firmware_filter_changed.connect(
+            self._on_enc_filter_changed)
+
         # Dashboard clear fault button
         self._telemetry_panel.clear_fault_requested.connect(
             lambda: self._send_command("CLEAR_FAULT"))
@@ -292,6 +305,7 @@ class MainWindow(QMainWindow):
             worker.connection_error.connect(self._on_connection_lost)
             worker.heartbeat_ack_received.connect(self._on_heartbeat_ack)
             worker.heartbeat_timeout.connect(self._on_heartbeat_timeout)
+            worker.event_received.connect(self._on_async_event)
 
             # Start heartbeat producer BEFORE starting the thread so the
             # flag is set when run() begins its first loop iteration.
@@ -320,12 +334,10 @@ class MainWindow(QMainWindow):
             self._serial_thread.stop()
             self._serial_thread = None
 
-        # Now safe to send cleanup commands directly (worker is stopped)
+        # Close the serial port but do NOT disarm the MCU heartbeat watchdog.
+        # If heartbeat was enabled, the MCU will notice the missing heartbeats
+        # and enter safe state (stop motor) after the timeout expires.
         if self._client and self._client.is_connected():
-            try:
-                self._client.set_heartbeat(0)
-            except Exception:
-                pass
             try:
                 self._client.disconnect()
             except Exception:
@@ -371,6 +383,16 @@ class MainWindow(QMainWindow):
                         f"SET_HEARTBEAT {timeout_ms}",
                         CommandTag.GENERIC))
 
+            # Enable async events (all types) after setup is complete
+            self._serial_thread.worker.queue_command(
+                QueuedCommand("EVENT_ENABLE", CommandTag.GENERIC))
+
+            # Restore saved firmware filter settings
+            fw_filter_cmd = self._graph_panel.get_firmware_filter_command()
+            if fw_filter_cmd != "NONE":
+                self._serial_thread.send_command(
+                    f"ENC_FILTER {fw_filter_cmd}")
+
     @Slot()
     def _on_disconnected(self):
         """Handle disconnection."""
@@ -387,6 +409,7 @@ class MainWindow(QMainWindow):
         self._telemetry_panel.clear()
         self._driver_panel.clear()
         self._protection_panel.clear()
+        self._stepmode_panel.clear()
         self._graph_panel.clear()
 
     @Slot(str)
@@ -446,6 +469,21 @@ class MainWindow(QMainWindow):
             self._serial_thread.worker.queue_command(
                 QueuedCommand(commands[-1], CommandTag.APPLY_PROTECTION))
 
+    @Slot(str)
+    def _on_stepmode_apply(self, cmd_str: str):
+        """Send MCONFIG_STEPMODE + MCONFIG_APPLY to update step mode."""
+        if self._serial_thread:
+            self._serial_thread.worker.queue_command(
+                QueuedCommand(cmd_str, CommandTag.APPLY_PARAMS))
+            self._serial_thread.worker.queue_command(
+                QueuedCommand("MCONFIG_APPLY", CommandTag.APPLY_PARAMS))
+
+    @Slot(str)
+    def _on_enc_filter_changed(self, filter_cmd: str):
+        """Send ENC_FILTER command with type + param."""
+        if self._serial_thread:
+            self._serial_thread.send_command(f"ENC_FILTER {filter_cmd}")
+
     @Slot(str, str, object)
     def _on_response_received(self, tag: str, command: str, response):
         """Route worker responses to appropriate UI handlers."""
@@ -479,6 +517,7 @@ class MainWindow(QMainWindow):
         elif tag == CommandTag.REFRESH_MCONFIG.name:
             self._telemetry_panel.update_motor_config(response.raw)
             self._protection_panel.update_protection_params(response.raw)
+            self._stepmode_panel.update_step_mode(response.raw)
 
         elif tag == CommandTag.SET_FORMAT.name:
             self._status_bar.showMessage("Format set", 2000)
@@ -626,10 +665,56 @@ class MainWindow(QMainWindow):
         self._status_bar.showMessage(
             "COMMS TIMEOUT: Motor stopped. Send CLEAR_FAULT to recover.")
 
+    @Slot(str, dict)
+    def _on_async_event(self, event_type: str, data: dict):
+        """Handle async event from firmware (FAULT, STALL, MOTION_DONE, etc.).
+
+        NOTE: Events update the status bar and log warnings, but do NOT
+        change motor_panel button state.  The GET_STATUS telemetry poll
+        (every 100ms) is the sole authority for button enable/disable.
+        This prevents transient events (OCD on ENABLE, false stall during
+        acceleration) from flickering buttons and blocking jog input.
+        """
+        status_hex = data.get("status", "?")
+
+        if event_type == "FAULT":
+            detail = data.get("detail", "unknown")
+            self._status_bar.showMessage(
+                f"FAULT: {detail} (status=0x{status_hex})", 10000)
+            log.warning("[EVENT] Fault: %s (status=0x%s)", detail, status_hex)
+
+        elif event_type == "FAULT_CLEAR":
+            self._status_bar.showMessage("Fault cleared", 3000)
+            log.info("[EVENT] Fault cleared (status=0x%s)", status_hex)
+
+        elif event_type == "STALL":
+            detail = data.get("detail", "?")
+            self._status_bar.showMessage(
+                f"STALL: bridge {detail} (status=0x{status_hex})", 10000)
+            log.warning("[EVENT] Stall: bridge %s (status=0x%s)",
+                        detail, status_hex)
+
+        elif event_type == "STALL_CLEAR":
+            self._status_bar.showMessage("Stall cleared", 3000)
+            log.info("[EVENT] Stall cleared (status=0x%s)", status_hex)
+
+        elif event_type == "MOTION_DONE":
+            self._status_bar.showMessage("Motion complete", 3000)
+            log.info("[EVENT] Motion complete (status=0x%s)", status_hex)
+
+        else:
+            log.info("[EVENT] Unknown event: %s data=%s", event_type, data)
+
+        # Show in raw data panel for visibility
+        self._telemetry_panel.show_raw_response(
+            f"EVENT:{event_type}",
+            f"!{event_type} " + " ".join(f"{k}={v}" for k, v in data.items()))
+
     def closeEvent(self, event: QCloseEvent):
-        """Handle window close - queue ESTOP through worker, then disconnect."""
+        """Handle window close - queue cleanup through worker, then disconnect."""
         if self._serial_thread:
-            # Queue safety commands through the worker (don't bypass it)
+            # Queue cleanup commands through the worker (don't bypass it)
+            self._serial_thread.send_command("EVENT_DISABLE")
             self._serial_thread.send_command("SET_HEARTBEAT 0")
             self._serial_thread.send_command("ESTOP")
             time.sleep(0.2)  # Brief pause to let commands drain
