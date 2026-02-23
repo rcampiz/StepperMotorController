@@ -19,6 +19,7 @@
 #include "services/safety_service.hpp"
 #include "services/tick_timer.hpp"
 #include "services/trace.hpp"
+#include "services/flash_image_service.hpp"
 #include "tasks/display_task.hpp"
 #include "tasks/encoder_task.hpp"
 #include "tasks/motor_task.hpp"
@@ -105,6 +106,8 @@ void CommandParser::process() {
 
         ParsedCommand cmd = parse(m_buffer);
         if (cmd.valid) {
+          // Any valid command confirms the baud rate is working
+          m_baudRevertRate = 0;
           dispatch(cmd);
         }
 
@@ -305,6 +308,10 @@ void CommandParser::dispatchSystem(const char *suffix, const ParsedCommand &cmd)
   else if (strcmp(suffix, "VER?") == 0) {
     cmdVersion();
   }
+  // SYST:BAUD <rate>
+  else if (strcmp(suffix, "BAUD") == 0) {
+    cmdSetBaud(cmd);
+  }
   // SYST:EVT:EN [mask]
   else if (strcmp(suffix, "EVT:EN") == 0) {
     cmdEventEnable(cmd);
@@ -414,6 +421,21 @@ void CommandParser::dispatchUI(const char *suffix, const ParsedCommand &cmd) {
     } else {
       respondErr("Unknown UI:DISP command");
     }
+  }
+  // UI:FLASH:* flash image storage commands
+  else if (strncmp(suffix, "FLASH:", 6) == 0) {
+    const char *flashSuffix = suffix + 6;
+    if (strcmp(flashSuffix, "INFO") == 0) {
+      cmdFlashInfo();
+    } else if (strcmp(flashSuffix, "UPLOAD") == 0) {
+      cmdFlashUpload(cmd);
+    } else if (strcmp(flashSuffix, "SHOW") == 0) {
+      cmdFlashShow(cmd);
+    } else if (strcmp(flashSuffix, "ERASE_ALL") == 0) {
+      cmdFlashEraseAll();
+    } else {
+      respondErr("Unknown UI:FLASH command");
+    }
   } else {
     respondErr("Unknown UI command");
   }
@@ -471,6 +493,8 @@ void CommandParser::dispatchLegacy(const ParsedCommand &cmd) {
     cmdSetFormat(cmd);
   } else if (strcmp(cmd.cmd, "GET_FORMAT") == 0) {
     cmdGetFormat();
+  } else if (strcmp(cmd.cmd, "SET_BAUD") == 0) {
+    cmdSetBaud(cmd);
   }
   // Motion commands
   else if (strcmp(cmd.cmd, "MOVE") == 0) {
@@ -596,6 +620,18 @@ void CommandParser::dispatchLegacy(const ParsedCommand &cmd) {
     cmdDispBitmap(cmd);
   } else if (strcmp(cmd.cmd, "DISP_BITMAP_B64") == 0) {
     cmdDispBitmapB64(cmd);
+  } else if (strcmp(cmd.cmd, "DISP_INDICATOR") == 0) {
+    cmdDispIndicator(cmd);
+  } else if (strcmp(cmd.cmd, "DISP_BITMAP_RLE") == 0) {
+    cmdDispBitmapRle(cmd);
+  } else if (strcmp(cmd.cmd, "FLASH_INFO") == 0) {
+    cmdFlashInfo();
+  } else if (strcmp(cmd.cmd, "FLASH_UPLOAD") == 0) {
+    cmdFlashUpload(cmd);
+  } else if (strcmp(cmd.cmd, "FLASH_SHOW") == 0) {
+    cmdFlashShow(cmd);
+  } else if (strcmp(cmd.cmd, "FLASH_ERASE_ALL") == 0) {
+    cmdFlashEraseAll();
   } else if (strcmp(cmd.cmd, "SPI_DEBUG") == 0) {
     // Debug: show SPI1 and GPIO states
     char buf[128];
@@ -2660,6 +2696,7 @@ void CommandParser::cmdHelp() {
   m_transport.println("Format:");
   m_transport.println("  SET_FORMAT <fmt>    - ASCII or JSON");
   m_transport.println("  GET_FORMAT          - Query response format");
+  m_transport.println("  SET_BAUD <rate>     - Change baud (auto-reverts in 2s)");
   m_transport.println("UI/Display:");
   m_transport.println("  UI_MODE [LOCAL|REMOTE] - Get/set UI mode");
   m_transport.println("  DISP_CLEAR [color]  - Clear display");
@@ -2668,6 +2705,11 @@ void CommandParser::cmdHelp() {
   m_transport.println("  DISP_LINE x1 y1 x2 y2 color");
   m_transport.println("  DISP_BITMAP x y w h   - Binary RGB565 stream");
   m_transport.println("  DISP_BITMAP_B64 x y w h b64data");
+  m_transport.println("Flash Image:");
+  m_transport.println("  FLASH_INFO          - Flash capacity and slot count");
+  m_transport.println("  FLASH_UPLOAD <slot> - Binary upload to flash slot");
+  m_transport.println("  FLASH_SHOW <slot>   - Display image from flash");
+  m_transport.println("  FLASH_ERASE_ALL     - Erase all image slots");
   m_transport.println("Utility:");
   m_transport.println("  ENCODER             - Encoder data");
   m_transport.println("  ENC_DEBUG           - Encoder HW registers");
@@ -3026,6 +3068,66 @@ void CommandParser::cmdGetFormat() {
 }
 
 // ============================================================================
+// Baud rate negotiation
+// ============================================================================
+
+void CommandParser::cmdSetBaud(const ParsedCommand &cmd) {
+  if (cmd.argCount < 1) {
+    respondErr("Usage: SET_BAUD <115200|230400|460800|921600>");
+    return;
+  }
+
+  uint32_t rate = static_cast<uint32_t>(strtoul(cmd.args[0], nullptr, 10));
+
+  // Whitelist supported rates
+  if (rate != 115200 && rate != 230400 && rate != 460800 && rate != 921600) {
+    respondErr("Supported: 115200, 230400, 460800, 921600");
+    return;
+  }
+
+  // Save current rate for auto-revert
+  // (We don't have a getter, but 115200 is always the boot default.
+  //  If already at a non-default rate, revert target is still 115200.)
+  m_baudRevertRate = 115200;
+
+  // Respond at the CURRENT baud rate so the client sees the OK
+  if (m_format == ResponseFormat::JSON) {
+    char buf[48];
+    snprintf(buf, sizeof(buf), "{\"baud\":%lu}", (unsigned long)rate);
+    respondJsonOk("SET_BAUD", buf);
+  } else {
+    char buf[24];
+    snprintf(buf, sizeof(buf), "OK %lu", (unsigned long)rate);
+    m_transport.println(buf);
+  }
+
+  // Flush TX completely before switching
+  m_transport.flush();
+
+  // Switch baud rate on the UART hardware
+  if (!m_transport.setBaudRate(rate)) {
+    // Transport doesn't support baud change (e.g. RTT)
+    m_baudRevertRate = 0;
+    return;
+  }
+
+  // Set 2-second deadline for confirmation (any valid command cancels revert)
+  m_baudRevertDeadline = xTaskGetTickCount() + pdMS_TO_TICKS(2000);
+}
+
+void CommandParser::checkBaudRevert() {
+  if (m_baudRevertRate == 0) return;
+
+  TickType_t now = xTaskGetTickCount();
+  if ((int32_t)(now - m_baudRevertDeadline) >= 0) {
+    // Timeout expired — revert to safe baud rate
+    m_transport.flush();
+    m_transport.setBaudRate(m_baudRevertRate);
+    m_baudRevertRate = 0;
+  }
+}
+
+// ============================================================================
 // UI mode command handlers
 // ============================================================================
 
@@ -3179,7 +3281,7 @@ void CommandParser::cmdDispBitmap(const ParsedCommand &cmd) {
     respondErr("Invalid dimensions");
     return;
   }
-  if (x >= 240 || y >= 240) {
+  if (x >= 240 || y >= 320) {
     respondErr("Position out of bounds");
     return;
   }
@@ -3188,7 +3290,7 @@ void CommandParser::cmdDispBitmap(const ParsedCommand &cmd) {
   uint32_t expectedBytes = static_cast<uint32_t>(w) * h * 2;
 
   // Limit maximum transfer size (115200 bytes = 240x240 full screen)
-  constexpr uint32_t MAX_BITMAP_BYTES = 240 * 240 * 2;
+  constexpr uint32_t MAX_BITMAP_BYTES = 240 * 320 * 2;
   if (expectedBytes > MAX_BITMAP_BYTES) {
     respondErr("Bitmap too large");
     return;
@@ -3342,6 +3444,157 @@ void CommandParser::cmdDispBitmapB64(const ParsedCommand &cmd) {
   }
 
   Tasks::DisplayTask_RemoteBitmap(x, y, w, h, decoded, decodedLen);
+  respondOk("");
+}
+
+void CommandParser::cmdDispIndicator(const ParsedCommand &cmd) {
+  if (UI::g_uiMode.getMode() != UI::UIMode::REMOTE) {
+    respondErr("Not in REMOTE mode");
+    return;
+  }
+
+  if (cmd.argCount < 3) {
+    respondErr("Usage: DISP_INDICATOR <angle> <rot_dir> <has_trans>");
+    return;
+  }
+
+  int32_t angle = strtol(cmd.args[0], nullptr, 10);
+  int32_t rotDir = strtol(cmd.args[1], nullptr, 10);
+  int32_t hasTrans = strtol(cmd.args[2], nullptr, 10);
+
+  if (angle < 0 || angle > 359) { respondErr("Invalid angle"); return; }
+  if (rotDir < -1 || rotDir > 1) { respondErr("Invalid rotation_dir"); return; }
+  if (hasTrans < 0 || hasTrans > 1) { respondErr("Invalid has_translation"); return; }
+
+  Tasks::DisplayTask_RemoteIndicator(
+      static_cast<uint16_t>(angle),
+      static_cast<int8_t>(rotDir),
+      hasTrans != 0);
+  respondOk("");
+}
+
+void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
+  if (UI::g_uiMode.getMode() != UI::UIMode::REMOTE) {
+    respondErr("Not in REMOTE mode");
+    return;
+  }
+
+  // Usage: DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes>
+  if (cmd.argCount < 5) {
+    respondErr("Usage: DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes>");
+    return;
+  }
+
+  uint16_t x = static_cast<uint16_t>(strtoul(cmd.args[0], nullptr, 10));
+  uint16_t y = static_cast<uint16_t>(strtoul(cmd.args[1], nullptr, 10));
+  uint16_t w = static_cast<uint16_t>(strtoul(cmd.args[2], nullptr, 10));
+  uint16_t h = static_cast<uint16_t>(strtoul(cmd.args[3], nullptr, 10));
+  uint32_t compressedBytes = strtoul(cmd.args[4], nullptr, 10);
+
+  if (w == 0 || h == 0) { respondErr("Invalid dimensions"); return; }
+  if (x >= 240 || y >= 320) { respondErr("Position out of bounds"); return; }
+  if (compressedBytes == 0) { respondErr("Invalid compressed size"); return; }
+
+  // Sanity limit on compressed size
+  constexpr uint32_t MAX_COMPRESSED = 240 * 320 * 3;
+  if (compressedBytes > MAX_COMPRESSED) {
+    respondErr("Compressed size too large");
+    return;
+  }
+
+  // Start LCD streaming
+  if (!Tasks::DisplayTask_StreamBitmapStart(x, y, w, h)) {
+    respondErr("LCD streaming failed");
+    return;
+  }
+
+  // Send ready response
+  char buf[32];
+  snprintf(buf, sizeof(buf), "OK READY %lu", static_cast<unsigned long>(compressedBytes));
+  m_transport.println(buf);
+  m_transport.flush();
+
+  // RLE streaming decoder state machine
+  enum RleState { HEADER, LITERAL, REPEAT };
+  RleState rleState = HEADER;
+  uint16_t runCount = 0;        // Pixels remaining in current run
+  uint8_t pixelBuf[2] = {0, 0}; // Current pixel being assembled
+  uint8_t pixelIdx = 0;          // 0=high byte, 1=low byte
+  uint32_t totalPixels = static_cast<uint32_t>(w) * h;
+  uint32_t decodedPixels = 0;
+
+  constexpr uint32_t BYTE_TIMEOUT_MS = 100;
+  uint32_t bytesReceived = 0;
+
+  while (bytesReceived < compressedBytes) {
+    uint8_t byte;
+    if (!m_transport.readByte(byte, BYTE_TIMEOUT_MS)) {
+      Tasks::DisplayTask_StreamBitmapEnd();
+      char errBuf[48];
+      snprintf(errBuf, sizeof(errBuf), "Timeout at byte %lu/%lu",
+               static_cast<unsigned long>(bytesReceived),
+               static_cast<unsigned long>(compressedBytes));
+      respondErr(errBuf);
+      return;
+    }
+    bytesReceived++;
+
+    switch (rleState) {
+      case HEADER:
+        if (byte & 0x80) {
+          // Repeat run: next pixel repeated (byte - 125) times
+          runCount = static_cast<uint16_t>(byte - 125);
+          rleState = REPEAT;
+          pixelIdx = 0;
+        } else {
+          // Literal run: next (byte + 1) pixels are raw
+          runCount = static_cast<uint16_t>(byte + 1);
+          rleState = LITERAL;
+          pixelIdx = 0;
+        }
+        break;
+
+      case LITERAL:
+        pixelBuf[pixelIdx++] = byte;
+        if (pixelIdx >= 2) {
+          // Emit one pixel to LCD
+          Tasks::DisplayTask_StreamBitmapData(pixelBuf, 2);
+          decodedPixels++;
+          pixelIdx = 0;
+          runCount--;
+          if (runCount == 0) {
+            rleState = HEADER;
+          }
+        }
+        break;
+
+      case REPEAT:
+        pixelBuf[pixelIdx++] = byte;
+        if (pixelIdx >= 2) {
+          // Emit repeated pixel runCount times
+          for (uint16_t i = 0; i < runCount; i++) {
+            Tasks::DisplayTask_StreamBitmapData(pixelBuf, 2);
+            decodedPixels++;
+          }
+          rleState = HEADER;
+          pixelIdx = 0;
+        }
+        break;
+    }
+  }
+
+  Tasks::DisplayTask_StreamBitmapEnd();
+
+  // Verify decoded pixel count
+  if (decodedPixels != totalPixels) {
+    char errBuf[64];
+    snprintf(errBuf, sizeof(errBuf), "RLE decode: got %lu pixels, expected %lu",
+             static_cast<unsigned long>(decodedPixels),
+             static_cast<unsigned long>(totalPixels));
+    respondErr(errBuf);
+    return;
+  }
+
   respondOk("");
 }
 
@@ -3765,6 +4018,163 @@ void CommandParser::cmdEventStatus() {
              static_cast<unsigned>(st.queueDepth));
     m_transport.println(buf);
   }
+}
+
+// =============================================================================
+// Flash image commands (delegate to FlashImageService)
+// =============================================================================
+
+void CommandParser::cmdFlashInfo() {
+  auto &svc = Services::g_flashImageService;
+  if (!svc.isAvailable()) {
+    respondErr("Flash not available");
+    return;
+  }
+
+  auto info = svc.getInfo();
+  char buf[128];
+  snprintf(buf, sizeof(buf),
+           "FLASH_INFO mfr=%02X cap=%luKB slots=%lu",
+           info.manufacturer,
+           static_cast<unsigned long>(info.capacityBytes / 1024),
+           static_cast<unsigned long>(info.maxSlots));
+  respondOk(buf);
+}
+
+void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
+  auto &svc = Services::g_flashImageService;
+  if (!svc.isAvailable()) {
+    respondErr("Flash not available");
+    return;
+  }
+
+  if (cmd.argCount < 1) {
+    respondErr("Usage: FLASH_UPLOAD <slot>");
+    return;
+  }
+
+  uint32_t slot = strtoul(cmd.args[0], nullptr, 10);
+  if (slot >= svc.maxSlots()) {
+    respondErr("Slot out of range");
+    return;
+  }
+
+  constexpr uint32_t expectedBytes = Services::FLASH_IMAGE_SIZE;
+
+  // Erase the slot first
+  if (!svc.eraseSlot(slot)) {
+    respondErr("Flash erase failed");
+    return;
+  }
+
+  // Send ready response
+  char buf[32];
+  snprintf(buf, sizeof(buf), "OK READY %lu",
+           static_cast<unsigned long>(expectedBytes));
+  m_transport.println(buf);
+  m_transport.flush();
+
+  // Receive binary data and program page-by-page
+  constexpr uint32_t PAGE_SIZE = Services::FLASH_PAGE_SIZE;
+  constexpr uint32_t BYTE_TIMEOUT_MS = 100;
+  uint8_t page[PAGE_SIZE];
+  uint32_t bytesReceived = 0;
+
+  while (bytesReceived < expectedBytes) {
+    uint32_t remaining = expectedBytes - bytesReceived;
+    uint32_t toRead = (remaining < PAGE_SIZE) ? remaining : PAGE_SIZE;
+
+    // Read one page worth of data
+    uint32_t pageReceived = 0;
+    while (pageReceived < toRead) {
+      uint8_t byte;
+      if (m_transport.readByte(byte, BYTE_TIMEOUT_MS)) {
+        page[pageReceived++] = byte;
+      } else {
+        char errBuf[48];
+        snprintf(errBuf, sizeof(errBuf), "Timeout at byte %lu/%lu",
+                 static_cast<unsigned long>(bytesReceived + pageReceived),
+                 static_cast<unsigned long>(expectedBytes));
+        respondErr(errBuf);
+        return;
+      }
+    }
+
+    // Program the page to flash
+    if (!svc.writeSlotData(slot, bytesReceived, page, toRead)) {
+      respondErr("Flash program failed");
+      return;
+    }
+
+    bytesReceived += toRead;
+  }
+
+  respondOk("Upload complete");
+}
+
+void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
+  auto &svc = Services::g_flashImageService;
+  if (!svc.isAvailable()) {
+    respondErr("Flash not available");
+    return;
+  }
+
+  if (cmd.argCount < 1) {
+    respondErr("Usage: FLASH_SHOW <slot>");
+    return;
+  }
+
+  uint32_t slot = strtoul(cmd.args[0], nullptr, 10);
+  if (slot >= svc.maxSlots()) {
+    respondErr("Slot out of range");
+    return;
+  }
+
+  // Automatically switch to REMOTE mode for display control
+  UI::g_uiMode.setMode(UI::UIMode::REMOTE);
+
+  // Start LCD streaming (full screen)
+  if (!Tasks::DisplayTask_StreamBitmapStart(0, 0, 240, 320)) {
+    respondErr("LCD streaming failed");
+    return;
+  }
+
+  // Read from flash and stream to LCD in chunks
+  constexpr uint32_t CHUNK_SIZE = 512;
+  uint8_t chunk[CHUNK_SIZE];
+  uint32_t offset = 0;
+
+  while (offset < Services::FLASH_IMAGE_SIZE) {
+    uint32_t remaining = Services::FLASH_IMAGE_SIZE - offset;
+    uint32_t toRead = (remaining < CHUNK_SIZE) ? remaining : CHUNK_SIZE;
+
+    if (!svc.readSlotChunk(slot, offset, chunk, toRead)) {
+      Tasks::DisplayTask_StreamBitmapEnd();
+      respondErr("Flash read failed");
+      return;
+    }
+
+    Tasks::DisplayTask_StreamBitmapData(chunk, toRead);
+    offset += toRead;
+  }
+
+  Tasks::DisplayTask_StreamBitmapEnd();
+  respondOk("OK");
+}
+
+void CommandParser::cmdFlashEraseAll() {
+  auto &svc = Services::g_flashImageService;
+  if (!svc.isAvailable()) {
+    respondErr("Flash not available");
+    return;
+  }
+
+  if (!svc.eraseAll()) {
+    respondErr("Flash erase failed");
+    return;
+  }
+
+  respondOk("All image slots erased");
 }
 
 } // namespace Comms

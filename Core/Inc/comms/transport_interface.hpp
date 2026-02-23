@@ -76,6 +76,13 @@ public:
    * @brief Flush any buffered output
    */
   virtual void flush() = 0;
+
+  /**
+   * @brief Change transport baud rate at runtime
+   * @param baudRate New baud rate
+   * @return true if supported and applied, false if not supported
+   */
+  virtual bool setBaudRate(uint32_t baudRate) { (void)baudRate; return false; }
 };
 
 } // namespace Comms

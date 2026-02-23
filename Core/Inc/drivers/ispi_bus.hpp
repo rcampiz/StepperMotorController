@@ -62,6 +62,14 @@ public:
     virtual SPIMode getMode() const = 0;
 
     /**
+     * @brief Set clock prescaler (BR[2:0] value)
+     * @param prescaler 0=/2, 1=/4, 2=/8, 3=/16, 4=/32, 5=/64, 6=/128, 7=/256
+     *
+     * Default implementation is a no-op (bit-banged SPI ignores prescaler).
+     */
+    virtual void setPrescaler(uint8_t prescaler) { (void)prescaler; }
+
+    /**
      * @brief Transfer one byte (full duplex)
      * @param data Byte to send
      * @return Byte received
@@ -88,6 +96,22 @@ public:
      */
     void read(uint8_t* data, size_t len) {
         transfer(nullptr, data, len);
+    }
+
+    /**
+     * @brief Write a repeated pattern (e.g., solid-color LCD fills)
+     * @param pattern Pattern bytes to repeat
+     * @param patternLen Length of pattern in bytes
+     * @param repeatCount Number of times to repeat the pattern
+     *
+     * Default: polled byte-by-byte. SPIHardware overrides with DMA for SPI1.
+     */
+    virtual void writeFill(const uint8_t* pattern, size_t patternLen, uint32_t repeatCount) {
+        for (uint32_t i = 0; i < repeatCount; i++) {
+            for (size_t j = 0; j < patternLen; j++) {
+                transfer(pattern[j]);
+            }
+        }
     }
 };
 

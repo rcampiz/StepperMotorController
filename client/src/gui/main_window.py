@@ -30,6 +30,8 @@ from gui.driver_panel import DriverPanel
 from gui.protection_panel import ProtectionPanel
 from gui.stepmode_panel import StepModePanel
 from gui.graph_panel import GraphPanel
+from gui.display_panel import DisplayPanel
+from gui.arrow_generator import NUM_FRAMES
 from gui.serial_worker import SerialThread, QueuedCommand, CommandTag
 from protocol import MotorClient, ResponseFormat
 from transport import VcpTransport
@@ -97,6 +99,9 @@ class MainWindow(QMainWindow):
 
         self._graph_panel = GraphPanel()
         self._right_tabs.addTab(self._graph_panel, "Telemetry Graphs")
+
+        self._display_panel = DisplayPanel()
+        self._right_tabs.addTab(self._display_panel, "Display")
 
         splitter.addWidget(self._right_tabs)
 
@@ -215,6 +220,24 @@ class MainWindow(QMainWindow):
         self._graph_panel.firmware_filter_changed.connect(
             self._on_enc_filter_changed)
 
+        # Display panel bitmap send
+        self._display_panel.bitmap_send_requested.connect(
+            self._on_bitmap_send_requested)
+
+        # Display panel indicator
+        self._display_panel.indicator_send_requested.connect(
+            self._on_indicator_send_requested)
+
+        # Display panel flash operations
+        self._display_panel.flash_info_requested.connect(
+            self._on_flash_info_requested)
+        self._display_panel.flash_upload_all_requested.connect(
+            self._on_flash_upload_all_requested)
+        self._display_panel.flash_show_requested.connect(
+            self._on_flash_show_requested)
+        self._display_panel.flash_erase_requested.connect(
+            self._on_flash_erase_requested)
+
         # Dashboard clear fault button
         self._telemetry_panel.clear_fault_requested.connect(
             lambda: self._send_command("CLEAR_FAULT"))
@@ -296,6 +319,11 @@ class MainWindow(QMainWindow):
             self._json_action.setChecked(True)
             self._ascii_action.setChecked(False)
 
+            # Baud auto-negotiation disabled — ST-LINK V2-1 VCP drops bytes
+            # above 115200 during bulk binary transfers.  The SET_BAUD command
+            # is still available for manual use if a different adapter is used.
+            self._status_bar.showMessage(f"Connected to {port}")
+
             # Create and start worker thread — after this point, ALL serial
             # communication must go through the worker's command queue
             self._serial_thread = SerialThread(self._client)
@@ -306,6 +334,9 @@ class MainWindow(QMainWindow):
             worker.heartbeat_ack_received.connect(self._on_heartbeat_ack)
             worker.heartbeat_timeout.connect(self._on_heartbeat_timeout)
             worker.event_received.connect(self._on_async_event)
+            worker.bitmap_progress.connect(self._display_panel.update_progress)
+            worker.flash_upload_progress.connect(
+                self._display_panel.update_upload_progress)
 
             # Start heartbeat producer BEFORE starting the thread so the
             # flag is set when run() begins its first loop iteration.
@@ -484,11 +515,182 @@ class MainWindow(QMainWindow):
         if self._serial_thread:
             self._serial_thread.send_command(f"ENC_FILTER {filter_cmd}")
 
+    # Rows per band for chunked bitmap transfer.  Each band is a separate
+    # DISP_BITMAP command so heartbeats can flow between bands.
+    # 20 rows × 240px × 2 bytes = 9600 bytes ≈ 0.83s at 115200 baud.
+    BITMAP_BAND_ROWS = 20
+
+    @Slot(int, int, int, int, bytes)
+    def _on_bitmap_send_requested(self, x, y, w, h, rgb565_data):
+        """Handle bitmap send request from display panel.
+
+        Splits the image into horizontal bands and queues each as a
+        separate DISP_BITMAP command so the serial worker can send
+        heartbeats between bands.
+        """
+        if not self._serial_thread:
+            self._display_panel.transfer_complete(False, "Not connected")
+            return
+
+        worker = self._serial_thread.worker
+        total_bytes = len(rgb565_data)
+        band_h = self.BITMAP_BAND_ROWS
+        bytes_per_row = w * 2
+
+        # Switch to REMOTE mode first
+        worker.queue_command(
+            QueuedCommand("UI_MODE REMOTE", CommandTag.GENERIC))
+
+        # Queue one DISP_BITMAP per band
+        row = 0
+        while row < h:
+            rows_this_band = min(band_h, h - row)
+            band_y = y + row
+            data_offset = row * bytes_per_row
+            band_data = rgb565_data[data_offset:data_offset + rows_this_band * bytes_per_row]
+            band_row = row  # capture for closure
+
+            def make_transfer(bx, by, bw, bh, bd, accumulated_offset):
+                """Create a closure that sends one band."""
+                def do_transfer(client):
+                    resp = client.disp_bitmap(bx, by, bw, bh, bd)
+                    # Emit cumulative progress
+                    worker.bitmap_progress.emit(
+                        accumulated_offset + len(bd), total_bytes)
+                    return resp
+                return do_transfer
+
+            accumulated = data_offset  # bytes already sent before this band
+            is_last = (row + rows_this_band >= h)
+            tag = CommandTag.BITMAP_TRANSFER if is_last else CommandTag.GENERIC
+
+            worker.queue_command(
+                QueuedCommand(
+                    command=f"DISP_BITMAP {x} {band_y} {w} {rows_this_band}",
+                    tag=tag,
+                    callable=make_transfer(x, band_y, w, rows_this_band,
+                                           band_data, accumulated),
+                )
+            )
+            row += rows_this_band
+
+    # --- Indicator handler ---
+
+    @Slot(int, int, bool)
+    def _on_indicator_send_requested(self, angle: int, rotation_dir: int,
+                                     has_translation: bool):
+        """Handle indicator send request from display panel."""
+        if not self._serial_thread:
+            self._display_panel.transfer_complete(False, "Not connected")
+            return
+
+        worker = self._serial_thread.worker
+
+        # Ensure REMOTE mode
+        worker.queue_command(
+            QueuedCommand("UI_MODE REMOTE", CommandTag.GENERIC))
+
+        # Send indicator command
+        trans_int = 1 if has_translation else 0
+        worker.queue_command(
+            QueuedCommand(
+                f"DISP_INDICATOR {angle} {rotation_dir} {trans_int}",
+                CommandTag.GENERIC))
+
+        self._display_panel.transfer_complete(True, "Indicator sent")
+
+    # --- Flash operation handlers ---
+
+    @Slot()
+    def _on_flash_info_requested(self):
+        """Handle Flash Info button click."""
+        if not self._serial_thread:
+            self._display_panel.transfer_complete(False, "Not connected")
+            return
+        self._serial_thread.worker.queue_command(
+            QueuedCommand("FLASH_INFO", CommandTag.FLASH_INFO))
+
+    @Slot()
+    def _on_flash_upload_all_requested(self):
+        """Handle Upload All to Flash button click.
+
+        Generates all 64 arrow frames, queues each as a callable FLASH_UPLOAD
+        command through the serial worker. Progress is emitted per-slot via
+        flash_upload_progress signal.
+        """
+        if not self._serial_thread:
+            self._display_panel.transfer_complete(False, "Not connected")
+            return
+
+        worker = self._serial_thread.worker
+        total = NUM_FRAMES
+
+        # Switch to REMOTE mode first
+        worker.queue_command(
+            QueuedCommand("UI_MODE REMOTE", CommandTag.GENERIC))
+
+        # Queue one FLASH_UPLOAD per slot
+        for slot in range(total):
+            rgb565 = self._display_panel.get_frame_rgb565(slot)
+
+            def make_upload(s, data, t):
+                """Create a closure that uploads one slot."""
+                def do_upload(client):
+                    resp = client.flash_upload(s, data)
+                    worker.flash_upload_progress.emit(s + 1, t)
+                    return resp
+                return do_upload
+
+            is_last = (slot == total - 1)
+            tag = CommandTag.FLASH_UPLOAD_SLOT if is_last else CommandTag.GENERIC
+
+            worker.queue_command(
+                QueuedCommand(
+                    command=f"FLASH_UPLOAD {slot}",
+                    tag=tag,
+                    callable=make_upload(slot, rgb565, total),
+                )
+            )
+
+    @Slot(int)
+    def _on_flash_show_requested(self, slot: int):
+        """Handle Show from Flash button click."""
+        if not self._serial_thread:
+            self._display_panel.transfer_complete(False, "Not connected")
+            return
+        self._serial_thread.worker.queue_command(
+            QueuedCommand(f"FLASH_SHOW {slot}", CommandTag.FLASH_SHOW))
+
+    @Slot()
+    def _on_flash_erase_requested(self):
+        """Handle Erase Flash button click."""
+        if not self._serial_thread:
+            self._display_panel.transfer_complete(False, "Not connected")
+            return
+        self._display_panel._set_status("Erasing flash...", "blue")
+
+        def do_erase(client):
+            return client.flash_erase_all(timeout_ms=60000)
+
+        self._serial_thread.worker.queue_command(
+            QueuedCommand(
+                command="FLASH_ERASE_ALL",
+                tag=CommandTag.FLASH_ERASE,
+                callable=do_erase,
+            )
+        )
+
     @Slot(str, str, object)
     def _on_response_received(self, tag: str, command: str, response):
         """Route worker responses to appropriate UI handlers."""
         if response is None:
             self._status_bar.showMessage(f"Error: no response to {command}", 5000)
+            if tag == CommandTag.BITMAP_TRANSFER.name:
+                self._display_panel.transfer_complete(False, "No response")
+            if tag in (CommandTag.FLASH_UPLOAD_SLOT.name,
+                       CommandTag.FLASH_SHOW.name,
+                       CommandTag.FLASH_ERASE.name):
+                self._display_panel.transfer_complete(False, "No response")
             return
 
         if not response.success:
@@ -504,6 +706,13 @@ class MainWindow(QMainWindow):
             if tag == CommandTag.CLEAR_FAULT.name:
                 self._motor_panel.show_fault_error(
                     f"Cannot clear: {response.error_message}")
+            # Flash operation failures
+            if tag in (CommandTag.FLASH_UPLOAD_SLOT.name,
+                       CommandTag.FLASH_SHOW.name,
+                       CommandTag.FLASH_ERASE.name,
+                       CommandTag.FLASH_INFO.name):
+                self._display_panel.transfer_complete(
+                    False, f"Flash error: {response.error_message}")
             return
 
         if tag == CommandTag.REFRESH_MOTOR_DEBUG.name:
@@ -543,6 +752,36 @@ class MainWindow(QMainWindow):
             self._status_bar.showMessage("Fault cleared", 2000)
             if self._serial_thread:
                 self._serial_thread.queue_refresh()
+
+        elif tag == CommandTag.BITMAP_TRANSFER.name:
+            if response.success:
+                self._display_panel.transfer_complete(True, "Transfer complete")
+                self._status_bar.showMessage("Bitmap sent to LCD", 3000)
+            else:
+                self._display_panel.transfer_complete(
+                    False, f"Transfer failed: {response.error_message}")
+
+        elif tag == CommandTag.FLASH_INFO.name:
+            info = response.data if response.data else {}
+            cap_kb = info.get("capacity_kb", "?")
+            max_slots = info.get("max_slots", "?")
+            stored = info.get("stored", "?")
+            self._display_panel.update_flash_info(
+                f"Flash: {cap_kb} KB, {max_slots} slots, {stored} stored")
+            self._status_bar.showMessage("Flash info received", 3000)
+
+        elif tag == CommandTag.FLASH_UPLOAD_SLOT.name:
+            self._display_panel.transfer_complete(
+                True, "All frames uploaded to flash")
+            self._status_bar.showMessage("Flash upload complete", 3000)
+
+        elif tag == CommandTag.FLASH_SHOW.name:
+            self._display_panel.transfer_complete(True, "Displayed from flash")
+            self._status_bar.showMessage("Image shown from flash", 3000)
+
+        elif tag == CommandTag.FLASH_ERASE.name:
+            self._display_panel.transfer_complete(True, "Flash erased")
+            self._status_bar.showMessage("Flash erased", 3000)
 
         else:  # GENERIC
             self._status_bar.showMessage(f"OK: {command}", 2000)

@@ -141,11 +141,55 @@ public:
         for (volatile int i = 0; i < 100; i++);
     }
 
+    /**
+     * @brief Get flash capacity in bytes from JEDEC ID
+     * @return Capacity in bytes, or 0 if unknown
+     */
+    uint32_t capacityBytes() {
+        JEDEC_ID id = readJEDEC();
+        // Capacity byte: 0x14=1MB, 0x15=2MB, 0x16=4MB, 0x17=8MB, 0x18=16MB
+        if (id.capacity >= 0x10 && id.capacity <= 0x20) {
+            return 1UL << id.capacity;
+        }
+        return 0;
+    }
+
+    /**
+     * @brief Erase a 64KB block at the given address
+     * @param addr Address within the block (will be aligned to 64KB boundary)
+     */
+    void blockErase64(uint32_t addr) {
+        writeEnable();
+        m_spi.lock();
+        csLow();
+        m_spi.transfer(static_cast<uint8_t>(Cmd::BlockErase64));
+        m_spi.transfer((addr >> 16) & 0xFF);
+        m_spi.transfer((addr >> 8) & 0xFF);
+        m_spi.transfer(addr & 0xFF);
+        csHigh();
+        m_spi.unlock();
+        waitReady();
+    }
+
+    /**
+     * @brief Erase the entire chip
+     * WARNING: This can take several seconds to complete.
+     */
+    void chipErase() {
+        writeEnable();
+        m_spi.lock();
+        csLow();
+        m_spi.transfer(static_cast<uint8_t>(Cmd::ChipErase));
+        csHigh();
+        m_spi.unlock();
+        waitReady();
+    }
+
 private:
     SPIBus& m_spi;
 
     void initPins() {
-        RCC->AHB1ENR |= RCC_AHB1ENR_GPIOCEN;
+        RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
 
         // CS - output, high
         auto port = Pins::GFX_Flash::CS_PORT;

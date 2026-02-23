@@ -125,6 +125,7 @@ void vCommsTask(void* pvParameters)
         // Process incoming commands
         if (s_parser != nullptr) {
             s_parser->process();
+            s_parser->checkBaudRevert();
         }
 
         // Publish periodic telemetry if enabled

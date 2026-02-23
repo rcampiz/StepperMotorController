@@ -28,6 +28,11 @@ class CommandTag(Enum):
     APPLY_PARAMS = auto()
     APPLY_PROTECTION = auto()
     CLEAR_FAULT = auto()
+    BITMAP_TRANSFER = auto()
+    FLASH_INFO = auto()
+    FLASH_UPLOAD_SLOT = auto()
+    FLASH_SHOW = auto()
+    FLASH_ERASE = auto()
 
 
 @dataclass
@@ -37,6 +42,7 @@ class QueuedCommand:
     tag: CommandTag = CommandTag.GENERIC
     multiline: bool = False
     max_lines: int = 20
+    callable: object = None
 
 
 class SerialWorker(QObject):
@@ -51,6 +57,8 @@ class SerialWorker(QObject):
     heartbeat_ack_received = Signal(dict)
     heartbeat_timeout = Signal()
     event_received = Signal(str, dict)  # (event_type, data_dict)
+    bitmap_progress = Signal(int, int)  # (bytes_sent, total_bytes)
+    flash_upload_progress = Signal(int, int)  # (slot_done, total_slots)
 
     def __init__(self, client):
         super().__init__()
@@ -157,7 +165,9 @@ class SerialWorker(QObject):
 
         try:
             log.debug("Sending [%s]: %s", queued.tag.name, queued.command)
-            if queued.multiline:
+            if queued.callable is not None:
+                resp = queued.callable(self._client)
+            elif queued.multiline:
                 resp = self._client.send_command_multiline(
                     queued.command, max_lines=queued.max_lines
                 )

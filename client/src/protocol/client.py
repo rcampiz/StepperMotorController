@@ -557,7 +557,8 @@ class MotorClient:
     # -------------------------------------------------------------------------
 
     def disp_bitmap(self, x: int, y: int, w: int, h: int, data: bytes,
-                    timeout_ms: Optional[int] = None) -> Response:
+                    timeout_ms: Optional[int] = None,
+                    progress_cb=None) -> Response:
         """
         Stream raw RGB565 bitmap data to the device.
 
@@ -574,10 +575,11 @@ class MotorClient:
         self._drain_pending()
 
         # Step 1: request streaming
-        self._transport.send_line(f"DISP_BITMAP {x} {y} {w} {h}")
+        cmd_str = f"DISP_BITMAP {x} {y} {w} {h}"
+        self._transport.send_line(cmd_str)
 
-        # Step 2: read READY response (ASCII even if JSON mode is enabled)
-        line = self._transport.recv_line(timeout_ms=timeout)
+        # Step 2: read READY response, skipping echo/events
+        line = self._recv_response(cmd_str, timeout)
         if line is None:
             raise ProtocolError("No READY response for DISP_BITMAP")
 
@@ -605,9 +607,216 @@ class MotorClient:
             chunk = data[offset:offset + self._stream_chunk]
             self._transport.send(chunk)
             offset += len(chunk)
+            if progress_cb is not None:
+                progress_cb(offset, ready_bytes)
 
-        # Step 4: final OK/ERROR
-        final_line = self._transport.recv_line(timeout_ms=timeout)
+        # Step 4: final OK/ERROR (skip any echo/event lines)
+        final_line = self._recv_response(cmd_str, timeout)
         if final_line is None:
             raise ProtocolError("No final response for DISP_BITMAP")
         return self._parse_response(final_line, "DISP_BITMAP")
+
+    # -------------------------------------------------------------------------
+    # Baud rate negotiation
+    # -------------------------------------------------------------------------
+
+    def set_baud(self, baud: int) -> bool:
+        """
+        Negotiate a new baud rate with the firmware.
+
+        Sends SET_BAUD, waits for OK, switches pyserial port, verifies
+        with PING. If verification fails, reverts to the old baud rate.
+        The firmware auto-reverts after 2 seconds if no valid command arrives.
+
+        Returns:
+            True if baud rate was successfully changed, False otherwise.
+        """
+        import time
+
+        old_baud = self._transport._baudrate
+
+        # Send SET_BAUD at current baud rate
+        try:
+            resp = self.send_command(f"SET_BAUD {baud}")
+        except Exception:
+            return False
+
+        if not resp.success:
+            return False
+
+        # Give firmware time to switch (it does flush + 10ms delay internally)
+        time.sleep(0.05)
+
+        # Switch the serial port to the new baud rate
+        self._transport._serial.baudrate = baud
+        self._transport._baudrate = baud
+        self._transport._line_buffer = b""
+        self._transport.flush_input()
+
+        # Small delay for ST-LINK to reconfigure its UART bridge
+        time.sleep(0.05)
+
+        # Verify with PING at new baud rate
+        try:
+            verify = self.send_command("PING 99", timeout_ms=1000)
+            if verify.success:
+                return True
+        except Exception:
+            pass
+
+        # Verification failed — revert to old baud rate
+        self._transport._serial.baudrate = old_baud
+        self._transport._baudrate = old_baud
+        self._transport._line_buffer = b""
+        self._transport.flush_input()
+        return False
+
+    # -------------------------------------------------------------------------
+    # Flash Image Storage
+    # -------------------------------------------------------------------------
+
+    def flash_info(self) -> Response:
+        """Query NOR flash info (capacity, slot count)."""
+        return self.send_command("FLASH_INFO")
+
+    def flash_show(self, slot: int) -> Response:
+        """Display an image stored in flash slot on the LCD."""
+        return self.send_command(f"FLASH_SHOW {slot}")
+
+    def flash_erase_all(self, timeout_ms: int = 60000) -> Response:
+        """Erase all flash image slots. Can take several seconds."""
+        return self.send_command("FLASH_ERASE_ALL", timeout_ms=timeout_ms)
+
+    def flash_upload(self, slot: int, data: bytes,
+                     timeout_ms: Optional[int] = None,
+                     progress_cb=None) -> Response:
+        """
+        Upload raw RGB565 image data to a flash slot.
+
+        Protocol (same pattern as disp_bitmap):
+          1) Send FLASH_UPLOAD <slot>
+          2) Expect "OK READY <bytes>"
+          3) Send raw RGB565 bytes
+          4) Receive final OK/ERROR
+        """
+        if not self.is_connected():
+            raise TransportError("Not connected")
+
+        timeout = timeout_ms or max(self._timeout_ms, 30000)
+        self._drain_pending()
+
+        cmd_str = f"FLASH_UPLOAD {slot}"
+        self._transport.send_line(cmd_str)
+
+        # Wait for READY (flash erase may take a moment)
+        line = self._recv_response(cmd_str, timeout)
+        if line is None:
+            raise ProtocolError("No READY response for FLASH_UPLOAD")
+
+        if line.startswith("{"):
+            resp = self._parse_json_response(line, "FLASH_UPLOAD")
+            if resp.success:
+                raise ProtocolError("Expected READY for FLASH_UPLOAD, got JSON OK")
+            return resp
+
+        resp = self._parse_ascii_response(line, "FLASH_UPLOAD")
+        ready_bytes = resp.data.get("ready_bytes")
+        if ready_bytes is None:
+            raise ProtocolError(f"Expected READY response, got: {line}")
+
+        if len(data) < ready_bytes:
+            raise ProtocolError(
+                f"Data too small: expected {ready_bytes}, got {len(data)}"
+            )
+
+        # Stream raw bytes
+        offset = 0
+        while offset < ready_bytes:
+            chunk = data[offset:offset + self._stream_chunk]
+            self._transport.send(chunk)
+            offset += len(chunk)
+            if progress_cb is not None:
+                progress_cb(offset, ready_bytes)
+
+        # Final response (programming may take a moment)
+        final_line = self._recv_response(cmd_str, timeout)
+        if final_line is None:
+            raise ProtocolError("No final response for FLASH_UPLOAD")
+        return self._parse_response(final_line, "FLASH_UPLOAD")
+
+    # -------------------------------------------------------------------------
+    # Display Indicator + RLE Bitmap
+    # -------------------------------------------------------------------------
+
+    def disp_indicator(self, angle: int, rotation_dir: int,
+                       has_translation: bool) -> Response:
+        """
+        Draw a motion indicator on the MCU LCD.
+
+        Args:
+            angle: Direction angle 0-359 (0=up/north, clockwise).
+            rotation_dir: -1 (CCW), 0 (none), 1 (CW).
+            has_translation: Whether translational motion is active.
+        """
+        return self.send_command(
+            f"DISP_INDICATOR {angle} {rotation_dir} {int(has_translation)}"
+        )
+
+    def disp_bitmap_rle(self, x: int, y: int, w: int, h: int,
+                        rle_data: bytes,
+                        timeout_ms: Optional[int] = None,
+                        progress_cb=None) -> Response:
+        """
+        Stream RLE-compressed RGB565 bitmap data to the device.
+
+        Protocol:
+          1) Send DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes>
+          2) Expect "OK READY <compressed_bytes>"
+          3) Send compressed data
+          4) Receive final OK/ERROR
+        """
+        if not self.is_connected():
+            raise TransportError("Not connected")
+
+        timeout = timeout_ms or self._timeout_ms
+        self._drain_pending()
+
+        compressed_len = len(rle_data)
+        cmd_str = f"DISP_BITMAP_RLE {x} {y} {w} {h} {compressed_len}"
+        self._transport.send_line(cmd_str)
+
+        line = self._recv_response(cmd_str, timeout)
+        if line is None:
+            raise ProtocolError("No READY response for DISP_BITMAP_RLE")
+
+        if line.startswith("{"):
+            resp = self._parse_json_response(line, "DISP_BITMAP_RLE")
+            if resp.success:
+                raise ProtocolError(
+                    "Expected READY for DISP_BITMAP_RLE, got JSON OK"
+                )
+            return resp
+
+        resp = self._parse_ascii_response(line, "DISP_BITMAP_RLE")
+        ready_bytes = resp.data.get("ready_bytes")
+        if ready_bytes is None:
+            raise ProtocolError(f"Expected READY response, got: {line}")
+
+        if compressed_len != ready_bytes:
+            raise ProtocolError(
+                f"RLE size mismatch: expected {ready_bytes}, "
+                f"got {compressed_len}"
+            )
+
+        offset = 0
+        while offset < compressed_len:
+            chunk = rle_data[offset:offset + self._stream_chunk]
+            self._transport.send(chunk)
+            offset += len(chunk)
+            if progress_cb is not None:
+                progress_cb(offset, compressed_len)
+
+        final_line = self._recv_response(cmd_str, timeout)
+        if final_line is None:
+            raise ProtocolError("No final response for DISP_BITMAP_RLE")
+        return self._parse_response(final_line, "DISP_BITMAP_RLE")

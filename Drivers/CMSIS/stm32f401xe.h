@@ -134,6 +134,9 @@ typedef enum {
 
 // AHB1 peripherals (additional)
 #define FLASH_R_BASE          (AHB1PERIPH_BASE + 0x3C00UL)
+#define DMA1_BASE             (AHB1PERIPH_BASE + 0x6000UL)
+#define DMA2_BASE             (AHB1PERIPH_BASE + 0x6400UL)
+#define DMA2_Stream3_BASE     (DMA2_BASE + 0x58UL)
 
 // GPIO register structure
 typedef struct {
@@ -288,6 +291,24 @@ typedef struct {
     volatile uint32_t OPTCR;       // Option control register
 } FLASH_TypeDef;
 
+// DMA controller register structure
+typedef struct {
+    volatile uint32_t LISR;        // Low interrupt status register
+    volatile uint32_t HISR;        // High interrupt status register
+    volatile uint32_t LIFCR;       // Low interrupt flag clear register
+    volatile uint32_t HIFCR;       // High interrupt flag clear register
+} DMA_TypeDef;
+
+// DMA stream register structure
+typedef struct {
+    volatile uint32_t CR;          // Configuration register
+    volatile uint32_t NDTR;        // Number of data register
+    volatile uint32_t PAR;         // Peripheral address register
+    volatile uint32_t M0AR;        // Memory 0 address register
+    volatile uint32_t M1AR;        // Memory 1 address register
+    volatile uint32_t FCR;         // FIFO control register
+} DMA_Stream_TypeDef;
+
 // Peripheral declarations
 #define GPIOA               ((GPIO_TypeDef *) GPIOA_BASE)
 #define GPIOB               ((GPIO_TypeDef *) GPIOB_BASE)
@@ -316,6 +337,8 @@ typedef struct {
 #define EXTI                ((EXTI_TypeDef *) EXTI_BASE)
 #define SYSCFG              ((SYSCFG_TypeDef *) SYSCFG_BASE)
 #define FLASH               ((FLASH_TypeDef *) FLASH_R_BASE)
+#define DMA2                ((DMA_TypeDef *) DMA2_BASE)
+#define DMA2_Stream3        ((DMA_Stream_TypeDef *) DMA2_Stream3_BASE)
 
 // RCC AHB1ENR register bits
 #define RCC_AHB1ENR_GPIOAEN_Pos       (0U)
@@ -330,6 +353,8 @@ typedef struct {
 #define RCC_AHB1ENR_GPIOEEN           (1UL << RCC_AHB1ENR_GPIOEEN_Pos)
 #define RCC_AHB1ENR_GPIOHEN_Pos       (7U)
 #define RCC_AHB1ENR_GPIOHEN           (1UL << RCC_AHB1ENR_GPIOHEN_Pos)
+#define RCC_AHB1ENR_DMA2EN_Pos        (22U)
+#define RCC_AHB1ENR_DMA2EN            (1UL << RCC_AHB1ENR_DMA2EN_Pos)
 
 // GPIO MODER register bits
 #define GPIO_MODER_MODE0_Pos          (0U)
@@ -653,6 +678,45 @@ typedef struct {
 #define SPI_SR_TXE                    (1UL << SPI_SR_TXE_Pos)
 #define SPI_SR_BSY_Pos                (7U)
 #define SPI_SR_BSY                    (1UL << SPI_SR_BSY_Pos)
+
+// SPI CR2 register bits
+#define SPI_CR2_RXDMAEN_Pos           (0U)
+#define SPI_CR2_RXDMAEN               (1UL << SPI_CR2_RXDMAEN_Pos)
+#define SPI_CR2_TXDMAEN_Pos           (1U)
+#define SPI_CR2_TXDMAEN               (1UL << SPI_CR2_TXDMAEN_Pos)
+
+// DMA Stream configuration register (DMA_SxCR) bits
+#define DMA_SxCR_EN_Pos               (0U)
+#define DMA_SxCR_EN                   (1UL << DMA_SxCR_EN_Pos)
+#define DMA_SxCR_DIR_Pos              (6U)
+#define DMA_SxCR_DIR                  (0x3UL << DMA_SxCR_DIR_Pos)
+#define DMA_SxCR_DIR_0                (0x1UL << DMA_SxCR_DIR_Pos)
+#define DMA_SxCR_MINC_Pos             (10U)
+#define DMA_SxCR_MINC                 (1UL << DMA_SxCR_MINC_Pos)
+#define DMA_SxCR_PL_Pos               (16U)
+#define DMA_SxCR_PL                   (0x3UL << DMA_SxCR_PL_Pos)
+#define DMA_SxCR_PL_1                 (0x2UL << DMA_SxCR_PL_Pos)
+#define DMA_SxCR_CHSEL_Pos            (25U)
+#define DMA_SxCR_CHSEL                (0x7UL << DMA_SxCR_CHSEL_Pos)
+#define DMA_SxCR_CHSEL_0              (0x1UL << DMA_SxCR_CHSEL_Pos)
+#define DMA_SxCR_CHSEL_1              (0x2UL << DMA_SxCR_CHSEL_Pos)
+
+// DMA Stream FIFO control register (DMA_SxFCR) bits
+#define DMA_SxFCR_FTH_Pos             (0U)
+#define DMA_SxFCR_FTH                 (0x3UL << DMA_SxFCR_FTH_Pos)
+#define DMA_SxFCR_DMDIS_Pos           (2U)
+#define DMA_SxFCR_DMDIS               (1UL << DMA_SxFCR_DMDIS_Pos)
+
+// DMA Low interrupt status register (LISR) - Stream 3 flags
+#define DMA_LISR_TCIF3_Pos            (27U)
+#define DMA_LISR_TCIF3                (1UL << DMA_LISR_TCIF3_Pos)
+
+// DMA Low interrupt flag clear register (LIFCR) - Stream 3 flags
+#define DMA_LIFCR_CFEIF3              (1UL << 22)
+#define DMA_LIFCR_CDMEIF3             (1UL << 24)
+#define DMA_LIFCR_CTEIF3              (1UL << 25)
+#define DMA_LIFCR_CHTIF3              (1UL << 26)
+#define DMA_LIFCR_CTCIF3              (1UL << 27)
 
 // TIM CR1 register bits
 #define TIM_CR1_CEN_Pos               (0U)

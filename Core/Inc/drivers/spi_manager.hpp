@@ -138,7 +138,8 @@ public:
      */
     bool init(ILock& spi1Lock, ILock& spi2Lock) {
         // SPI1: Hardware SPI peripheral on PA5 (SCK), PA6 (MISO), PA7 (MOSI)
-        // Prescaler 5 = /64 → 84 MHz / 64 = 1.3125 MHz
+        // Prescaler 4 = /32 → 84 MHz / 32 = 2.625 MHz
+        // Safe for both ST7789 LCD (max ~62 MHz) and powerSTEP01 (max 5 MHz)
         m_spi1 = new SPIHardware(
             SPI1,
             Pins::SPI1_Bus::PORT,
@@ -147,21 +148,20 @@ public:
             Pins::SPI1_Bus::MOSI_PIN,
             Pins::SPI1_Bus::AF,
             SPIMode::Mode3,
-            5,  // BR = /64
+            4,  // BR = /32 (2.625 MHz)
             spi1Lock
         );
 
-        // SPI3: Hardware SPI on PC10 (SCK), PC11 (MISO), PC12 (MOSI)
-        // Prescaler 4 = /32 → 42 MHz / 32 = 1.3125 MHz (APB1)
+        // SPI2: Hardware SPI on PB13 (SCK), PB14 (MISO), PC3 (MOSI)
+        // Prescaler 4 = /32 → 42 MHz / 32 = 1.3 MHz (conservative, proven reliable)
         m_spi2 = new SPIHardware(
-            SPI3,
-            Pins::SPI3_Bus::PORT,
-            Pins::SPI3_Bus::SCK_PIN,
-            Pins::SPI3_Bus::MISO_PIN,
-            Pins::SPI3_Bus::MOSI_PIN,
-            Pins::SPI3_Bus::AF,
+            SPI2,
+            Pins::SPI2_Bus::SCK_PORT,  Pins::SPI2_Bus::SCK_PIN,
+            Pins::SPI2_Bus::MISO_PORT, Pins::SPI2_Bus::MISO_PIN,
+            Pins::SPI2_Bus::MOSI_PORT, Pins::SPI2_Bus::MOSI_PIN,
+            Pins::SPI2_Bus::AF,
             SPIMode::Mode0,
-            4,  // BR = /32
+            4,  // BR = /32 (1.3 MHz)
             spi2Lock
         );
 
@@ -292,7 +292,7 @@ public:
      * @brief Read MISO pin state for SPI2
      */
     bool readMISO2() const {
-        return (Pins::SPI3_Bus::PORT->IDR & (1UL << Pins::SPI3_Bus::MISO_PIN)) != 0;
+        return (Pins::SPI2_Bus::MISO_PORT->IDR & (1UL << Pins::SPI2_Bus::MISO_PIN)) != 0;
     }
 
     /**

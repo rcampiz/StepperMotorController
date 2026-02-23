@@ -335,16 +335,16 @@ bool Encoder::initGPIO()
     GPIOC->PUPDR &= ~(3U << (9 * 2));   // Clear pull
     GPIOC->PUPDR |=  (1U << (9 * 2));   // Pull-up
 
-    // Enable AM26LV32EIDR line receiver: G (PC3) = HIGH, nG (PC2) = LOW
-    // PC2 (nG): output, drive low
-    GPIOC->MODER &= ~GPIO_MODER_MODER2;
-    GPIOC->MODER |= (0x1 << GPIO_MODER_MODER2_Pos);  // Output
-    GPIOC->BSRR = (1U << 18);  // Reset PC2 (low)
+    // Enable AM26LV32EIDR line receiver: G = HIGH, nG = LOW
+    // nG (PC2): output, drive low
+    Pins::Encoder::NG_PORT->MODER &= ~(0x3UL << (Pins::Encoder::NG_PIN * 2));
+    Pins::Encoder::NG_PORT->MODER |=  (0x1UL << (Pins::Encoder::NG_PIN * 2));
+    Pins::Encoder::NG_PORT->BSRR = (1UL << (Pins::Encoder::NG_PIN + 16));  // Low
 
-    // PC3 (G): output, drive high
-    GPIOC->MODER &= ~GPIO_MODER_MODER3;
-    GPIOC->MODER |= (0x1 << GPIO_MODER_MODER3_Pos);  // Output
-    GPIOC->BSRR = (1U << 3);   // Set PC3 (high)
+    // G (PA4): output, drive high
+    Pins::Encoder::G_PORT->MODER &= ~(0x3UL << (Pins::Encoder::G_PIN * 2));
+    Pins::Encoder::G_PORT->MODER |=  (0x1UL << (Pins::Encoder::G_PIN * 2));
+    Pins::Encoder::G_PORT->BSRR = (1UL << Pins::Encoder::G_PIN);  // High
 
     return true;
 }

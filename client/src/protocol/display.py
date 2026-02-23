@@ -15,7 +15,7 @@ from transport.interface import TransportError
 
 # LCD dimensions
 LCD_WIDTH = 240
-LCD_HEIGHT = 240
+LCD_HEIGHT = 320
 
 
 @dataclass

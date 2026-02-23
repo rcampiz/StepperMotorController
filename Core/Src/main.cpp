@@ -32,6 +32,7 @@
 #include "services/control_mode.hpp"
 #include "services/event_service.hpp"
 #include "services/motor_config.hpp"
+#include "services/flash_image_service.hpp"
 
 // Drivers
 #include "drivers/spi_manager.hpp"
@@ -93,6 +94,7 @@ namespace EarlyDebug {
 
         // Baud rate: 115200 at 42 MHz APB1
         // BRR = 42000000 / (16 * 115200) = 22.786
+        // Mantissa=22, Fraction=13 (0.786*16=12.58 → round to 13)
         USART2->BRR = (22 << 4) | 13;  // Mantissa=22, Fraction=13
 
         // Enable TX, RX, USART
@@ -116,6 +118,17 @@ namespace EarlyDebug {
     static void println(const char* str) {
         print(str);
         print("\r\n");
+    }
+
+    static void printUint(uint32_t val) {
+        char buf[12];
+        char* p = buf + sizeof(buf) - 1;
+        *p = '\0';
+        do {
+            *(--p) = '0' + (val % 10);
+            val /= 10;
+        } while (val > 0);
+        print(p);
     }
 } // namespace EarlyDebug
 
@@ -204,7 +217,7 @@ int main(void)
 
     // Initialize SPI manager
     // SPI1: Hardware SPI on PA5/6/7 — Motor (Mode3) + LCD (Mode0), ~1.3 MHz
-    // SPI3: Hardware SPI on PC10/11/12 — NOR Flash (Mode0), ~1.3 MHz
+    // SPI2: Hardware SPI on PB13/PB14/PC3 — NOR Flash (Mode0), ~1.3 MHz
     EarlyDebug::print("SPI Manager init... ");
     if (!g_spiManager.init(spi1Lock, spi2Lock)) {
         // SPI manager init failed - halt
@@ -213,19 +226,39 @@ int main(void)
     }
     EarlyDebug::println("OK");
 
-    // NOR flash driver for persistent config (uses SPI manager internally)
-    // TODO: Update SPIFlash to use g_spiManager
-    // For now, we skip NOR flash initialization until SPIFlash is updated
-    // static SPIFlash norFlash(...);
-    // s_norFlash = &norFlash;
-    // norFlash.init();
+    // NOR flash driver (uses SPI2 via SPI manager)
+    EarlyDebug::print("NOR Flash init... ");
+    {
+        ISPIBus* spi2 = g_spiManager.getSPI2();  // getSPI2() returns SPI2 peripheral
+        static SPIBus flashBus(*spi2);
+        static SPIFlash norFlash(flashBus);
+        norFlash.init();
+        s_norFlash = &norFlash;
 
-    // Device config (persistent storage in NOR flash)
-    // TODO: Re-enable when SPIFlash is updated to use g_spiManager
-    // For now, use defaults
-    // if (!Services::g_deviceConfig.init(norFlash)) {
-    //     // Device config init failed - continue with defaults
-    // }
+        // Verify flash is responding by reading JEDEC ID
+        auto jedec = norFlash.readJEDEC();
+        if (jedec.manufacturer != 0x00 && jedec.manufacturer != 0xFF) {
+            uint32_t cap = norFlash.capacityBytes();
+            EarlyDebug::print("OK (");
+            EarlyDebug::printUint(cap / 1024);
+            EarlyDebug::println("KB)");
+        } else {
+            EarlyDebug::println("NO DEVICE");
+            s_norFlash = nullptr;
+        }
+    }
+
+    // Initialize flash image service (uses NOR flash driver)
+    if (s_norFlash != nullptr) {
+        EarlyDebug::print("FlashImageService init... ");
+        if (Services::g_flashImageService.init(s_norFlash)) {
+            EarlyDebug::print("OK (");
+            EarlyDebug::printUint(Services::g_flashImageService.maxSlots());
+            EarlyDebug::println(" slots)");
+        } else {
+            EarlyDebug::println("FAIL");
+        }
+    }
 
     // Apply default control mode (using defaults until flash is available)
     Services::g_controlMode.setMode(Services::ControlMode::OPEN_LOOP);

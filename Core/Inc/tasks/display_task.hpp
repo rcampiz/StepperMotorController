@@ -122,6 +122,15 @@ void DisplayTask_RemoteBitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                               const uint8_t* data, size_t len);
 
 /**
+ * @brief Draw motion indicator (arrow / rotation ring / chevrons)
+ * @param angle_deg Direction angle (0-359, 0=up, clockwise)
+ * @param rotation_dir Rotation direction (-1=CCW, 0=none, 1=CW)
+ * @param has_translation Whether translational motion is active
+ */
+void DisplayTask_RemoteIndicator(uint16_t angle_deg, int8_t rotation_dir,
+                                  bool has_translation);
+
+/**
  * @brief Get pointer to LCD driver (for advanced use)
  * @return Pointer to LCD instance, or nullptr if not initialized
  */

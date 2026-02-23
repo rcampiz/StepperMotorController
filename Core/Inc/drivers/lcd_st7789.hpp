@@ -172,22 +172,13 @@ public:
     }
 
     void setWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
-        writeCmd(0x2A);  // Column address set
-        writeData(x0 >> 8);
-        writeData(x0 & 0xFF);
-        writeData(x1 >> 8);
-        writeData(x1 & 0xFF);
-
-        // Apply row offset for 240x240 panel in 240x320 controller RAM
-        uint16_t r0 = y0 + ROW_OFFSET;
-        uint16_t r1 = y1 + ROW_OFFSET;
-        writeCmd(0x2B);  // Row address set
-        writeData(r0 >> 8);
-        writeData(r0 & 0xFF);
-        writeData(r1 >> 8);
-        writeData(r1 & 0xFF);
-
-        writeCmd(0x2C);  // Memory write
+        m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
+        csLow();
+        setWindowLocked(x0, y0, x1, y1);
+        csHigh();
+        m_spi.unlock();
     }
 
     void fillScreen(uint16_t color) {
@@ -195,22 +186,16 @@ public:
     }
 
     void fillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) {
-        setWindow(x, y, x + w - 1, y + h - 1);
+        m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
+        csLow();
+        setWindowLocked(x, y, x + w - 1, y + h - 1);
 
         // Compensate for INVON (required for IPS panel, inverts pixel data)
         uint16_t c = ~color;
-        uint8_t hi = c >> 8;
-        uint8_t lo = c & 0xFF;
-
-        m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode0);
-        csLow();
-        dcHigh();  // Data mode
-
-        for (uint32_t i = 0; i < (uint32_t)w * h; i++) {
-            m_spi.transfer(hi);
-            m_spi.transfer(lo);
-        }
+        uint8_t pattern[2] = { static_cast<uint8_t>(c >> 8), static_cast<uint8_t>(c & 0xFF) };
+        m_spi.writeFill(pattern, 2, static_cast<uint32_t>(w) * h);
 
         csHigh();
         m_spi.unlock();
@@ -218,13 +203,14 @@ public:
 
     void drawPixel(uint16_t x, uint16_t y, uint16_t color) {
         if (x >= WIDTH || y >= HEIGHT) return;
-        setWindow(x, y, x, y);
 
-        uint16_t c = ~color;  // INVON compensation
         m_spi.lock();
         m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
         csLow();
-        dcHigh();
+        setWindowLocked(x, y, x, y);
+
+        uint16_t c = ~color;  // INVON compensation
         m_spi.transfer(c >> 8);
         m_spi.transfer(c & 0xFF);
         csHigh();
@@ -517,12 +503,11 @@ public:
         uint16_t drawW = (x + w > WIDTH) ? WIDTH - x : w;
         uint16_t drawH = (y + h > HEIGHT) ? HEIGHT - y : h;
 
-        setWindow(x, y, x + drawW - 1, y + drawH - 1);
-
         m_spi.lock();
         m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
         csLow();
-        dcHigh();
+        setWindowLocked(x, y, x + drawW - 1, y + drawH - 1);
 
         for (uint16_t row = 0; row < drawH; row++) {
             for (uint16_t col = 0; col < drawW; col++) {
@@ -552,12 +537,11 @@ public:
         uint16_t drawW = (x + w > WIDTH) ? WIDTH - x : w;
         uint16_t drawH = (y + h > HEIGHT) ? HEIGHT - y : h;
 
-        setWindow(x, y, x + drawW - 1, y + drawH - 1);
-
         m_spi.lock();
         m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
         csLow();
-        dcHigh();
+        setWindowLocked(x, y, x + drawW - 1, y + drawH - 1);
 
         // Transfer raw bytes with INVON compensation (invert each byte)
         size_t maxBytes = static_cast<size_t>(drawW) * drawH * 2;
@@ -587,12 +571,11 @@ public:
         uint16_t drawW = (x + w > WIDTH) ? WIDTH - x : w;
         uint16_t drawH = (y + h > HEIGHT) ? HEIGHT - y : h;
 
-        setWindow(x, y, x + drawW - 1, y + drawH - 1);
-
         m_spi.lock();
         m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
         csLow();
-        dcHigh();
+        setWindowLocked(x, y, x + drawW - 1, y + drawH - 1);
         m_streaming = true;
     }
 
@@ -633,9 +616,13 @@ public:
      */
     bool isStreaming() const { return m_streaming; }
 
+    void setSPIPrescaler(SPIBus::Prescaler p) { m_prescaler = p; }
+    SPIBus::Prescaler getSPIPrescaler() const { return m_prescaler; }
+
 private:
     bool m_streaming = false;
     SPIBus& m_spi;
+    SPIBus::Prescaler m_prescaler = SPIBus::Prescaler::Div2;  // 42 MHz (84 MHz APB2 / 2)
 
     void initPins() {
         RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_GPIOBEN
@@ -671,9 +658,23 @@ private:
     void nresetLow()  { Pins::GFX_LCD::NRESET_PORT->BSRR = (1 << (Pins::GFX_LCD::NRESET_PIN + 16)); }
     void nresetHigh() { Pins::GFX_LCD::NRESET_PORT->BSRR = (1 << Pins::GFX_LCD::NRESET_PIN); }
 
+    void setWindowLocked(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
+        uint16_t r0 = y0 + ROW_OFFSET;
+        uint16_t r1 = y1 + ROW_OFFSET;
+        dcLow();  m_spi.transfer(0x2A);  // CASET
+        dcHigh(); m_spi.transfer(x0 >> 8); m_spi.transfer(x0 & 0xFF);
+                  m_spi.transfer(x1 >> 8); m_spi.transfer(x1 & 0xFF);
+        dcLow();  m_spi.transfer(0x2B);  // RASET
+        dcHigh(); m_spi.transfer(r0 >> 8); m_spi.transfer(r0 & 0xFF);
+                  m_spi.transfer(r1 >> 8); m_spi.transfer(r1 & 0xFF);
+        dcLow();  m_spi.transfer(0x2C);  // RAMWR
+        dcHigh();
+    }
+
     void writeCmd(uint8_t cmd) {
         m_spi.lock();
         m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
         csLow();
         dcLow();
         m_spi.transfer(cmd);
@@ -684,6 +685,7 @@ private:
     void writeData(uint8_t data) {
         m_spi.lock();
         m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
         csLow();
         dcHigh();
         m_spi.transfer(data);

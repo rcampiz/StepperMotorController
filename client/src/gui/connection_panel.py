@@ -66,7 +66,7 @@ class ConnectionPanel(QWidget):
         inner.addWidget(baud_label)
 
         self._baud_combo = QComboBox()
-        self._baud_combo.addItems(["9600", "19200", "38400", "57600", "115200", "230400"])
+        self._baud_combo.addItems(["9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600"])
         self._baud_combo.setCurrentText("115200")
         self._baud_combo.setToolTip("Serial baud rate")
         inner.addWidget(self._baud_combo)

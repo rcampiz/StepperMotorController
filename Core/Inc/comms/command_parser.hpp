@@ -137,6 +137,15 @@ public:
   ResponseFormat getFormat() const { return m_format; }
 
   /**
+   * @brief Check baud rate auto-revert timeout
+   *
+   * Call periodically from comms task. If a baud change was made
+   * and no valid command has been received within 2 seconds,
+   * reverts to the previous baud rate.
+   */
+  void checkBaudRevert();
+
+  /**
    * @brief Set response format
    */
   void setFormat(ResponseFormat format) { m_format = format; }
@@ -234,6 +243,13 @@ private:
   void cmdSetFormat(const ParsedCommand &cmd);
   void cmdGetFormat();
 
+  // Baud rate negotiation
+  void cmdSetBaud(const ParsedCommand &cmd);
+
+  // Baud auto-revert state
+  uint32_t m_baudRevertRate = 0;     // 0 = no pending revert
+  uint32_t m_baudRevertDeadline = 0; // tick count deadline
+
   // UI mode command handlers
   void cmdUIMode(const ParsedCommand &cmd);
   void cmdUIGetMode();
@@ -245,6 +261,14 @@ private:
   void cmdDispLine(const ParsedCommand &cmd);
   void cmdDispBitmap(const ParsedCommand &cmd);
   void cmdDispBitmapB64(const ParsedCommand &cmd);
+  void cmdDispIndicator(const ParsedCommand &cmd);
+  void cmdDispBitmapRle(const ParsedCommand &cmd);
+
+  // Flash image command handlers (delegate to FlashImageService)
+  void cmdFlashInfo();
+  void cmdFlashUpload(const ParsedCommand &cmd);
+  void cmdFlashShow(const ParsedCommand &cmd);
+  void cmdFlashEraseAll();
 
   // Debug command handlers
   void cmdMotorDebug();

@@ -9,6 +9,7 @@
 #include "drivers/spi_bus.hpp"
 #include "drivers/spi_manager.hpp"
 #include "comms/telemetry.hpp"
+#include "services/indicator_service.hpp"
 #include "ui/ui_mode.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
@@ -64,6 +65,9 @@ bool DisplayTask_Init()
 
     // Startup: draw color bar test pattern
     s_lcd->drawTestPattern();
+
+    // Initialize indicator service (service layer, no RTOS dependency)
+    Services::g_indicatorService.init(s_lcd);
 
     // Initialize joystick
     s_joystick = new Joystick();
@@ -251,6 +255,12 @@ void DisplayTask_RemoteBitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
     if (s_lcd != nullptr && data != nullptr) {
         s_lcd->drawBitmapRaw(x, y, w, h, data, len);
     }
+}
+
+void DisplayTask_RemoteIndicator(uint16_t angle_deg, int8_t rotation_dir,
+                                  bool has_translation)
+{
+    Services::g_indicatorService.draw({angle_deg, rotation_dir, has_translation});
 }
 
 LCD* DisplayTask_GetLCD()

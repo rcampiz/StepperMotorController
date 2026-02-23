@@ -33,16 +33,18 @@ namespace SPI1_Bus {
 }
 
 // ============================================================================
-// SPI3 - GFX01M2 NOR Flash (hardware SPI on APB1, 42 MHz)
-// SPI2 pins (PB13-15) not usable — PB15 unavailable for SPIB MOSI.
-// SPI3 on PC10-12 (AF6) provides clean hardware SPI for the NOR flash.
+// SPI2 - GFX01M2 NOR Flash (hardware SPI on APB1, 42 MHz)
+// SPIB routed via board rework: PB13 (SCK), PB14 (MISO), PC3 (MOSI).
+// PB15 unavailable for MOSI; PC3 is the SPI2_MOSI alternate (AF5).
 // ============================================================================
-namespace SPI3_Bus {
-    static GPIO_TypeDef* const PORT = GPIOC;
-    static constexpr uint8_t SCK_PIN  = 10;  // PC10 - CN7-1
-    static constexpr uint8_t MISO_PIN = 11;  // PC11 - CN7-2
-    static constexpr uint8_t MOSI_PIN = 12;  // PC12 - CN7-3
-    static constexpr uint8_t AF = 6;         // AF6 for SPI3
+namespace SPI2_Bus {
+    static GPIO_TypeDef* const SCK_PORT  = GPIOB;
+    static constexpr uint8_t  SCK_PIN   = 13;  // PB13 - CN10-30
+    static GPIO_TypeDef* const MISO_PORT = GPIOB;
+    static constexpr uint8_t  MISO_PIN  = 14;  // PB14 - CN10-28
+    static GPIO_TypeDef* const MOSI_PORT = GPIOC;
+    static constexpr uint8_t  MOSI_PIN  = 3;   // PC3  - CN7-37
+    static constexpr uint8_t  AF = 5;          // AF5 for SPI2
 }
 
 // ============================================================================
@@ -101,7 +103,7 @@ namespace GFX_Flash {
     static GPIO_TypeDef* const CS_PORT = GPIOA;
     static constexpr uint8_t CS_PIN = 8;
 
-    // Directly uses SPI3_Bus for SCK/MISO/MOSI
+    // Directly uses SPI2_Bus for SCK/MISO/MOSI
 }
 
 // ============================================================================
@@ -159,8 +161,8 @@ namespace Encoder {
     static GPIO_TypeDef* const NG_PORT = GPIOC;  // nG (active low config)
     static constexpr uint8_t NG_PIN = 2;
 
-    static GPIO_TypeDef* const G_PORT = GPIOC;   // G (config)
-    static constexpr uint8_t G_PIN = 3;
+    static GPIO_TypeDef* const G_PORT = GPIOA;   // G (config) — moved from PC3 (now SPI2_MOSI)
+    static constexpr uint8_t G_PIN = 4;           // PA4
 }
 
 // ============================================================================

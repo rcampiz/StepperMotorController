@@ -199,6 +199,39 @@ void UartTransport::flush() {
     }
 }
 
+bool UartTransport::setBaudRate(uint32_t baudRate) {
+    USART_TypeDef* usart = Pins::VCP_UART::INSTANCE;
+
+    // Wait for transmission complete (all bits shifted out)
+    while ((usart->SR & USART_SR_TC) == 0) {}
+
+    // Small delay to let the last byte propagate through the bridge
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    // Disable USART
+    usart->CR1 &= ~USART_CR1_UE;
+
+    // Recalculate BRR (same formula as initUsart)
+    uint32_t integerdivider = ((25 * Pins::VCP_UART::APB1_CLOCK_HZ) / (4 * baudRate));
+    uint32_t mantissa = integerdivider / 100;
+    uint32_t fraction = ((integerdivider - (mantissa * 100)) * 16 + 50) / 100;
+    if (fraction >= 16) {
+        mantissa++;
+        fraction = 0;
+    }
+    usart->BRR = (mantissa << 4) | (fraction & 0x0F);
+
+    // Re-enable USART
+    usart->CR1 |= USART_CR1_UE;
+
+    // Clear any garbage from RX buffer
+    m_rxBuffer.clear();
+    (void)usart->DR;  // Clear RXNE if set
+
+    m_baudRate = baudRate;
+    return true;
+}
+
 void UartTransport::handleIRQ() {
     ::g_usart2IrqCount++;  // Use global scope
 

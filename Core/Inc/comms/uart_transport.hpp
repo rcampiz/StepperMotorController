@@ -154,6 +154,13 @@ public:
     void flush() override;
 
     /**
+     * @brief Change baud rate at runtime
+     *
+     * Waits for current TX to complete, reconfigures BRR, clears RX buffer.
+     */
+    bool setBaudRate(uint32_t baudRate) override;
+
+    /**
      * @brief Handle USART2 RX interrupt (called from ISR)
      */
     void handleIRQ();

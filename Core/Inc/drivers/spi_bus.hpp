@@ -83,6 +83,14 @@ public:
     }
 
     /**
+     * @brief Set clock prescaler (BR[2:0] value)
+     * @param prescaler Prescaler enum value
+     */
+    void setPrescaler(Prescaler prescaler) {
+        m_spi.setPrescaler(static_cast<uint8_t>(prescaler));
+    }
+
+    /**
      * @brief Transfer one byte (full duplex)
      */
     uint8_t transfer(uint8_t data) {
@@ -108,6 +116,10 @@ public:
      */
     void read(uint8_t* data, size_t len) {
         m_spi.read(data, len);
+    }
+
+    void writeFill(const uint8_t* pattern, size_t patternLen, uint32_t repeatCount) {
+        m_spi.writeFill(pattern, patternLen, repeatCount);
     }
 
 private:

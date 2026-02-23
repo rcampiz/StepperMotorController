@@ -24,7 +24,7 @@ if not exist "build" mkdir build
 REM Compiler flags
 set "MCU_FLAGS=-mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard"
 set "FREERTOS_INC=-IMiddlewares/Third_Party/FreeRTOS-Kernel/include -IMiddlewares/Third_Party/FreeRTOS-Kernel/portable/GCC/ARM_CM4F"
-set "INCLUDES=-ICore/Inc -ICore/Inc/board -ICore/Inc/comms -ICore/Inc/drivers -ICore/Inc/tasks -ICore/Inc/services -ICore/Inc/ui -IDrivers/CMSIS -IDrivers/CMSIS/Device/ST/STM32F4xx/Include -IDrivers/CMSIS/Include -IDrivers/STM32F4xx_HAL_Driver/Inc %FREERTOS_INC% -IMiddlewares/SEGGER/RTT -IMiddlewares/SEGGER/SystemView"
+set "INCLUDES=-ICore/Inc -ICore/Inc/board -ICore/Inc/comms -ICore/Inc/drivers -ICore/Inc/graphics -ICore/Inc/tasks -ICore/Inc/services -ICore/Inc/ui -IDrivers/CMSIS -IDrivers/CMSIS/Device/ST/STM32F4xx/Include -IDrivers/CMSIS/Include -IDrivers/STM32F4xx_HAL_Driver/Inc %FREERTOS_INC% -IMiddlewares/SEGGER/RTT -IMiddlewares/SEGGER/SystemView"
 set "DEFINES=-DSTM32F401xE -D__FPU_PRESENT=1 -D__FPU_USED=1 -DENABLE_SEGGER_SYSTEMVIEW -DRTT_USE_ASM=0"
 set "CFLAGS=%MCU_FLAGS% %INCLUDES% %DEFINES% -Og -Wall -fdata-sections -ffunction-sections -g -gdwarf-2"
 set "CXXFLAGS=%CFLAGS% -std=c++14 -fno-exceptions -fno-rtti -fno-use-cxa-atexit"
@@ -134,6 +134,10 @@ arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/trace.cpp -o build/trace.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile trace.cpp & exit /b 1)
 arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/event_service.cpp -o build/event_service.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile event_service.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/flash_image_service.cpp -o build/flash_image_service.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile flash_image_service.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/indicator_service.cpp -o build/indicator_service.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile indicator_service.cpp & exit /b 1)
 
 echo [17/25] Compiling UI sources...
 arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/ui/ui_mode.cpp -o build/ui_mode.o
@@ -157,7 +161,7 @@ set "OBJS=%OBJS% build/timers.o build/event_groups.o build/stream_buffer.o build
 set "OBJS=%OBJS% build/SEGGER_RTT.o build/SEGGER_RTT_printf.o build/SEGGER_SYSVIEW.o build/SEGGER_SYSVIEW_Config_FreeRTOS.o build/SEGGER_SYSVIEW_FreeRTOS.o"
 set "OBJS=%OBJS% build/main.o build/uart_transport.o build/rtt_transport.o build/command_parser.o build/telemetry.o build/event_codec.o"
 set "OBJS=%OBJS% build/motor_task.o build/encoder_task.o build/display_task.o build/comms_task.o build/bringup_task.o"
-set "OBJS=%OBJS% build/tick_timer.o build/command_queue.o build/device_config.o build/control_mode.o build/motor_config.o build/motion_service.o build/safety_service.o build/config_service.o build/trace.o build/event_service.o"
+set "OBJS=%OBJS% build/tick_timer.o build/command_queue.o build/device_config.o build/control_mode.o build/motor_config.o build/motion_service.o build/safety_service.o build/config_service.o build/trace.o build/event_service.o build/flash_image_service.o build/indicator_service.o"
 set "OBJS=%OBJS% build/ui_mode.o build/menu_screen.o build/terminal_screen.o"
 set "OBJS=%OBJS% build/spi_manager.o"
 set "OBJS=%OBJS% build/startup_stm32f401xe.o"
