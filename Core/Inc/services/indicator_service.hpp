@@ -62,6 +62,15 @@ private:
     bool     m_hasDrawn = false;
     bool     m_screenCleared = false;  // First-draw full screen clear
 
+    // Previous draw params for incremental redraw optimization
+    Params   m_prevParams = {0, 0, false};
+    bool     m_prevHadRing = false;
+
+    // Dirty rectangle support: previous arrow screen-space vertices
+    int16_t  m_prevArrowVerts[7][2] = {};
+    int      m_prevNumArrowVerts = 0;
+    bool     m_compositedValid = false;  // True after first full composited render
+
     // Current bounding box being accumulated during draw
     int16_t  m_curMinX = 0;
     int16_t  m_curMinY = 0;
@@ -85,6 +94,12 @@ private:
     // Chevrons: bold triangular markers on circumference
     static constexpr int16_t CHEVRON_SIZE = 22;    // Chevron triangle size
 
+    // Composited renderer windows
+    static constexpr int16_t COMPOSITED_HALF_W =
+        RING_OUTER_R + (CHEVRON_SIZE / 2) + 1;  // 107 (ring + chevron protrusion)
+    static constexpr int16_t ARROW_COMPOSITED_HALF_W =
+        ARROW_HALF_LEN + 2;                      // 57 (arrow only, no ring)
+
     static constexpr uint16_t ARROW_COLOR   = 0xFFFF;  // White
     static constexpr uint16_t CIRCLE_COLOR  = 0x07E0;  // Green
     static constexpr uint16_t CHEVRON_COLOR = 0x07E0;  // Green
@@ -95,6 +110,7 @@ private:
     void expandBbox(int16_t x, int16_t y);
     void storeBbox();
 
+    void drawComposited(const Params& p);
     void drawArrow(uint16_t angle_deg);
     void drawRing();
     void drawChevrons(int8_t direction);

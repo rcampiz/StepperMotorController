@@ -68,6 +68,9 @@ class SerialWorker(QObject):
         self._poll_telemetry = False
         self._poll_interval = 0.1  # seconds (100ms = 10 Hz graph updates)
 
+        # Coalesced indicator: only latest value is sent (replaces queue backlog)
+        self._pending_indicator = None  # str or None
+
         # Heartbeat state
         self._heartbeat_enabled = False
         self._heartbeat_interval = 0.050  # seconds (50ms default)
@@ -122,6 +125,14 @@ class SerialWorker(QObject):
             command = QueuedCommand(command=command)
         self._command_queue.put(command)
 
+    def set_indicator_command(self, cmd_str: str):
+        """Set the latest indicator command (coalesced, thread-safe).
+
+        Only the most recent value is kept. The worker sends it on the next
+        loop iteration, skipping any stale intermediate values.
+        """
+        self._pending_indicator = cmd_str
+
     @Slot()
     def run(self):
         """Main worker loop - runs in background thread."""
@@ -136,6 +147,12 @@ class SerialWorker(QObject):
                 self._send_command(cmd)
             except queue.Empty:
                 pass
+
+            # Send coalesced indicator command (latest-wins, no queue backlog)
+            indicator_cmd = self._pending_indicator
+            if indicator_cmd is not None:
+                self._pending_indicator = None
+                self._send_command(QueuedCommand(indicator_cmd, CommandTag.GENERIC))
 
             # Send heartbeat if enabled and due
             if self._heartbeat_enabled and self._client and self._client.is_connected():

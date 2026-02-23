@@ -4032,13 +4032,24 @@ void CommandParser::cmdFlashInfo() {
   }
 
   auto info = svc.getInfo();
-  char buf[128];
-  snprintf(buf, sizeof(buf),
-           "FLASH_INFO mfr=%02X cap=%luKB slots=%lu",
-           info.manufacturer,
-           static_cast<unsigned long>(info.capacityBytes / 1024),
-           static_cast<unsigned long>(info.maxSlots));
-  respondOk(buf);
+
+  if (m_format == ResponseFormat::JSON) {
+    char data[128];
+    snprintf(data, sizeof(data),
+             "{\"manufacturer\":\"%02X\",\"capacity_kb\":%lu,\"max_slots\":%lu}",
+             info.manufacturer,
+             static_cast<unsigned long>(info.capacityBytes / 1024),
+             static_cast<unsigned long>(info.maxSlots));
+    respondJsonOk(m_currentCmd, data);
+  } else {
+    char buf[128];
+    snprintf(buf, sizeof(buf),
+             "FLASH_INFO mfr=%02X cap=%luKB slots=%lu",
+             info.manufacturer,
+             static_cast<unsigned long>(info.capacityBytes / 1024),
+             static_cast<unsigned long>(info.maxSlots));
+    respondOk(buf);
+  }
 }
 
 void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {

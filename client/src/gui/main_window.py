@@ -51,6 +51,7 @@ class MainWindow(QMainWindow):
         self._client: Optional[MotorClient] = None
         self._transport: Optional[VcpTransport] = None
         self._serial_thread: Optional[SerialThread] = None
+        self._remote_mode_sent = False
 
         self._setup_ui()
         self._setup_menu()
@@ -364,6 +365,7 @@ class MainWindow(QMainWindow):
             self._serial_thread.stop_heartbeat()
             self._serial_thread.stop()
             self._serial_thread = None
+            self._remote_mode_sent = False
 
         # Close the serial port but do NOT disarm the MCU heartbeat watchdog.
         # If heartbeat was enabled, the MCU will notice the missing heartbeats
@@ -586,16 +588,16 @@ class MainWindow(QMainWindow):
 
         worker = self._serial_thread.worker
 
-        # Ensure REMOTE mode
-        worker.queue_command(
-            QueuedCommand("UI_MODE REMOTE", CommandTag.GENERIC))
+        # Ensure REMOTE mode (send only once per session)
+        if not self._remote_mode_sent:
+            worker.queue_command(
+                QueuedCommand("UI_MODE REMOTE", CommandTag.GENERIC))
+            self._remote_mode_sent = True
 
-        # Send indicator command
+        # Use coalesced indicator path (latest-wins, no queue backlog)
         trans_int = 1 if has_translation else 0
-        worker.queue_command(
-            QueuedCommand(
-                f"DISP_INDICATOR {angle} {rotation_dir} {trans_int}",
-                CommandTag.GENERIC))
+        worker.set_indicator_command(
+            f"DISP_INDICATOR {angle} {rotation_dir} {trans_int}")
 
         self._display_panel.transfer_complete(True, "Indicator sent")
 
@@ -763,11 +765,14 @@ class MainWindow(QMainWindow):
 
         elif tag == CommandTag.FLASH_INFO.name:
             info = response.data if response.data else {}
+            mfr = info.get("manufacturer", "?")
             cap_kb = info.get("capacity_kb", "?")
             max_slots = info.get("max_slots", "?")
-            stored = info.get("stored", "?")
+            # 240x320 RGB565 = 153600 bytes per image
+            img_kb = 240 * 320 * 2 / 1024  # 150.0
             self._display_panel.update_flash_info(
-                f"Flash: {cap_kb} KB, {max_slots} slots, {stored} stored")
+                f"Flash: {cap_kb} KB \u2014 {max_slots} full-screen images "
+                f"(240\u00d7320 RGB565, {img_kb:.0f} KB each)")
             self._status_bar.showMessage("Flash info received", 3000)
 
         elif tag == CommandTag.FLASH_UPLOAD_SLOT.name:

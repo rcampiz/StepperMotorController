@@ -180,6 +180,11 @@ class DisplayPanel(QWidget):
         self._ind_trans_cb.setChecked(True)
         opts_row.addWidget(self._ind_trans_cb)
 
+        self._ind_auto_cb = QCheckBox("Auto")
+        self._ind_auto_cb.setChecked(False)
+        self._ind_auto_cb.setToolTip("Automatically send indicator on any change")
+        opts_row.addWidget(self._ind_auto_cb)
+
         opts_row.addStretch()
 
         self._ind_send_btn = QPushButton("Send Indicator")
@@ -239,6 +244,9 @@ class DisplayPanel(QWidget):
         self._ind_angle_spin.valueChanged.connect(self._on_ind_angle_spin)
         self._ind_send_btn.clicked.connect(self._on_ind_send_clicked)
         self._ind_clear_btn.clicked.connect(self._on_ind_clear_clicked)
+        self._ind_rot_combo.currentIndexChanged.connect(self._on_ind_auto_maybe)
+        self._ind_trans_cb.toggled.connect(self._on_ind_auto_maybe)
+        self._ind_angle_slider.valueChanged.connect(self._on_ind_auto_maybe)
 
     # --- Slider / SpinBox sync ---
 
@@ -359,6 +367,11 @@ class DisplayPanel(QWidget):
         self.indicator_send_requested.emit(angle, rot_dir, has_trans)
 
     @Slot()
+    def _on_ind_auto_maybe(self, *_args):
+        if self._ind_auto_cb.isChecked():
+            self._on_ind_send_clicked()
+
+    @Slot()
     def _on_ind_clear_clicked(self):
         self._set_status("Clearing indicator...", "blue")
         self.indicator_send_requested.emit(0, 0, False)
@@ -398,6 +411,7 @@ class DisplayPanel(QWidget):
         """Update the flash info label."""
         self._flash_info_label.setText(info_text)
         self._flash_info_label.setStyleSheet("color: #ccc;")
+        self._set_status("Flash info received", "green")
 
     # --- Helpers ---
 
