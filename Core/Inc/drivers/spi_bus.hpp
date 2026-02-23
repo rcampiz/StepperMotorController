@@ -129,6 +129,20 @@ public:
         m_spi.writeFill(pattern, patternLen, repeatCount);
     }
 
+    /**
+     * @brief Start non-blocking read (DMA on SPI2, sync fallback otherwise)
+     */
+    void startAsyncRead(uint8_t* data, size_t len) {
+        m_spi.startAsyncRead(data, len);
+    }
+
+    /**
+     * @brief Wait for async read to complete
+     */
+    void waitAsyncRead() {
+        m_spi.waitAsyncRead();
+    }
+
 private:
     ISPIBus& m_spi;
 };

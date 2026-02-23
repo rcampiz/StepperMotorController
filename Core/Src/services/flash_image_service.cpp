@@ -96,6 +96,29 @@ bool FlashImageService::readSlotChunk(uint32_t slot, uint32_t offset,
     return true;
 }
 
+bool FlashImageService::readSlotChunkStart(uint32_t slot, uint32_t offset,
+                                            uint8_t* buf, size_t len) {
+    if (m_flash == nullptr || slot >= m_maxSlots) {
+        return false;
+    }
+    if (buf == nullptr || len == 0) {
+        return false;
+    }
+    if (offset + len > FLASH_IMAGE_SIZE) {
+        return false;
+    }
+
+    uint32_t addr = slotAddress(slot) + offset;
+    m_flash->readStart(addr, buf, len);
+    return true;
+}
+
+void FlashImageService::readSlotChunkFinish() {
+    if (m_flash != nullptr) {
+        m_flash->readFinish();
+    }
+}
+
 bool FlashImageService::eraseAll() {
     if (m_flash == nullptr || m_maxSlots == 0) {
         return false;

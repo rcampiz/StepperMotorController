@@ -109,11 +109,38 @@ public:
     void read(uint32_t addr, uint8_t* buf, size_t len) {
         m_spi.lock();
         csLow();
-        m_spi.transfer(static_cast<uint8_t>(Cmd::Read));
+        m_spi.transfer(static_cast<uint8_t>(Cmd::FastRead));
         m_spi.transfer((addr >> 16) & 0xFF);
         m_spi.transfer((addr >> 8) & 0xFF);
         m_spi.transfer(addr & 0xFF);
+        m_spi.transfer(0xFF);  // Dummy byte required by Fast Read (0x0B)
         m_spi.read(buf, len);
+        csHigh();
+        m_spi.unlock();
+    }
+
+    /**
+     * @brief Start non-blocking flash read (sends command, starts DMA, returns)
+     *
+     * Bus lock and CS are held until readFinish() is called.
+     * Caller must call readFinish() before using the data.
+     */
+    void readStart(uint32_t addr, uint8_t* buf, size_t len) {
+        m_spi.lock();
+        csLow();
+        m_spi.transfer(static_cast<uint8_t>(Cmd::FastRead));
+        m_spi.transfer((addr >> 16) & 0xFF);
+        m_spi.transfer((addr >> 8) & 0xFF);
+        m_spi.transfer(addr & 0xFF);
+        m_spi.transfer(0xFF);  // Dummy byte
+        m_spi.startAsyncRead(buf, len);
+    }
+
+    /**
+     * @brief Finish non-blocking flash read (waits for DMA, releases CS and bus lock)
+     */
+    void readFinish() {
+        m_spi.waitAsyncRead();
         csHigh();
         m_spi.unlock();
     }

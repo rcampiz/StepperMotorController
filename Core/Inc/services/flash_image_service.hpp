@@ -111,6 +111,20 @@ public:
      */
     bool eraseAll();
 
+    /**
+     * @brief Start non-blocking read from a slot (for double-buffering)
+     *
+     * Starts DMA and returns immediately. Call readSlotChunkFinish()
+     * before using the data or starting another read.
+     */
+    bool readSlotChunkStart(uint32_t slot, uint32_t offset,
+                            uint8_t* buf, size_t len);
+
+    /**
+     * @brief Finish non-blocking slot read (waits for DMA completion)
+     */
+    void readSlotChunkFinish();
+
     /** @brief Get the absolute flash address for a slot. */
     uint32_t slotAddress(uint32_t slot) const {
         return FLASH_IMAGE_BASE + slot * FLASH_IMAGE_PADDED;

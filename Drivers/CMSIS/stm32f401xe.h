@@ -135,6 +135,8 @@ typedef enum {
 // AHB1 peripherals (additional)
 #define FLASH_R_BASE          (AHB1PERIPH_BASE + 0x3C00UL)
 #define DMA1_BASE             (AHB1PERIPH_BASE + 0x6000UL)
+#define DMA1_Stream3_BASE     (DMA1_BASE + 0x58UL)
+#define DMA1_Stream4_BASE     (DMA1_BASE + 0x70UL)
 #define DMA2_BASE             (AHB1PERIPH_BASE + 0x6400UL)
 #define DMA2_Stream3_BASE     (DMA2_BASE + 0x58UL)
 
@@ -337,6 +339,9 @@ typedef struct {
 #define EXTI                ((EXTI_TypeDef *) EXTI_BASE)
 #define SYSCFG              ((SYSCFG_TypeDef *) SYSCFG_BASE)
 #define FLASH               ((FLASH_TypeDef *) FLASH_R_BASE)
+#define DMA1                ((DMA_TypeDef *) DMA1_BASE)
+#define DMA1_Stream3        ((DMA_Stream_TypeDef *) DMA1_Stream3_BASE)
+#define DMA1_Stream4        ((DMA_Stream_TypeDef *) DMA1_Stream4_BASE)
 #define DMA2                ((DMA_TypeDef *) DMA2_BASE)
 #define DMA2_Stream3        ((DMA_Stream_TypeDef *) DMA2_Stream3_BASE)
 
@@ -353,6 +358,8 @@ typedef struct {
 #define RCC_AHB1ENR_GPIOEEN           (1UL << RCC_AHB1ENR_GPIOEEN_Pos)
 #define RCC_AHB1ENR_GPIOHEN_Pos       (7U)
 #define RCC_AHB1ENR_GPIOHEN           (1UL << RCC_AHB1ENR_GPIOHEN_Pos)
+#define RCC_AHB1ENR_DMA1EN_Pos        (21U)
+#define RCC_AHB1ENR_DMA1EN            (1UL << RCC_AHB1ENR_DMA1EN_Pos)
 #define RCC_AHB1ENR_DMA2EN_Pos        (22U)
 #define RCC_AHB1ENR_DMA2EN            (1UL << RCC_AHB1ENR_DMA2EN_Pos)
 
@@ -695,6 +702,7 @@ typedef struct {
 #define DMA_SxCR_MINC                 (1UL << DMA_SxCR_MINC_Pos)
 #define DMA_SxCR_PL_Pos               (16U)
 #define DMA_SxCR_PL                   (0x3UL << DMA_SxCR_PL_Pos)
+#define DMA_SxCR_PL_0                 (0x1UL << DMA_SxCR_PL_Pos)
 #define DMA_SxCR_PL_1                 (0x2UL << DMA_SxCR_PL_Pos)
 #define DMA_SxCR_CHSEL_Pos            (25U)
 #define DMA_SxCR_CHSEL                (0x7UL << DMA_SxCR_CHSEL_Pos)
@@ -717,6 +725,17 @@ typedef struct {
 #define DMA_LIFCR_CTEIF3              (1UL << 25)
 #define DMA_LIFCR_CHTIF3              (1UL << 26)
 #define DMA_LIFCR_CTCIF3              (1UL << 27)
+
+// DMA High interrupt status register (HISR) - Stream 4 flags
+#define DMA_HISR_TCIF4_Pos            (5U)
+#define DMA_HISR_TCIF4                (1UL << DMA_HISR_TCIF4_Pos)
+
+// DMA High interrupt flag clear register (HIFCR) - Stream 4 flags
+#define DMA_HIFCR_CFEIF4              (1UL << 0)
+#define DMA_HIFCR_CDMEIF4             (1UL << 2)
+#define DMA_HIFCR_CTEIF4              (1UL << 3)
+#define DMA_HIFCR_CHTIF4              (1UL << 4)
+#define DMA_HIFCR_CTCIF4              (1UL << 5)
 
 // TIM CR1 register bits
 #define TIM_CR1_CEN_Pos               (0U)

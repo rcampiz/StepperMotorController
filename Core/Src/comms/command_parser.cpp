@@ -4210,38 +4210,59 @@ void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
     return;
   }
 
-  // Read from flash and stream to LCD in chunks
+  // Double-buffered flash→LCD pipeline: DMA1 (SPI2 flash read) overlaps
+  // with DMA2 (SPI1 LCD write) since they use independent DMA controllers.
   constexpr uint32_t CHUNK_SIZE = 512;
-  uint8_t chunk[CHUNK_SIZE];
+  uint8_t buf[2][CHUNK_SIZE];
+  int cur = 0;
   uint32_t offset = 0;
   uint32_t nonZeroCount = 0;
   uint32_t nonFFCount = 0;
   uint8_t first4[4] = {0};
-  bool gotFirst = false;
 
+  // Read first chunk synchronously
+  if (!svc.readSlotChunk(slot, 0, buf[cur], CHUNK_SIZE)) {
+    Tasks::DisplayTask_StreamBitmapEnd();
+    respondErr("Flash read failed");
+    return;
+  }
+  for (uint32_t i = 0; i < 4; i++) first4[i] = buf[cur][i];
+  offset = CHUNK_SIZE;
+
+  // Pipeline: start next flash read, then write current chunk to LCD
   while (offset < Services::FLASH_IMAGE_SIZE) {
     uint32_t remaining = Services::FLASH_IMAGE_SIZE - offset;
     uint32_t toRead = (remaining < CHUNK_SIZE) ? remaining : CHUNK_SIZE;
 
-    if (!svc.readSlotChunk(slot, offset, chunk, toRead)) {
+    // Start async flash read into other buffer (DMA1 on SPI2)
+    if (!svc.readSlotChunkStart(slot, offset, buf[1 - cur], toRead)) {
       Tasks::DisplayTask_StreamBitmapEnd();
       respondErr("Flash read failed");
       return;
     }
 
-    // Capture first 4 bytes and count non-trivial data
-    if (!gotFirst) {
-      for (uint32_t i = 0; i < 4 && i < toRead; i++) first4[i] = chunk[i];
-      gotFirst = true;
+    // While flash DMA runs, write current buffer to LCD (DMA2 on SPI1)
+    for (uint32_t i = 0; i < CHUNK_SIZE; i++) {
+      if (buf[cur][i] != 0x00) nonZeroCount++;
+      if (buf[cur][i] != 0xFF) nonFFCount++;
     }
-    for (uint32_t i = 0; i < toRead; i++) {
-      if (chunk[i] != 0x00) nonZeroCount++;
-      if (chunk[i] != 0xFF) nonFFCount++;
-    }
+    Tasks::DisplayTask_StreamBitmapData(buf[cur], CHUNK_SIZE);
 
-    Tasks::DisplayTask_StreamBitmapData(chunk, toRead);
+    // Wait for flash read to complete
+    svc.readSlotChunkFinish();
+
+    cur = 1 - cur;
     offset += toRead;
   }
+
+  // Write final chunk to LCD
+  uint32_t lastSize = Services::FLASH_IMAGE_SIZE - (offset - CHUNK_SIZE);
+  if (lastSize > CHUNK_SIZE) lastSize = CHUNK_SIZE;
+  for (uint32_t i = 0; i < lastSize; i++) {
+    if (buf[cur][i] != 0x00) nonZeroCount++;
+    if (buf[cur][i] != 0xFF) nonFFCount++;
+  }
+  Tasks::DisplayTask_StreamBitmapData(buf[cur], lastSize);
 
   Tasks::DisplayTask_StreamBitmapEnd();
   char okBuf[96];

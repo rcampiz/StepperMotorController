@@ -162,9 +162,14 @@ public:
     }
 
     /**
-     * @brief Transfer multiple bytes
+     * @brief Transfer multiple bytes — DMA for SPI2 read-only, polled otherwise
      */
     void transfer(const uint8_t* txBuf, uint8_t* rxBuf, size_t len) override {
+        // DMA path for SPI2 read-only transfers (flash reads)
+        if (m_spi == SPI2 && txBuf == nullptr && rxBuf != nullptr && len >= DMA_THRESHOLD) {
+            readDMA(rxBuf, len);
+            return;
+        }
         for (size_t i = 0; i < len; i++) {
             uint8_t tx = txBuf ? txBuf[i] : 0xFF;
             uint8_t rx = transfer(tx);
@@ -191,6 +196,29 @@ public:
         while (m_spi->SR & SPI_SR_BSY);
         (void)m_spi->DR;
         (void)m_spi->SR;
+    }
+
+    /**
+     * @brief Start non-blocking DMA read on SPI2 (returns immediately)
+     *
+     * Must call waitAsyncRead() before using data or starting another transfer.
+     * Falls back to synchronous read on non-SPI2 or small transfers.
+     */
+    void startAsyncRead(uint8_t* data, size_t len) override {
+        if (m_spi == SPI2 && len >= DMA_THRESHOLD && len <= 65535) {
+            startReadDMA(data, static_cast<uint32_t>(len));
+            return;
+        }
+        ISPIBus::startAsyncRead(data, len);  // sync fallback
+    }
+
+    /**
+     * @brief Wait for async DMA read to complete
+     */
+    void waitAsyncRead() override {
+        if (m_asyncReadActive) {
+            finishReadDMA();
+        }
     }
 
     /**
@@ -223,6 +251,7 @@ private:
     SPIMode m_mode;
     uint8_t m_prescaler;
     ILock& m_lock;
+    bool m_asyncReadActive = false;
 
     /**
      * @brief Configure GPIO pins for SPI alternate function (pins may be on different ports)
@@ -299,6 +328,98 @@ private:
 
     static constexpr size_t DMA_BUF_SIZE = 480;     // One LCD scanline (240 * 2 bytes)
     static constexpr uint32_t DMA_THRESHOLD = 32;    // Min bytes for DMA vs polled
+
+    /**
+     * @brief Start DMA read on SPI2 — non-blocking, returns immediately
+     *
+     * Configures DMA1 Stream 3 (RX ch0) + Stream 4 (TX ch0) and starts transfer.
+     * Caller must call finishReadDMA() before using data or starting another transfer.
+     * len must be <= 65535 (single DMA transfer).
+     */
+    void startReadDMA(uint8_t* rxBuf, uint32_t len) {
+        static const uint8_t txDummy = 0xFF;
+
+        RCC->AHB1ENR |= RCC_AHB1ENR_DMA1EN;
+
+        // Disable streams before configuration
+        DMA1_Stream3->CR = 0;  // SPI2_RX
+        DMA1_Stream4->CR = 0;  // SPI2_TX
+        while (DMA1_Stream3->CR & DMA_SxCR_EN);
+        while (DMA1_Stream4->CR & DMA_SxCR_EN);
+
+        // Clear interrupt flags
+        DMA1->LIFCR = DMA_LIFCR_CTCIF3 | DMA_LIFCR_CHTIF3
+                    | DMA_LIFCR_CTEIF3 | DMA_LIFCR_CDMEIF3
+                    | DMA_LIFCR_CFEIF3;
+        DMA1->HIFCR = DMA_HIFCR_CTCIF4 | DMA_HIFCR_CHTIF4
+                    | DMA_HIFCR_CTEIF4 | DMA_HIFCR_CDMEIF4
+                    | DMA_HIFCR_CFEIF4;
+
+        // Drain any stale RX data
+        (void)m_spi->DR;
+        (void)m_spi->SR;
+
+        // RX stream (DMA1 Stream 3, Channel 0): Peripheral-to-memory
+        DMA1_Stream3->PAR = reinterpret_cast<uint32_t>(&m_spi->DR);
+        DMA1_Stream3->M0AR = reinterpret_cast<uint32_t>(rxBuf);
+        DMA1_Stream3->NDTR = len;
+        DMA1_Stream3->FCR = 0;
+        DMA1_Stream3->CR = DMA_SxCR_MINC | DMA_SxCR_PL_1;
+
+        // TX stream (DMA1 Stream 4, Channel 0): Memory-to-peripheral, no MINC
+        DMA1_Stream4->PAR = reinterpret_cast<uint32_t>(&m_spi->DR);
+        DMA1_Stream4->M0AR = reinterpret_cast<uint32_t>(&txDummy);
+        DMA1_Stream4->NDTR = len;
+        DMA1_Stream4->FCR = 0;
+        DMA1_Stream4->CR = DMA_SxCR_DIR_0 | DMA_SxCR_PL_0;
+
+        // Enable SPI DMA requests and start both streams
+        m_spi->CR2 |= SPI_CR2_RXDMAEN | SPI_CR2_TXDMAEN;
+        DMA1_Stream3->CR |= DMA_SxCR_EN;  // RX first
+        DMA1_Stream4->CR |= DMA_SxCR_EN;  // TX starts clocking
+
+        m_asyncReadActive = true;
+    }
+
+    /**
+     * @brief Wait for DMA read started by startReadDMA() to complete, clean up
+     */
+    void finishReadDMA() {
+        // Wait for RX transfer complete
+        while (!(DMA1->LISR & DMA_LISR_TCIF3));
+
+        // Disable streams
+        DMA1_Stream4->CR = 0;
+        DMA1_Stream3->CR = 0;
+        while (DMA1_Stream4->CR & DMA_SxCR_EN);
+        while (DMA1_Stream3->CR & DMA_SxCR_EN);
+
+        // Disable SPI DMA requests
+        m_spi->CR2 &= ~(SPI_CR2_RXDMAEN | SPI_CR2_TXDMAEN);
+
+        while (m_spi->SR & SPI_SR_BSY);
+        (void)m_spi->DR;
+        (void)m_spi->SR;
+
+        m_asyncReadActive = false;
+    }
+
+    /**
+     * @brief Blocking DMA read — convenience wrapper for synchronous callers
+     *
+     * Handles arbitrary lengths via chunking (> 65535 bytes).
+     */
+    void readDMA(uint8_t* rxBuf, size_t len) {
+        uint8_t* rxPtr = rxBuf;
+        size_t remaining = len;
+        while (remaining > 0) {
+            uint32_t chunk = remaining > 65535 ? 65535 : static_cast<uint32_t>(remaining);
+            startReadDMA(rxPtr, chunk);
+            finishReadDMA();
+            rxPtr += chunk;
+            remaining -= chunk;
+        }
+    }
 
     /**
      * @brief DMA-accelerated fill for SPI1 (DMA2 Stream 3 Channel 3)

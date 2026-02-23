@@ -115,6 +115,24 @@ public:
     }
 
     /**
+     * @brief Start non-blocking read (for double-buffering)
+     *
+     * Default: synchronous fallback (blocks until complete).
+     * SPIHardware overrides with DMA for SPI2.
+     * Caller must call waitAsyncRead() before using the data.
+     */
+    virtual void startAsyncRead(uint8_t* data, size_t len) {
+        read(data, len);
+    }
+
+    /**
+     * @brief Wait for async read started by startAsyncRead() to complete
+     *
+     * Default: no-op (startAsyncRead was synchronous).
+     */
+    virtual void waitAsyncRead() {}
+
+    /**
      * @brief Write a repeated pattern (e.g., solid-color LCD fills)
      * @param pattern Pattern bytes to repeat
      * @param patternLen Length of pattern in bytes
