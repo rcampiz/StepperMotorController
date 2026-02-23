@@ -5,6 +5,8 @@ Provides high-level command interface with JSON/ASCII response parsing.
 """
 
 import json
+import struct
+import zlib
 from enum import Enum
 from typing import Optional, Any, Dict
 from dataclasses import dataclass, field
@@ -558,14 +560,15 @@ class MotorClient:
 
     def disp_bitmap(self, x: int, y: int, w: int, h: int, data: bytes,
                     timeout_ms: Optional[int] = None,
-                    progress_cb=None) -> Response:
+                    progress_cb=None,
+                    use_crc: bool = False) -> Response:
         """
         Stream raw RGB565 bitmap data to the device.
 
         Protocol:
-          1) Send DISP_BITMAP <x> <y> <w> <h>
+          1) Send DISP_BITMAP <x> <y> <w> <h> [CRC]
           2) Expect "OK READY <bytes>" (ASCII)
-          3) Send exactly <bytes> raw RGB565 bytes
+          3) Send exactly <bytes> raw RGB565 bytes [+ 4-byte CRC32 LE]
           4) Receive final OK/ERROR response
         """
         if not self.is_connected():
@@ -576,6 +579,8 @@ class MotorClient:
 
         # Step 1: request streaming
         cmd_str = f"DISP_BITMAP {x} {y} {w} {h}"
+        if use_crc:
+            cmd_str += " CRC"
         self._transport.send_line(cmd_str)
 
         # Step 2: read READY response, skipping echo/events
@@ -609,6 +614,10 @@ class MotorClient:
             offset += len(chunk)
             if progress_cb is not None:
                 progress_cb(offset, ready_bytes)
+
+        if use_crc:
+            crc = zlib.crc32(data[:ready_bytes]) & 0xFFFFFFFF
+            self._transport.send(struct.pack('<I', crc))
 
         # Step 4: final OK/ERROR (skip any echo/event lines)
         final_line = self._recv_response(cmd_str, timeout)
@@ -689,14 +698,15 @@ class MotorClient:
 
     def flash_upload(self, slot: int, data: bytes,
                      timeout_ms: Optional[int] = None,
-                     progress_cb=None) -> Response:
+                     progress_cb=None,
+                     use_crc: bool = False) -> Response:
         """
         Upload raw RGB565 image data to a flash slot.
 
         Protocol (same pattern as disp_bitmap):
-          1) Send FLASH_UPLOAD <slot>
+          1) Send FLASH_UPLOAD <slot> [CRC]
           2) Expect "OK READY <bytes>"
-          3) Send raw RGB565 bytes
+          3) Send raw RGB565 bytes [+ 4-byte CRC32 LE]
           4) Receive final OK/ERROR
         """
         if not self.is_connected():
@@ -706,6 +716,8 @@ class MotorClient:
         self._drain_pending()
 
         cmd_str = f"FLASH_UPLOAD {slot}"
+        if use_crc:
+            cmd_str += " CRC"
         self._transport.send_line(cmd_str)
 
         # Wait for READY (flash erase may take a moment)
@@ -738,6 +750,10 @@ class MotorClient:
             if progress_cb is not None:
                 progress_cb(offset, ready_bytes)
 
+        if use_crc:
+            crc = zlib.crc32(data[:ready_bytes]) & 0xFFFFFFFF
+            self._transport.send(struct.pack('<I', crc))
+
         # Final response (programming may take a moment)
         final_line = self._recv_response(cmd_str, timeout)
         if final_line is None:
@@ -765,14 +781,15 @@ class MotorClient:
     def disp_bitmap_rle(self, x: int, y: int, w: int, h: int,
                         rle_data: bytes,
                         timeout_ms: Optional[int] = None,
-                        progress_cb=None) -> Response:
+                        progress_cb=None,
+                        use_crc: bool = False) -> Response:
         """
         Stream RLE-compressed RGB565 bitmap data to the device.
 
         Protocol:
-          1) Send DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes>
+          1) Send DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes> [CRC]
           2) Expect "OK READY <compressed_bytes>"
-          3) Send compressed data
+          3) Send compressed data [+ 4-byte CRC32 little-endian]
           4) Receive final OK/ERROR
         """
         if not self.is_connected():
@@ -783,6 +800,8 @@ class MotorClient:
 
         compressed_len = len(rle_data)
         cmd_str = f"DISP_BITMAP_RLE {x} {y} {w} {h} {compressed_len}"
+        if use_crc:
+            cmd_str += " CRC"
         self._transport.send_line(cmd_str)
 
         line = self._recv_response(cmd_str, timeout)
@@ -816,7 +835,76 @@ class MotorClient:
             if progress_cb is not None:
                 progress_cb(offset, compressed_len)
 
+        if use_crc:
+            crc = zlib.crc32(rle_data) & 0xFFFFFFFF
+            self._transport.send(struct.pack('<I', crc))
+
         final_line = self._recv_response(cmd_str, timeout)
         if final_line is None:
             raise ProtocolError("No final response for DISP_BITMAP_RLE")
         return self._parse_response(final_line, "DISP_BITMAP_RLE")
+
+    def flash_upload_rle(self, slot: int, rle_data: bytes,
+                         timeout_ms: Optional[int] = None,
+                         progress_cb=None,
+                         use_crc: bool = False) -> Response:
+        """
+        Upload RLE-compressed image data to a flash slot.
+
+        Protocol:
+          1) Send FLASH_UPLOAD_RLE <slot> <compressed_bytes> [CRC]
+          2) Expect "OK READY <compressed_bytes>"
+          3) Send compressed data [+ 4-byte CRC32 little-endian]
+          4) Receive final OK/ERROR
+        """
+        if not self.is_connected():
+            raise TransportError("Not connected")
+
+        timeout = timeout_ms or max(self._timeout_ms, 30000)
+        self._drain_pending()
+
+        compressed_len = len(rle_data)
+        cmd_str = f"FLASH_UPLOAD_RLE {slot} {compressed_len}"
+        if use_crc:
+            cmd_str += " CRC"
+        self._transport.send_line(cmd_str)
+
+        line = self._recv_response(cmd_str, timeout)
+        if line is None:
+            raise ProtocolError("No READY response for FLASH_UPLOAD_RLE")
+
+        if line.startswith("{"):
+            resp = self._parse_json_response(line, "FLASH_UPLOAD_RLE")
+            if resp.success:
+                raise ProtocolError(
+                    "Expected READY for FLASH_UPLOAD_RLE, got JSON OK"
+                )
+            return resp
+
+        resp = self._parse_ascii_response(line, "FLASH_UPLOAD_RLE")
+        ready_bytes = resp.data.get("ready_bytes")
+        if ready_bytes is None:
+            raise ProtocolError(f"Expected READY response, got: {line}")
+
+        if compressed_len != ready_bytes:
+            raise ProtocolError(
+                f"RLE size mismatch: expected {ready_bytes}, "
+                f"got {compressed_len}"
+            )
+
+        offset = 0
+        while offset < compressed_len:
+            chunk = rle_data[offset:offset + self._stream_chunk]
+            self._transport.send(chunk)
+            offset += len(chunk)
+            if progress_cb is not None:
+                progress_cb(offset, compressed_len)
+
+        if use_crc:
+            crc = zlib.crc32(rle_data) & 0xFFFFFFFF
+            self._transport.send(struct.pack('<I', crc))
+
+        final_line = self._recv_response(cmd_str, timeout)
+        if final_line is None:
+            raise ProtocolError("No final response for FLASH_UPLOAD_RLE")
+        return self._parse_response(final_line, "FLASH_UPLOAD_RLE")

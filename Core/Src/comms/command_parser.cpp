@@ -20,6 +20,7 @@
 #include "services/tick_timer.hpp"
 #include "services/trace.hpp"
 #include "services/flash_image_service.hpp"
+#include "util/crc32.hpp"
 #include "tasks/display_task.hpp"
 #include "tasks/encoder_task.hpp"
 #include "tasks/motor_task.hpp"
@@ -628,10 +629,16 @@ void CommandParser::dispatchLegacy(const ParsedCommand &cmd) {
     cmdFlashInfo();
   } else if (strcmp(cmd.cmd, "FLASH_UPLOAD") == 0) {
     cmdFlashUpload(cmd);
+  } else if (strcmp(cmd.cmd, "FLASH_UPLOAD_RLE") == 0) {
+    cmdFlashUploadRle(cmd);
   } else if (strcmp(cmd.cmd, "FLASH_SHOW") == 0) {
     cmdFlashShow(cmd);
   } else if (strcmp(cmd.cmd, "FLASH_ERASE_ALL") == 0) {
     cmdFlashEraseAll();
+  } else if (strcmp(cmd.cmd, "FLASH_DUMP") == 0) {
+    cmdFlashDump(cmd);
+  } else if (strcmp(cmd.cmd, "FLASH_TEST") == 0) {
+    cmdFlashTest();
   } else if (strcmp(cmd.cmd, "SPI_DEBUG") == 0) {
     // Debug: show SPI1 and GPIO states
     char buf[128];
@@ -3261,13 +3268,12 @@ void CommandParser::cmdDispBitmap(const ParsedCommand &cmd) {
     return;
   }
 
-  // Usage: DISP_BITMAP <x> <y> <w> <h>
-  // Protocol:
-  //   1. Server sends "OK READY <bytes>"
-  //   2. Client sends raw RGB565 binary data
-  //   3. Server sends "OK" or "ERROR <reason>"
-  if (cmd.argCount < 4) {
-    respondErr("Usage: DISP_BITMAP <x> <y> <w> <h>");
+  // Usage: DISP_BITMAP <x> <y> <w> <h> [CRC]
+  bool useCrc = hasCrcFlag(cmd);
+  uint32_t minArgs = useCrc ? 5 : 4;
+
+  if (cmd.argCount < minArgs) {
+    respondErr("Usage: DISP_BITMAP <x> <y> <w> <h> [CRC]");
     return;
   }
 
@@ -3289,7 +3295,6 @@ void CommandParser::cmdDispBitmap(const ParsedCommand &cmd) {
   // Calculate expected bytes (RGB565 = 2 bytes per pixel)
   uint32_t expectedBytes = static_cast<uint32_t>(w) * h * 2;
 
-  // Limit maximum transfer size (115200 bytes = 240x240 full screen)
   constexpr uint32_t MAX_BITMAP_BYTES = 240 * 320 * 2;
   if (expectedBytes > MAX_BITMAP_BYTES) {
     respondErr("Bitmap too large");
@@ -3308,25 +3313,30 @@ void CommandParser::cmdDispBitmap(const ParsedCommand &cmd) {
   m_transport.println(buf);
   m_transport.flush();
 
+  // Drain trailing \r/\n from command line before binary read
+  { uint8_t drain;
+    while (m_transport.available() && m_transport.readByte(drain, 1)) {
+      if (drain != '\r' && drain != '\n') break;
+    }
+  }
+
   // Receive binary data with timeout
   constexpr uint32_t CHUNK_SIZE = 64;
-  constexpr uint32_t BYTE_TIMEOUT_MS = 100;  // Timeout per byte
+  constexpr uint32_t BYTE_TIMEOUT_MS = 100;
   uint8_t chunk[CHUNK_SIZE];
   uint32_t bytesReceived = 0;
+  uint32_t crcState = 0xFFFFFFFF;
 
   while (bytesReceived < expectedBytes) {
-    // Calculate how many bytes to read this iteration
     uint32_t remaining = expectedBytes - bytesReceived;
     uint32_t toRead = (remaining < CHUNK_SIZE) ? remaining : CHUNK_SIZE;
 
-    // Read chunk with timeout
     uint32_t chunkReceived = 0;
     while (chunkReceived < toRead) {
       uint8_t byte;
       if (m_transport.readByte(byte, BYTE_TIMEOUT_MS)) {
         chunk[chunkReceived++] = byte;
       } else {
-        // Timeout - abort transfer
         Tasks::DisplayTask_StreamBitmapEnd();
         char errBuf[48];
         snprintf(errBuf, sizeof(errBuf), "Timeout at byte %lu/%lu",
@@ -3337,15 +3347,22 @@ void CommandParser::cmdDispBitmap(const ParsedCommand &cmd) {
       }
     }
 
-    // Stream chunk to LCD
+    if (useCrc) {
+      crcState = Util::crc32_update(crcState, chunk, chunkReceived);
+    }
+
     Tasks::DisplayTask_StreamBitmapData(chunk, chunkReceived);
     bytesReceived += chunkReceived;
   }
 
-  // End LCD streaming
   Tasks::DisplayTask_StreamBitmapEnd();
 
-  // Success
+  if (useCrc) {
+    if (!verifyCrc(crcState)) {
+      return;
+    }
+  }
+
   respondOk("");
 }
 
@@ -3479,9 +3496,12 @@ void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
     return;
   }
 
-  // Usage: DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes>
-  if (cmd.argCount < 5) {
-    respondErr("Usage: DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes>");
+  // Usage: DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes> [CRC]
+  bool useCrc = hasCrcFlag(cmd);
+  uint32_t minArgs = useCrc ? 6 : 5;
+
+  if (cmd.argCount < minArgs) {
+    respondErr("Usage: DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes> [CRC]");
     return;
   }
 
@@ -3495,36 +3515,41 @@ void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
   if (x >= 240 || y >= 320) { respondErr("Position out of bounds"); return; }
   if (compressedBytes == 0) { respondErr("Invalid compressed size"); return; }
 
-  // Sanity limit on compressed size
   constexpr uint32_t MAX_COMPRESSED = 240 * 320 * 3;
   if (compressedBytes > MAX_COMPRESSED) {
     respondErr("Compressed size too large");
     return;
   }
 
-  // Start LCD streaming
   if (!Tasks::DisplayTask_StreamBitmapStart(x, y, w, h)) {
     respondErr("LCD streaming failed");
     return;
   }
 
-  // Send ready response
   char buf[32];
   snprintf(buf, sizeof(buf), "OK READY %lu", static_cast<unsigned long>(compressedBytes));
   m_transport.println(buf);
   m_transport.flush();
 
+  // Drain trailing \r/\n from command line before binary read
+  { uint8_t drain;
+    while (m_transport.available() && m_transport.readByte(drain, 1)) {
+      if (drain != '\r' && drain != '\n') break;
+    }
+  }
+
   // RLE streaming decoder state machine
   enum RleState { HEADER, LITERAL, REPEAT };
   RleState rleState = HEADER;
-  uint16_t runCount = 0;        // Pixels remaining in current run
-  uint8_t pixelBuf[2] = {0, 0}; // Current pixel being assembled
-  uint8_t pixelIdx = 0;          // 0=high byte, 1=low byte
+  uint16_t runCount = 0;
+  uint8_t pixelBuf[2] = {0, 0};
+  uint8_t pixelIdx = 0;
   uint32_t totalPixels = static_cast<uint32_t>(w) * h;
   uint32_t decodedPixels = 0;
 
   constexpr uint32_t BYTE_TIMEOUT_MS = 100;
   uint32_t bytesReceived = 0;
+  uint32_t crcState = 0xFFFFFFFF;
 
   while (bytesReceived < compressedBytes) {
     uint8_t byte;
@@ -3537,17 +3562,18 @@ void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
       respondErr(errBuf);
       return;
     }
+    if (useCrc) {
+      crcState = Util::crc32_update(crcState, &byte, 1);
+    }
     bytesReceived++;
 
     switch (rleState) {
       case HEADER:
         if (byte & 0x80) {
-          // Repeat run: next pixel repeated (byte - 125) times
           runCount = static_cast<uint16_t>(byte - 125);
           rleState = REPEAT;
           pixelIdx = 0;
         } else {
-          // Literal run: next (byte + 1) pixels are raw
           runCount = static_cast<uint16_t>(byte + 1);
           rleState = LITERAL;
           pixelIdx = 0;
@@ -3557,21 +3583,17 @@ void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
       case LITERAL:
         pixelBuf[pixelIdx++] = byte;
         if (pixelIdx >= 2) {
-          // Emit one pixel to LCD
           Tasks::DisplayTask_StreamBitmapData(pixelBuf, 2);
           decodedPixels++;
           pixelIdx = 0;
           runCount--;
-          if (runCount == 0) {
-            rleState = HEADER;
-          }
+          if (runCount == 0) rleState = HEADER;
         }
         break;
 
       case REPEAT:
         pixelBuf[pixelIdx++] = byte;
         if (pixelIdx >= 2) {
-          // Emit repeated pixel runCount times
           for (uint16_t i = 0; i < runCount; i++) {
             Tasks::DisplayTask_StreamBitmapData(pixelBuf, 2);
             decodedPixels++;
@@ -3584,6 +3606,13 @@ void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
   }
 
   Tasks::DisplayTask_StreamBitmapEnd();
+
+  // Verify CRC if requested
+  if (useCrc) {
+    if (!verifyCrc(crcState)) {
+      return;
+    }
+  }
 
   // Verify decoded pixel count
   if (decodedPixels != totalPixels) {
@@ -4059,8 +4088,12 @@ void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
     return;
   }
 
-  if (cmd.argCount < 1) {
-    respondErr("Usage: FLASH_UPLOAD <slot>");
+  // Usage: FLASH_UPLOAD <slot> [CRC]
+  bool useCrc = hasCrcFlag(cmd);
+  uint32_t minArgs = useCrc ? 2 : 1;
+
+  if (cmd.argCount < minArgs) {
+    respondErr("Usage: FLASH_UPLOAD <slot> [CRC]");
     return;
   }
 
@@ -4085,11 +4118,19 @@ void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
   m_transport.println(buf);
   m_transport.flush();
 
+  // Drain trailing \r/\n from command line before binary read
+  { uint8_t drain;
+    while (m_transport.available() && m_transport.readByte(drain, 1)) {
+      if (drain != '\r' && drain != '\n') break;
+    }
+  }
+
   // Receive binary data and program page-by-page
   constexpr uint32_t PAGE_SIZE = Services::FLASH_PAGE_SIZE;
   constexpr uint32_t BYTE_TIMEOUT_MS = 100;
   uint8_t page[PAGE_SIZE];
   uint32_t bytesReceived = 0;
+  uint32_t crcState = 0xFFFFFFFF;
 
   while (bytesReceived < expectedBytes) {
     uint32_t remaining = expectedBytes - bytesReceived;
@@ -4111,6 +4152,10 @@ void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
       }
     }
 
+    if (useCrc) {
+      crcState = Util::crc32_update(crcState, page, toRead);
+    }
+
     // Program the page to flash
     if (!svc.writeSlotData(slot, bytesReceived, page, toRead)) {
       respondErr("Flash program failed");
@@ -4120,7 +4165,22 @@ void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
     bytesReceived += toRead;
   }
 
-  respondOk("Upload complete");
+  // Verify CRC if requested
+  if (useCrc) {
+    if (!verifyCrc(crcState)) {
+      return;
+    }
+  }
+
+  // Read-back verification: read first 4 bytes from flash to confirm write
+  uint8_t verify[4] = {0xFF, 0xFF, 0xFF, 0xFF};
+  svc.readSlotChunk(slot, 0, verify, 4);
+  char okBuf[96];
+  snprintf(okBuf, sizeof(okBuf),
+           "Upload complete (%lu bytes, verify %02X%02X%02X%02X)",
+           static_cast<unsigned long>(bytesReceived),
+           verify[0], verify[1], verify[2], verify[3]);
+  respondOk(okBuf);
 }
 
 void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
@@ -4154,6 +4214,10 @@ void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
   constexpr uint32_t CHUNK_SIZE = 512;
   uint8_t chunk[CHUNK_SIZE];
   uint32_t offset = 0;
+  uint32_t nonZeroCount = 0;
+  uint32_t nonFFCount = 0;
+  uint8_t first4[4] = {0};
+  bool gotFirst = false;
 
   while (offset < Services::FLASH_IMAGE_SIZE) {
     uint32_t remaining = Services::FLASH_IMAGE_SIZE - offset;
@@ -4165,12 +4229,27 @@ void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
       return;
     }
 
+    // Capture first 4 bytes and count non-trivial data
+    if (!gotFirst) {
+      for (uint32_t i = 0; i < 4 && i < toRead; i++) first4[i] = chunk[i];
+      gotFirst = true;
+    }
+    for (uint32_t i = 0; i < toRead; i++) {
+      if (chunk[i] != 0x00) nonZeroCount++;
+      if (chunk[i] != 0xFF) nonFFCount++;
+    }
+
     Tasks::DisplayTask_StreamBitmapData(chunk, toRead);
     offset += toRead;
   }
 
   Tasks::DisplayTask_StreamBitmapEnd();
-  respondOk("OK");
+  char okBuf[96];
+  snprintf(okBuf, sizeof(okBuf),
+           "slot=%lu first=%02X%02X%02X%02X nonZero=%lu nonFF=%lu",
+           (unsigned long)slot, first4[0], first4[1], first4[2], first4[3],
+           (unsigned long)nonZeroCount, (unsigned long)nonFFCount);
+  respondOk(okBuf);
 }
 
 void CommandParser::cmdFlashEraseAll() {
@@ -4186,6 +4265,387 @@ void CommandParser::cmdFlashEraseAll() {
   }
 
   respondOk("All image slots erased");
+}
+
+void CommandParser::cmdFlashDump(const ParsedCommand &cmd) {
+  auto &svc = Services::g_flashImageService;
+  if (!svc.isAvailable()) {
+    respondErr("Flash not available");
+    return;
+  }
+
+  // Usage: FLASH_DUMP <slot> [offset] [len]
+  if (cmd.argCount < 1) {
+    respondErr("Usage: FLASH_DUMP <slot> [offset] [len]");
+    return;
+  }
+
+  uint32_t slot = strtoul(cmd.args[0], nullptr, 10);
+  if (slot >= svc.maxSlots()) {
+    respondErr("Slot out of range");
+    return;
+  }
+
+  uint32_t offset = 0;
+  uint32_t len = 64;  // Default: dump 64 bytes
+  if (cmd.argCount >= 2) offset = strtoul(cmd.args[1], nullptr, 10);
+  if (cmd.argCount >= 3) len = strtoul(cmd.args[2], nullptr, 10);
+  if (len > 256) len = 256;  // Cap at 256 bytes
+  if (offset + len > Services::FLASH_IMAGE_SIZE) {
+    respondErr("Offset+len exceeds image size");
+    return;
+  }
+
+  uint8_t buf[256];
+  if (!svc.readSlotChunk(slot, offset, buf, len)) {
+    respondErr("Flash read failed");
+    return;
+  }
+
+  // Print hex dump in 16-byte rows
+  char line[80];
+  for (uint32_t i = 0; i < len; i += 16) {
+    int pos = snprintf(line, sizeof(line), "%06lX:",
+                       static_cast<unsigned long>(svc.slotAddress(slot) + offset + i));
+    for (uint32_t j = 0; j < 16 && (i + j) < len; j++) {
+      pos += snprintf(line + pos, sizeof(line) - pos, " %02X", buf[i + j]);
+    }
+    m_transport.println(line);
+  }
+  respondOk("Dump complete");
+}
+
+void CommandParser::cmdFlashTest() {
+  auto &svc = Services::g_flashImageService;
+  if (!svc.isAvailable()) {
+    respondErr("Flash not available");
+    return;
+  }
+
+  // All diagnostics packed into final response (client discards println lines)
+  char result[256];
+  int rpos = 0;
+
+  // Step 0: Read JEDEC ID NOW (verifies SPI2 bus is still alive)
+  auto info = svc.getInfo();
+  rpos += snprintf(result + rpos, sizeof(result) - rpos,
+                   "jedec=%02X/%02X/%02X",
+                   info.manufacturer, info.memoryType, info.capacityCode);
+
+  // Step 0b: Check SPI2 peripheral registers
+  rpos += snprintf(result + rpos, sizeof(result) - rpos,
+                   " SPI2:CR1=%04lX,SR=%04lX",
+                   (unsigned long)SPI2->CR1, (unsigned long)SPI2->SR);
+
+  // Step 0c: Dump SPI2 pin config (MODER + AFR for SCK/MISO/MOSI)
+  {
+    // SCK = PB13
+    auto sp = Pins::SPI2_Bus::SCK_PORT;
+    auto sn = Pins::SPI2_Bus::SCK_PIN;
+    uint32_t sckM = (sp->MODER >> (sn * 2)) & 0x3;
+    uint32_t sckAF = (sp->AFR[sn / 8] >> ((sn % 8) * 4)) & 0xF;
+    // MISO = PC2
+    auto mp = Pins::SPI2_Bus::MISO_PORT;
+    auto mn = Pins::SPI2_Bus::MISO_PIN;
+    uint32_t misoM = (mp->MODER >> (mn * 2)) & 0x3;
+    uint32_t misoAF = (mp->AFR[mn / 8] >> ((mn % 8) * 4)) & 0xF;
+    uint32_t misoIDR = (mp->IDR >> mn) & 0x1;
+    // MOSI = PC3
+    auto op = Pins::SPI2_Bus::MOSI_PORT;
+    auto on = Pins::SPI2_Bus::MOSI_PIN;
+    uint32_t mosiM = (op->MODER >> (on * 2)) & 0x3;
+    uint32_t mosiAF = (op->AFR[on / 8] >> ((on % 8) * 4)) & 0xF;
+    rpos += snprintf(result + rpos, sizeof(result) - rpos,
+                     " SCK:M%lu/AF%lu MI:M%lu/AF%lu/IDR%lu MO:M%lu/AF%lu",
+                     sckM, sckAF, misoM, misoAF, misoIDR, mosiM, mosiAF);
+  }
+
+  // Step 1: Read before erase (first 4 bytes)
+  uint8_t before[4];
+  svc.readSlotChunk(0, 0, before, 4);
+  rpos += snprintf(result + rpos, sizeof(result) - rpos,
+                   " pre=%02X%02X%02X%02X",
+                   before[0], before[1], before[2], before[3]);
+
+  // Step 2: Erase slot 0
+  if (!svc.eraseSlot(0)) {
+    rpos += snprintf(result + rpos, sizeof(result) - rpos, " erase=ERR");
+    respondErr(result);
+    return;
+  }
+
+  // Step 3: Read after erase (should be all FF)
+  uint8_t afterErase[16];
+  svc.readSlotChunk(0, 0, afterErase, 16);
+  bool eraseOk = true;
+  for (int i = 0; i < 16; i++) {
+    if (afterErase[i] != 0xFF) { eraseOk = false; break; }
+  }
+  rpos += snprintf(result + rpos, sizeof(result) - rpos,
+                   " era=%s/%02X%02X%02X%02X",
+                   eraseOk ? "OK" : "FAIL",
+                   afterErase[0], afterErase[1], afterErase[2], afterErase[3]);
+
+  // Step 4: Write test pattern to first page
+  uint8_t pattern[256];
+  for (int i = 0; i < 256; i++) pattern[i] = (i & 1) ? 0x55 : 0xAA;
+  if (!svc.writeSlotData(0, 0, pattern, 256)) {
+    rpos += snprintf(result + rpos, sizeof(result) - rpos, " wr=ERR");
+    respondErr(result);
+    return;
+  }
+
+  // Step 5: Read back and compare
+  uint8_t readback[256];
+  svc.readSlotChunk(0, 0, readback, 256);
+  int mismatches = 0;
+  for (int i = 0; i < 256; i++) {
+    if (readback[i] != pattern[i]) mismatches++;
+  }
+  rpos += snprintf(result + rpos, sizeof(result) - rpos,
+                   " wr=%s(%d) rb=%02X%02X%02X%02X",
+                   mismatches == 0 ? "OK" : "FAIL",
+                   256 - mismatches,
+                   readback[0], readback[1], readback[2], readback[3]);
+
+  if (mismatches == 0 && eraseOk) {
+    respondOk(result);
+  } else {
+    respondErr(result);
+  }
+}
+
+// ========================================================================
+// CRC32 helpers
+// ========================================================================
+
+bool CommandParser::hasCrcFlag(const ParsedCommand &cmd) const {
+  if (cmd.argCount < 1) return false;
+  return (strcmp(cmd.args[cmd.argCount - 1], "CRC") == 0);
+}
+
+bool CommandParser::verifyCrc(uint32_t computedCrc) {
+  // Finalize CRC
+  uint32_t expected = computedCrc ^ 0xFFFFFFFF;
+
+  // Read 4 CRC bytes (little-endian)
+  constexpr uint32_t CRC_TIMEOUT_MS = 200;
+  uint8_t crcBytes[4];
+  for (int i = 0; i < 4; i++) {
+    if (!m_transport.readByte(crcBytes[i], CRC_TIMEOUT_MS)) {
+      respondErr("CRC bytes timeout");
+      return false;
+    }
+  }
+
+  uint32_t received = static_cast<uint32_t>(crcBytes[0])
+                    | (static_cast<uint32_t>(crcBytes[1]) << 8)
+                    | (static_cast<uint32_t>(crcBytes[2]) << 16)
+                    | (static_cast<uint32_t>(crcBytes[3]) << 24);
+
+  if (received != expected) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "CRC mismatch: expected %08lX got %08lX",
+             static_cast<unsigned long>(expected),
+             static_cast<unsigned long>(received));
+    respondErr(buf);
+    return false;
+  }
+
+  return true;
+}
+
+// ========================================================================
+// FLASH_UPLOAD_RLE: upload RLE-compressed image to flash slot
+// ========================================================================
+
+void CommandParser::cmdFlashUploadRle(const ParsedCommand &cmd) {
+  auto &svc = Services::g_flashImageService;
+  if (!svc.isAvailable()) {
+    respondErr("Flash not available");
+    return;
+  }
+
+  // Usage: FLASH_UPLOAD_RLE <slot> <compressed_bytes> [CRC]
+  bool useCrc = hasCrcFlag(cmd);
+  uint32_t minArgs = useCrc ? 3 : 2;  // slot, comp_bytes [, CRC]
+
+  if (cmd.argCount < minArgs) {
+    respondErr("Usage: FLASH_UPLOAD_RLE <slot> <compressed_bytes> [CRC]");
+    return;
+  }
+
+  uint32_t slot = strtoul(cmd.args[0], nullptr, 10);
+  if (slot >= svc.maxSlots()) {
+    respondErr("Slot out of range");
+    return;
+  }
+
+  uint32_t compressedBytes = strtoul(cmd.args[1], nullptr, 10);
+  if (compressedBytes == 0) {
+    respondErr("Invalid compressed size");
+    return;
+  }
+
+  constexpr uint32_t MAX_COMPRESSED = 240 * 320 * 3;
+  if (compressedBytes > MAX_COMPRESSED) {
+    respondErr("Compressed size too large");
+    return;
+  }
+
+  // Erase the slot first
+  if (!svc.eraseSlot(slot)) {
+    respondErr("Flash erase failed");
+    return;
+  }
+
+  // Send ready response
+  char buf[32];
+  snprintf(buf, sizeof(buf), "OK READY %lu",
+           static_cast<unsigned long>(compressedBytes));
+  m_transport.println(buf);
+  m_transport.flush();
+
+  // Drain trailing \r/\n from command line before binary read
+  { uint8_t drain;
+    while (m_transport.available() && m_transport.readByte(drain, 1)) {
+      if (drain != '\r' && drain != '\n') break;
+    }
+  }
+
+  // RLE streaming decoder → page buffer → flash
+  enum RleState { HEADER, LITERAL, REPEAT };
+  RleState rleState = HEADER;
+  uint16_t runCount = 0;
+  uint8_t pixelBuf[2] = {0, 0};
+  uint8_t pixelIdx = 0;
+  uint32_t totalPixels = 240UL * 320;
+  uint32_t decodedPixels = 0;
+
+  constexpr uint32_t PAGE_SIZE = Services::FLASH_PAGE_SIZE;
+  constexpr uint32_t BYTE_TIMEOUT_MS = 100;
+  uint8_t page[PAGE_SIZE];
+  uint32_t pageOffset = 0;   // Bytes in current page buffer
+  uint32_t flashOffset = 0;  // Byte offset into the flash slot
+
+  uint32_t crcState = 0xFFFFFFFF;
+  uint32_t bytesReceived = 0;
+
+  // Helper lambda: flush current page to flash
+  auto flushPage = [&]() -> bool {
+    if (pageOffset == 0) return true;
+    if (!svc.writeSlotData(slot, flashOffset, page, pageOffset)) {
+      return false;
+    }
+    flashOffset += pageOffset;
+    pageOffset = 0;
+    return true;
+  };
+
+  // Helper: emit one decoded pixel (2 bytes) into the page buffer
+  auto emitPixel = [&](uint8_t hi, uint8_t lo) -> bool {
+    page[pageOffset++] = hi;
+    if (pageOffset >= PAGE_SIZE) {
+      if (!flushPage()) return false;
+    }
+    page[pageOffset++] = lo;
+    if (pageOffset >= PAGE_SIZE) {
+      if (!flushPage()) return false;
+    }
+    decodedPixels++;
+    return true;
+  };
+
+  while (bytesReceived < compressedBytes) {
+    uint8_t byte;
+    if (!m_transport.readByte(byte, BYTE_TIMEOUT_MS)) {
+      char errBuf[48];
+      snprintf(errBuf, sizeof(errBuf), "Timeout at byte %lu/%lu",
+               static_cast<unsigned long>(bytesReceived),
+               static_cast<unsigned long>(compressedBytes));
+      respondErr(errBuf);
+      return;
+    }
+    if (useCrc) {
+      crcState = Util::crc32_update(crcState, &byte, 1);
+    }
+    bytesReceived++;
+
+    switch (rleState) {
+      case HEADER:
+        if (byte & 0x80) {
+          runCount = static_cast<uint16_t>(byte - 125);
+          rleState = REPEAT;
+          pixelIdx = 0;
+        } else {
+          runCount = static_cast<uint16_t>(byte + 1);
+          rleState = LITERAL;
+          pixelIdx = 0;
+        }
+        break;
+
+      case LITERAL:
+        pixelBuf[pixelIdx++] = byte;
+        if (pixelIdx >= 2) {
+          if (!emitPixel(pixelBuf[0], pixelBuf[1])) {
+            respondErr("Flash program failed");
+            return;
+          }
+          pixelIdx = 0;
+          runCount--;
+          if (runCount == 0) rleState = HEADER;
+        }
+        break;
+
+      case REPEAT:
+        pixelBuf[pixelIdx++] = byte;
+        if (pixelIdx >= 2) {
+          for (uint16_t i = 0; i < runCount; i++) {
+            if (!emitPixel(pixelBuf[0], pixelBuf[1])) {
+              respondErr("Flash program failed");
+              return;
+            }
+          }
+          rleState = HEADER;
+          pixelIdx = 0;
+        }
+        break;
+    }
+  }
+
+  // Flush remaining page data
+  if (!flushPage()) {
+    respondErr("Flash program failed (final page)");
+    return;
+  }
+
+  // Verify CRC if requested
+  if (useCrc) {
+    if (!verifyCrc(crcState)) {
+      return;  // verifyCrc already sent error response
+    }
+  }
+
+  // Verify decoded pixel count
+  if (decodedPixels != totalPixels) {
+    char errBuf[64];
+    snprintf(errBuf, sizeof(errBuf), "RLE decode: got %lu pixels, expected %lu",
+             static_cast<unsigned long>(decodedPixels),
+             static_cast<unsigned long>(totalPixels));
+    respondErr(errBuf);
+    return;
+  }
+
+  // Read-back verification: read first 4 bytes from flash to confirm write
+  uint8_t verify[4] = {0xFF, 0xFF, 0xFF, 0xFF};
+  svc.readSlotChunk(slot, 0, verify, 4);
+
+  char okBuf[80];
+  snprintf(okBuf, sizeof(okBuf),
+           "Upload complete (%lu px, verify %02X%02X%02X%02X)",
+           static_cast<unsigned long>(decodedPixels),
+           verify[0], verify[1], verify[2], verify[3]);
+  respondOk(okBuf);
 }
 
 } // namespace Comms

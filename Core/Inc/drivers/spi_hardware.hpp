@@ -175,6 +175,25 @@ public:
     }
 
     /**
+     * @brief Write-only transfer — DMA for SPI1 large writes, TX-only polled otherwise
+     */
+    void writeOnly(const uint8_t* data, size_t len) override {
+        if (m_spi == SPI1 && len >= DMA_THRESHOLD) {
+            writeOnlyDMA(data, len);
+            return;
+        }
+
+        // TX-only polled (no RXNE waits)
+        for (size_t i = 0; i < len; i++) {
+            while (!(m_spi->SR & SPI_SR_TXE));
+            *reinterpret_cast<volatile uint8_t*>(&m_spi->DR) = data[i];
+        }
+        while (m_spi->SR & SPI_SR_BSY);
+        (void)m_spi->DR;
+        (void)m_spi->SR;
+    }
+
+    /**
      * @brief Write repeated pattern — DMA for SPI1 large fills, TX-only polled otherwise
      */
     void writeFill(const uint8_t* pattern, size_t patternLen, uint32_t repeatCount) override {
@@ -351,6 +370,55 @@ private:
         while (m_spi->SR & SPI_SR_BSY);
 
         // Clear OVR: read DR then SR
+        (void)m_spi->DR;
+        (void)m_spi->SR;
+    }
+
+    /**
+     * @brief DMA-accelerated write for SPI1 — arbitrary data (not repeated pattern)
+     *
+     * Sends directly from the caller's buffer via DMA2 Stream 3 Channel 3.
+     */
+    void writeOnlyDMA(const uint8_t* data, size_t len) {
+        RCC->AHB1ENR |= RCC_AHB1ENR_DMA2EN;
+
+        DMA2_Stream3->CR = 0;
+        while (DMA2_Stream3->CR & DMA_SxCR_EN);
+
+        DMA2_Stream3->PAR = reinterpret_cast<uint32_t>(&m_spi->DR);
+        DMA2_Stream3->FCR = 0;
+
+        uint32_t cr = DMA_SxCR_CHSEL_0 | DMA_SxCR_CHSEL_1  // Channel 3
+                    | DMA_SxCR_DIR_0                          // Memory-to-peripheral
+                    | DMA_SxCR_MINC                           // Memory increment
+                    | DMA_SxCR_PL_1;                          // High priority
+
+        m_spi->CR2 |= SPI_CR2_TXDMAEN;
+
+        const uint8_t* ptr = data;
+        size_t remaining = len;
+        while (remaining > 0) {
+            uint32_t chunk = remaining > 65535 ? 65535 : static_cast<uint32_t>(remaining);
+
+            DMA2->LIFCR = DMA_LIFCR_CTCIF3 | DMA_LIFCR_CHTIF3
+                         | DMA_LIFCR_CTEIF3 | DMA_LIFCR_CDMEIF3
+                         | DMA_LIFCR_CFEIF3;
+
+            DMA2_Stream3->NDTR = chunk;
+            DMA2_Stream3->M0AR = reinterpret_cast<uint32_t>(ptr);
+            DMA2_Stream3->CR = cr | DMA_SxCR_EN;
+
+            while (!(DMA2->LISR & DMA_LISR_TCIF3));
+
+            DMA2_Stream3->CR = 0;
+            while (DMA2_Stream3->CR & DMA_SxCR_EN);
+
+            ptr += chunk;
+            remaining -= chunk;
+        }
+
+        m_spi->CR2 &= ~SPI_CR2_TXDMAEN;
+        while (m_spi->SR & SPI_SR_BSY);
         (void)m_spi->DR;
         (void)m_spi->SR;
     }

@@ -40,8 +40,8 @@ namespace SPI1_Bus {
 namespace SPI2_Bus {
     static GPIO_TypeDef* const SCK_PORT  = GPIOB;
     static constexpr uint8_t  SCK_PIN   = 13;  // PB13 - CN10-30
-    static GPIO_TypeDef* const MISO_PORT = GPIOB;
-    static constexpr uint8_t  MISO_PIN  = 14;  // PB14 - CN10-28
+    static GPIO_TypeDef* const MISO_PORT = GPIOC;
+    static constexpr uint8_t  MISO_PIN  = 2;   // PC2 - SPI2_MISO AF5 (GFX01M2 SPIB_MISO)
     static GPIO_TypeDef* const MOSI_PORT = GPIOC;
     static constexpr uint8_t  MOSI_PIN  = 3;   // PC3  - CN7-37
     static constexpr uint8_t  AF = 5;          // AF5 for SPI2
@@ -157,12 +157,8 @@ namespace Encoder {
     static constexpr uint8_t EZ_EXTI_LINE = 9;
     static constexpr IRQn_Type EZ_EXTI_IRQn = EXTI9_5_IRQn;
 
-    // Configuration pins (directly from board directly from board directly from board from encoder module directly from board)
-    static GPIO_TypeDef* const NG_PORT = GPIOC;  // nG (active low config)
-    static constexpr uint8_t NG_PIN = 2;
-
-    static GPIO_TypeDef* const G_PORT = GPIOA;   // G (config) — moved from PC3 (now SPI2_MOSI)
-    static constexpr uint8_t G_PIN = 4;           // PA4
+    // AM26LV32EIDR G/nG enable pins handled by on-board pulls (no STM32 GPIO).
+    // nG routed to PA2, G to PA3 on encoder board — traces cut, pulls keep receiver enabled.
 }
 
 // ============================================================================

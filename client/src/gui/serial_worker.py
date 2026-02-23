@@ -33,6 +33,7 @@ class CommandTag(Enum):
     FLASH_UPLOAD_SLOT = auto()
     FLASH_SHOW = auto()
     FLASH_ERASE = auto()
+    FLASH_DIAG = auto()
 
 
 @dataclass

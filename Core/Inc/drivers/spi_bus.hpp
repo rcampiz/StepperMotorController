@@ -118,6 +118,13 @@ public:
         m_spi.read(data, len);
     }
 
+    /**
+     * @brief Write-only transfer (TX only, no RXNE waits). DMA on SPI1.
+     */
+    void writeOnly(const uint8_t* data, size_t len) {
+        m_spi.writeOnly(data, len);
+    }
+
     void writeFill(const uint8_t* pattern, size_t patternLen, uint32_t repeatCount) {
         m_spi.writeFill(pattern, patternLen, repeatCount);
     }

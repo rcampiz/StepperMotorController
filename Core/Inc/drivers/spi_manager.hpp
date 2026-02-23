@@ -152,8 +152,8 @@ public:
             spi1Lock
         );
 
-        // SPI2: Hardware SPI on PB13 (SCK), PB14 (MISO), PC3 (MOSI)
-        // Prescaler 4 = /32 → 42 MHz / 32 = 1.3 MHz (conservative, proven reliable)
+        // SPI2: Hardware SPI on PB13 (SCK), PC2 (MISO), PC3 (MOSI)
+        // Prescaler 0 = /2 → 42 MHz / 2 = 21 MHz (MX25L6433F supports 86 MHz normal read)
         m_spi2 = new SPIHardware(
             SPI2,
             Pins::SPI2_Bus::SCK_PORT,  Pins::SPI2_Bus::SCK_PIN,
@@ -161,7 +161,7 @@ public:
             Pins::SPI2_Bus::MOSI_PORT, Pins::SPI2_Bus::MOSI_PIN,
             Pins::SPI2_Bus::AF,
             SPIMode::Mode0,
-            4,  // BR = /32 (1.3 MHz)
+            0,  // BR = /2 (21 MHz)
             spi2Lock
         );
 

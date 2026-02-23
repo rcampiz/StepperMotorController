@@ -591,8 +591,17 @@ public:
         if (!m_streaming) {
             return;
         }
-        for (size_t i = 0; i < len; i++) {
-            m_spi.transfer(~data[i]);  // INVON compensation
+        // Bulk-invert into static buffer, then TX-only write (DMA on SPI1)
+        static uint8_t invBuf[512];
+        size_t offset = 0;
+        while (offset < len) {
+            size_t chunk = len - offset;
+            if (chunk > sizeof(invBuf)) chunk = sizeof(invBuf);
+            for (size_t i = 0; i < chunk; i++) {
+                invBuf[i] = ~data[offset + i];
+            }
+            m_spi.writeOnly(invBuf, chunk);
+            offset += chunk;
         }
     }
 

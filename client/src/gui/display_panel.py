@@ -1,8 +1,8 @@
 """
 Display panel for sending images to the LCD.
 
-Provides arrow image selection (64 rotations), preview, and two transfer modes:
-  - Direct: stream RGB565 over serial to the LCD (slow, for testing)
+Provides image file loading (JPEG/PNG/SVG), preview, and two transfer modes:
+  - Direct: stream RLE-compressed RGB565 over serial to the LCD
   - Flash:  upload to NOR flash on the LCD board, then show instantly
 """
 
@@ -19,33 +19,36 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QComboBox,
     QCheckBox,
+    QLineEdit,
+    QFileDialog,
 )
 from PySide6.QtCore import Qt, Slot, Signal
 from PySide6.QtGui import QImage, QPixmap
 import logging
 
-from gui.arrow_generator import (
-    generate_arrow_image,
+from gui.image_loader import (
+    load_image,
+    resize_for_lcd,
+    crop_for_lcd,
+    rotate_image,
     image_to_rgb565,
-    NUM_FRAMES,
+    SUPPORTED_FILTER,
     LCD_WIDTH,
     LCD_HEIGHT,
 )
+from gui.rle_codec import encode_rle_rgb565
 
 log = logging.getLogger("display_panel")
 
 
 class DisplayPanel(QWidget):
-    """Panel for selecting and sending arrow images to the LCD."""
+    """Panel for loading images and sending them to the LCD."""
 
-    # Signal: request bitmap send (x, y, w, h, rgb565_bytes)
-    bitmap_send_requested = Signal(int, int, int, int, bytes)
+    # Signal: request direct-to-LCD send (rgb565_bytes, rle_bytes)
+    image_send_requested = Signal(bytes, bytes)
 
-    # Signal: request flash upload of one slot (slot_index, rgb565_bytes)
-    flash_upload_requested = Signal(int, bytes)
-
-    # Signal: request all 64 frames uploaded to flash
-    flash_upload_all_requested = Signal()
+    # Signal: request flash upload (slot, rgb565_bytes, rle_bytes)
+    image_flash_upload_requested = Signal(int, bytes, bytes)
 
     # Signal: request display of a flash slot
     flash_show_requested = Signal(int)
@@ -56,49 +59,67 @@ class DisplayPanel(QWidget):
     # Signal: request erase all flash slots
     flash_erase_requested = Signal()
 
+    # Signal: request flash diagnostics (FLASH_TEST)
+    flash_diag_requested = Signal()
+
     # Signal: request indicator draw (angle_deg, rotation_dir, has_translation)
     indicator_send_requested = Signal(int, int, bool)
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
-        # Cache: index -> (QPixmap for preview, rgb565 bytes)
-        self._cache = {}
+        self._original_image = None  # PIL Image (original loaded, before transform)
+        self._loaded_pixmap = None   # QPixmap for preview
+        self._loaded_rgb565 = None   # bytes: raw RGB565 data
+        self._loaded_rle = None      # bytes: RLE-compressed data
+        self._max_slots = 53         # Updated by flash info query
 
         self._setup_ui()
-        self._update_preview(0)
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
         layout.setSpacing(8)
 
-        # --- Arrow Selection Group ---
-        sel_group = QGroupBox("Arrow Selection")
-        sel_layout = QVBoxLayout(sel_group)
+        # --- Image Upload Group ---
+        img_group = QGroupBox("Image Upload")
+        img_layout = QVBoxLayout(img_group)
 
-        # Slider + SpinBox row
-        ctrl_row = QHBoxLayout()
-        ctrl_row.addWidget(QLabel("Frame:"))
+        # File picker row
+        file_row = QHBoxLayout()
+        self._file_path = QLineEdit()
+        self._file_path.setReadOnly(True)
+        self._file_path.setPlaceholderText("No image loaded")
+        file_row.addWidget(self._file_path, 1)
 
-        self._slider = QSlider(Qt.Horizontal)
-        self._slider.setRange(0, NUM_FRAMES - 1)
-        self._slider.setValue(0)
-        self._slider.setTickPosition(QSlider.TicksBelow)
-        self._slider.setTickInterval(8)
-        ctrl_row.addWidget(self._slider, 1)
+        self._browse_btn = QPushButton("Browse...")
+        self._browse_btn.setFixedWidth(80)
+        file_row.addWidget(self._browse_btn)
 
-        self._spinbox = QSpinBox()
-        self._spinbox.setRange(0, NUM_FRAMES - 1)
-        self._spinbox.setValue(0)
-        self._spinbox.setFixedWidth(60)
-        ctrl_row.addWidget(self._spinbox)
+        img_layout.addLayout(file_row)
 
-        self._angle_label = QLabel("0.0\u00b0")
-        self._angle_label.setFixedWidth(60)
-        ctrl_row.addWidget(self._angle_label)
+        # Transform controls row
+        xform_row = QHBoxLayout()
 
-        sel_layout.addLayout(ctrl_row)
+        xform_row.addWidget(QLabel("Rotate:"))
+        self._rotate_combo = QComboBox()
+        self._rotate_combo.addItem("0\u00b0", 0)
+        self._rotate_combo.addItem("90\u00b0 CCW", 90)
+        self._rotate_combo.addItem("180\u00b0", 180)
+        self._rotate_combo.addItem("90\u00b0 CW", 270)
+        self._rotate_combo.setFixedWidth(85)
+        xform_row.addWidget(self._rotate_combo)
+
+        xform_row.addWidget(QLabel("Scaling:"))
+        self._crop_combo = QComboBox()
+        self._crop_combo.addItem("Fit (Letterbox)", "fit")
+        self._crop_combo.addItem("Fill (Crop)", "fill")
+        self._crop_combo.setFixedWidth(120)
+        xform_row.addWidget(self._crop_combo)
+
+        xform_row.addStretch()
+
+        img_layout.addLayout(xform_row)
 
         # Preview image
         self._preview_label = QLabel()
@@ -106,9 +127,43 @@ class DisplayPanel(QWidget):
         self._preview_label.setMinimumSize(160, 213)  # 240:320 aspect at half
         self._preview_label.setStyleSheet(
             "QLabel { background-color: #1a1a1a; border: 1px solid #444; }")
-        sel_layout.addWidget(self._preview_label, 1)
+        self._preview_label.setText("No image loaded")
+        img_layout.addWidget(self._preview_label, 1)
 
-        layout.addWidget(sel_group, 1)
+        # Image info label
+        self._img_info_label = QLabel("")
+        self._img_info_label.setStyleSheet("color: #888;")
+        img_layout.addWidget(self._img_info_label)
+
+        # Transfer buttons row
+        xfer_row = QHBoxLayout()
+
+        self._send_btn = QPushButton("Send Direct to LCD")
+        self._send_btn.setFixedWidth(140)
+        self._send_btn.setEnabled(False)
+        xfer_row.addWidget(self._send_btn)
+
+        self._flash_upload_btn = QPushButton("Upload to Flash")
+        self._flash_upload_btn.setFixedWidth(120)
+        self._flash_upload_btn.setEnabled(False)
+        xfer_row.addWidget(self._flash_upload_btn)
+
+        xfer_row.addWidget(QLabel("Slot:"))
+        self._slot_spin = QSpinBox()
+        self._slot_spin.setRange(0, self._max_slots - 1)
+        self._slot_spin.setValue(0)
+        self._slot_spin.setFixedWidth(60)
+        xfer_row.addWidget(self._slot_spin)
+
+        self._progress = QProgressBar()
+        self._progress.setRange(0, 100)
+        self._progress.setValue(0)
+        self._progress.setTextVisible(True)
+        xfer_row.addWidget(self._progress, 1)
+
+        img_layout.addLayout(xfer_row)
+
+        layout.addWidget(img_group, 1)
 
         # --- Flash Operations Group ---
         flash_group = QGroupBox("Flash Storage")
@@ -126,8 +181,12 @@ class DisplayPanel(QWidget):
         self._flash_info_btn.setFixedWidth(90)
         flash_btn_row.addWidget(self._flash_info_btn)
 
-        self._upload_all_btn = QPushButton("Upload All to Flash")
-        flash_btn_row.addWidget(self._upload_all_btn)
+        flash_btn_row.addWidget(QLabel("Show Slot:"))
+        self._flash_show_spin = QSpinBox()
+        self._flash_show_spin.setRange(0, self._max_slots - 1)
+        self._flash_show_spin.setValue(0)
+        self._flash_show_spin.setFixedWidth(60)
+        flash_btn_row.addWidget(self._flash_show_spin)
 
         self._flash_show_btn = QPushButton("Show from Flash")
         flash_btn_row.addWidget(self._flash_show_btn)
@@ -135,6 +194,11 @@ class DisplayPanel(QWidget):
         self._flash_erase_btn = QPushButton("Erase Flash")
         self._flash_erase_btn.setFixedWidth(100)
         flash_btn_row.addWidget(self._flash_erase_btn)
+
+        self._flash_diag_btn = QPushButton("Diagnostics")
+        self._flash_diag_btn.setFixedWidth(100)
+        self._flash_diag_btn.setToolTip("Run FLASH_TEST: erase/write/read-back self-test on slot 0")
+        flash_btn_row.addWidget(self._flash_diag_btn)
 
         flash_layout.addLayout(flash_btn_row)
 
@@ -199,45 +263,23 @@ class DisplayPanel(QWidget):
 
         layout.addWidget(ind_group)
 
-        # --- Direct Transfer Group ---
-        xfer_group = QGroupBox("Direct Transfer (bypass flash)")
-        xfer_layout = QVBoxLayout(xfer_group)
-
-        # Info row
-        total_bytes = LCD_WIDTH * LCD_HEIGHT * 2
-        info_text = (f"Image: {LCD_WIDTH}\u00d7{LCD_HEIGHT} RGB565  "
-                     f"({total_bytes:,} bytes)")
-        xfer_layout.addWidget(QLabel(info_text))
-
-        # Send button + progress bar
-        btn_row = QHBoxLayout()
-        self._send_btn = QPushButton("Send Direct to LCD")
-        self._send_btn.setFixedWidth(140)
-        btn_row.addWidget(self._send_btn)
-
-        self._progress = QProgressBar()
-        self._progress.setRange(0, 100)
-        self._progress.setValue(0)
-        self._progress.setTextVisible(True)
-        btn_row.addWidget(self._progress, 1)
-
-        xfer_layout.addLayout(btn_row)
-
-        layout.addWidget(xfer_group)
-
         # --- Status Label ---
         self._status_label = QLabel("Ready")
         self._status_label.setStyleSheet("color: #888;")
         layout.addWidget(self._status_label)
 
         # --- Connections ---
-        self._slider.valueChanged.connect(self._on_slider_changed)
-        self._spinbox.valueChanged.connect(self._on_spinbox_changed)
+        self._browse_btn.clicked.connect(self._on_browse_clicked)
         self._send_btn.clicked.connect(self._on_send_clicked)
+        self._flash_upload_btn.clicked.connect(self._on_flash_upload_clicked)
         self._flash_info_btn.clicked.connect(self._on_flash_info_clicked)
-        self._upload_all_btn.clicked.connect(self._on_upload_all_clicked)
         self._flash_show_btn.clicked.connect(self._on_flash_show_clicked)
         self._flash_erase_btn.clicked.connect(self._on_flash_erase_clicked)
+        self._flash_diag_btn.clicked.connect(self._on_flash_diag_clicked)
+
+        # Transform controls
+        self._rotate_combo.currentIndexChanged.connect(self._on_transform_changed)
+        self._crop_combo.currentIndexChanged.connect(self._on_transform_changed)
 
         # Indicator controls
         self._ind_angle_slider.valueChanged.connect(self._on_ind_angle_slider)
@@ -248,28 +290,76 @@ class DisplayPanel(QWidget):
         self._ind_trans_cb.toggled.connect(self._on_ind_auto_maybe)
         self._ind_angle_slider.valueChanged.connect(self._on_ind_auto_maybe)
 
-    # --- Slider / SpinBox sync ---
+    # --- Image Loading ---
 
-    @Slot(int)
-    def _on_slider_changed(self, value):
-        self._spinbox.blockSignals(True)
-        self._spinbox.setValue(value)
-        self._spinbox.blockSignals(False)
-        self._update_preview(value)
+    @Slot()
+    def _on_browse_clicked(self):
+        """Open file dialog to select an image."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Image", "", SUPPORTED_FILTER)
+        if not path:
+            return
 
-    @Slot(int)
-    def _on_spinbox_changed(self, value):
-        self._slider.blockSignals(True)
-        self._slider.setValue(value)
-        self._slider.blockSignals(False)
-        self._update_preview(value)
+        try:
+            self._set_status("Loading image...", "blue")
+            self._original_image = load_image(path)
+            self._file_path.setText(path)
+            self._reprocess_image()
+            self._set_status("Image loaded", "green")
 
-    def _update_preview(self, index):
-        """Update the preview image for the given frame index."""
-        angle = index * 360.0 / NUM_FRAMES
-        self._angle_label.setText(f"{angle:.1f}\u00b0")
+        except Exception as e:
+            log.error("Failed to load image: %s", e)
+            self._set_status(f"Load failed: {e}", "red")
+            self._original_image = None
+            self._loaded_pixmap = None
+            self._loaded_rgb565 = None
+            self._loaded_rle = None
+            self._send_btn.setEnabled(False)
+            self._flash_upload_btn.setEnabled(False)
 
-        pixmap, _ = self._get_cached(index)
+    @Slot()
+    def _on_transform_changed(self, *_args):
+        """Re-process image when rotation or crop mode changes."""
+        if self._original_image is None:
+            return
+        try:
+            self._reprocess_image()
+            self._set_status("Image updated", "green")
+        except Exception as e:
+            log.error("Failed to reprocess image: %s", e)
+            self._set_status(f"Transform failed: {e}", "red")
+
+    def _reprocess_image(self):
+        """Apply rotation and crop/fit, then update preview and cached data."""
+        img = self._original_image
+        orig_w, orig_h = img.size
+
+        # Apply rotation
+        degrees = self._rotate_combo.currentData()
+        if degrees:
+            img = rotate_image(img, degrees)
+
+        # Apply scaling mode
+        mode = self._crop_combo.currentData()
+        if mode == "fill":
+            final = crop_for_lcd(img)
+        else:
+            final = resize_for_lcd(img)
+
+        rgb565 = image_to_rgb565(final)
+        rle = encode_rle_rgb565(rgb565)
+
+        # Convert PIL image to QPixmap for preview
+        rgb_data = final.tobytes("raw", "RGB")
+        qimg = QImage(rgb_data, LCD_WIDTH, LCD_HEIGHT, LCD_WIDTH * 3,
+                      QImage.Format_RGB888)
+        pixmap = QPixmap.fromImage(qimg)
+
+        self._loaded_pixmap = pixmap
+        self._loaded_rgb565 = rgb565
+        self._loaded_rle = rle
+
+        # Update preview
         scaled = pixmap.scaled(
             self._preview_label.size(),
             Qt.KeepAspectRatio,
@@ -277,40 +367,51 @@ class DisplayPanel(QWidget):
         )
         self._preview_label.setPixmap(scaled)
 
-    def _get_cached(self, index):
-        """Get or generate cached (QPixmap, rgb565_bytes) for frame index."""
-        if index not in self._cache:
-            img = generate_arrow_image(index)
-            rgb565 = image_to_rgb565(img)
+        # Update info label
+        raw_kb = len(rgb565) / 1024
+        rle_kb = len(rle) / 1024
+        ratio = len(rle) * 100 / len(rgb565) if len(rgb565) > 0 else 0
+        rot_str = f" rot {degrees}\u00b0" if degrees else ""
+        mode_str = "crop" if mode == "fill" else "fit"
+        self._img_info_label.setText(
+            f"{orig_w}\u00d7{orig_h}{rot_str} \u2192 "
+            f"{LCD_WIDTH}\u00d7{LCD_HEIGHT} ({mode_str}) "
+            f"\u2014 {raw_kb:.1f} KB raw, {rle_kb:.1f} KB RLE ({ratio:.0f}%)")
+        self._img_info_label.setStyleSheet("color: #ccc;")
 
-            rgb_data = img.tobytes("raw", "RGB")
-            qimg = QImage(rgb_data, LCD_WIDTH, LCD_HEIGHT, LCD_WIDTH * 3,
-                          QImage.Format_RGB888)
-            pixmap = QPixmap.fromImage(qimg)
-
-            self._cache[index] = (pixmap, rgb565)
-
-        return self._cache[index]
-
-    def get_frame_rgb565(self, index):
-        """Get the RGB565 bytes for a frame index (public, for upload-all)."""
-        _, rgb565 = self._get_cached(index)
-        return rgb565
+        # Enable transfer buttons
+        self._send_btn.setEnabled(True)
+        self._flash_upload_btn.setEnabled(True)
 
     # --- Direct Send ---
 
     @Slot()
     def _on_send_clicked(self):
         """Handle Send Direct to LCD button click."""
-        index = self._slider.value()
-        _, rgb565 = self._get_cached(index)
+        if self._loaded_rgb565 is None or self._loaded_rle is None:
+            self._set_status("No image loaded", "red")
+            return
 
-        self._send_btn.setEnabled(False)
+        self._set_buttons_enabled(False)
         self._progress.setValue(0)
-        angle = index * 360.0 / NUM_FRAMES
-        self._set_status(f"Sending frame {index} ({angle:.1f}\u00b0)...", "blue")
+        self._set_status("Sending image to LCD...", "blue")
+        self.image_send_requested.emit(self._loaded_rgb565, self._loaded_rle)
 
-        self.bitmap_send_requested.emit(0, 0, LCD_WIDTH, LCD_HEIGHT, rgb565)
+    # --- Flash Upload ---
+
+    @Slot()
+    def _on_flash_upload_clicked(self):
+        """Handle Upload to Flash button click."""
+        if self._loaded_rgb565 is None or self._loaded_rle is None:
+            self._set_status("No image loaded", "red")
+            return
+
+        slot = self._slot_spin.value()
+        self._set_buttons_enabled(False)
+        self._progress.setValue(0)
+        self._set_status(f"Uploading to flash slot {slot}...", "blue")
+        self.image_flash_upload_requested.emit(
+            slot, self._loaded_rgb565, self._loaded_rle)
 
     # --- Flash Operations ---
 
@@ -320,17 +421,10 @@ class DisplayPanel(QWidget):
         self.flash_info_requested.emit()
 
     @Slot()
-    def _on_upload_all_clicked(self):
-        self._set_buttons_enabled(False)
-        self._progress.setValue(0)
-        self._set_status("Starting upload of all 64 frames...", "blue")
-        self.flash_upload_all_requested.emit()
-
-    @Slot()
     def _on_flash_show_clicked(self):
-        index = self._slider.value()
-        self._set_status(f"Showing frame {index} from flash...", "blue")
-        self.flash_show_requested.emit(index)
+        slot = self._flash_show_spin.value()
+        self._set_status(f"Showing slot {slot} from flash...", "blue")
+        self.flash_show_requested.emit(slot)
 
     @Slot()
     def _on_flash_erase_clicked(self):
@@ -342,6 +436,11 @@ class DisplayPanel(QWidget):
         if reply == QMessageBox.Yes:
             self._set_status("Erasing flash...", "blue")
             self.flash_erase_requested.emit()
+
+    @Slot()
+    def _on_flash_diag_clicked(self):
+        self._set_status("Running flash diagnostics...", "blue")
+        self.flash_diag_requested.emit()
 
     # --- Indicator controls ---
 
@@ -387,15 +486,6 @@ class DisplayPanel(QWidget):
             self._status_label.setText(
                 f"Transferring... {bytes_sent:,}/{total_bytes:,} bytes")
 
-    @Slot(int, int)
-    def update_upload_progress(self, slot_done, total_slots):
-        """Update progress for upload-all operation."""
-        if total_slots > 0:
-            pct = int(slot_done * 100 / total_slots)
-            self._progress.setValue(pct)
-            self._status_label.setText(
-                f"Uploading {slot_done}/{total_slots}...")
-
     @Slot(bool, str)
     def transfer_complete(self, success, message=""):
         """Handle transfer/operation completion."""
@@ -413,6 +503,23 @@ class DisplayPanel(QWidget):
         self._flash_info_label.setStyleSheet("color: #ccc;")
         self._set_status("Flash info received", "green")
 
+    @Slot(int)
+    def update_max_slots(self, max_slots):
+        """Update the max flash slot count (from flash info query)."""
+        self._max_slots = max_slots
+        self._slot_spin.setRange(0, max(0, max_slots - 1))
+        self._flash_show_spin.setRange(0, max(0, max_slots - 1))
+
+    @Slot(bool, str)
+    def show_diag_result(self, success, message):
+        """Show flash diagnostics result in a message box."""
+        if success:
+            QMessageBox.information(self, "Flash Diagnostics", message)
+            self._set_status("Flash test PASSED", "green")
+        else:
+            QMessageBox.warning(self, "Flash Diagnostics", message)
+            self._set_status("Flash test FAILED", "red")
+
     # --- Helpers ---
 
     def _set_status(self, text, color="gray"):
@@ -426,9 +533,13 @@ class DisplayPanel(QWidget):
         self._status_label.setStyleSheet(f"color: {colors.get(color, color)};")
 
     def _set_buttons_enabled(self, enabled):
-        self._send_btn.setEnabled(enabled)
-        self._upload_all_btn.setEnabled(enabled)
+        has_image = self._loaded_rgb565 is not None
+        self._send_btn.setEnabled(enabled and has_image)
+        self._flash_upload_btn.setEnabled(enabled and has_image)
+        self._browse_btn.setEnabled(enabled)
         self._flash_show_btn.setEnabled(enabled)
         self._flash_erase_btn.setEnabled(enabled)
+        self._flash_info_btn.setEnabled(enabled)
+        self._flash_diag_btn.setEnabled(enabled)
         self._ind_send_btn.setEnabled(enabled)
         self._ind_clear_btn.setEnabled(enabled)

@@ -19,6 +19,7 @@ public:
         ReadStatus2   = 0x35,
         WriteEnable   = 0x06,
         WriteDisable  = 0x04,
+        WriteStatusReg = 0x01,
         Read          = 0x03,
         FastRead      = 0x0B,
         PageProgram   = 0x02,
@@ -43,6 +44,35 @@ public:
 
     void init() {
         releasePowerDown();
+        clearWriteProtection();
+    }
+
+    /**
+     * @brief Clear all block protect bits (BP0-3) in status register.
+     *
+     * Some flash chips ship with or retain write protection across power
+     * cycles.  This ensures all sectors are writable.
+     */
+    void clearWriteProtection() {
+        uint8_t sr = readStatus1();
+        if ((sr & 0x3C) != 0) {  // BP0-BP3 = bits 2-5
+            writeEnable();
+            m_spi.lock();
+            csLow();
+            m_spi.transfer(static_cast<uint8_t>(Cmd::WriteStatusReg));
+            m_spi.transfer(sr & ~0x3C);  // Clear BP bits, keep other bits
+            csHigh();
+            m_spi.unlock();
+            waitReady();
+        }
+    }
+
+    /**
+     * @brief Check if write-enable latch (WEL) is set after WREN.
+     * @return true if WEL bit is set.
+     */
+    bool isWriteEnabled() {
+        return readStatus1() & 0x02;
     }
 
     JEDEC_ID readJEDEC() {

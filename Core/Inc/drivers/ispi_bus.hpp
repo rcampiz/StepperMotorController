@@ -99,6 +99,22 @@ public:
     }
 
     /**
+     * @brief Write-only transfer (TX only, discard RX, no per-byte RXNE wait)
+     *
+     * Faster than write() for output-only devices (e.g. LCD).
+     * Default: per-byte transfer. SPIHardware overrides with TX-only polled
+     * and DMA for SPI1.
+     *
+     * @param data  Source buffer
+     * @param len   Bytes to write
+     */
+    virtual void writeOnly(const uint8_t* data, size_t len) {
+        for (size_t i = 0; i < len; i++) {
+            transfer(data[i]);
+        }
+    }
+
+    /**
      * @brief Write a repeated pattern (e.g., solid-color LCD fills)
      * @param pattern Pattern bytes to repeat
      * @param patternLen Length of pattern in bytes

@@ -267,8 +267,24 @@ private:
   // Flash image command handlers (delegate to FlashImageService)
   void cmdFlashInfo();
   void cmdFlashUpload(const ParsedCommand &cmd);
+  void cmdFlashUploadRle(const ParsedCommand &cmd);
   void cmdFlashShow(const ParsedCommand &cmd);
   void cmdFlashEraseAll();
+  void cmdFlashDump(const ParsedCommand &cmd);
+  void cmdFlashTest();
+
+  /**
+   * @brief Check if last argument of a command is "CRC"
+   * @return true if CRC mode requested
+   */
+  bool hasCrcFlag(const ParsedCommand &cmd) const;
+
+  /**
+   * @brief Receive 4-byte CRC and verify against computed value
+   * @param computedCrc Running CRC state (pre-finalized, i.e. before XOR)
+   * @return true if CRC matches
+   */
+  bool verifyCrc(uint32_t computedCrc);
 
   // Debug command handlers
   void cmdMotorDebug();
