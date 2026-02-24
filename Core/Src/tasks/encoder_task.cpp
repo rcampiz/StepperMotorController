@@ -30,7 +30,7 @@ struct PosSample {
     int32_t count;
     uint32_t tickUs;  // Services::TickTimer_GetTick() — microseconds
 };
-static constexpr int POS_BUF_SIZE = 5;
+static constexpr int POS_BUF_SIZE = 8;
 static PosSample s_posBuf[POS_BUF_SIZE] = {};
 static int s_posHead = 0;
 static int s_posCount = 0;
@@ -46,8 +46,8 @@ enum class VelFilterType : uint8_t {
     SMA  = 2,
 };
 
-static VelFilterType s_filterType = VelFilterType::NONE;
-static uint8_t s_filterParam = 0;  // alpha for EMA, window for SMA
+static VelFilterType s_filterType = VelFilterType::SMA;
+static uint8_t s_filterParam = 8;  // SMA window=8 default (smooth over 80ms)
 
 // EMA state
 static int32_t s_filteredVelocity = 0;
@@ -173,6 +173,11 @@ void vEncoderTask(void* pvParameters)
 
         // Apply velocity filter (NONE / EMA / SMA)
         applyVelocityFilter(velocity);
+
+        // Deadband: suppress ±2 count/s noise at rest
+        if (s_filteredVelocity > -3 && s_filteredVelocity < 3) {
+            s_filteredVelocity = 0;
+        }
 
         // Get index pulse status
         bool indexSeen = s_encoder.isIndexSeen();

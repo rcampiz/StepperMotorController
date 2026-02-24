@@ -23,9 +23,9 @@ class LCD;
 namespace Tasks {
 
 // Task configuration
-constexpr uint32_t DISPLAY_TASK_STACK_SIZE = 256;
+constexpr uint32_t DISPLAY_TASK_STACK_SIZE = 512;  // Increased for menu screens (snprintf, trig)
 constexpr UBaseType_t DISPLAY_TASK_PRIORITY = tskIDLE_PRIORITY + 1;
-constexpr TickType_t DISPLAY_REFRESH_PERIOD_MS = 100; // 10 Hz refresh
+constexpr TickType_t DISPLAY_REFRESH_PERIOD_MS = 50; // 20 Hz refresh
 
 /**
  * @brief Display pages/screens for LOCAL mode

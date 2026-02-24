@@ -341,6 +341,10 @@ public:
         drawVLine(x + w - 1, y, h, color);
     }
 
+    // Medium font (scale=3): 8×12 cell from 5×7 base, selective row/col doubling
+    static constexpr uint8_t MED_CHAR_W = 8;
+    static constexpr uint8_t MED_CHAR_H = 12;
+
     /**
      * @brief Draw a single character
      * @param x X position (top-left)
@@ -348,22 +352,101 @@ public:
      * @param c Character to draw (ASCII 32-126)
      * @param fg Foreground color
      * @param bg Background color
+     * @param scale 1 = 6×8 (small), 2 = 12×16 (large), 3 = 8×12 (medium)
      */
-    void drawChar(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t bg) {
+    void drawChar(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t bg,
+                  uint8_t scale = 1) {
         if (c < 32 || c > 126) c = '?';
-        const uint8_t* glyph = FONT_5X7[c - 32];
 
-        for (uint8_t col = 0; col < 5; col++) {
-            uint8_t line = glyph[col];
-            for (uint8_t row = 0; row < 7; row++) {
-                uint16_t color = (line & (1 << row)) ? fg : bg;
-                drawPixel(x + col, y + row, color);
+        const uint8_t* glyph = FONT_5X7[c - 32];
+        uint16_t fgInv = ~fg;  // INVON compensation
+        uint16_t bgInv = ~bg;
+
+        if (scale == 3) {
+            // Medium: 8×12 via selective doubling of cols 1,3 and rows 0,1,3,5
+            static constexpr uint8_t COL_SRC[] = {0, 1, 1, 2, 3, 3, 4};
+            static constexpr uint8_t ROW_DUP[] = {2, 2, 1, 2, 1, 2, 1}; // 11 data rows + 1 spacing
+
+            if (x + MED_CHAR_W > WIDTH || y + MED_CHAR_H > HEIGHT) return;
+
+            uint8_t buf[MED_CHAR_W * MED_CHAR_H * 2]; // 192 bytes
+            uint16_t idx = 0;
+
+            for (uint8_t srcRow = 0; srcRow < 7; srcRow++) {
+                for (uint8_t d = 0; d < ROW_DUP[srcRow]; d++) {
+                    for (uint8_t oc = 0; oc < 7; oc++) {
+                        uint16_t color = (glyph[COL_SRC[oc]] & (1 << srcRow)) ? fgInv : bgInv;
+                        buf[idx++] = static_cast<uint8_t>(color >> 8);
+                        buf[idx++] = static_cast<uint8_t>(color & 0xFF);
+                    }
+                    buf[idx++] = static_cast<uint8_t>(bgInv >> 8);
+                    buf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+                }
+            }
+            // Spacing row
+            for (uint8_t c = 0; c < MED_CHAR_W; c++) {
+                buf[idx++] = static_cast<uint8_t>(bgInv >> 8);
+                buf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+            }
+
+            m_spi.lock();
+            m_spi.setMode(SPIBus::Mode::Mode0);
+            m_spi.setPrescaler(m_prescaler);
+            csLow();
+            setWindowLocked(x, y, static_cast<uint16_t>(x + MED_CHAR_W - 1),
+                            static_cast<uint16_t>(y + MED_CHAR_H - 1));
+            m_spi.writeOnly(buf, idx);
+            csHigh();
+            m_spi.unlock();
+            return;
+        }
+
+        // Scale 1 or 2: uniform pixel doubling
+        if (scale < 1) scale = 1;
+        if (scale > 2) scale = 2;
+
+        uint16_t charW = CHAR_WIDTH * scale;
+        uint16_t charH = CHAR_HEIGHT * scale;
+        if (x + charW > WIDTH || y + charH > HEIGHT) return;
+
+        // Max buffer: 12×16×2 = 384 bytes at scale=2
+        uint8_t buf[CHAR_WIDTH * 2 * CHAR_HEIGHT * 2 * 2];
+        uint16_t idx = 0;
+
+        // Rows 0-6: font data (each font row produces `scale` pixel rows)
+        for (uint8_t row = 0; row < 7; row++) {
+            for (uint8_t sy = 0; sy < scale; sy++) {
+                for (uint8_t col = 0; col < 5; col++) {
+                    uint16_t color = (glyph[col] & (1 << row)) ? fgInv : bgInv;
+                    for (uint8_t sx = 0; sx < scale; sx++) {
+                        buf[idx++] = static_cast<uint8_t>(color >> 8);
+                        buf[idx++] = static_cast<uint8_t>(color & 0xFF);
+                    }
+                }
+                // Spacing column (scale pixels wide)
+                for (uint8_t sx = 0; sx < scale; sx++) {
+                    buf[idx++] = static_cast<uint8_t>(bgInv >> 8);
+                    buf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+                }
             }
         }
-        // Draw spacing column
-        for (uint8_t row = 0; row < 7; row++) {
-            drawPixel(x + 5, y + row, bg);
+        // Row 7: all background (scale pixel rows)
+        for (uint8_t sy = 0; sy < scale; sy++) {
+            for (uint16_t px = 0; px < charW; px++) {
+                buf[idx++] = static_cast<uint8_t>(bgInv >> 8);
+                buf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+            }
         }
+
+        m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
+        csLow();
+        setWindowLocked(x, y, static_cast<uint16_t>(x + charW - 1),
+                        static_cast<uint16_t>(y + charH - 1));
+        m_spi.writeOnly(buf, idx);
+        csHigh();
+        m_spi.unlock();
     }
 
     /**
@@ -373,16 +456,172 @@ public:
      * @param str Null-terminated string
      * @param fg Foreground color
      * @param bg Background color
+     * @param scale 1 = 6×8 (small), 2 = 12×16 (large), 3 = 8×12 (medium)
      */
-    void drawString(uint16_t x, uint16_t y, const char* str, uint16_t fg, uint16_t bg) {
-        while (*str) {
-            if (x + CHAR_WIDTH > WIDTH) {
+    void drawString(uint16_t x, uint16_t y, const char* str, uint16_t fg, uint16_t bg,
+                    uint8_t scale = 1) {
+        if (str == nullptr) return;
+
+        // Medium font: separate rendering path
+        if (scale == 3) {
+            drawStringMedium(x, y, str, fg, bg);
+            return;
+        }
+
+        if (scale < 1) scale = 1;
+        if (scale > 2) scale = 2;
+        uint16_t cw = CHAR_WIDTH * scale;
+        uint16_t ch = CHAR_HEIGHT * scale;
+
+        if (y + ch > HEIGHT) return;
+
+        // Process string in line segments for wrapping support
+        while (*str && y + ch <= HEIGHT) {
+            // Count characters that fit on this line
+            uint16_t len = 0;
+            while (str[len] && (x + (len + 1) * cw) <= WIDTH) len++;
+            if (len == 0) {
                 x = 0;
-                y += CHAR_HEIGHT;
-                if (y + CHAR_HEIGHT > HEIGHT) break;
+                y += ch;
+                continue;
             }
-            drawChar(x, y, *str++, fg, bg);
-            x += CHAR_WIDTH;
+
+            uint16_t pixelW = len * cw;
+            uint16_t fgInv = ~fg;  // INVON compensation
+            uint16_t bgInv = ~bg;
+
+            // Row buffer: max 480 bytes (fits 20 chars at scale=2 or 40 at scale=1)
+            uint8_t rowBuf[WIDTH * 2];
+
+            m_spi.lock();
+            m_spi.setMode(SPIBus::Mode::Mode0);
+            m_spi.setPrescaler(m_prescaler);
+            csLow();
+            setWindowLocked(x, y, static_cast<uint16_t>(x + pixelW - 1),
+                            static_cast<uint16_t>(y + ch - 1));
+
+            // Render rows 0-6 (font data): each font row → scale pixel rows
+            for (uint8_t row = 0; row < 7; row++) {
+                // Build one pixel row
+                uint16_t idx = 0;
+                for (uint16_t c = 0; c < len; c++) {
+                    char cc = str[c];
+                    if (cc < 32 || cc > 126) cc = '?';
+                    const uint8_t* glyph = FONT_5X7[cc - 32];
+                    for (uint8_t col = 0; col < 5; col++) {
+                        uint16_t color = (glyph[col] & (1 << row)) ? fgInv : bgInv;
+                        for (uint8_t sx = 0; sx < scale; sx++) {
+                            rowBuf[idx++] = static_cast<uint8_t>(color >> 8);
+                            rowBuf[idx++] = static_cast<uint8_t>(color & 0xFF);
+                        }
+                    }
+                    // Spacing column (scale pixels wide)
+                    for (uint8_t sx = 0; sx < scale; sx++) {
+                        rowBuf[idx++] = static_cast<uint8_t>(bgInv >> 8);
+                        rowBuf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+                    }
+                }
+                // Send same pixel row `scale` times (vertical scaling)
+                for (uint8_t sy = 0; sy < scale; sy++) {
+                    m_spi.writeOnly(rowBuf, idx);
+                }
+            }
+
+            // Row 7: all background (scale pixel rows)
+            {
+                uint16_t idx = 0;
+                for (uint16_t px = 0; px < pixelW; px++) {
+                    rowBuf[idx++] = static_cast<uint8_t>(bgInv >> 8);
+                    rowBuf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+                }
+                for (uint8_t sy = 0; sy < scale; sy++) {
+                    m_spi.writeOnly(rowBuf, idx);
+                }
+            }
+
+            csHigh();
+            m_spi.unlock();
+
+            str += len;
+            x += pixelW;
+
+            if (*str) {
+                x = 0;
+                y += ch;
+            }
+        }
+    }
+
+    /**
+     * @brief Draw a string using medium font (8×12 from 5×7 base)
+     *
+     * Cols 1 and 3 doubled, rows 0/1/3/5 doubled → 7+1=8 wide, 11+1=12 tall.
+     * Row buffer: 30 chars × 8px × 2 bytes = 480 bytes (fits WIDTH*2).
+     */
+    void drawStringMedium(uint16_t x, uint16_t y, const char* str,
+                          uint16_t fg, uint16_t bg) {
+        static constexpr uint8_t COL_SRC[] = {0, 1, 1, 2, 3, 3, 4};
+        static constexpr uint8_t ROW_DUP[] = {2, 2, 1, 2, 1, 2, 1};
+        uint16_t cw = MED_CHAR_W;
+        uint16_t ch = MED_CHAR_H;
+
+        if (str == nullptr || y + ch > HEIGHT) return;
+
+        while (*str && y + ch <= HEIGHT) {
+            uint16_t len = 0;
+            while (str[len] && (x + (len + 1) * cw) <= WIDTH) len++;
+            if (len == 0) { x = 0; y += ch; continue; }
+
+            uint16_t pixelW = len * cw;
+            uint16_t fgInv = ~fg;
+            uint16_t bgInv = ~bg;
+            uint8_t rowBuf[WIDTH * 2];
+
+            m_spi.lock();
+            m_spi.setMode(SPIBus::Mode::Mode0);
+            m_spi.setPrescaler(m_prescaler);
+            csLow();
+            setWindowLocked(x, y, static_cast<uint16_t>(x + pixelW - 1),
+                            static_cast<uint16_t>(y + ch - 1));
+
+            for (uint8_t srcRow = 0; srcRow < 7; srcRow++) {
+                // Build one pixel row with medium column mapping
+                uint16_t idx = 0;
+                for (uint16_t c = 0; c < len; c++) {
+                    char cc = str[c];
+                    if (cc < 32 || cc > 126) cc = '?';
+                    const uint8_t* glyph = FONT_5X7[cc - 32];
+                    for (uint8_t oc = 0; oc < 7; oc++) {
+                        uint16_t color = (glyph[COL_SRC[oc]] & (1 << srcRow)) ? fgInv : bgInv;
+                        rowBuf[idx++] = static_cast<uint8_t>(color >> 8);
+                        rowBuf[idx++] = static_cast<uint8_t>(color & 0xFF);
+                    }
+                    // Spacing column
+                    rowBuf[idx++] = static_cast<uint8_t>(bgInv >> 8);
+                    rowBuf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+                }
+                // Send row ROW_DUP[srcRow] times (selective vertical doubling)
+                for (uint8_t d = 0; d < ROW_DUP[srcRow]; d++) {
+                    m_spi.writeOnly(rowBuf, idx);
+                }
+            }
+
+            // Spacing row (1 row)
+            {
+                uint16_t idx = 0;
+                for (uint16_t px = 0; px < pixelW; px++) {
+                    rowBuf[idx++] = static_cast<uint8_t>(bgInv >> 8);
+                    rowBuf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+                }
+                m_spi.writeOnly(rowBuf, idx);
+            }
+
+            csHigh();
+            m_spi.unlock();
+
+            str += len;
+            x += pixelW;
+            if (*str) { x = 0; y += ch; }
         }
     }
 
@@ -395,7 +634,8 @@ public:
      * @param fg Foreground color
      * @param bg Background color
      */
-    void drawInt(uint16_t x, uint16_t y, int32_t value, uint8_t fieldWidth, uint16_t fg, uint16_t bg) {
+    void drawInt(uint16_t x, uint16_t y, int32_t value, uint8_t fieldWidth,
+                 uint16_t fg, uint16_t bg, uint8_t scale = 1) {
         char buf[12];
         int idx = 0;
         bool neg = false;
@@ -405,7 +645,6 @@ public:
             value = -value;
         }
 
-        // Convert to string (reversed)
         if (value == 0) {
             buf[idx++] = '0';
         } else {
@@ -416,23 +655,23 @@ public:
         }
         if (neg) buf[idx++] = '-';
 
-        // Pad with spaces
         while (idx < fieldWidth) {
             buf[idx++] = ' ';
         }
 
-        // Draw reversed
-        uint16_t px = x - CHAR_WIDTH;
+        uint16_t cw = (scale == 3) ? MED_CHAR_W : CHAR_WIDTH * scale;
+        uint16_t px = x - cw;
         for (int i = 0; i < idx; i++) {
-            drawChar(px, y, buf[i], fg, bg);
-            px -= CHAR_WIDTH;
+            drawChar(px, y, buf[i], fg, bg, scale);
+            px -= cw;
         }
     }
 
     /**
      * @brief Draw an unsigned integer value (right-aligned in field)
      */
-    void drawUInt(uint16_t x, uint16_t y, uint32_t value, uint8_t fieldWidth, uint16_t fg, uint16_t bg) {
+    void drawUInt(uint16_t x, uint16_t y, uint32_t value, uint8_t fieldWidth,
+                  uint16_t fg, uint16_t bg, uint8_t scale = 1) {
         char buf[12];
         int idx = 0;
 
@@ -449,10 +688,11 @@ public:
             buf[idx++] = ' ';
         }
 
-        uint16_t px = x - CHAR_WIDTH;
+        uint16_t cw = (scale == 3) ? MED_CHAR_W : CHAR_WIDTH * scale;
+        uint16_t px = x - cw;
         for (int i = 0; i < idx; i++) {
-            drawChar(px, y, buf[i], fg, bg);
-            px -= CHAR_WIDTH;
+            drawChar(px, y, buf[i], fg, bg, scale);
+            px -= cw;
         }
     }
 
@@ -549,6 +789,40 @@ public:
         for (size_t i = 0; i < transferLen; i++) {
             m_spi.transfer(~data[i]);
         }
+
+        csHigh();
+        m_spi.unlock();
+    }
+
+    /**
+     * @brief Blit a pre-built column buffer to the display (flicker-free)
+     *
+     * Writes a 1-pixel-wide column of RGB565 pixel data in a single DMA transfer.
+     * Used by graph rendering to avoid full-screen clear flicker.
+     * Data is big-endian RGB565, h pixels (h*2 bytes).
+     *
+     * @param x Column X position
+     * @param y Top Y position
+     * @param h Column height in pixels
+     * @param data Pre-built pixel data (h * 2 bytes, RGB565 big-endian)
+     */
+    void blitColumn(uint16_t x, uint16_t y, uint16_t h, const uint8_t* data) {
+        if (x >= WIDTH || y >= HEIGHT) return;
+        uint16_t drawH = (y + h > HEIGHT) ? static_cast<uint16_t>(HEIGHT - y) : h;
+
+        m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
+        csLow();
+        setWindowLocked(x, y, x, static_cast<uint16_t>(y + drawH - 1));
+
+        // Invert for INVON compensation, then DMA write
+        static uint8_t invBuf[600];
+        size_t len = static_cast<size_t>(drawH) * 2;
+        for (size_t i = 0; i < len; i++) {
+            invBuf[i] = ~data[i];
+        }
+        m_spi.writeOnly(invBuf, len);
 
         csHigh();
         m_spi.unlock();

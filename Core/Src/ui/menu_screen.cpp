@@ -9,12 +9,13 @@
 
 namespace UI {
 
-// Layout constants
+// Layout constants (medium font: 8×12 char cell)
 static constexpr uint16_t MARGIN_LEFT = 8;
 static constexpr uint16_t MARGIN_TOP = 4;
-static constexpr uint16_t TITLE_HEIGHT = 20;
-static constexpr uint16_t ITEM_HEIGHT = 24;
+static constexpr uint16_t TITLE_HEIGHT = 18;
+static constexpr uint16_t ITEM_HEIGHT = 22;
 static constexpr uint16_t ITEM_PADDING = 4;
+static constexpr uint8_t  TEXT_SCALE = 3;  // Medium (8×12)
 
 // Colors
 static constexpr uint16_t COLOR_TITLE = 0x07FF;      // Cyan
@@ -30,6 +31,7 @@ MenuScreen::MenuScreen(const char* title)
     , m_scrollOffset(0)
     , m_selectionCallback(nullptr)
     , m_needsRedraw(true)
+    , m_dirty(true)
 {
     memset(m_title, 0, sizeof(m_title));
     memset(m_items, 0, sizeof(m_items));
@@ -48,6 +50,7 @@ void MenuScreen::setTitle(const char* title)
         m_title[0] = '\0';
     }
     m_needsRedraw = true;
+    m_dirty = true;
 }
 
 bool MenuScreen::addItem(const char* name, MenuCallback callback, bool enabled)
@@ -64,6 +67,7 @@ bool MenuScreen::addItem(const char* name, MenuCallback callback, bool enabled)
 
     m_itemCount++;
     m_needsRedraw = true;
+    m_dirty = true;
     return true;
 }
 
@@ -73,6 +77,7 @@ void MenuScreen::clearItems()
     m_selectedIndex = 0;
     m_scrollOffset = 0;
     m_needsRedraw = true;
+    m_dirty = true;
 }
 
 void MenuScreen::setSelectedIndex(uint8_t index)
@@ -81,21 +86,27 @@ void MenuScreen::setSelectedIndex(uint8_t index)
         m_selectedIndex = index;
         ensureSelectionVisible();
         m_needsRedraw = true;
+        m_dirty = true;
     }
 }
 
 void MenuScreen::onActivate()
 {
     m_needsRedraw = true;
+    m_dirty = true;
 }
 
 void MenuScreen::render(LCD& lcd)
 {
+    // Skip render if nothing changed — menu is static between inputs
+    if (!m_dirty) return;
+    m_dirty = false;
+
     uint16_t y = MARGIN_TOP;
 
     // Draw title if set
     if (m_title[0] != '\0') {
-        lcd.drawString(MARGIN_LEFT, y, m_title, COLOR_TITLE, COLOR_BG);
+        lcd.drawString(MARGIN_LEFT, y, m_title, COLOR_TITLE, COLOR_BG, TEXT_SCALE);
         y += TITLE_HEIGHT;
 
         // Draw separator line
@@ -120,11 +131,11 @@ void MenuScreen::render(LCD& lcd)
     // Draw scroll indicators if needed
     if (m_scrollOffset > 0) {
         // Up arrow indicator
-        lcd.drawString(LCD::WIDTH - 16, MARGIN_TOP + TITLE_HEIGHT + 4, "^", COLOR_TITLE, COLOR_BG);
+        lcd.drawString(LCD::WIDTH - 20, MARGIN_TOP + TITLE_HEIGHT + 4, "^", COLOR_TITLE, COLOR_BG, TEXT_SCALE);
     }
     if (m_scrollOffset + visibleCount < m_itemCount) {
         // Down arrow indicator
-        lcd.drawString(LCD::WIDTH - 16, LCD::HEIGHT - 16, "v", COLOR_TITLE, COLOR_BG);
+        lcd.drawString(LCD::WIDTH - 20, LCD::HEIGHT - 20, "v", COLOR_TITLE, COLOR_BG, TEXT_SCALE);
     }
 }
 
@@ -147,7 +158,7 @@ void MenuScreen::renderItem(LCD& lcd, uint8_t itemIndex, uint16_t y, bool select
     }
 
     // Draw item text
-    lcd.drawString(MARGIN_LEFT + ITEM_PADDING, y + ITEM_PADDING, item.name, fg, bg);
+    lcd.drawString(MARGIN_LEFT + ITEM_PADDING, y + ITEM_PADDING, item.name, fg, bg, TEXT_SCALE);
 }
 
 InputResult MenuScreen::handleInput(JoyDirection dir, bool pressed)
@@ -161,7 +172,7 @@ InputResult MenuScreen::handleInput(JoyDirection dir, bool pressed)
             if (m_selectedIndex > 0) {
                 m_selectedIndex--;
                 ensureSelectionVisible();
-                m_needsRedraw = true;
+                m_dirty = true;
             }
             return InputResult::HANDLED;
 
@@ -169,7 +180,7 @@ InputResult MenuScreen::handleInput(JoyDirection dir, bool pressed)
             if (m_selectedIndex < m_itemCount - 1) {
                 m_selectedIndex++;
                 ensureSelectionVisible();
-                m_needsRedraw = true;
+                m_dirty = true;
             }
             return InputResult::HANDLED;
 

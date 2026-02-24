@@ -146,6 +146,24 @@ arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/ui/menu_screen.cpp -o build/menu_screen
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile menu_screen.cpp & exit /b 1)
 arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/ui/terminal_screen.cpp -o build/terminal_screen.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile terminal_screen.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/ui/screen_manager.cpp -o build/screen_manager.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile screen_manager.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/ui/screens/boot_color_screen.cpp -o build/boot_color_screen.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile boot_color_screen.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/ui/screens/device_info_screen.cpp -o build/device_info_screen.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile device_info_screen.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/ui/screens/encoder_screen.cpp -o build/encoder_screen.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile encoder_screen.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/ui/screens/motion_screen.cpp -o build/motion_screen.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile motion_screen.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/ui/screens/config_screen.cpp -o build/config_screen.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile config_screen.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/ui/screens/graph_screen.cpp -o build/graph_screen.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile graph_screen.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/ui/screens/image_view_screen.cpp -o build/image_view_screen.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile image_view_screen.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/ui/screens/trace_screen.cpp -o build/trace_screen.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile trace_screen.cpp & exit /b 1)
 
 echo [18/26] Compiling driver sources...
 arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/drivers/spi_manager.cpp -o build/spi_manager.o
@@ -162,7 +180,8 @@ set "OBJS=%OBJS% build/SEGGER_RTT.o build/SEGGER_RTT_printf.o build/SEGGER_SYSVI
 set "OBJS=%OBJS% build/main.o build/uart_transport.o build/rtt_transport.o build/command_parser.o build/telemetry.o build/event_codec.o"
 set "OBJS=%OBJS% build/motor_task.o build/encoder_task.o build/display_task.o build/comms_task.o build/bringup_task.o"
 set "OBJS=%OBJS% build/tick_timer.o build/command_queue.o build/device_config.o build/control_mode.o build/motor_config.o build/motion_service.o build/safety_service.o build/config_service.o build/trace.o build/event_service.o build/flash_image_service.o build/indicator_service.o"
-set "OBJS=%OBJS% build/ui_mode.o build/menu_screen.o build/terminal_screen.o"
+set "OBJS=%OBJS% build/ui_mode.o build/menu_screen.o build/terminal_screen.o build/screen_manager.o"
+set "OBJS=%OBJS% build/boot_color_screen.o build/device_info_screen.o build/encoder_screen.o build/motion_screen.o build/config_screen.o build/graph_screen.o build/image_view_screen.o build/trace_screen.o"
 set "OBJS=%OBJS% build/spi_manager.o"
 set "OBJS=%OBJS% build/startup_stm32f401xe.o"
 

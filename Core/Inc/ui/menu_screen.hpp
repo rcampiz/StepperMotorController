@@ -20,7 +20,7 @@ namespace UI {
 // Menu configuration
 constexpr uint8_t MENU_MAX_ITEMS = 16;      ///< Max menu items
 constexpr uint8_t MENU_ITEM_NAME_LEN = 24;  ///< Max item name length
-constexpr uint8_t MENU_VISIBLE_ITEMS = 8;   ///< Items visible at once
+constexpr uint8_t MENU_VISIBLE_ITEMS = 12;  ///< Items visible at once (at medium scale)
 
 /**
  * @brief Menu item callback type
@@ -117,6 +117,7 @@ private:
     uint8_t m_scrollOffset;  // First visible item index
     MenuCallback m_selectionCallback;
     bool m_needsRedraw;
+    bool m_dirty;  // Per-frame render gate (skip render when nothing changed)
 
     void ensureSelectionVisible();
     void renderItem(LCD& lcd, uint8_t itemIndex, uint16_t y, bool selected);

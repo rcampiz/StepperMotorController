@@ -11,27 +11,135 @@
 #include "comms/telemetry.hpp"
 #include "services/indicator_service.hpp"
 #include "ui/ui_mode.hpp"
+#include "ui/screen_manager.hpp"
+#include "ui/menu_screen.hpp"
+#include "ui/screens/boot_color_screen.hpp"
+#include "ui/screens/device_info_screen.hpp"
+#include "ui/screens/encoder_screen.hpp"
+#include "ui/screens/motion_screen.hpp"
+#include "ui/screens/config_screen.hpp"
+#include "ui/screens/graph_screen.hpp"
+#include "ui/screens/image_view_screen.hpp"
+#include "ui/screens/trace_screen.hpp"
+#include "services/flash_image_service.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 namespace Tasks {
-
-// Forward declarations for render functions
-static void renderStatusPage(LCD& lcd, const Comms::TelemetrySnapshot& telem);
-static void renderMotorPage(LCD& lcd, const Comms::TelemetrySnapshot& telem);
-static void renderEncoderPage(LCD& lcd, const Comms::TelemetrySnapshot& telem);
-static void renderSystemPage(LCD& lcd, const Comms::TelemetrySnapshot& telem);
-static void renderDebugPage(LCD& lcd, const Comms::TelemetrySnapshot& telem);
 
 // Helper to convert Joystick::Direction to UI::JoyDirection
 static UI::JoyDirection convertDirection(Joystick::Direction dir);
 
-// Display state
-static DisplayPage s_currentPage = DisplayPage::Status;
-static bool s_refreshPending = false;
-static DisplayPage s_lastRenderedPage = DisplayPage::Status;
+// Screen manager and screen instances (static allocation, no heap)
+static UI::ScreenManager s_screenManager;
+static UI::MenuScreen s_mainMenu("Main Menu");
+static UI::BootColorScreen s_bootScreen;
+static UI::DeviceInfoScreen s_deviceInfoScreen;
+static UI::EncoderScreen s_encoderScreen;
+static UI::MotionScreen s_motionScreen;
+static UI::ConfigScreen s_configScreen;
+static UI::GraphScreen s_graphScreen;
+static UI::MenuScreen s_imageMenu("Flash Images");
+static UI::MenuScreen s_imageActionMenu;
+static UI::ImageViewScreen s_imageViewScreen;
+static uint32_t s_imageSlotMap[UI::MENU_MAX_ITEMS];
+static uint32_t s_activeSlot = 0;
+static UI::TraceScreen s_traceScreen;
+
+// Forward declaration
+static void populateImageMenu();
+
+// Image action callback: View or Erase
+static bool onImageActionSelect(uint8_t index) {
+    if (index == 0) {
+        // View
+        s_imageViewScreen.setSlot(s_activeSlot);
+        s_screenManager.push(&s_imageViewScreen);
+        return true;
+    } else if (index == 1) {
+        // Erase
+        Services::g_flashImageService.eraseSlot(s_activeSlot);
+        populateImageMenu();  // Refresh browser to reflect deletion
+        return false;  // Pop action menu, back to browser
+    }
+    return true;
+}
+
+// Populate image menu by scanning flash slots
+static void populateImageMenu() {
+    s_imageMenu.clearItems();
+
+    auto& svc = Services::g_flashImageService;
+    if (!svc.isAvailable()) {
+        s_imageMenu.addItem("Flash unavailable", nullptr, false);
+        return;
+    }
+
+    uint32_t maxSlots = svc.maxSlots();
+    uint8_t found = 0;
+    uint8_t probe[4];
+
+    for (uint32_t slot = 0; slot < maxSlots && found < UI::MENU_MAX_ITEMS; slot++) {
+        if (svc.readSlotChunk(slot, 0, probe, 4)) {
+            // Non-0xFF means slot has image data (erased flash = all 0xFF)
+            if (probe[0] != 0xFF || probe[1] != 0xFF ||
+                probe[2] != 0xFF || probe[3] != 0xFF) {
+                char name[UI::MENU_ITEM_NAME_LEN];
+                snprintf(name, sizeof(name), "Image %lu", (unsigned long)slot);
+                s_imageSlotMap[found] = slot;
+                s_imageMenu.addItem(name);
+                found++;
+            }
+        }
+    }
+
+    if (found == 0) {
+        s_imageMenu.addItem("No images found", nullptr, false);
+    }
+}
+
+// Image menu callback: show View/Erase actions for selected image
+static bool onImageMenuSelect(uint8_t index) {
+    s_activeSlot = s_imageSlotMap[index];
+
+    char title[UI::MENU_ITEM_NAME_LEN];
+    snprintf(title, sizeof(title), "Image %lu", (unsigned long)s_activeSlot);
+
+    s_imageActionMenu.clearItems();
+    s_imageActionMenu.setTitle(title);
+    s_imageActionMenu.addItem("View");
+    s_imageActionMenu.addItem("Erase");
+    s_imageActionMenu.setSelectionCallback(onImageActionSelect);
+    s_imageActionMenu.setSelectedIndex(0);
+
+    s_screenManager.push(&s_imageActionMenu);
+    return true;
+}
+
+// Menu callback: push the selected screen
+static bool onMainMenuSelect(uint8_t index) {
+    UI::IScreen* screens[] = {
+        &s_bootScreen, &s_deviceInfoScreen, &s_encoderScreen,
+        &s_motionScreen, &s_configScreen, &s_graphScreen
+    };
+    if (index < 6) {
+        s_screenManager.push(screens[index]);
+    } else if (index == 6) {
+        populateImageMenu();
+        s_imageMenu.setSelectionCallback(onImageMenuSelect);
+        s_screenManager.push(&s_imageMenu);
+    } else if (index == 7) {
+        s_screenManager.push(&s_traceScreen);
+    }
+    return true;  // Stay in menu (it remains on the stack under the new screen)
+}
+
+// Long-press detection
+static uint8_t s_centerHoldCount = 0;
+static constexpr uint8_t LONG_PRESS_POLLS = 5;  // 500ms at 10Hz
 
 // Driver instances (created in init)
 static SPIBus* s_spi = nullptr;
@@ -63,18 +171,28 @@ bool DisplayTask_Init()
     }
     s_lcd->init();
 
-    // Startup: draw color bar test pattern
-    s_lcd->drawTestPattern();
-
     // Initialize indicator service (service layer, no RTOS dependency)
     Services::g_indicatorService.init(s_lcd);
 
     // Initialize joystick
     s_joystick = new Joystick();
 
-    s_currentPage = DisplayPage::Status;
-    s_lastRenderedPage = DisplayPage::Status;
-    s_refreshPending = false;  // Don't refresh - keep blue screen
+    // Set up main menu
+    s_mainMenu.addItem("Boot Color Screen");
+    s_mainMenu.addItem("Device Info");
+    s_mainMenu.addItem("Encoder Monitor");
+    s_mainMenu.addItem("Motion Control");
+    s_mainMenu.addItem("Driver Config");
+    s_mainMenu.addItem("Telemetry Graph");
+    s_mainMenu.addItem("Flash Images");
+    s_mainMenu.addItem("Trace Monitor");
+    s_mainMenu.setSelectionCallback(onMainMenuSelect);
+
+    // Initialize screen manager with main menu as root
+    s_screenManager.init(&s_mainMenu, s_lcd);
+
+    // Boot into color test screen (any button → main menu)
+    s_screenManager.push(&s_bootScreen);
 
     return true;
 }
@@ -91,107 +209,67 @@ void vDisplayTask(void* pvParameters)
         if (s_joystick != nullptr) {
             Joystick::Direction dir = s_joystick->readDirection();
 
-            // Detect new press (edge detection)
-            if (dir != lastDir) {
-                bool wasPressed = (dir != Joystick::Direction::None);
-
-                // In REMOTE mode, forward joystick events upstream
-                if (UI::g_uiMode.getMode() == UI::UIMode::REMOTE) {
+            // In REMOTE mode, forward joystick events upstream
+            if (UI::g_uiMode.getMode() == UI::UIMode::REMOTE) {
+                if (dir != lastDir) {
+                    bool wasPressed = (dir != Joystick::Direction::None);
                     UI::JoyEvent event;
                     event.direction = convertDirection(dir);
                     event.pressed = wasPressed;
                     event.timestamp = xTaskGetTickCount();
                     UI::g_uiMode.reportJoyEvent(event);
-                } else {
-                    // LOCAL mode: handle page navigation
-                    switch (dir) {
-                        case Joystick::Direction::Left:
-                            if (s_currentPage > DisplayPage::Status) {
-                                s_currentPage = static_cast<DisplayPage>(
-                                    static_cast<uint8_t>(s_currentPage) - 1);
-                                s_refreshPending = true;
-                            }
-                            break;
-
-                        case Joystick::Direction::Right:
-                            if (s_currentPage < DisplayPage::Debug) {
-                                s_currentPage = static_cast<DisplayPage>(
-                                    static_cast<uint8_t>(s_currentPage) + 1);
-                                s_refreshPending = true;
-                            }
-                            break;
-
-                        case Joystick::Direction::Center:
-                            s_refreshPending = true;
-                            break;
-
-                        default:
-                            break;
-                    }
+                    lastDir = dir;
                 }
-                lastDir = dir;
+                s_centerHoldCount = 0;
+            } else {
+                // LOCAL mode: long-press CENTER detection
+                if (dir == Joystick::Direction::Center) {
+                    s_centerHoldCount++;
+                    if (s_centerHoldCount == LONG_PRESS_POLLS) {
+                        // Long-press CENTER → return to main menu
+                        s_screenManager.popToRoot();
+                        lastDir = dir;
+                        // Skip normal edge handling this cycle
+                        goto render;
+                    }
+                } else {
+                    s_centerHoldCount = 0;
+                }
+
+                // Edge-detected input → screen manager
+                if (dir != lastDir) {
+                    if (dir != Joystick::Direction::None) {
+                        s_screenManager.handleInput(convertDirection(dir), true);
+                    }
+                    lastDir = dir;
+                }
             }
         }
 
-        // Update display only in LOCAL mode
-        // DISABLED FOR BLUE SCREEN TEST
-#if 0
+render:
+        // Render current screen in LOCAL mode
         if (s_lcd != nullptr && UI::g_uiMode.getMode() == UI::UIMode::LOCAL) {
-            // Get current telemetry
-            Comms::TelemetrySnapshot telem = Comms::g_telemetry.getSnapshot();
-
-            // Clear screen on page change
-            if (s_currentPage != s_lastRenderedPage) {
-                s_lcd->fillScreen(LCD::BLACK);
-                s_lastRenderedPage = s_currentPage;
-            }
-
-            // Render current page
-            switch (s_currentPage) {
-                case DisplayPage::Status:
-                    renderStatusPage(*s_lcd, telem);
-                    break;
-
-                case DisplayPage::MotorDetail:
-                    renderMotorPage(*s_lcd, telem);
-                    break;
-
-                case DisplayPage::EncoderDetail:
-                    renderEncoderPage(*s_lcd, telem);
-                    break;
-
-                case DisplayPage::System:
-                    renderSystemPage(*s_lcd, telem);
-                    break;
-
-                case DisplayPage::Debug:
-                    renderDebugPage(*s_lcd, telem);
-                    break;
-            }
-
-            s_refreshPending = false;
+            s_screenManager.render();
         }
-#endif
 
         // Wait for next refresh cycle
         vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(DISPLAY_REFRESH_PERIOD_MS));
     }
 }
 
-void DisplayTask_SetPage(DisplayPage page)
+void DisplayTask_SetPage(DisplayPage /*page*/)
 {
-    s_currentPage = page;
-    s_refreshPending = true;
+    // Legacy API — no-op with screen manager
 }
 
 DisplayPage DisplayTask_GetPage()
 {
-    return s_currentPage;
+    return DisplayPage::Status;
 }
 
 void DisplayTask_Refresh()
 {
-    s_refreshPending = true;
+    // Legacy API — screen manager handles refresh automatically
 }
 
 // =============================================================================
@@ -314,178 +392,6 @@ void DisplayTask_Resume()
     if (g_displayTaskHandle != nullptr) {
         vTaskResume(g_displayTaskHandle);
     }
-}
-
-// =============================================================================
-// Layout constants
-static constexpr uint16_t MARGIN_LEFT = 4;
-static constexpr uint16_t LINE_HEIGHT = 12;
-static constexpr uint16_t VALUE_X = 140;  // Right-aligned value position
-
-// Page rendering functions
-static void renderStatusPage(LCD& lcd, const Comms::TelemetrySnapshot& telem)
-{
-    uint16_t y = 4;
-
-    // Title
-    lcd.drawString(MARGIN_LEFT, y, "STATUS", LCD::CYAN, LCD::BLACK);
-    y += LINE_HEIGHT + 4;
-
-    // Motor position
-    lcd.drawString(MARGIN_LEFT, y, "Position:", LCD::CYAN, LCD::BLACK);
-    lcd.drawInt(VALUE_X, y, telem.motor.position, 10, LCD::WHITE, LCD::BLACK);
-    y += LINE_HEIGHT;
-
-    // Motor speed
-    lcd.drawString(MARGIN_LEFT, y, "Speed:", LCD::CYAN, LCD::BLACK);
-    lcd.drawUInt(VALUE_X, y, telem.motor.speed, 10, LCD::WHITE, LCD::BLACK);
-    y += LINE_HEIGHT;
-
-    // Motor state
-    lcd.drawString(MARGIN_LEFT, y, "State:", LCD::CYAN, LCD::BLACK);
-    const char* state;
-    if (telem.motor.hiZ) {
-        state = "HiZ";
-    } else if (telem.motor.busy) {
-        state = "Moving";
-    } else {
-        state = "Idle";
-    }
-    lcd.drawString(90, y, state, LCD::WHITE, LCD::BLACK);
-    y += LINE_HEIGHT;
-
-    // Separator
-    y += 4;
-    lcd.drawHLine(MARGIN_LEFT, y, LCD::WIDTH - 2 * MARGIN_LEFT, LCD::GRAY);
-    y += 8;
-
-    // Encoder count
-    lcd.drawString(MARGIN_LEFT, y, "Encoder:", LCD::CYAN, LCD::BLACK);
-    lcd.drawInt(VALUE_X, y, telem.encoder.count, 10, LCD::WHITE, LCD::BLACK);
-    y += LINE_HEIGHT;
-
-    // Encoder velocity
-    lcd.drawString(MARGIN_LEFT, y, "Velocity:", LCD::CYAN, LCD::BLACK);
-    lcd.drawInt(VALUE_X, y, telem.encoder.velocity, 10, LCD::WHITE, LCD::BLACK);
-    y += LINE_HEIGHT;
-
-    // Index status
-    lcd.drawString(MARGIN_LEFT, y, "Index:", LCD::CYAN, LCD::BLACK);
-    lcd.drawString(90, y, telem.encoder.indexSeen ? "Yes" : "No", LCD::WHITE, LCD::BLACK);
-    y += LINE_HEIGHT;
-
-    // Separator
-    y += 4;
-    lcd.drawHLine(MARGIN_LEFT, y, LCD::WIDTH - 2 * MARGIN_LEFT, LCD::GRAY);
-    y += 8;
-
-    // Stall indicator
-    if (telem.motor.stalled) {
-        lcd.drawString(MARGIN_LEFT, y, "** STALL **", LCD::RED, LCD::BLACK);
-    }
-}
-
-static void renderMotorPage(LCD& lcd, const Comms::TelemetrySnapshot& telem)
-{
-    uint16_t y = 4;
-
-    lcd.drawString(MARGIN_LEFT, y, "MOTOR DETAIL", LCD::CYAN, LCD::BLACK);
-    y += LINE_HEIGHT + 4;
-
-    lcd.drawString(MARGIN_LEFT, y, "Position:", LCD::CYAN, LCD::BLACK);
-    lcd.drawInt(VALUE_X, y, telem.motor.position, 10, LCD::WHITE, LCD::BLACK);
-    y += LINE_HEIGHT;
-
-    lcd.drawString(MARGIN_LEFT, y, "Target:", LCD::CYAN, LCD::BLACK);
-    lcd.drawInt(VALUE_X, y, telem.motor.targetPosition, 10, LCD::WHITE, LCD::BLACK);
-    y += LINE_HEIGHT;
-
-    lcd.drawString(MARGIN_LEFT, y, "Speed:", LCD::CYAN, LCD::BLACK);
-    lcd.drawUInt(VALUE_X, y, telem.motor.speed, 10, LCD::WHITE, LCD::BLACK);
-    y += LINE_HEIGHT;
-
-    lcd.drawString(MARGIN_LEFT, y, "Status:", LCD::CYAN, LCD::BLACK);
-    char hexBuf[8];
-    hexBuf[0] = '0';
-    hexBuf[1] = 'x';
-    uint16_t reg = telem.motor.statusReg;
-    for (int i = 3; i >= 0; i--) {
-        uint8_t nibble = (reg >> (i * 4)) & 0xF;
-        hexBuf[5 - i] = nibble < 10 ? ('0' + nibble) : ('A' + (nibble - 10));
-    }
-    hexBuf[6] = '\0';
-    lcd.drawString(90, y, hexBuf, LCD::WHITE, LCD::BLACK);
-    y += LINE_HEIGHT;
-
-    y += 4;
-    lcd.drawString(MARGIN_LEFT, y, "Busy:", LCD::CYAN, LCD::BLACK);
-    lcd.drawString(90, y, telem.motor.busy ? "Yes" : "No ", LCD::WHITE, LCD::BLACK);
-    y += LINE_HEIGHT;
-
-    lcd.drawString(MARGIN_LEFT, y, "HiZ:", LCD::CYAN, LCD::BLACK);
-    lcd.drawString(90, y, telem.motor.hiZ ? "Yes" : "No ", LCD::WHITE, LCD::BLACK);
-    y += LINE_HEIGHT;
-
-    lcd.drawString(MARGIN_LEFT, y, "Stalled:", LCD::CYAN, LCD::BLACK);
-    lcd.drawString(90, y, telem.motor.stalled ? "Yes" : "No ",
-                   telem.motor.stalled ? LCD::RED : LCD::WHITE, LCD::BLACK);
-}
-
-static void renderEncoderPage(LCD& lcd, const Comms::TelemetrySnapshot& telem)
-{
-    uint16_t y = 4;
-
-    lcd.drawString(MARGIN_LEFT, y, "ENCODER DETAIL", LCD::CYAN, LCD::BLACK);
-    y += LINE_HEIGHT + 4;
-
-    lcd.drawString(MARGIN_LEFT, y, "Count:", LCD::CYAN, LCD::BLACK);
-    lcd.drawInt(VALUE_X, y, telem.encoder.count, 10, LCD::WHITE, LCD::BLACK);
-    y += LINE_HEIGHT;
-
-    lcd.drawString(MARGIN_LEFT, y, "Velocity:", LCD::CYAN, LCD::BLACK);
-    lcd.drawInt(VALUE_X, y, telem.encoder.velocity, 10, LCD::WHITE, LCD::BLACK);
-    y += LINE_HEIGHT;
-
-    lcd.drawString(MARGIN_LEFT, y, "Index:", LCD::CYAN, LCD::BLACK);
-    lcd.drawString(90, y, telem.encoder.indexSeen ? "Seen" : "Not seen", LCD::WHITE, LCD::BLACK);
-    y += LINE_HEIGHT;
-
-    lcd.drawString(MARGIN_LEFT, y, "Idx Tick:", LCD::CYAN, LCD::BLACK);
-    lcd.drawUInt(VALUE_X, y, telem.encoder.indexTick, 10, LCD::WHITE, LCD::BLACK);
-}
-
-static void renderSystemPage(LCD& lcd, const Comms::TelemetrySnapshot& telem)
-{
-    uint16_t y = 4;
-
-    lcd.drawString(MARGIN_LEFT, y, "SYSTEM", LCD::CYAN, LCD::BLACK);
-    y += LINE_HEIGHT + 4;
-
-    // Uptime in seconds
-    uint32_t uptimeSec = telem.system.uptimeTicks / configTICK_RATE_HZ;
-    lcd.drawString(MARGIN_LEFT, y, "Uptime:", LCD::CYAN, LCD::BLACK);
-    lcd.drawUInt(VALUE_X, y, uptimeSec, 10, LCD::WHITE, LCD::BLACK);
-    lcd.drawString(VALUE_X + 6, y, "s", LCD::WHITE, LCD::BLACK);
-    y += LINE_HEIGHT;
-
-    lcd.drawString(MARGIN_LEFT, y, "Free Heap:", LCD::CYAN, LCD::BLACK);
-    lcd.drawUInt(VALUE_X, y, telem.system.freeHeap, 10, LCD::WHITE, LCD::BLACK);
-    y += LINE_HEIGHT;
-
-    lcd.drawString(MARGIN_LEFT, y, "CPU Load:", LCD::CYAN, LCD::BLACK);
-    lcd.drawUInt(VALUE_X, y, telem.system.cpuLoad, 3, LCD::WHITE, LCD::BLACK);
-    lcd.drawString(VALUE_X + 6, y, "%", LCD::WHITE, LCD::BLACK);
-}
-
-static void renderDebugPage(LCD& lcd, const Comms::TelemetrySnapshot& telem)
-{
-    (void)telem;
-    uint16_t y = 4;
-
-    lcd.drawString(MARGIN_LEFT, y, "DEBUG", LCD::CYAN, LCD::BLACK);
-    y += LINE_HEIGHT + 4;
-
-    lcd.drawString(MARGIN_LEFT, y, "No debug data", LCD::GRAY, LCD::BLACK);
 }
 
 } // namespace Tasks
