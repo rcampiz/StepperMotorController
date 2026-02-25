@@ -152,6 +152,19 @@ void MotorTask_Reinit();
  */
 bool MotorTask_ApplyConfig();
 
+/**
+ * @brief Set microstep mode with Hi-Z safety sequence
+ *
+ * Hi-Z → write STEP_MODE → readback verify → SoftStop re-enable.
+ * Must be called when motor is idle (not busy).
+ * Caller must suspend motor task first (MotorTask_Suspend).
+ *
+ * @param mode Step mode 0-7 (0=full, 7=1/128)
+ * @param readback Output: verified step mode read back from hardware
+ * @return true if write and verify succeeded
+ */
+bool MotorTask_SetStepModeSafe(uint8_t mode, uint8_t& readback);
+
 // Command queue handle (for direct access if needed)
 extern QueueHandle_t g_motorCmdQueue;
 

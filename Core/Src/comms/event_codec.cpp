@@ -14,12 +14,15 @@
 
 const char* eventTypeToString(EventType t) {
     switch (t) {
-        case EventType::FAULT:        return "FAULT";
-        case EventType::FAULT_CLEAR:  return "FAULT_CLEAR";
-        case EventType::STALL:        return "STALL";
-        case EventType::STALL_CLEAR:  return "STALL_CLEAR";
-        case EventType::MOTION_DONE:  return "MOTION_DONE";
-        default:                      return "UNKNOWN";
+        case EventType::FAULT:             return "FAULT";
+        case EventType::FAULT_CLEAR:       return "FAULT_CLEAR";
+        case EventType::STALL:             return "STALL";
+        case EventType::STALL_CLEAR:       return "STALL_CLEAR";
+        case EventType::MOTION_DONE:       return "MOTION_DONE";
+        case EventType::FOLLOW_FAULT:      return "FOLLOW_FAULT";
+        case EventType::FOLLOW_RECOVERY:   return "FOLLOW_RECOVERY";
+        case EventType::FOLLOW_RECOVERED:  return "FOLLOW_RECOVERED";
+        default:                           return "UNKNOWN";
     }
 }
 
@@ -33,8 +36,11 @@ bool eventTypeIsCritical(EventType t) {
         case EventType::FAULT_CLEAR:
         case EventType::STALL:
         case EventType::STALL_CLEAR:
+        case EventType::FOLLOW_FAULT:
             return true;
         case EventType::MOTION_DONE:
+        case EventType::FOLLOW_RECOVERY:
+        case EventType::FOLLOW_RECOVERED:
         default:
             return false;
     }
@@ -102,6 +108,9 @@ void formatAscii(ITransport& transport, const AsyncEvent& evt, uint32_t seq) {
             break;
 
         case EventType::MOTION_DONE:
+        case EventType::FOLLOW_FAULT:
+        case EventType::FOLLOW_RECOVERY:
+        case EventType::FOLLOW_RECOVERED:
             snprintf(line, sizeof(line), "!%s status=0x%04X",
                      typeName, evt.statusReg);
             break;
@@ -146,6 +155,9 @@ void formatJson(ITransport& transport, const AsyncEvent& evt, uint32_t seq, uint
             break;
 
         case EventType::MOTION_DONE:
+        case EventType::FOLLOW_FAULT:
+        case EventType::FOLLOW_RECOVERY:
+        case EventType::FOLLOW_RECOVERED:
             snprintf(buf, sizeof(buf),
                 "{\"kind\":\"event\",\"type\":\"%s\",\"seq\":%lu,\"ts_ms\":%lu,"
                 "\"data\":{\"status\":%u}}",

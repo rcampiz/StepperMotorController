@@ -6,6 +6,10 @@ PySide6>=6.5.0
 
 # Real-time plotting
 pyqtgraph>=0.13.0
+numpy>=1.24.0
+
+# System identification model fitting
+scipy>=1.10.0
 
 # Serial Communication
 pyserial>=3.5

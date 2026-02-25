@@ -228,6 +228,7 @@ private:
   void cmdEncoder();
   void cmdEncDebug();
   void cmdEncFilter(const ParsedCommand &cmd);
+  void cmdEncFilterSub(const char *sub, const ParsedCommand &cmd);
 
   // Device identification command handlers
   void cmdGetDeviceId();
@@ -310,6 +311,46 @@ private:
   void cmdEventEnable(const ParsedCommand &cmd);
   void cmdEventDisable();
   void cmdEventStatus();
+
+  // Phase A: unit model + safety commands
+  void cmdDrvStepMode(const ParsedCommand &cmd);   // Hi-Z safe step mode change
+  void cmdDrvStepModeQuery();                       // Read step mode from hardware
+  void cmdDrvFullSteps(const ParsedCommand &cmd);   // Set full steps/rev
+  void cmdDrvFullStepsQuery();                      // Query full steps/rev
+  void cmdDrvEncoderPPR(const ParsedCommand &cmd);  // Set encoder PPR
+  void cmdDrvEncoderPPRQuery();                     // Query encoder PPR
+  void cmdSystDelay(const ParsedCommand &cmd);      // Set transport delay
+  void cmdSystDelayQuery();                         // Query transport delay
+  void cmdFollowingError();                         // CTRL:FOLLOW? — supervisor status
+  void cmdFollowThreshQuery();                      // CTRL:FOLLOW:THRESH?
+  void cmdFollowThreshSet(const ParsedCommand &cmd);// CTRL:FOLLOW:THRESH <params>
+  void cmdFollowSave();                             // CTRL:FOLLOW:SAVE
+  void cmdFollowClear();                            // CTRL:FOLLOW:CLEAR
+
+  // Speed-trim controller commands (CTRL:TRIM:*)
+  void cmdTrimQuery();                               // CTRL:TRIM? — query config + live state
+  void cmdTrimSetGains(const ParsedCommand &cmd);    // CTRL:TRIM:GAINS <kp> <ki>
+  void cmdTrimSetLimits(const ParsedCommand &cmd);   // CTRL:TRIM:LIMITS <out> <int>
+  void cmdTrimSetMaxPct(const ParsedCommand &cmd);   // CTRL:TRIM:MAXPCT <1-50>
+  void cmdTrimReset();                               // CTRL:TRIM:RESET
+  void cmdTrimSave();                                // CTRL:TRIM:SAVE
+
+  // Legacy PID aliases (route to trim commands)
+  void cmdPidQuery();                                // CTRL:PID? → CTRL:TRIM?
+  void cmdPidSetGains(const ParsedCommand &cmd);     // CTRL:PID:GAINS → CTRL:TRIM:GAINS
+  void cmdPidSetLimits(const ParsedCommand &cmd);    // CTRL:PID:LIMITS → CTRL:TRIM:LIMITS
+  void cmdPidReset();                                // CTRL:PID:RESET → CTRL:TRIM:RESET
+  void cmdPidSave();                                 // CTRL:PID:SAVE → CTRL:TRIM:SAVE
+
+  // System identification commands
+  void cmdSysIdStep(const ParsedCommand &cmd);       // CTRL:SYSID:STEP
+  void cmdSysIdRamp(const ParsedCommand &cmd);       // CTRL:SYSID:RAMP
+  void cmdSysIdSine(const ParsedCommand &cmd);       // CTRL:SYSID:SINE
+  void cmdSysIdTrapezoid(const ParsedCommand &cmd);  // CTRL:SYSID:TRAPEZOID
+  void cmdSysIdRect(const ParsedCommand &cmd);       // CTRL:SYSID:RECT
+  void cmdSysIdStatus();                             // CTRL:SYSID:STATUS?
+  void cmdSysIdData(const ParsedCommand &cmd);       // CTRL:SYSID:DATA?
+  void cmdSysIdAbort();                              // CTRL:SYSID:ABORT
 };
 
 } // namespace Comms

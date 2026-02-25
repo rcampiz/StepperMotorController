@@ -86,9 +86,12 @@ void MotorConfigManager::applyDefaults() {
     m_config.faultAction = 1;  // HardHiZ - safest option
     m_config.stepMode = 7;     // 1/128 microstep (powerSTEP01 power-on default)
 
-    // Encoder velocity filter - disabled by default
-    m_config.encFilterType = 0;   // NONE
-    m_config.encFilterParam = 0;
+    // Encoder velocity filter - EMA+SMA+Padé+Butterworth enabled by default
+    m_config.encFilterType = 0x0F;  // EMA|SMA|PADE|BIQUAD
+    m_config.encFilterParam = 200;  // EMA alpha=200
+    m_config.encSmaWindow = 8;      // SMA window=8
+    m_config.encMeasWindowMs = 40;  // 40ms measurement window
+    m_config.encSampleRateDiv100 = 0; // 0 = default 1000Hz
 }
 
 void MotorConfigManager::setKval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec) {
@@ -129,6 +132,48 @@ void MotorConfigManager::setEncFilter(uint8_t type, uint8_t param) {
     m_config.encFilterParam = param;
 }
 
+void MotorConfigManager::setEncFilterFull(uint8_t flags, uint8_t emaAlpha,
+                                           uint8_t smaWindow, uint8_t measWindowMs,
+                                           uint8_t sampleRateDiv100) {
+    m_config.encFilterType = flags;
+    m_config.encFilterParam = emaAlpha;
+    m_config.encSmaWindow = smaWindow;
+    m_config.encMeasWindowMs = measWindowMs;
+    m_config.encSampleRateDiv100 = sampleRateDiv100;
+}
+
+void MotorConfigManager::setFullStepsPerRev(uint16_t steps) {
+    if (steps == 0) steps = 200;
+    m_config.fullStepsPerRev = steps;
+}
+
+void MotorConfigManager::setEncoderPPR(uint16_t ppr) {
+    if (ppr == 0) ppr = 4000;
+    m_config.encoderPPR = ppr;
+}
+
+void MotorConfigManager::setPidGains(int16_t kp100, int16_t ki100, int16_t kd100) {
+    m_config.pidKp100 = kp100;
+    m_config.pidKi100 = ki100;
+    m_config.pidKd100 = kd100;
+}
+
+void MotorConfigManager::setPidLimits(uint16_t outputLimit, uint16_t integralLimit) {
+    m_config.pidOutputLimit = outputLimit;
+    m_config.pidIntegralLimit = integralLimit;
+}
+
+void MotorConfigManager::setFollowThresholds(int16_t moveErr, uint16_t moveTimeMs,
+                                              int16_t holdErr, uint16_t holdTimeMs,
+                                              int16_t hardLimit, uint8_t maxRetries) {
+    m_config.followMoveError  = moveErr;
+    m_config.followMoveTimeMs = moveTimeMs;
+    m_config.followHoldError  = holdErr;
+    m_config.followHoldTimeMs = holdTimeMs;
+    m_config.followHardLimit  = hardLimit;
+    m_config.followMaxRetries = maxRetries;
+}
+
 bool MotorConfigManager::loadFromFlash() {
     // Read config from flash
     const MotorConfig* flashConfig = reinterpret_cast<const MotorConfig*>(MOTOR_CONFIG_FLASH_ADDR);
@@ -138,6 +183,19 @@ bool MotorConfigManager::loadFromFlash() {
         // Clamp stepMode to valid range (0-7)
         if (m_config.stepMode > 7) {
             m_config.stepMode = 7;
+        }
+        // Migrate V1 → V2: filter field reinterpretation
+        if (m_config.version < 2) {
+            // V1 encFilterType: 0=NONE, 1=EMA, 2=SMA (mutually exclusive)
+            // V2 encFilterType: bitfield (bit0=EMA, bit1=SMA)
+            // Values 0, 1, 2 map cleanly: 0→0, 1→bit0, 2→bit1
+            // But V1 encFilterParam was SMA window when type==2
+            if (m_config.encFilterType == 2) {
+                // Old SMA mode: param was SMA window, move to dedicated field
+                m_config.encSmaWindow = m_config.encFilterParam;
+                m_config.encFilterParam = 0; // No EMA alpha
+            }
+            m_config.version = 2;
         }
         return true;
     }

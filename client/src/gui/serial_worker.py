@@ -34,6 +34,16 @@ class CommandTag(Enum):
     FLASH_SHOW = auto()
     FLASH_ERASE = auto()
     FLASH_DIAG = auto()
+    REFRESH_DRV_CONFIG = auto()
+    REFRESH_PID_CONFIG = auto()
+    APPLY_PID = auto()
+    SET_CTRL_MODE = auto()
+    SYSID_START = auto()
+    SYSID_STATUS = auto()
+    SYSID_DATA = auto()
+    SYSID_ABORT = auto()
+    REFRESH_ENC_FILTER = auto()
+    APPLY_ENC_FILTER = auto()
 
 
 @dataclass

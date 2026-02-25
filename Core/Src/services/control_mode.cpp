@@ -15,23 +15,38 @@ const char *modeToString(ControlMode mode) {
   switch (mode) {
   case ControlMode::OPEN_LOOP:
     return "OPEN_LOOP";
-  case ControlMode::CLOSED_LOOP:
-    return "CLOSED_LOOP";
+  case ControlMode::CLOSED_LOOP_MONITOR:
+    return "CLOSED_LOOP_MONITOR";
+  case ControlMode::SPEED_TRIM:
+    return "SPEED_TRIM";
   default:
     return "UNKNOWN";
   }
 }
 
 ControlMode parseMode(const char *str) {
+  // OPEN_LOOP
   if (strcmp(str, "OPEN_LOOP") == 0 || strcmp(str, "open_loop") == 0 ||
       strcmp(str, "OPEN") == 0 || strcmp(str, "open") == 0 ||
       strcmp(str, "0") == 0) {
     return ControlMode::OPEN_LOOP;
   }
-  if (strcmp(str, "CLOSED_LOOP") == 0 || strcmp(str, "closed_loop") == 0 ||
+  // CLOSED_LOOP_MONITOR (also accepts legacy "CLOSED_LOOP" / "1")
+  if (strcmp(str, "CLOSED_LOOP_MONITOR") == 0 ||
+      strcmp(str, "closed_loop_monitor") == 0 ||
+      strcmp(str, "MONITOR") == 0 || strcmp(str, "monitor") == 0 ||
+      strcmp(str, "CLOSED_LOOP") == 0 || strcmp(str, "closed_loop") == 0 ||
       strcmp(str, "CLOSED") == 0 || strcmp(str, "closed") == 0 ||
       strcmp(str, "1") == 0) {
-    return ControlMode::CLOSED_LOOP;
+    return ControlMode::CLOSED_LOOP_MONITOR;
+  }
+  // SPEED_TRIM (also accepts legacy "PID", "CLOSED_LOOP_PID")
+  if (strcmp(str, "SPEED_TRIM") == 0 || strcmp(str, "speed_trim") == 0 ||
+      strcmp(str, "TRIM") == 0 || strcmp(str, "trim") == 0 ||
+      strcmp(str, "CLOSED_LOOP_PID") == 0 || strcmp(str, "closed_loop_pid") == 0 ||
+      strcmp(str, "PID") == 0 || strcmp(str, "pid") == 0 ||
+      strcmp(str, "2") == 0) {
+    return ControlMode::SPEED_TRIM;
   }
   return ControlMode::OPEN_LOOP;
 }
@@ -81,8 +96,8 @@ bool ControlModeManager::setMode(ControlMode mode) {
     // OPEN_LOOP is always allowed
     m_currentMode = mode;
     success = true;
-  } else if (mode == ControlMode::CLOSED_LOOP) {
-    // CLOSED_LOOP requires encoder to be ready
+  } else {
+    // Both closed-loop modes require encoder to be ready
     if (m_encoderStatus == EncoderStatus::READY) {
       m_currentMode = mode;
       success = true;
@@ -103,9 +118,9 @@ void ControlModeManager::setEncoderStatus(EncoderStatus status) {
 
   m_encoderStatus = status;
 
-  // If encoder becomes unavailable while in CLOSED_LOOP, revert to OPEN_LOOP
+  // If encoder becomes unavailable while in any closed-loop mode, revert
   if (status != EncoderStatus::READY &&
-      m_currentMode == ControlMode::CLOSED_LOOP) {
+      m_currentMode != ControlMode::OPEN_LOOP) {
     m_currentMode = ControlMode::OPEN_LOOP;
   }
 

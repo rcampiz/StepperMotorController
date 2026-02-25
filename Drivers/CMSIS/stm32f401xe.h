@@ -135,6 +135,7 @@ typedef enum {
 // AHB1 peripherals (additional)
 #define FLASH_R_BASE          (AHB1PERIPH_BASE + 0x3C00UL)
 #define DMA1_BASE             (AHB1PERIPH_BASE + 0x6000UL)
+#define DMA1_Stream2_BASE     (DMA1_BASE + 0x40UL)
 #define DMA1_Stream3_BASE     (DMA1_BASE + 0x58UL)
 #define DMA1_Stream4_BASE     (DMA1_BASE + 0x70UL)
 #define DMA2_BASE             (AHB1PERIPH_BASE + 0x6400UL)
@@ -340,6 +341,7 @@ typedef struct {
 #define SYSCFG              ((SYSCFG_TypeDef *) SYSCFG_BASE)
 #define FLASH               ((FLASH_TypeDef *) FLASH_R_BASE)
 #define DMA1                ((DMA_TypeDef *) DMA1_BASE)
+#define DMA1_Stream2        ((DMA_Stream_TypeDef *) DMA1_Stream2_BASE)
 #define DMA1_Stream3        ((DMA_Stream_TypeDef *) DMA1_Stream3_BASE)
 #define DMA1_Stream4        ((DMA_Stream_TypeDef *) DMA1_Stream4_BASE)
 #define DMA2                ((DMA_TypeDef *) DMA2_BASE)
@@ -698,8 +700,16 @@ typedef struct {
 #define DMA_SxCR_DIR_Pos              (6U)
 #define DMA_SxCR_DIR                  (0x3UL << DMA_SxCR_DIR_Pos)
 #define DMA_SxCR_DIR_0                (0x1UL << DMA_SxCR_DIR_Pos)
+#define DMA_SxCR_CIRC_Pos             (8U)
+#define DMA_SxCR_CIRC                 (1UL << DMA_SxCR_CIRC_Pos)
 #define DMA_SxCR_MINC_Pos             (10U)
 #define DMA_SxCR_MINC                 (1UL << DMA_SxCR_MINC_Pos)
+#define DMA_SxCR_PSIZE_Pos            (11U)
+#define DMA_SxCR_PSIZE                (0x3UL << DMA_SxCR_PSIZE_Pos)
+#define DMA_SxCR_PSIZE_0              (0x1UL << DMA_SxCR_PSIZE_Pos)
+#define DMA_SxCR_MSIZE_Pos            (13U)
+#define DMA_SxCR_MSIZE                (0x3UL << DMA_SxCR_MSIZE_Pos)
+#define DMA_SxCR_MSIZE_0              (0x1UL << DMA_SxCR_MSIZE_Pos)
 #define DMA_SxCR_PL_Pos               (16U)
 #define DMA_SxCR_PL                   (0x3UL << DMA_SxCR_PL_Pos)
 #define DMA_SxCR_PL_0                 (0x1UL << DMA_SxCR_PL_Pos)
@@ -755,6 +765,10 @@ typedef struct {
 #define TIM_CCMR1_CC2S_Pos            (8U)
 #define TIM_CCMR1_CC2S                (0x3UL << TIM_CCMR1_CC2S_Pos)
 #define TIM_CCMR1_CC2S_0              (0x1UL << TIM_CCMR1_CC2S_Pos)
+
+// TIM DIER register bits
+#define TIM_DIER_UDE_Pos              (8U)
+#define TIM_DIER_UDE                  (1UL << TIM_DIER_UDE_Pos)
 
 // TIM EGR register bits
 #define TIM_EGR_UG_Pos                (0U)

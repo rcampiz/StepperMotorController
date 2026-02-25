@@ -138,6 +138,18 @@ arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/flash_image_service.cpp -o bui
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile flash_image_service.cpp & exit /b 1)
 arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/indicator_service.cpp -o build/indicator_service.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile indicator_service.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/unit_conversion.cpp -o build/unit_conversion.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile unit_conversion.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/timing_service.cpp -o build/timing_service.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile timing_service.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/pid_controller.cpp -o build/pid_controller.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile pid_controller.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/following_supervisor.cpp -o build/following_supervisor.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile following_supervisor.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/sysid.cpp -o build/sysid.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile sysid.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/services/speed_trim_controller.cpp -o build/speed_trim_controller.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile speed_trim_controller.cpp & exit /b 1)
 
 echo [17/25] Compiling UI sources...
 arm-none-eabi-g++ -c %CXXFLAGS% Core/Src/ui/ui_mode.cpp -o build/ui_mode.o
@@ -179,7 +191,7 @@ set "OBJS=%OBJS% build/timers.o build/event_groups.o build/stream_buffer.o build
 set "OBJS=%OBJS% build/SEGGER_RTT.o build/SEGGER_RTT_printf.o build/SEGGER_SYSVIEW.o build/SEGGER_SYSVIEW_Config_FreeRTOS.o build/SEGGER_SYSVIEW_FreeRTOS.o"
 set "OBJS=%OBJS% build/main.o build/uart_transport.o build/rtt_transport.o build/command_parser.o build/telemetry.o build/event_codec.o"
 set "OBJS=%OBJS% build/motor_task.o build/encoder_task.o build/display_task.o build/comms_task.o build/bringup_task.o"
-set "OBJS=%OBJS% build/tick_timer.o build/command_queue.o build/device_config.o build/control_mode.o build/motor_config.o build/motion_service.o build/safety_service.o build/config_service.o build/trace.o build/event_service.o build/flash_image_service.o build/indicator_service.o"
+set "OBJS=%OBJS% build/tick_timer.o build/command_queue.o build/device_config.o build/control_mode.o build/motor_config.o build/motion_service.o build/safety_service.o build/config_service.o build/trace.o build/event_service.o build/flash_image_service.o build/indicator_service.o build/unit_conversion.o build/timing_service.o build/pid_controller.o build/following_supervisor.o build/sysid.o build/speed_trim_controller.o"
 set "OBJS=%OBJS% build/ui_mode.o build/menu_screen.o build/terminal_screen.o build/screen_manager.o"
 set "OBJS=%OBJS% build/boot_color_screen.o build/device_info_screen.o build/encoder_screen.o build/motion_screen.o build/config_screen.o build/graph_screen.o build/image_view_screen.o build/trace_screen.o"
 set "OBJS=%OBJS% build/spi_manager.o"

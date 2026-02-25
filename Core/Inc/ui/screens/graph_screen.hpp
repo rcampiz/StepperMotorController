@@ -29,7 +29,7 @@ public:
     void clearRedrawFlag() override { m_needsRedraw = false; }
 
 private:
-    static constexpr uint8_t NUM_CHANNELS = 3;
+    static constexpr uint8_t NUM_CHANNELS = 4;
     static constexpr uint16_t GRAPH_SAMPLES = 188;
     static constexpr uint16_t GRAPH_X = 50;      // Left margin for Y-axis labels (6ch × 8px + 2px)
     static constexpr uint16_t GRAPH_Y = 18;       // Below header
@@ -39,7 +39,8 @@ private:
     enum class Channel : uint8_t {
         VELOCITY = 0,  // Encoder velocity (counts/s)
         SPEED = 1,     // Motor speed (steps/s)
-        POSITION = 2   // Motor position (steps)
+        POSITION = 2,  // Motor position (steps)
+        SLIP = 3       // Following error (encoder ticks)
     };
 
     enum class YScaleMode : uint8_t {

@@ -48,6 +48,14 @@ void TelemetryManager::updateSystem(const SystemTelemetry &data) {
   }
 }
 
+void TelemetryManager::updateControl(const ControlTelemetry &data) {
+  if (xSemaphoreTake(m_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+    m_data.control = data;
+    m_data.timestamp = xTaskGetTickCount();
+    xSemaphoreGive(m_mutex);
+  }
+}
+
 TelemetrySnapshot TelemetryManager::getSnapshot() {
   TelemetrySnapshot snapshot = {};
 

@@ -11,6 +11,10 @@
 #include "comms/telemetry.hpp"
 #include "services/motor_config.hpp"
 #include "services/event_service.hpp"
+#include "services/following_supervisor.hpp"
+#include "services/control_mode.hpp"
+#include "services/sysid.hpp"
+#include "services/speed_trim_controller.hpp"
 #include "FreeRTOS.h"
 #include "task.h"
 #include "queue.h"
@@ -30,6 +34,17 @@ static PowerSTEP01* s_motor = nullptr;
 // Temporary MAX_SPEED override for GOTO/MOVE/HOME with speed parameter
 static uint32_t s_savedMaxSpeed = 0;
 static bool s_speedOverrideActive = false;
+
+// Cached direction for supervisor input (set on Run command)
+static bool s_lastRunForward = true;
+
+// Track continuous run (RUN command) vs finite move (MOVE/GOTO)
+// For RUN, busy→idle means "reached target speed", NOT "stopped"
+// Only finite moves should transition supervisor to HOLDING
+static bool s_continuousRunActive = false;
+
+// Last trim result for telemetry reporting
+static Services::SpeedTrimResult s_lastTrimResult = {};
 
 static void applySpeedOverride(uint32_t rawMaxSpeed) {
     s_savedMaxSpeed = s_motor->getParam(PowerSTEP01::Reg::MAX_SPEED);
@@ -119,6 +134,7 @@ void vMotorTask(void* pvParameters)
                     if (cmd.param2 != 0) {
                         applySpeedOverride(static_cast<uint32_t>(cmd.param2));
                     }
+                    s_continuousRunActive = false;  // Finite move
                     s_motor->move(forward, steps);
                     break;
                 }
@@ -127,27 +143,100 @@ void vMotorTask(void* pvParameters)
                     if (cmd.param2 != 0) {
                         applySpeedOverride(static_cast<uint32_t>(cmd.param2));
                     }
+                    s_continuousRunActive = false;  // Finite move
                     s_motor->goTo(cmd.param1);
                     break;
 
-                case MotorCmdType::Run:
-                    s_motor->run(cmd.param2 != 0, static_cast<uint32_t>(cmd.param1));
+                case MotorCmdType::Run: {
+                    auto mode = Services::g_controlMode.getMode();
+                    uint32_t rawSpeed = static_cast<uint32_t>(cmd.param1);
+                    bool fwd = (cmd.param2 != 0);
+                    s_lastRunForward = fwd;
+                    s_continuousRunActive = true;  // RUN is continuous motion
+                    s_motor->run(fwd, rawSpeed);   // Always issue initial run
+
+                    if (mode != Services::ControlMode::OPEN_LOOP) {
+                        // Convert raw speed directly to encoder ticks/sec in one
+                        // 64-bit operation to avoid intermediate integer truncation.
+                        // setpointTps = rawSpeed * 15625 * encPPR / (1048576 * fpr)
+                        uint16_t encPPR = Services::g_motorConfig.getEncoderPPR();
+                        uint16_t fpr = Services::g_motorConfig.getFullStepsPerRev();
+                        int32_t setpointTps = static_cast<int32_t>(
+                            (static_cast<uint64_t>(rawSpeed) * 15625ULL * encPPR)
+                            / (1048576ULL * fpr));
+                        if (!fwd) { setpointTps = -setpointTps; }
+
+                        // Configure supervisor for fault detection
+                        Services::SupervisorConfig scfg{};
+                        scfg.moveError      = Services::g_motorConfig.getFollowMoveError();
+                        scfg.moveTimeMs     = Services::g_motorConfig.getFollowMoveTimeMs();
+                        scfg.holdError      = Services::g_motorConfig.getFollowHoldError();
+                        scfg.holdTimeMs     = Services::g_motorConfig.getFollowHoldTimeMs();
+                        scfg.hardLimit      = Services::g_motorConfig.getFollowHardLimit();
+                        scfg.maxRetries     = Services::g_motorConfig.getFollowMaxRetries();
+                        scfg.maxDeltaVRaw   = 0;
+                        scfg.recoveryTimeMs = 2000;
+                        Services::g_supervisor.configure(scfg);
+                        Services::g_supervisor.beginMove(setpointTps, fwd, rawSpeed);
+
+                        // In SPEED_TRIM mode, also start trim controller
+                        if (mode == Services::ControlMode::SPEED_TRIM) {
+                            Services::SpeedTrimConfig tcfg{};
+                            tcfg.kp = Services::g_motorConfig.getPidKp();
+                            tcfg.ki = Services::g_motorConfig.getPidKi();
+                            uint16_t pidKd100 = static_cast<uint16_t>(
+                                Services::g_motorConfig.getPidKd100());
+                            tcfg.trimMaxPercent = (pidKd100 > 0 && pidKd100 <= 50)
+                                                  ? static_cast<uint8_t>(pidKd100) : 0;
+                            tcfg.outputLimit = static_cast<float>(
+                                Services::g_motorConfig.getPidOutputLimit());
+                            tcfg.integralLimit = static_cast<float>(
+                                Services::g_motorConfig.getPidIntegralLimit());
+                            Services::g_speedTrim.configure(tcfg);
+                            Services::g_speedTrim.beginTrim(setpointTps, fwd, rawSpeed);
+                        } else {
+                            Services::g_speedTrim.reset();
+                            // Load PID for supervisor (MONITOR mode uses no PID, but configure anyway)
+                            Services::g_supervisor.configurePID(
+                                Services::g_motorConfig.getPidKp(),
+                                Services::g_motorConfig.getPidKi(),
+                                Services::g_motorConfig.getPidKd(),
+                                static_cast<float>(Services::g_motorConfig.getPidOutputLimit()),
+                                static_cast<float>(Services::g_motorConfig.getPidIntegralLimit()));
+                        }
+                    } else {
+                        Services::g_supervisor.goIdle();
+                        Services::g_speedTrim.reset();
+                    }
                     break;
+                }
 
                 case MotorCmdType::SoftStop:
+                    s_continuousRunActive = false;
+                    Services::g_supervisor.goIdle();
+                    Services::g_speedTrim.reset();
                     s_motor->softStop();
                     break;
 
                 case MotorCmdType::HardStop:
+                    s_continuousRunActive = false;
+                    Services::g_supervisor.goIdle();
+                    Services::g_speedTrim.reset();
                     s_motor->hardStop();
                     restoreSpeedIfOverridden();
                     break;
 
                 case MotorCmdType::SoftHiZ:
+                    s_continuousRunActive = false;
+                    Services::g_supervisor.goIdle();
+                    Services::g_speedTrim.reset();
                     s_motor->softHiZ();
                     break;
 
                 case MotorCmdType::HardHiZ:
+                    s_continuousRunActive = false;
+                    Services::g_supervisor.goIdle();
+                    Services::g_speedTrim.reset();
                     s_motor->hardHiZ();
                     restoreSpeedIfOverridden();
                     break;
@@ -156,10 +245,12 @@ void vMotorTask(void* pvParameters)
                     if (cmd.param2 != 0) {
                         applySpeedOverride(static_cast<uint32_t>(cmd.param2));
                     }
+                    s_continuousRunActive = false;  // Finite move
                     s_motor->goHome();
                     break;
 
                 case MotorCmdType::GoMark:
+                    s_continuousRunActive = false;  // Finite move
                     s_motor->goMark();
                     break;
 
@@ -224,6 +315,143 @@ void vMotorTask(void* pvParameters)
 
             Comms::g_telemetry.updateMotor(telem);
 
+            // Shared sensor data for sysid + supervisor
+            Comms::TelemetrySnapshot snap = Comms::g_telemetry.getSnapshot();
+            uint32_t ustepsPerRev = Services::g_motorConfig.getMicrostepsPerRev();
+            uint16_t encPPR = Services::g_motorConfig.getEncoderPPR();
+            uint16_t fpr = Services::g_motorConfig.getFullStepsPerRev();
+
+            int32_t cmdTicks = static_cast<int32_t>(
+                (static_cast<int64_t>(position) * encPPR) / ustepsPerRev);
+            int32_t measTicks = static_cast<int32_t>(snap.encoder.count);
+            int32_t followError = cmdTicks - measTicks;
+
+            // System identification — overrides normal control when active
+            bool sysidActive = false;
+            {
+                auto& sysid = Services::g_sysId;
+                auto sysResult = sysid.tick(
+                    snap.encoder.velocity, followError, fpr, encPPR);
+
+                if (sysResult.active) {
+                    sysidActive = true;
+                    if (sysResult.rawSpeed > 0) {
+                        s_motor->run(sysResult.forward, sysResult.rawSpeed);
+                    } else {
+                        s_motor->softStop();
+                    }
+                    // Force supervisor idle during sysid
+                    if (Services::g_supervisor.getState() !=
+                        Services::SupervisorState::IDLE) {
+                        Services::g_supervisor.goIdle();
+                    }
+                }
+                if (sysResult.justFinished) {
+                    s_motor->softStop();
+                }
+            }
+
+            // Speed-trim controller (skipped during sysid)
+            if (!sysidActive && Services::g_speedTrim.isActive()) {
+                Services::SpeedTrimInput ti{};
+                ti.encVelTps       = snap.encoder.velocity;
+                ti.velQuality      = static_cast<Services::VelocityQuality>(
+                                         snap.encoder.velocityQuality);
+                ti.forward         = s_lastRunForward;
+                ti.fullStepsPerRev = fpr;
+                ti.encoderPPR      = encPPR;
+                ti.maxSpeedRaw     = s_motor->getParam(PowerSTEP01::Reg::MAX_SPEED);
+                ti.dtSec           = 0.050f;
+
+                Services::SpeedTrimResult trimResult = Services::g_speedTrim.update(ti);
+                s_lastTrimResult = trimResult;
+                if (trimResult.active) {
+                    s_motor->run(s_lastRunForward, trimResult.finalSpeedRaw);
+                }
+            }
+
+            // Following Error Supervisor evaluation (skipped during sysid)
+            if (!sysidActive) {
+                auto mode = Services::g_controlMode.getMode();
+                auto& sup = Services::g_supervisor;
+
+                // Auto-deactivate supervisor if mode reverted (encoder fault, etc.)
+                if (mode == Services::ControlMode::OPEN_LOOP &&
+                    sup.getState() != Services::SupervisorState::IDLE) {
+                    sup.goIdle();
+                    Services::g_speedTrim.reset();
+                }
+
+                // Build supervisor input
+                Services::SupervisorInput si{};
+                si.cmdPosTicks     = cmdTicks;
+                si.encPosTicks     = measTicks;
+                si.encVelTps       = snap.encoder.velocity;
+                si.baseSpeedRaw    = 0;  // Stored internally by supervisor
+                si.motorBusy       = status.busy();
+                si.forward         = s_lastRunForward;
+                si.maxSpeedRaw     = s_motor->getParam(PowerSTEP01::Reg::MAX_SPEED);
+                si.fullStepsPerRev = fpr;
+                si.encoderPPR      = encPPR;
+                si.dtSec           = 0.050f;
+                si.revolutions     = snap.encoder.revolutions;
+
+                Services::SupervisorAction act = sup.evaluate(si, mode);
+
+                // Apply action to driver
+                switch (act.type) {
+                    case Services::SupervisorAction::Type::SET_SPEED:
+                        s_motor->run(act.direction, act.rawSpeed);
+                        break;
+                    case Services::SupervisorAction::Type::SOFT_STOP:
+                        Services::g_speedTrim.reset();
+                        s_motor->softStop();
+                        break;
+                    case Services::SupervisorAction::Type::HARD_STOP:
+                        Services::g_speedTrim.reset();
+                        s_motor->hardStop();
+                        break;
+                    default:
+                        break;
+                }
+
+                // Post supervisor events
+                if (act.faultEvent) {
+                    Services::Event::post(EventType::FOLLOW_FAULT, status.raw);
+                }
+                if (act.recoveryEvent) {
+                    Services::Event::post(EventType::FOLLOW_RECOVERY, status.raw);
+                }
+                if (act.recoveredEvent) {
+                    Services::Event::post(EventType::FOLLOW_RECOVERED, status.raw);
+                }
+
+                // Populate control telemetry from supervisor + trim
+                Services::SupervisorTelemetry st = sup.getTelemetry();
+                Comms::ControlTelemetry ctrl{};
+                ctrl.followingError  = st.posError;
+                ctrl.setpoint        = st.setpoint;
+                ctrl.mode            = static_cast<uint8_t>(mode);
+                ctrl.tracking        = s_lastTrimResult.active;
+                ctrl.pidOutput       = static_cast<int16_t>(s_lastTrimResult.trimTps);
+                ctrl.pTerm           = static_cast<int16_t>(s_lastTrimResult.pTerm);
+                ctrl.iTerm           = static_cast<int16_t>(s_lastTrimResult.iTerm);
+                ctrl.dTerm           = 0;
+                ctrl.supervisorState = static_cast<uint8_t>(st.state);
+                ctrl.currentTier     = static_cast<uint8_t>(st.tier);
+                ctrl.velError        = st.velError;
+                ctrl.retryCount      = st.retryCount;
+                // Speed-trim specific fields
+                ctrl.baseSpeedRaw    = static_cast<int32_t>(s_lastTrimResult.finalSpeedRaw)
+                                       - s_lastTrimResult.trimRaw;
+                ctrl.trimSpeedRaw    = s_lastTrimResult.trimRaw;
+                ctrl.finalSpeedRaw   = static_cast<int32_t>(s_lastTrimResult.finalSpeedRaw);
+                ctrl.trimFrozen      = s_lastTrimResult.frozen ? 1 : 0;
+                ctrl.velQuality      = snap.encoder.velocityQuality;
+
+                Comms::g_telemetry.updateControl(ctrl);
+            }
+
             // Edge detection for async events
             // Fault: OCD (bit13, active-low), UVLO (bit9, active-low), TH_SD (bits 11-12 >= 2)
             bool curFault  = status.ocd() || status.uvlo() || status.thermalSD();
@@ -258,6 +486,22 @@ void vMotorTask(void* pvParameters)
             if (prevBusy && !curBusy) {
                 restoreSpeedIfOverridden();
                 Services::Event::post(EventType::MOTION_DONE, status.raw);
+
+                // Transition supervisor to HOLDING only for finite moves
+                // For RUN command, busy→idle means "reached target speed" — motor still spinning
+                if (!s_continuousRunActive) {
+                    auto mode = Services::g_controlMode.getMode();
+                    if (mode != Services::ControlMode::OPEN_LOOP) {
+                        auto& sup = Services::g_supervisor;
+                        if (sup.getState() == Services::SupervisorState::MOVING) {
+                            uint32_t ustepsPerRev = Services::g_motorConfig.getMicrostepsPerRev();
+                            uint16_t encPPR = Services::g_motorConfig.getEncoderPPR();
+                            int32_t cmdTicks = static_cast<int32_t>(
+                                (static_cast<int64_t>(position) * encPPR) / ustepsPerRev);
+                            sup.beginHold(cmdTicks);
+                        }
+                    }
+                }
             }
 
             prevStatusReg = status.raw;
@@ -400,6 +644,37 @@ bool MotorTask_ApplyConfig()
     s_motor->getStatus();
 
     return true;
+}
+
+bool MotorTask_SetStepModeSafe(uint8_t mode, uint8_t& readback)
+{
+    if (s_motor == nullptr || mode > 7) {
+        readback = 0xFF;
+        return false;
+    }
+
+    // Put motor into Hi-Z (de-energize coils — required before STEP_MODE write)
+    s_motor->hardHiZ();
+
+    // Small delay for Hi-Z to take effect
+    vTaskDelay(pdMS_TO_TICKS(5));
+
+    // Read-modify-write STEP_MODE (preserve CM_VM and SYNC_SEL bits)
+    uint32_t reg = s_motor->getParam(PowerSTEP01::Reg::STEP_MODE);
+    reg = (reg & 0xF8) | (mode & 0x07);
+    s_motor->setParam(PowerSTEP01::Reg::STEP_MODE, reg);
+
+    // Read back and verify
+    uint32_t verify = s_motor->getParam(PowerSTEP01::Reg::STEP_MODE);
+    readback = static_cast<uint8_t>(verify & 0x07);
+
+    // Clear any latched fault bits
+    s_motor->getStatus();
+
+    // Re-enable motor (SoftStop holds position with configured KVAL_HOLD)
+    s_motor->softStop();
+
+    return (readback == mode);
 }
 
 void MotorTask_Reinit()

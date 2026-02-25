@@ -37,6 +37,10 @@ struct EncoderTelemetry {
     uint32_t indexTick;      // Tick count when index last seen
     int32_t revolutions;     // Revolution count from index pulses (signed)
     uint32_t indexPeriodUs;  // Microseconds between last two index pulses
+    uint8_t velocityQuality; // VelocityQuality enum (0=GOOD..3=INVALID)
+    uint8_t filterFlags;     // Active filter flags (bit0=EMA, bit1=SMA)
+    uint8_t measWindowMs;    // Current measurement window (ms)
+    uint16_t sampleRateHz;   // DMA sample rate (Hz)
 };
 
 /**
@@ -49,12 +53,38 @@ struct SystemTelemetry {
 };
 
 /**
+ * @brief Control loop telemetry data
+ */
+struct ControlTelemetry {
+    int32_t  followingError;   // Position error in encoder ticks
+    int32_t  setpoint;         // Commanded velocity (ticks/sec)
+    uint8_t  mode;             // 0=OPEN_LOOP, 1=MONITOR, 2=SPEED_TRIM
+    bool     tracking;         // Trim controller is actively correcting
+    int16_t  pidOutput;        // Trim total output (tps adjustment)
+    int16_t  pTerm;            // Proportional component
+    int16_t  iTerm;            // Integral component
+    int16_t  dTerm;            // Derivative component (always 0 for PI)
+    // Following Error Supervisor fields
+    uint8_t  supervisorState;  // SupervisorState enum (0=IDLE..4=FAULT)
+    uint8_t  currentTier;      // Tier enum (0=OBSERVE..3=FAULT_LATCH)
+    int32_t  velError;         // Velocity error (ticks/sec)
+    uint8_t  retryCount;       // Recovery attempt counter
+    // Speed-trim fields
+    int32_t  baseSpeedRaw;     // Original commanded speed (raw register)
+    int32_t  trimSpeedRaw;     // Trim adjustment (signed raw)
+    int32_t  finalSpeedRaw;    // Applied speed = base + trim (raw)
+    uint8_t  trimFrozen;       // 1 if integrator frozen this cycle
+    uint8_t  velQuality;       // VelocityQuality from encoder (0=GOOD..3=INVALID)
+};
+
+/**
  * @brief Combined telemetry snapshot
  */
 struct TelemetrySnapshot {
     MotorTelemetry motor;
     EncoderTelemetry encoder;
     SystemTelemetry system;
+    ControlTelemetry control;
     uint32_t timestamp;      // Snapshot time (ticks)
 };
 
@@ -86,6 +116,12 @@ public:
      * @param data New system data
      */
     void updateSystem(const SystemTelemetry& data);
+
+    /**
+     * @brief Update control loop telemetry
+     * @param data New control data
+     */
+    void updateControl(const ControlTelemetry& data);
 
     /**
      * @brief Get complete telemetry snapshot (thread-safe)

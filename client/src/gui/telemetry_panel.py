@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QProgressBar,
     QPushButton,
+    QSpinBox,
+    QCheckBox,
 )
 from PySide6.QtCore import Qt, Slot, Signal
 from PySide6.QtGui import QFont
@@ -26,6 +28,7 @@ class TelemetryPanel(QWidget):
     """Panel for displaying telemetry data."""
 
     clear_fault_requested = Signal()
+    enc_filter_command = Signal(str)  # SCPI command string for encoder filter
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -38,6 +41,7 @@ class TelemetryPanel(QWidget):
 
         layout.addWidget(self._create_motor_group())
         layout.addWidget(self._create_encoder_group())
+        layout.addWidget(self._create_encoder_filter_group())
         layout.addWidget(self._create_status_group())
         layout.addWidget(self._create_link_health_group())
         layout.addWidget(self._create_motor_config_group())
@@ -68,7 +72,7 @@ class TelemetryPanel(QWidget):
         layout.addWidget(QLabel("steps/s"), 1, 2)
 
         self._speed_bar = QProgressBar()
-        self._speed_bar.setRange(0, 100000)
+        self._speed_bar.setRange(0, 15625)  # powerSTEP01 max speed in steps/s
         self._speed_bar.setValue(0)
         self._speed_bar.setTextVisible(False)
         layout.addWidget(self._speed_bar, 2, 0, 1, 3)
@@ -116,16 +120,307 @@ class TelemetryPanel(QWidget):
         layout.addWidget(self._rpm_label, 4, 1)
         layout.addWidget(QLabel("rev/min"), 4, 2)
 
-        layout.addWidget(QLabel("Index:"), 5, 0)
+        layout.addWidget(QLabel("Vel Quality:"), 5, 0)
+        self._vel_quality_label = QLabel("---")
+        self._vel_quality_label.setFont(QFont("Consolas", 10, QFont.Bold))
+        self._vel_quality_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.addWidget(self._vel_quality_label, 5, 1, 1, 2)
+
+        layout.addWidget(QLabel("Index:"), 6, 0)
         self._index_indicator = QLabel("NOT SEEN")
         self._index_indicator.setAlignment(Qt.AlignCenter)
         self._index_indicator.setStyleSheet(
             "background-color: #444; color: gray; padding: 2px 8px; border-radius: 3px;"
         )
-        layout.addWidget(self._index_indicator, 5, 1, 1, 2)
+        layout.addWidget(self._index_indicator, 6, 1, 1, 2)
 
         layout.setColumnStretch(1, 1)
         return group
+
+    def _create_encoder_filter_group(self) -> QGroupBox:
+        """Create encoder filter configuration group."""
+        group = QGroupBox("Encoder Filter")
+        layout = QGridLayout(group)
+
+        # Row 0: Measurement window + Sample rate
+        layout.addWidget(QLabel("Meas. Window:"), 0, 0)
+        self._filt_window_spin = QSpinBox()
+        self._filt_window_spin.setRange(1, 255)
+        self._filt_window_spin.setValue(40)
+        self._filt_window_spin.setSuffix(" ms")
+        self._filt_window_spin.setFixedWidth(80)
+        self._filt_window_spin.setFont(QFont("Consolas", 9))
+        layout.addWidget(self._filt_window_spin, 0, 1)
+
+        layout.addWidget(QLabel("Sample Rate:"), 0, 2)
+        self._filt_rate_spin = QSpinBox()
+        self._filt_rate_spin.setRange(100, 10000)
+        self._filt_rate_spin.setValue(1000)
+        self._filt_rate_spin.setSingleStep(100)
+        self._filt_rate_spin.setSuffix(" Hz")
+        self._filt_rate_spin.setFixedWidth(100)
+        self._filt_rate_spin.setFont(QFont("Consolas", 9))
+        layout.addWidget(self._filt_rate_spin, 0, 3)
+
+        # Row 1: EMA checkbox + alpha
+        self._filt_ema_check = QCheckBox("EMA")
+        self._filt_ema_check.setStyleSheet(
+            "QCheckBox { color: #00ccff; font-weight: bold; }")
+        self._filt_ema_check.setChecked(True)
+        layout.addWidget(self._filt_ema_check, 1, 0)
+        lbl_alpha = QLabel("Alpha:")
+        lbl_alpha.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.addWidget(lbl_alpha, 1, 1)
+        self._filt_ema_alpha = QSpinBox()
+        self._filt_ema_alpha.setRange(0, 255)
+        self._filt_ema_alpha.setValue(200)
+        self._filt_ema_alpha.setFixedWidth(70)
+        self._filt_ema_alpha.setFont(QFont("Consolas", 9))
+        layout.addWidget(self._filt_ema_alpha, 1, 2)
+
+        # Row 2: SMA checkbox + window
+        self._filt_sma_check = QCheckBox("SMA")
+        self._filt_sma_check.setStyleSheet(
+            "QCheckBox { color: #66ff99; font-weight: bold; }")
+        self._filt_sma_check.setChecked(True)
+        layout.addWidget(self._filt_sma_check, 2, 0)
+        lbl_win = QLabel("Window:")
+        lbl_win.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.addWidget(lbl_win, 2, 1)
+        self._filt_sma_window = QSpinBox()
+        self._filt_sma_window.setRange(0, 32)
+        self._filt_sma_window.setValue(8)
+        self._filt_sma_window.setFixedWidth(70)
+        self._filt_sma_window.setFont(QFont("Consolas", 9))
+        self._filt_sma_window.setToolTip("0 = speed-adaptive (auto)")
+        layout.addWidget(self._filt_sma_window, 2, 2)
+        adapt_lbl = QLabel("(0 = adaptive)")
+        adapt_lbl.setStyleSheet("color: #888; font-size: 9px;")
+        layout.addWidget(adapt_lbl, 2, 3)
+
+        # Row 3: Padé sharpener checkbox + gain + max correction
+        self._filt_pade_check = QCheckBox("Padé")
+        self._filt_pade_check.setStyleSheet(
+            "QCheckBox { color: #ffcc00; font-weight: bold; }")
+        self._filt_pade_check.setChecked(True)
+        self._filt_pade_check.setToolTip(
+            "Padé [1/1] approximant lag compensation.\n"
+            "Removes averaging blur from EMA/SMA output.")
+        layout.addWidget(self._filt_pade_check, 3, 0)
+
+        lbl_gain = QLabel("Gain %:")
+        lbl_gain.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.addWidget(lbl_gain, 3, 1)
+        self._filt_pade_gain = QSpinBox()
+        self._filt_pade_gain.setRange(1, 100)
+        self._filt_pade_gain.setValue(25)
+        self._filt_pade_gain.setSuffix("%")
+        self._filt_pade_gain.setFixedWidth(70)
+        self._filt_pade_gain.setFont(QFont("Consolas", 9))
+        self._filt_pade_gain.setToolTip("Correction strength (lower = less overshoot)")
+        layout.addWidget(self._filt_pade_gain, 3, 2)
+
+        # Row 4: Padé max correction
+        lbl_max = QLabel("Max Corr:")
+        lbl_max.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.addWidget(lbl_max, 4, 1)
+        self._filt_pade_max = QSpinBox()
+        self._filt_pade_max.setRange(1, 255)
+        self._filt_pade_max.setValue(50)
+        self._filt_pade_max.setSuffix(" tps")
+        self._filt_pade_max.setFixedWidth(80)
+        self._filt_pade_max.setFont(QFont("Consolas", 9))
+        self._filt_pade_max.setToolTip("Max absolute correction per sample (clamps spikes)")
+        layout.addWidget(self._filt_pade_max, 4, 2)
+
+        # Row 5: Butterworth 2nd-order IIR low-pass
+        self._filt_biquad_check = QCheckBox("Butterworth")
+        self._filt_biquad_check.setStyleSheet(
+            "QCheckBox { color: #ff9966; font-weight: bold; }")
+        self._filt_biquad_check.setChecked(True)
+        self._filt_biquad_check.setToolTip(
+            "2nd-order Butterworth IIR low-pass filter.\n"
+            "Removes high-frequency noise with flat passband.")
+        layout.addWidget(self._filt_biquad_check, 5, 0)
+        lbl_bq_cut = QLabel("Cutoff:")
+        lbl_bq_cut.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.addWidget(lbl_bq_cut, 5, 1)
+        self._filt_biquad_cutoff = QSpinBox()
+        self._filt_biquad_cutoff.setRange(1, 50)
+        self._filt_biquad_cutoff.setValue(5)
+        self._filt_biquad_cutoff.setSuffix(" Hz")
+        self._filt_biquad_cutoff.setFixedWidth(80)
+        self._filt_biquad_cutoff.setFont(QFont("Consolas", 9))
+        self._filt_biquad_cutoff.setToolTip("Cutoff frequency (lower = smoother, more lag)")
+        layout.addWidget(self._filt_biquad_cutoff, 5, 2)
+
+        # Row 6: Notch (band-reject) filter
+        self._filt_notch_check = QCheckBox("Notch")
+        self._filt_notch_check.setStyleSheet(
+            "QCheckBox { color: #cc99ff; font-weight: bold; }")
+        self._filt_notch_check.setToolTip(
+            "Band-reject (notch) filter.\n"
+            "Removes a specific resonance frequency.")
+        layout.addWidget(self._filt_notch_check, 6, 0)
+        lbl_nt_ctr = QLabel("Center:")
+        lbl_nt_ctr.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.addWidget(lbl_nt_ctr, 6, 1)
+        self._filt_notch_center = QSpinBox()
+        self._filt_notch_center.setRange(1, 50)
+        self._filt_notch_center.setValue(25)
+        self._filt_notch_center.setSuffix(" Hz")
+        self._filt_notch_center.setFixedWidth(80)
+        self._filt_notch_center.setFont(QFont("Consolas", 9))
+        self._filt_notch_center.setToolTip("Center frequency to reject")
+        layout.addWidget(self._filt_notch_center, 6, 2)
+
+        # Row 7: Notch Q factor
+        lbl_nt_q = QLabel("Q (x10):")
+        lbl_nt_q.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.addWidget(lbl_nt_q, 7, 1)
+        self._filt_notch_q = QSpinBox()
+        self._filt_notch_q.setRange(1, 100)
+        self._filt_notch_q.setValue(50)
+        self._filt_notch_q.setFixedWidth(70)
+        self._filt_notch_q.setFont(QFont("Consolas", 9))
+        self._filt_notch_q.setToolTip("Q factor x10 (higher = narrower notch, 50 = Q=5.0)")
+        layout.addWidget(self._filt_notch_q, 7, 2)
+
+        # Row 8: Holt's double exponential smoothing
+        self._filt_holt_check = QCheckBox("Holt")
+        self._filt_holt_check.setStyleSheet(
+            "QCheckBox { color: #ff66cc; font-weight: bold; }")
+        self._filt_holt_check.setToolTip(
+            "Holt's double exponential smoothing.\n"
+            "Tracks level + trend for smooth prediction.")
+        layout.addWidget(self._filt_holt_check, 8, 0)
+        lbl_h_a = QLabel("Alpha:")
+        lbl_h_a.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.addWidget(lbl_h_a, 8, 1)
+        self._filt_holt_alpha = QSpinBox()
+        self._filt_holt_alpha.setRange(0, 255)
+        self._filt_holt_alpha.setValue(51)
+        self._filt_holt_alpha.setFixedWidth(70)
+        self._filt_holt_alpha.setFont(QFont("Consolas", 9))
+        self._filt_holt_alpha.setToolTip("Level smoothing (0-255, lower = smoother)")
+        layout.addWidget(self._filt_holt_alpha, 8, 2)
+
+        # Row 9: Holt beta
+        lbl_h_b = QLabel("Beta:")
+        lbl_h_b.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.addWidget(lbl_h_b, 9, 1)
+        self._filt_holt_beta = QSpinBox()
+        self._filt_holt_beta.setRange(0, 255)
+        self._filt_holt_beta.setValue(13)
+        self._filt_holt_beta.setFixedWidth(70)
+        self._filt_holt_beta.setFont(QFont("Consolas", 9))
+        self._filt_holt_beta.setToolTip("Trend smoothing (0-255, lower = smoother trend)")
+        layout.addWidget(self._filt_holt_beta, 9, 2)
+
+        # Row 10: Buttons
+        btn_row = QHBoxLayout()
+        self._filt_apply_btn = QPushButton("Apply")
+        self._filt_apply_btn.setFixedWidth(70)
+        self._filt_apply_btn.clicked.connect(self._on_filter_apply)
+        btn_row.addWidget(self._filt_apply_btn)
+
+        self._filt_save_btn = QPushButton("Save to Flash")
+        self._filt_save_btn.setFixedWidth(100)
+        self._filt_save_btn.clicked.connect(self._on_filter_save)
+        btn_row.addWidget(self._filt_save_btn)
+
+        self._filt_reset_btn = QPushButton("Reset")
+        self._filt_reset_btn.setFixedWidth(60)
+        self._filt_reset_btn.clicked.connect(self._on_filter_reset)
+        btn_row.addWidget(self._filt_reset_btn)
+
+        btn_row.addStretch()
+        layout.addLayout(btn_row, 10, 0, 1, 4)
+
+        layout.setColumnStretch(3, 1)
+        return group
+
+    @Slot()
+    def _on_filter_apply(self):
+        """Send all filter settings to firmware."""
+        window = self._filt_window_spin.value()
+        self.enc_filter_command.emit(f"CTRL:ENC:FILT:WINDOW {window}")
+        ema_en = 1 if self._filt_ema_check.isChecked() else 0
+        alpha = self._filt_ema_alpha.value()
+        self.enc_filter_command.emit(f"CTRL:ENC:FILT:EMA {ema_en} {alpha}")
+        sma_en = 1 if self._filt_sma_check.isChecked() else 0
+        win = self._filt_sma_window.value()
+        self.enc_filter_command.emit(f"CTRL:ENC:FILT:SMA {sma_en} {win}")
+        pade_en = 1 if self._filt_pade_check.isChecked() else 0
+        pade_gain = self._filt_pade_gain.value()
+        pade_max = self._filt_pade_max.value()
+        self.enc_filter_command.emit(
+            f"CTRL:ENC:FILT:PADE {pade_en} {pade_gain} {pade_max}")
+        bq_en = 1 if self._filt_biquad_check.isChecked() else 0
+        bq_cut = self._filt_biquad_cutoff.value()
+        self.enc_filter_command.emit(f"CTRL:ENC:FILT:BIQUAD {bq_en} {bq_cut}")
+        nt_en = 1 if self._filt_notch_check.isChecked() else 0
+        nt_ctr = self._filt_notch_center.value()
+        nt_q = self._filt_notch_q.value()
+        self.enc_filter_command.emit(
+            f"CTRL:ENC:FILT:NOTCH {nt_en} {nt_ctr} {nt_q}")
+        holt_en = 1 if self._filt_holt_check.isChecked() else 0
+        holt_a = self._filt_holt_alpha.value()
+        holt_b = self._filt_holt_beta.value()
+        self.enc_filter_command.emit(
+            f"CTRL:ENC:FILT:HOLT {holt_en} {holt_a} {holt_b}")
+        rate = self._filt_rate_spin.value()
+        self.enc_filter_command.emit(f"CTRL:ENC:FILT:RATE {rate}")
+
+    @Slot()
+    def _on_filter_save(self):
+        """Persist current filter config to flash."""
+        self._on_filter_apply()
+        self.enc_filter_command.emit("CTRL:ENC:FILT:SAVE")
+
+    @Slot()
+    def _on_filter_reset(self):
+        """Reset filter config to defaults."""
+        self.enc_filter_command.emit("CTRL:ENC:FILT:RESET")
+        # Reset local controls to defaults
+        self._filt_window_spin.setValue(40)
+        self._filt_rate_spin.setValue(1000)
+        self._filt_ema_check.setChecked(True)
+        self._filt_ema_alpha.setValue(200)
+        self._filt_sma_check.setChecked(True)
+        self._filt_sma_window.setValue(8)
+        self._filt_pade_check.setChecked(True)
+        self._filt_pade_gain.setValue(25)
+        self._filt_pade_max.setValue(50)
+        self._filt_biquad_check.setChecked(True)
+        self._filt_biquad_cutoff.setValue(5)
+        self._filt_notch_check.setChecked(False)
+        self._filt_notch_center.setValue(25)
+        self._filt_notch_q.setValue(50)
+        self._filt_holt_check.setChecked(False)
+        self._filt_holt_alpha.setValue(51)
+        self._filt_holt_beta.setValue(13)
+
+    @Slot(dict)
+    def update_filter_config(self, data: dict):
+        """Update filter controls from firmware query response."""
+        self._filt_window_spin.setValue(data.get("meas_window_ms", 40))
+        self._filt_rate_spin.setValue(data.get("sample_rate_hz", 1000))
+        self._filt_ema_check.setChecked(data.get("ema_enabled", True))
+        self._filt_ema_alpha.setValue(data.get("ema_alpha", 200))
+        self._filt_sma_check.setChecked(data.get("sma_enabled", True))
+        self._filt_sma_window.setValue(data.get("sma_window", 8))
+        self._filt_pade_check.setChecked(data.get("pade_enabled", True))
+        self._filt_pade_gain.setValue(data.get("pade_gain", 25))
+        self._filt_pade_max.setValue(data.get("pade_max_corr", 50))
+        self._filt_biquad_check.setChecked(data.get("biquad_enabled", True))
+        self._filt_biquad_cutoff.setValue(data.get("biquad_cutoff_hz", 5))
+        self._filt_notch_check.setChecked(data.get("notch_enabled", False))
+        self._filt_notch_center.setValue(data.get("notch_center_hz", 25))
+        self._filt_notch_q.setValue(data.get("notch_q10", 50))
+        self._filt_holt_check.setChecked(data.get("holt_enabled", False))
+        self._filt_holt_alpha.setValue(data.get("holt_alpha", 51))
+        self._filt_holt_beta.setValue(data.get("holt_beta", 13))
 
     def _create_status_group(self) -> QGroupBox:
         """Create status indicators group."""
@@ -332,7 +627,7 @@ class TelemetryPanel(QWidget):
             speed = motor.get("speed", motor.get("spd"))
             if speed is not None:
                 self._speed_label.setText(f"{speed:,}")
-                self._speed_bar.setValue(min(abs(speed), 100000))
+                self._speed_bar.setValue(min(abs(speed), self._speed_bar.maximum()))
             busy = motor.get("busy")
             if busy is not None:
                 self._set_indicator_active(self._busy_indicator, busy, "#ff9900")
@@ -379,6 +674,17 @@ class TelemetryPanel(QWidget):
             else:
                 self._revs_label.setText("---")
                 self._rpm_label.setText("---")
+
+            # Velocity quality indicator
+            vel_quality = encoder.get("vel_quality")
+            if vel_quality is not None:
+                vq_names = {0: "GOOD", 1: "LOW", 2: "STALE", 3: "INVALID"}
+                vq_colors = {0: "#00aa00", 1: "#ccaa44", 2: "#ff6633", 3: "#ff0000"}
+                vq_str = vq_names.get(vel_quality, "?")
+                vq_color = vq_colors.get(vel_quality, "#888")
+                self._vel_quality_label.setText(vq_str)
+                self._vel_quality_label.setStyleSheet(
+                    f"color: {vq_color}; font-weight: bold;")
 
             index_seen = encoder.get("index_seen", encoder.get("idx"))
             if index_seen is not None:
@@ -449,6 +755,12 @@ class TelemetryPanel(QWidget):
             lines.append(f"Tick: {tick}")
         self._raw_label.setText("\n".join(lines) if lines else "No data")
 
+    @Slot(int)
+    def set_max_speed(self, value: int):
+        """Update speed bar range from Driver panel's MAX SPD."""
+        value = max(1, value)
+        self._speed_bar.setMaximum(value)
+
     @Slot()
     def clear(self):
         """Clear all telemetry displays."""
@@ -460,6 +772,9 @@ class TelemetryPanel(QWidget):
         self._revolutions_label.setText("---")
         self._revs_label.setText("---")
         self._rpm_label.setText("---")
+
+        self._vel_quality_label.setText("---")
+        self._vel_quality_label.setStyleSheet("")
 
         self._index_indicator.setText("NOT SEEN")
         self._index_indicator.setStyleSheet(
@@ -486,6 +801,25 @@ class TelemetryPanel(QWidget):
         self._watchdog_label.setText("OFF")
 
         self._raw_label.setText("No data")
+
+        # Reset encoder filter controls
+        self._filt_window_spin.setValue(40)
+        self._filt_rate_spin.setValue(1000)
+        self._filt_ema_check.setChecked(True)
+        self._filt_ema_alpha.setValue(200)
+        self._filt_sma_check.setChecked(True)
+        self._filt_sma_window.setValue(8)
+        self._filt_pade_check.setChecked(True)
+        self._filt_pade_gain.setValue(25)
+        self._filt_pade_max.setValue(50)
+        self._filt_biquad_check.setChecked(True)
+        self._filt_biquad_cutoff.setValue(5)
+        self._filt_notch_check.setChecked(False)
+        self._filt_notch_center.setValue(25)
+        self._filt_notch_q.setValue(50)
+        self._filt_holt_check.setChecked(False)
+        self._filt_holt_alpha.setValue(51)
+        self._filt_holt_beta.setValue(13)
 
     def update_encoder_data(self, raw: str | None, error: str | None = None):
         """Update encoder display from ENC command response."""

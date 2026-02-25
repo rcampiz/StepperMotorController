@@ -31,6 +31,8 @@ from gui.protection_panel import ProtectionPanel
 from gui.stepmode_panel import StepModePanel
 from gui.graph_panel import GraphPanel
 from gui.display_panel import DisplayPanel
+from gui.motion_panel import MotionPanel
+from gui.sysid_panel import SysIdPanel
 from gui.rle_codec import encode_rle_rgb565
 from gui.serial_worker import SerialThread, QueuedCommand, CommandTag
 from gui.image_loader import LCD_WIDTH, LCD_HEIGHT
@@ -101,6 +103,12 @@ class MainWindow(QMainWindow):
 
         self._graph_panel = GraphPanel()
         self._right_tabs.addTab(self._graph_panel, "Telemetry Graphs")
+
+        self._motion_panel = MotionPanel()
+        self._right_tabs.addTab(self._motion_panel, "Motion")
+
+        self._sysid_panel = SysIdPanel()
+        self._right_tabs.addTab(self._sysid_panel, "System ID")
 
         self._display_panel = DisplayPanel()
         self._right_tabs.addTab(self._display_panel, "Display")
@@ -207,6 +215,7 @@ class MainWindow(QMainWindow):
         self._driver_panel.kval_apply_requested.connect(self._on_kval_apply)
         self._driver_panel.param_apply_requested.connect(self._on_param_apply)
         self._driver_panel.maxspd_changed.connect(self._motor_panel.set_max_speed)
+        self._driver_panel.maxspd_changed.connect(self._telemetry_panel.set_max_speed)
 
         # Protection panel
         self._protection_panel.protection_apply_requested.connect(
@@ -218,9 +227,18 @@ class MainWindow(QMainWindow):
             self._on_stepmode_apply)
         self._stepmode_panel.refresh_requested.connect(self._on_refresh_params)
 
-        # Graph panel firmware filter
-        self._graph_panel.firmware_filter_changed.connect(
-            self._on_enc_filter_changed)
+        # Motion panel commands
+        self._motion_panel.command_requested.connect(self._send_command)
+
+        # System ID panel commands
+        self._sysid_panel.command_requested.connect(self._send_command)
+        self._sysid_panel.tagged_command_requested.connect(
+            self._on_sysid_tagged_command)
+        self._sysid_panel.gains_applied.connect(self._refresh_trim_config)
+
+        # Telemetry panel encoder filter commands
+        self._telemetry_panel.enc_filter_command.connect(
+            self._on_enc_filter_scpi)
 
         # Display panel image transfer
         self._display_panel.image_send_requested.connect(
@@ -421,11 +439,19 @@ class MainWindow(QMainWindow):
             self._serial_thread.worker.queue_command(
                 QueuedCommand("EVENT_ENABLE", CommandTag.GENERIC))
 
-            # Restore saved firmware filter settings
-            fw_filter_cmd = self._graph_panel.get_firmware_filter_command()
-            if fw_filter_cmd != "NONE":
-                self._serial_thread.send_command(
-                    f"ENC_FILTER {fw_filter_cmd}")
+            # Query motor/encoder config for Motion panel unit conversion
+            for cmd in ("DRV:STEP_MODE?", "DRV:FULL_STEPS?",
+                        "DRV:ENC_PPR?", "SYST:DELAY?"):
+                self._serial_thread.worker.queue_command(
+                    QueuedCommand(cmd, CommandTag.REFRESH_DRV_CONFIG))
+
+            # Query trim gains for Motion panel tuning controls
+            self._serial_thread.worker.queue_command(
+                QueuedCommand("CTRL:TRIM?", CommandTag.REFRESH_PID_CONFIG))
+
+            # Query encoder filter config to populate Dashboard controls
+            self._serial_thread.worker.queue_command(
+                QueuedCommand("CTRL:ENC:FILT?", CommandTag.REFRESH_ENC_FILTER))
 
     @Slot()
     def _on_disconnected(self):
@@ -445,6 +471,15 @@ class MainWindow(QMainWindow):
         self._protection_panel.clear()
         self._stepmode_panel.clear()
         self._graph_panel.clear()
+        self._motion_panel.clear()
+
+    @Slot()
+    def _refresh_trim_config(self):
+        """Re-query trim gains so the motion panel reflects applied changes."""
+        if not self._serial_thread:
+            return
+        self._serial_thread.worker.queue_command(
+            QueuedCommand("CTRL:TRIM?", CommandTag.REFRESH_PID_CONFIG))
 
     @Slot(str)
     def _send_command(self, command: str):
@@ -459,8 +494,26 @@ class MainWindow(QMainWindow):
         elif command == "FORCE_CLEAR_FAULT":
             self._serial_thread.worker.queue_command(
                 QueuedCommand("FORCE_CLEAR_FAULT", CommandTag.CLEAR_FAULT))
+        elif command.startswith("CTRL:MODE"):
+            self._serial_thread.worker.queue_command(
+                QueuedCommand(command, CommandTag.SET_CTRL_MODE))
+        elif (command.startswith("CTRL:TRIM:") or
+              command.startswith("CTRL:PID:")):
+            self._serial_thread.worker.queue_command(
+                QueuedCommand(command, CommandTag.APPLY_PID))
         else:
             self._serial_thread.send_command(command)
+
+    def _on_sysid_tagged_command(self, command: str, tag_name: str):
+        """Send a tagged command from the SysIdPanel."""
+        if not self._serial_thread:
+            return
+        tag = CommandTag[tag_name]
+        multiline = (tag_name == "SYSID_DATA")
+        max_lines = 50 if multiline else 20
+        self._serial_thread.worker.queue_command(
+            QueuedCommand(command, tag, multiline=multiline,
+                          max_lines=max_lines))
 
     @Slot()
     def _on_refresh_params(self):
@@ -513,10 +566,11 @@ class MainWindow(QMainWindow):
                 QueuedCommand("MCONFIG_APPLY", CommandTag.APPLY_PARAMS))
 
     @Slot(str)
-    def _on_enc_filter_changed(self, filter_cmd: str):
-        """Send ENC_FILTER command with type + param."""
+    def _on_enc_filter_scpi(self, command: str):
+        """Send encoder filter SCPI command from telemetry panel."""
         if self._serial_thread:
-            self._serial_thread.send_command(f"ENC_FILTER {filter_cmd}")
+            self._serial_thread.worker.queue_command(
+                QueuedCommand(command, CommandTag.APPLY_ENC_FILTER))
 
     # Rows per band for chunked bitmap transfer.  Each band is a separate
     # DISP_BITMAP_RLE command so heartbeats can flow between bands.
@@ -730,6 +784,9 @@ class MainWindow(QMainWindow):
             if tag == CommandTag.CLEAR_FAULT.name:
                 self._motor_panel.show_fault_error(
                     f"Cannot clear: {response.error_message}")
+            # Mode change failure — revert combo
+            if tag == CommandTag.SET_CTRL_MODE.name:
+                self._motion_panel.update_mode_response(False, {})
             # Flash operation failures
             if tag in (CommandTag.FLASH_UPLOAD_SLOT.name,
                        CommandTag.FLASH_SHOW.name,
@@ -754,6 +811,7 @@ class MainWindow(QMainWindow):
             self._telemetry_panel.update_motor_config(response.raw)
             self._protection_panel.update_protection_params(response.raw)
             self._stepmode_panel.update_step_mode(response.raw)
+            self._motion_panel.update_mconfig(response.raw)
 
         elif tag == CommandTag.SET_FORMAT.name:
             self._status_bar.showMessage("Format set", 2000)
@@ -828,6 +886,48 @@ class MainWindow(QMainWindow):
                 True, f"FLASH_TEST PASSED\n\n{msg}")
             self._status_bar.showMessage("Flash diagnostics passed", 5000)
 
+        elif tag == CommandTag.REFRESH_DRV_CONFIG.name:
+            if response.data:
+                self._motion_panel.update_drv_config(response.data)
+                self._motor_panel.update_drv_config(response.data)
+                self._graph_panel.update_drv_config(response.data)
+
+        elif tag == CommandTag.REFRESH_PID_CONFIG.name:
+            if response.data:
+                self._motion_panel.update_pid_config(response.data)
+
+        elif tag == CommandTag.SET_CTRL_MODE.name:
+            if response.success:
+                self._status_bar.showMessage("Control mode set", 2000)
+                self._motion_panel.update_mode_response(True, response.data or {})
+            else:
+                self._motion_panel.update_mode_response(False, {})
+
+        elif tag == CommandTag.APPLY_PID.name:
+            self._status_bar.showMessage("Trim config updated", 2000)
+
+        elif tag == CommandTag.SYSID_START.name:
+            self._sysid_panel.on_sysid_start_response(
+                response.success, response.data)
+
+        elif tag == CommandTag.SYSID_STATUS.name:
+            self._sysid_panel.on_sysid_status_response(
+                response.success, response.data or response.raw)
+
+        elif tag == CommandTag.SYSID_DATA.name:
+            self._sysid_panel.on_sysid_data_response(
+                response.success, response.raw)
+
+        elif tag == CommandTag.SYSID_ABORT.name:
+            self._status_bar.showMessage("SYSID aborted", 2000)
+
+        elif tag == CommandTag.REFRESH_ENC_FILTER.name:
+            if response.data:
+                self._telemetry_panel.update_filter_config(response.data)
+
+        elif tag == CommandTag.APPLY_ENC_FILTER.name:
+            self._status_bar.showMessage("Encoder filter updated", 2000)
+
         else:  # GENERIC
             self._status_bar.showMessage(f"OK: {command}", 2000)
             self._telemetry_panel.show_raw_response(command, response.raw)
@@ -837,6 +937,7 @@ class MainWindow(QMainWindow):
         """Handle telemetry data from worker polling."""
         self._telemetry_panel.update_data(data)
         self._graph_panel.update_data(data)
+        self._motion_panel.update_telemetry(data)
         self.status_updated.emit(data)
 
         # Update motor panel state from telemetry
@@ -942,6 +1043,7 @@ class MainWindow(QMainWindow):
     def _on_heartbeat_ack(self, data: dict):
         """Handle heartbeat ACK from worker — update link health display."""
         self._telemetry_panel.update_link_health(data)
+        self._motion_panel.update_link_health(data)
 
     @Slot()
     def _on_heartbeat_timeout(self):

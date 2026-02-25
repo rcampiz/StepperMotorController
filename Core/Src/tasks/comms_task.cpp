@@ -289,7 +289,11 @@ void CommsTask_GetHeartbeatStatus(
 void CommsTask_ClearCommsTimeout()
 {
     s_commsTimedOut = false;
-    s_heartbeatTimeoutMs = 0;
+    // Reset timer so watchdog doesn't fire during recovery,
+    // but keep s_heartbeatTimeoutMs so watchdog stays armed.
+    // Client heartbeats are already flowing and will feed the timer.
+    // To actually disable the watchdog, use SET_HEARTBEAT 0.
+    s_lastHeartbeatTick = xTaskGetTickCount();
 }
 
 // =========================================================================

@@ -2,22 +2,26 @@
 Real-time graph panel for motor and encoder telemetry.
 
 Plots motor speed and encoder velocity over time using pyqtgraph.
-Provides configurable multi-type filtering for both firmware and display sides.
+Provides configurable display-side filtering for velocity data.
 
 Filter types:
   - None: raw passthrough
   - EMA (Exponential Moving Average): single-pole IIR low-pass, param=alpha (0-255)
   - SMA (Simple Moving Average): FIR window, param=window size (2-32)
-  - Median (display-only): sorted window, returns middle value (spike rejection)
+  - Median: sorted window, returns middle value (spike rejection)
+  - Padé: [1/1] Padé approximant sharpener — removes averaging lag
+
+Firmware-side filtering is configured from the Dashboard tab (Encoder Filter group).
 """
 
 from collections import deque
+import math
 import statistics
 import time
 
 from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
-    QSpinBox, QSlider, QStackedWidget,
+    QSpinBox, QDoubleSpinBox, QSlider, QStackedWidget, QCheckBox,
 )
 from PySide6.QtCore import Slot, Signal, Qt, QSettings
 from PySide6.QtGui import QFont
@@ -31,12 +35,11 @@ pg.setConfigOptions(background="#1e1e1e", foreground="#d4d4d4", antialias=True)
 # Encoder counts per revolution (quadrature mode: PPR × 4)
 ENCODER_CPR = 4000  # 1000 PPR × 4 quadrature
 
-# Filter type names (shared between firmware and display)
-FW_FILTER_TYPES = ["None", "EMA", "SMA"]
-DISP_FILTER_TYPES = ["None", "EMA", "SMA", "Median"]
+# Display-side filter type names
+DISP_FILTER_TYPES = ["None", "EMA", "SMA", "Median", "Padé",
+                     "Butterworth", "Notch", "Holt"]
 
-# Firmware sampling rate for cutoff frequency calculation
-FW_SAMPLE_RATE_HZ = 100  # encoder_task runs at 100 Hz
+# Display-side sampling rate for cutoff frequency calculation
 DISP_SAMPLE_RATE_HZ = 10  # client polls at ~10 Hz
 
 
@@ -153,6 +156,92 @@ class _FilterControlRow(QWidget):
             med_lay.addStretch()
             self._param_stack.addWidget(med_page)
 
+        # Page 4: Padé — no parameters (empty placeholder)
+        if "Padé" in filter_types:
+            self._param_stack.addWidget(QWidget())
+
+        # Page 5: Butterworth — cutoff frequency spinbox
+        if "Butterworth" in filter_types:
+            bq_page = QWidget()
+            bq_lay = QHBoxLayout(bq_page)
+            bq_lay.setContentsMargins(0, 0, 0, 0)
+            bq_lay.setSpacing(4)
+            bq_lbl = QLabel("Cutoff:")
+            bq_lbl.setFont(QFont("Consolas", 9))
+            bq_lay.addWidget(bq_lbl)
+            self._bq_spin = QSpinBox()
+            self._bq_spin.setRange(1, 50)
+            self._bq_spin.setValue(10)
+            self._bq_spin.setSuffix(" Hz")
+            self._bq_spin.setFixedWidth(70)
+            self._bq_spin.setFont(QFont("Consolas", 9))
+            self._bq_spin.valueChanged.connect(lambda _: self._on_param_changed())
+            bq_lay.addWidget(self._bq_spin)
+            bq_lay.addStretch()
+            self._param_stack.addWidget(bq_page)
+
+        # Page 6: Notch — center Hz + Q spinboxes
+        if "Notch" in filter_types:
+            nt_page = QWidget()
+            nt_lay = QHBoxLayout(nt_page)
+            nt_lay.setContentsMargins(0, 0, 0, 0)
+            nt_lay.setSpacing(4)
+            nt_ctr_lbl = QLabel("Ctr:")
+            nt_ctr_lbl.setFont(QFont("Consolas", 9))
+            nt_lay.addWidget(nt_ctr_lbl)
+            self._nt_center_spin = QSpinBox()
+            self._nt_center_spin.setRange(1, 50)
+            self._nt_center_spin.setValue(25)
+            self._nt_center_spin.setSuffix(" Hz")
+            self._nt_center_spin.setFixedWidth(70)
+            self._nt_center_spin.setFont(QFont("Consolas", 9))
+            self._nt_center_spin.valueChanged.connect(lambda _: self._on_param_changed())
+            nt_lay.addWidget(self._nt_center_spin)
+            nt_q_lbl = QLabel("Q:")
+            nt_q_lbl.setFont(QFont("Consolas", 9))
+            nt_lay.addWidget(nt_q_lbl)
+            self._nt_q_spin = QDoubleSpinBox()
+            self._nt_q_spin.setRange(0.1, 10.0)
+            self._nt_q_spin.setValue(5.0)
+            self._nt_q_spin.setSingleStep(0.5)
+            self._nt_q_spin.setFixedWidth(60)
+            self._nt_q_spin.setFont(QFont("Consolas", 9))
+            self._nt_q_spin.valueChanged.connect(lambda _: self._on_param_changed())
+            nt_lay.addWidget(self._nt_q_spin)
+            nt_lay.addStretch()
+            self._param_stack.addWidget(nt_page)
+
+        # Page 7: Holt — alpha + beta spinboxes
+        if "Holt" in filter_types:
+            hl_page = QWidget()
+            hl_lay = QHBoxLayout(hl_page)
+            hl_lay.setContentsMargins(0, 0, 0, 0)
+            hl_lay.setSpacing(4)
+            hl_a_lbl = QLabel("α:")
+            hl_a_lbl.setFont(QFont("Consolas", 9))
+            hl_lay.addWidget(hl_a_lbl)
+            self._hl_alpha_spin = QDoubleSpinBox()
+            self._hl_alpha_spin.setRange(0.01, 1.0)
+            self._hl_alpha_spin.setValue(0.20)
+            self._hl_alpha_spin.setSingleStep(0.05)
+            self._hl_alpha_spin.setFixedWidth(60)
+            self._hl_alpha_spin.setFont(QFont("Consolas", 9))
+            self._hl_alpha_spin.valueChanged.connect(lambda _: self._on_param_changed())
+            hl_lay.addWidget(self._hl_alpha_spin)
+            hl_b_lbl = QLabel("β:")
+            hl_b_lbl.setFont(QFont("Consolas", 9))
+            hl_lay.addWidget(hl_b_lbl)
+            self._hl_beta_spin = QDoubleSpinBox()
+            self._hl_beta_spin.setRange(0.01, 1.0)
+            self._hl_beta_spin.setValue(0.05)
+            self._hl_beta_spin.setSingleStep(0.01)
+            self._hl_beta_spin.setFixedWidth(60)
+            self._hl_beta_spin.setFont(QFont("Consolas", 9))
+            self._hl_beta_spin.valueChanged.connect(lambda _: self._on_param_changed())
+            hl_lay.addWidget(self._hl_beta_spin)
+            hl_lay.addStretch()
+            self._param_stack.addWidget(hl_page)
+
         row.addWidget(self._param_stack)
 
         # Description label
@@ -179,6 +268,8 @@ class _FilterControlRow(QWidget):
             return self._sma_spin.value()
         elif ft == "Median":
             return self._med_spin.value()
+        elif ft == "Butterworth":
+            return self._bq_spin.value() if hasattr(self, '_bq_spin') else 10
         return 0
 
     def set_filter(self, filter_type: str, param: int):
@@ -227,6 +318,23 @@ class _FilterControlRow(QWidget):
             duration_ms = win * (1000.0 / self._sample_rate)
             self._desc_label.setText(
                 f"Median filter, {win} samples = {duration_ms:.0f}ms window")
+        elif ft == "Padé":
+            self._desc_label.setText(
+                "Padé [1/1] lag compensator (no params)")
+        elif ft == "Butterworth":
+            cut = self._bq_spin.value() if hasattr(self, '_bq_spin') else 10
+            self._desc_label.setText(
+                f"2nd-order IIR low-pass, cutoff={cut} Hz")
+        elif ft == "Notch":
+            ctr = self._nt_center_spin.value() if hasattr(self, '_nt_center_spin') else 25
+            q = self._nt_q_spin.value() if hasattr(self, '_nt_q_spin') else 5.0
+            self._desc_label.setText(
+                f"Band-reject, center={ctr} Hz, Q={q:.1f}")
+        elif ft == "Holt":
+            a = self._hl_alpha_spin.value() if hasattr(self, '_hl_alpha_spin') else 0.2
+            b = self._hl_beta_spin.value() if hasattr(self, '_hl_beta_spin') else 0.05
+            self._desc_label.setText(
+                f"Double exp. smooth, α={a:.2f}, β={b:.2f}")
 
     def reset(self):
         """Reset to None filter."""
@@ -237,6 +345,16 @@ class _FilterControlRow(QWidget):
         self._sma_spin.setValue(8)
         if hasattr(self, '_med_spin'):
             self._med_spin.setValue(5)
+        if hasattr(self, '_bq_spin'):
+            self._bq_spin.setValue(10)
+        if hasattr(self, '_nt_center_spin'):
+            self._nt_center_spin.setValue(25)
+        if hasattr(self, '_nt_q_spin'):
+            self._nt_q_spin.setValue(5.0)
+        if hasattr(self, '_hl_alpha_spin'):
+            self._hl_alpha_spin.setValue(0.20)
+        if hasattr(self, '_hl_beta_spin'):
+            self._hl_beta_spin.setValue(0.05)
         self._update_description()
         self.blockSignals(False)
 
@@ -246,8 +364,6 @@ class GraphPanel(QWidget):
 
     MAX_POINTS = 600  # ~60 seconds at 0.1s polling
 
-    firmware_filter_changed = Signal(str)  # command string: "EMA 128" / "SMA 8" / "NONE"
-
     def __init__(self, parent=None):
         super().__init__(parent)
 
@@ -255,26 +371,43 @@ class GraphPanel(QWidget):
         self._timestamps = deque(maxlen=self.MAX_POINTS)
         self._motor_speed = deque(maxlen=self.MAX_POINTS)
         self._encoder_velocity = deque(maxlen=self.MAX_POINTS)
+        self._full_steps_per_rev = 200  # Updated from DRV:FULL_STEPS? response
 
         # Display-side filter state
         self._disp_filter_type = "None"
         self._disp_ema_state = 0.0
         self._disp_sma_buf = deque(maxlen=32)
         self._disp_median_buf = deque(maxlen=15)
+        self._disp_pade_history = [0.0, 0.0, 0.0]
+        self._disp_pade_count = 0
+        # Butterworth display-side state (biquad DF2T)
+        self._disp_bq_w0 = 0.0
+        self._disp_bq_w1 = 0.0
+        self._disp_bq_coeffs = None  # (b0, b1, b2, a1, a2) or None
+        # Notch display-side state
+        self._disp_nt_w0 = 0.0
+        self._disp_nt_w1 = 0.0
+        self._disp_nt_coeffs = None
+        # Holt display-side state
+        self._disp_holt_level = 0.0
+        self._disp_holt_trend = 0.0
+        self._disp_holt_init = False
 
         self._setup_ui()
         self._load_filter_settings()
+
+    # Trace definitions: (key, label, color, dash, default_on)
+    TRACE_DEFS = [
+        ("motor_rpm", "Motor RPM",       "#ffcc00", False, True),
+        ("enc_rpm",   "Encoder RPM",     "#00ccff", False, True),
+        ("motor_spd", "Motor steps/s",   "#ff9966", True,  False),
+        ("enc_vel",   "Encoder ticks/s", "#66ff99", True,  False),
+    ]
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(4, 4, 4, 4)
         layout.setSpacing(4)
-
-        # Firmware filter controls
-        self._fw_filter = _FilterControlRow(
-            "FW", FW_FILTER_TYPES, FW_SAMPLE_RATE_HZ)
-        self._fw_filter.filter_changed.connect(self._on_fw_filter_changed)
-        layout.addWidget(self._fw_filter)
 
         # Display filter controls
         self._disp_filter = _FilterControlRow(
@@ -282,70 +415,34 @@ class GraphPanel(QWidget):
         self._disp_filter.filter_changed.connect(self._on_disp_filter_changed)
         layout.addWidget(self._disp_filter)
 
-        # Motor speed plot
-        self._speed_plot = pg.PlotWidget(title="Motor Speed")
-        self._speed_plot.setLabel("left", "Speed", units="steps/s")
-        self._speed_plot.setLabel("bottom", "Time", units="s")
-        self._speed_plot.showGrid(x=True, y=True, alpha=0.3)
-        self._speed_curve = self._speed_plot.plot(
-            pen=pg.mkPen(color="#ffcc00", width=2))
-        layout.addWidget(self._speed_plot)
+        # Trace visibility checkboxes
+        cb_layout = QHBoxLayout()
+        cb_layout.setSpacing(16)
+        self._trace_cbs = {}
+        for key, label, color, _dash, default_on in self.TRACE_DEFS:
+            cb = QCheckBox(label)
+            cb.setChecked(default_on)
+            cb.setStyleSheet(f"QCheckBox {{ color: {color}; font-weight: bold; }}")
+            cb.toggled.connect(self._on_trace_toggled)
+            cb_layout.addWidget(cb)
+            self._trace_cbs[key] = cb
+        cb_layout.addStretch()
+        layout.addLayout(cb_layout)
 
-        # Encoder velocity plot with RPM right-hand axis
-        self._vel_plot = pg.PlotWidget(title="Encoder Velocity")
-        self._vel_plot.setLabel("left", "Velocity", units="ticks/s")
-        self._vel_plot.setLabel("bottom", "Time", units="s")
-        self._vel_plot.showGrid(x=True, y=True, alpha=0.3)
-        self._vel_curve = self._vel_plot.plot(
-            pen=pg.mkPen(color="#00ccff", width=2))
+        # Combined speed / velocity plot
+        self._plot = pg.PlotWidget()
+        self._plot.setLabel("bottom", "Time", units="s")
+        self._plot.showGrid(x=True, y=True, alpha=0.3)
 
-        # RPM right-hand axis (linked ViewBox)
-        self._rpm_axis = pg.AxisItem("right")
-        self._rpm_axis.setLabel("RPM", color="#ff9966")
-        self._vel_plot.plotItem.layout.addItem(self._rpm_axis, 2, 3)
-        self._rpm_vb = pg.ViewBox()
-        self._rpm_axis.linkToView(self._rpm_vb)
-        self._vel_plot.scene().addItem(self._rpm_vb)
-        self._rpm_curve = pg.PlotCurveItem(
-            pen=pg.mkPen(color="#ff9966", width=2, style=pg.QtCore.Qt.DashLine))
-        self._rpm_vb.addItem(self._rpm_curve)
+        self._curves = {}
+        for key, _label, color, dash, default_on in self.TRACE_DEFS:
+            style = Qt.DashLine if dash else Qt.SolidLine
+            curve = self._plot.plot(
+                pen=pg.mkPen(color=color, width=2, style=style))
+            curve.setVisible(default_on)
+            self._curves[key] = curve
 
-        # Keep RPM ViewBox geometry in sync with the main plot
-        self._vel_plot.getViewBox().sigResized.connect(self._sync_rpm_viewbox)
-
-        layout.addWidget(self._vel_plot)
-
-        # Link X axes so zooming/panning stays in sync
-        self._vel_plot.setXLink(self._speed_plot)
-
-    # =========================================================================
-    # Firmware filter
-    # =========================================================================
-
-    @Slot()
-    def _on_fw_filter_changed(self):
-        ft = self._fw_filter.filter_type()
-        param = self._fw_filter.filter_param()
-        if ft == "None":
-            cmd = "NONE"
-        elif ft == "EMA":
-            cmd = f"EMA {param}"
-        elif ft == "SMA":
-            cmd = f"SMA {param}"
-        else:
-            cmd = "NONE"
-        self.firmware_filter_changed.emit(cmd)
-        self._save_filter_settings()
-
-    def get_firmware_filter_command(self) -> str:
-        """Get the current firmware filter as a command string for restore."""
-        ft = self._fw_filter.filter_type()
-        param = self._fw_filter.filter_param()
-        if ft == "EMA":
-            return f"EMA {param}"
-        elif ft == "SMA":
-            return f"SMA {param}"
-        return "NONE"
+        layout.addWidget(self._plot)
 
     # =========================================================================
     # Display filter
@@ -358,6 +455,15 @@ class GraphPanel(QWidget):
         self._disp_ema_state = 0.0
         self._disp_sma_buf.clear()
         self._disp_median_buf.clear()
+        self._disp_pade_history = [0.0, 0.0, 0.0]
+        self._disp_pade_count = 0
+        self._disp_bq_w0 = self._disp_bq_w1 = 0.0
+        self._disp_bq_coeffs = None
+        self._disp_nt_w0 = self._disp_nt_w1 = 0.0
+        self._disp_nt_coeffs = None
+        self._disp_holt_level = 0.0
+        self._disp_holt_trend = 0.0
+        self._disp_holt_init = False
         self._save_filter_settings()
 
     def _apply_display_filter(self, raw_vel: float) -> float:
@@ -391,6 +497,83 @@ class GraphPanel(QWidget):
                 return statistics.median(self._disp_median_buf)
             return raw_vel
 
+        if ft == "Padé":
+            h = self._disp_pade_history
+            h[0], h[1], h[2] = h[1], h[2], raw_vel
+            self._disp_pade_count += 1
+            if self._disp_pade_count < 3:
+                return raw_vel
+            d1 = h[1] - h[0]
+            d2 = h[2] - h[1]
+            curvature = d1 - d2
+            if abs(curvature) < 1e-9:
+                return raw_vel
+            correction = (d1 * d2) / curvature
+            # Conservative defaults for display: 50% gain, clamp ±50
+            correction *= 0.5
+            correction = max(-50.0, min(50.0, correction))
+            return h[1] + correction
+
+        if ft == "Butterworth":
+            cut = self._disp_filter.filter_param()
+            fs = DISP_SAMPLE_RATE_HZ
+            # Recompute coefficients if needed
+            key = ("bq", cut, fs)
+            if self._disp_bq_coeffs is None or getattr(self, '_bq_key', None) != key:
+                K = math.tan(math.pi * cut / fs)
+                K2 = K * K
+                sqrt2 = math.sqrt(2.0)
+                norm = 1.0 / (1.0 + sqrt2 * K + K2)
+                b0 = K2 * norm
+                b1 = 2.0 * b0
+                b2 = b0
+                a1 = 2.0 * (K2 - 1.0) * norm
+                a2 = (1.0 - sqrt2 * K + K2) * norm
+                self._disp_bq_coeffs = (b0, b1, b2, a1, a2)
+                self._bq_key = key
+                self._disp_bq_w0 = self._disp_bq_w1 = 0.0
+            b0, b1, b2, a1, a2 = self._disp_bq_coeffs
+            y = b0 * raw_vel + self._disp_bq_w0
+            self._disp_bq_w0 = b1 * raw_vel - a1 * y + self._disp_bq_w1
+            self._disp_bq_w1 = b2 * raw_vel - a2 * y
+            return y
+
+        if ft == "Notch":
+            ctr = self._disp_filter._nt_center_spin.value() if hasattr(self._disp_filter, '_nt_center_spin') else 25
+            Q = self._disp_filter._nt_q_spin.value() if hasattr(self._disp_filter, '_nt_q_spin') else 5.0
+            fs = DISP_SAMPLE_RATE_HZ
+            key = ("nt", ctr, Q, fs)
+            if self._disp_nt_coeffs is None or getattr(self, '_nt_key', None) != key:
+                w0 = 2.0 * math.pi * ctr / fs
+                alpha = math.sin(w0) / (2.0 * Q)
+                norm = 1.0 / (1.0 + alpha)
+                b0 = norm
+                b1 = -2.0 * math.cos(w0) * norm
+                b2 = norm
+                a1 = -2.0 * math.cos(w0) * norm
+                a2 = (1.0 - alpha) * norm
+                self._disp_nt_coeffs = (b0, b1, b2, a1, a2)
+                self._nt_key = key
+                self._disp_nt_w0 = self._disp_nt_w1 = 0.0
+            b0, b1, b2, a1, a2 = self._disp_nt_coeffs
+            y = b0 * raw_vel + self._disp_nt_w0
+            self._disp_nt_w0 = b1 * raw_vel - a1 * y + self._disp_nt_w1
+            self._disp_nt_w1 = b2 * raw_vel - a2 * y
+            return y
+
+        if ft == "Holt":
+            a = self._disp_filter._hl_alpha_spin.value() if hasattr(self._disp_filter, '_hl_alpha_spin') else 0.2
+            b = self._disp_filter._hl_beta_spin.value() if hasattr(self._disp_filter, '_hl_beta_spin') else 0.05
+            if not self._disp_holt_init:
+                self._disp_holt_level = raw_vel
+                self._disp_holt_trend = 0.0
+                self._disp_holt_init = True
+                return raw_vel
+            prev = self._disp_holt_level
+            self._disp_holt_level = a * raw_vel + (1.0 - a) * (self._disp_holt_level + self._disp_holt_trend)
+            self._disp_holt_trend = b * (self._disp_holt_level - prev) + (1.0 - b) * self._disp_holt_trend
+            return self._disp_holt_level + self._disp_holt_trend
+
         return raw_vel
 
     # =========================================================================
@@ -400,8 +583,6 @@ class GraphPanel(QWidget):
     def _save_filter_settings(self):
         s = QSettings()
         s.beginGroup("filters")
-        s.setValue("fw_type", self._fw_filter.filter_type())
-        s.setValue("fw_param", self._fw_filter.filter_param())
         s.setValue("disp_type", self._disp_filter.filter_type())
         s.setValue("disp_param", self._disp_filter.filter_param())
         s.endGroup()
@@ -409,13 +590,10 @@ class GraphPanel(QWidget):
     def _load_filter_settings(self):
         s = QSettings()
         s.beginGroup("filters")
-        fw_type = s.value("fw_type", "None")
-        fw_param = int(s.value("fw_param", 128))
         disp_type = s.value("disp_type", "None")
         disp_param = int(s.value("disp_param", 128))
         s.endGroup()
 
-        self._fw_filter.set_filter(fw_type, fw_param)
         self._disp_filter.set_filter(disp_type, disp_param)
         self._disp_filter_type = disp_type
 
@@ -423,11 +601,18 @@ class GraphPanel(QWidget):
     # Plot updates
     # =========================================================================
 
-    def _sync_rpm_viewbox(self):
-        """Keep RPM ViewBox aligned with the main encoder plot area."""
-        self._rpm_vb.setGeometry(self._vel_plot.getViewBox().sceneBoundingRect())
-        self._rpm_vb.linkedViewChanged(
-            self._vel_plot.getViewBox(), self._rpm_vb.XAxis)
+    @Slot()
+    def _on_trace_toggled(self):
+        """Show/hide curves based on checkbox state and re-autorange."""
+        for key, cb in self._trace_cbs.items():
+            self._curves[key].setVisible(cb.isChecked())
+        self._plot.enableAutoRange(axis='y')
+
+    @Slot(dict)
+    def update_drv_config(self, data: dict):
+        """Update full_steps_per_rev for RPM conversion on motor speed plot."""
+        if "full_steps_per_rev" in data:
+            self._full_steps_per_rev = data["full_steps_per_rev"]
 
     @Slot(dict)
     def update_data(self, data: dict):
@@ -441,6 +626,9 @@ class GraphPanel(QWidget):
 
         motor = data.get("motor", {})
         speed = motor.get("speed", motor.get("spd", 0)) if isinstance(motor, dict) else 0
+        direction = motor.get("direction", motor.get("dir", 1)) if isinstance(motor, dict) else 1
+        if direction == 0:  # CCW → negative
+            speed = -speed
         self._motor_speed.append(speed)
 
         encoder = data.get("encoder", {})
@@ -450,19 +638,28 @@ class GraphPanel(QWidget):
         filtered_vel = self._apply_display_filter(vel)
         self._encoder_velocity.append(filtered_vel)
 
-        # Update curves
+        # Update all four curves
         ts = list(self._timestamps)
+        spd_list = list(self._motor_speed)
         vel_list = list(self._encoder_velocity)
-        self._speed_curve.setData(ts, list(self._motor_speed))
-        self._vel_curve.setData(ts, vel_list)
 
-        # Update RPM curve (RPM = velocity * 60 / CPR)
-        rpm_list = [v * 60.0 / ENCODER_CPR for v in vel_list]
-        self._rpm_curve.setData(ts, rpm_list)
+        # Motor RPM (steps/s * 60 / full_steps_per_rev)
+        fpr = self._full_steps_per_rev
+        motor_rpm = [v * 60.0 / fpr for v in spd_list]
+        self._curves["motor_rpm"].setData(ts, motor_rpm)
 
-        # Sync X range so RPM axis follows panning
-        self._rpm_vb.setXRange(*self._vel_plot.getViewBox().viewRange()[0],
-                               padding=0)
+        # Encoder RPM (ticks/s * 60 / CPR)
+        enc_rpm = [v * 60.0 / ENCODER_CPR for v in vel_list]
+        self._curves["enc_rpm"].setData(ts, enc_rpm)
+
+        # Motor speed (steps/s)
+        self._curves["motor_spd"].setData(ts, spd_list)
+
+        # Encoder velocity (ticks/s)
+        self._curves["enc_vel"].setData(ts, vel_list)
+
+        # Rolling X window — fixed 60s view, data scrolls from right to left
+        self._plot.setXRange(max(0, t - 60.0), t, padding=0)
 
     @Slot()
     def clear(self):
@@ -471,10 +668,18 @@ class GraphPanel(QWidget):
         self._timestamps.clear()
         self._motor_speed.clear()
         self._encoder_velocity.clear()
-        self._speed_curve.setData([], [])
-        self._vel_curve.setData([], [])
-        self._rpm_curve.setData([], [])
+        for curve in self._curves.values():
+            curve.setData([], [])
         # Reset display filter state
         self._disp_ema_state = 0.0
         self._disp_sma_buf.clear()
         self._disp_median_buf.clear()
+        self._disp_pade_history = [0.0, 0.0, 0.0]
+        self._disp_pade_count = 0
+        self._disp_bq_w0 = self._disp_bq_w1 = 0.0
+        self._disp_bq_coeffs = None
+        self._disp_nt_w0 = self._disp_nt_w1 = 0.0
+        self._disp_nt_coeffs = None
+        self._disp_holt_level = 0.0
+        self._disp_holt_trend = 0.0
+        self._disp_holt_init = False

@@ -18,7 +18,12 @@
 #include "services/motor_config.hpp"
 #include "services/safety_service.hpp"
 #include "services/tick_timer.hpp"
+#include "services/timing_service.hpp"
+#include "services/following_supervisor.hpp"
+#include "services/sysid.hpp"
+#include "services/speed_trim_controller.hpp"
 #include "services/trace.hpp"
+#include "services/unit_conversion.hpp"
 #include "services/flash_image_service.hpp"
 #include "util/crc32.hpp"
 #include "tasks/display_task.hpp"
@@ -328,6 +333,12 @@ void CommandParser::dispatchSystem(const char *suffix, const ParsedCommand &cmd)
   // SYST:ZERO (combined motor + encoder zero)
   else if (strcmp(suffix, "ZERO") == 0) {
     cmdZeroAll();
+  }
+  // SYST:DELAY <ms> / SYST:DELAY?
+  else if (strcmp(suffix, "DELAY") == 0) {
+    cmdSystDelay(cmd);
+  } else if (strcmp(suffix, "DELAY?") == 0) {
+    cmdSystDelayQuery();
   } else {
     respondErr("Unknown SYST command");
   }
@@ -377,6 +388,57 @@ void CommandParser::dispatchCtrl(const char *suffix, const ParsedCommand &cmd) {
     cmdEncDebug();
   } else if (strcmp(suffix, "ENC:FILT") == 0 || strcmp(suffix, "ENC:FILT?") == 0) {
     cmdEncFilter(cmd);
+  } else if (strncmp(suffix, "ENC:FILT:", 9) == 0) {
+    cmdEncFilterSub(suffix + 9, cmd);
+  } else if (strcmp(suffix, "FOLLOW?") == 0) {
+    cmdFollowingError();
+  } else if (strcmp(suffix, "FOLLOW:THRESH?") == 0) {
+    cmdFollowThreshQuery();
+  } else if (strcmp(suffix, "FOLLOW:THRESH") == 0) {
+    cmdFollowThreshSet(cmd);
+  } else if (strcmp(suffix, "FOLLOW:SAVE") == 0) {
+    cmdFollowSave();
+  } else if (strcmp(suffix, "FOLLOW:CLEAR") == 0) {
+    cmdFollowClear();
+  } else if (strcmp(suffix, "TRIM?") == 0) {
+    cmdTrimQuery();
+  } else if (strcmp(suffix, "TRIM:GAINS") == 0) {
+    cmdTrimSetGains(cmd);
+  } else if (strcmp(suffix, "TRIM:LIMITS") == 0) {
+    cmdTrimSetLimits(cmd);
+  } else if (strcmp(suffix, "TRIM:MAXPCT") == 0) {
+    cmdTrimSetMaxPct(cmd);
+  } else if (strcmp(suffix, "TRIM:RESET") == 0) {
+    cmdTrimReset();
+  } else if (strcmp(suffix, "TRIM:SAVE") == 0) {
+    cmdTrimSave();
+  // Legacy PID aliases → route to trim
+  } else if (strcmp(suffix, "PID?") == 0) {
+    cmdPidQuery();
+  } else if (strcmp(suffix, "PID:GAINS") == 0) {
+    cmdPidSetGains(cmd);
+  } else if (strcmp(suffix, "PID:LIMITS") == 0) {
+    cmdPidSetLimits(cmd);
+  } else if (strcmp(suffix, "PID:RESET") == 0) {
+    cmdPidReset();
+  } else if (strcmp(suffix, "PID:SAVE") == 0) {
+    cmdPidSave();
+  } else if (strcmp(suffix, "SYSID:STEP") == 0) {
+    cmdSysIdStep(cmd);
+  } else if (strcmp(suffix, "SYSID:RAMP") == 0) {
+    cmdSysIdRamp(cmd);
+  } else if (strcmp(suffix, "SYSID:SINE") == 0) {
+    cmdSysIdSine(cmd);
+  } else if (strcmp(suffix, "SYSID:TRAPEZOID") == 0) {
+    cmdSysIdTrapezoid(cmd);
+  } else if (strcmp(suffix, "SYSID:RECT") == 0) {
+    cmdSysIdRect(cmd);
+  } else if (strcmp(suffix, "SYSID:STATUS?") == 0) {
+    cmdSysIdStatus();
+  } else if (strcmp(suffix, "SYSID:DATA?") == 0) {
+    cmdSysIdData(cmd);
+  } else if (strcmp(suffix, "SYSID:ABORT") == 0) {
+    cmdSysIdAbort();
   } else {
     respondErr("Unknown CTRL command");
   }
@@ -480,6 +542,24 @@ void CommandParser::dispatchDriver(const char *suffix, const ParsedCommand &cmd)
     cmdMotorConfigStepMode(cmd);
   } else if (strcmp(suffix, "CFG:APPLY") == 0) {
     cmdMotorConfigApply();
+  }
+  // DRV:STEP_MODE <0-7> / DRV:STEP_MODE? (Hi-Z safe)
+  else if (strcmp(suffix, "STEP_MODE") == 0) {
+    cmdDrvStepMode(cmd);
+  } else if (strcmp(suffix, "STEP_MODE?") == 0) {
+    cmdDrvStepModeQuery();
+  }
+  // DRV:FULL_STEPS <n> / DRV:FULL_STEPS?
+  else if (strcmp(suffix, "FULL_STEPS") == 0) {
+    cmdDrvFullSteps(cmd);
+  } else if (strcmp(suffix, "FULL_STEPS?") == 0) {
+    cmdDrvFullStepsQuery();
+  }
+  // DRV:ENC_PPR <n> / DRV:ENC_PPR?
+  else if (strcmp(suffix, "ENC_PPR") == 0) {
+    cmdDrvEncoderPPR(cmd);
+  } else if (strcmp(suffix, "ENC_PPR?") == 0) {
+    cmdDrvEncoderPPRQuery();
   } else {
     respondErr("Unknown DRV command");
   }
@@ -2504,7 +2584,7 @@ void CommandParser::cmdGetStatus() {
     char encCountStr[24];
     i64toa(snap.encoder.count, encCountStr, sizeof(encCountStr));
 
-    char buf[700];
+    char buf[1024];
     snprintf(buf, sizeof(buf),
              "{\"status\":\"ok\",\"command\":\"GET_STATUS\",\"data\":"
              "{\"state\":\"%s\",\"tick\":%lu,\"queue_depth\":%u,"
@@ -2513,7 +2593,13 @@ void CommandParser::cmdGetStatus() {
              "\"cmd_err\":%s,\"ocd\":%s,\"thermal_sd\":%s,"
              "\"thermal_warn\":%s,\"uvlo\":%s,\"stall_a\":%s,\"stall_b\":%s},"
              "\"encoder\":{\"count\":%s,\"velocity\":%ld,\"index_seen\":%s,"
-             "\"revolutions\":%ld,\"index_period_us\":%lu},"
+             "\"revolutions\":%ld,\"index_period_us\":%lu,\"vel_quality\":%u},"
+             "\"control\":{\"following_error\":%ld,\"setpoint\":%ld,"
+             "\"mode\":%u,\"tracking\":%s,"
+             "\"trim_out\":%d,\"p\":%d,\"i\":%d,\"d\":%d,"
+             "\"sup_state\":%u,\"tier\":%u,\"vel_error\":%ld,\"retries\":%u,"
+             "\"base_spd\":%ld,\"trim_spd\":%ld,\"final_spd\":%ld,"
+             "\"trim_frozen\":%u,\"vel_quality\":%u},"
              "\"heartbeat\":{\"enabled\":%s,\"timeout_ms\":%lu,"
              "\"remaining_ms\":%lu,\"timed_out\":%s},"
              "\"mode\":\"%s\",\"encoder_status\":\"%s\",\"error\":%s}}",
@@ -2537,6 +2623,24 @@ void CommandParser::cmdGetStatus() {
              snap.encoder.indexSeen ? "true" : "false",
              static_cast<long>(snap.encoder.revolutions),
              static_cast<unsigned long>(snap.encoder.indexPeriodUs),
+             static_cast<unsigned>(snap.encoder.velocityQuality),
+             static_cast<long>(snap.control.followingError),
+             static_cast<long>(snap.control.setpoint),
+             static_cast<unsigned>(snap.control.mode),
+             snap.control.tracking ? "true" : "false",
+             static_cast<int>(snap.control.pidOutput),
+             static_cast<int>(snap.control.pTerm),
+             static_cast<int>(snap.control.iTerm),
+             static_cast<int>(snap.control.dTerm),
+             static_cast<unsigned>(snap.control.supervisorState),
+             static_cast<unsigned>(snap.control.currentTier),
+             static_cast<long>(snap.control.velError),
+             static_cast<unsigned>(snap.control.retryCount),
+             static_cast<long>(snap.control.baseSpeedRaw),
+             static_cast<long>(snap.control.trimSpeedRaw),
+             static_cast<long>(snap.control.finalSpeedRaw),
+             static_cast<unsigned>(snap.control.trimFrozen),
+             static_cast<unsigned>(snap.control.velQuality),
              hbEnabled ? "true" : "false",
              static_cast<unsigned long>(hbTimeout),
              static_cast<unsigned long>(hbRemaining),
@@ -2850,40 +2954,71 @@ void CommandParser::cmdEncDebug() {
   m_transport.println(buf);
 }
 
-// Apply encoder filter and persist to flash
-static void applyAndPersistFilter(uint8_t type, uint8_t param) {
-  Tasks::EncoderTask_SetFilter(type, param);
-  Services::g_motorConfig.setEncFilter(type, param);
-  Services::g_motorConfig.saveToFlash();
-}
-
 void CommandParser::cmdEncFilter(const ParsedCommand &cmd) {
-  // Query mode: no arguments
+  // Query mode: no arguments → return full filter config
   if (cmd.argCount < 1) {
-    uint8_t type = 0, param = 0;
-    Tasks::EncoderTask_GetFilter(type, param);
-    char buf[64];
+    Tasks::EncoderFilterConfig cfg;
+    Tasks::EncoderTask_GetFilterConfig(cfg);
+    char buf[512];
+    unsigned pGain = (cfg.padeGainPct > 0) ? cfg.padeGainPct : 50;
+    unsigned pMax  = (cfg.padeMaxCorr > 0) ? cfg.padeMaxCorr : 50;
+    unsigned bqCut = (cfg.biquadCutoffHz > 0) ? cfg.biquadCutoffHz : 10;
+    unsigned ntCtr = (cfg.notchCenterHz > 0) ? cfg.notchCenterHz : 25;
+    unsigned ntQ   = (cfg.notchQ10 > 0) ? cfg.notchQ10 : 50;
+    unsigned hAlph = (cfg.holtAlpha > 0) ? cfg.holtAlpha : 51;
+    unsigned hBeta = (cfg.holtBeta > 0) ? cfg.holtBeta : 13;
     if (m_format == ResponseFormat::JSON) {
-      const char *typeName = (type == 1) ? "EMA" : (type == 2) ? "SMA" : "NONE";
       snprintf(buf, sizeof(buf),
-               "{\"filter_type\":\"%s\",\"param\":%u}", typeName, (unsigned)param);
+        "{\"meas_window_ms\":%u,\"sample_rate_hz\":%u,"
+        "\"ema_enabled\":%s,\"ema_alpha\":%u,"
+        "\"sma_enabled\":%s,\"sma_window\":%u,"
+        "\"pade_enabled\":%s,\"pade_gain\":%u,\"pade_max_corr\":%u,"
+        "\"biquad_enabled\":%s,\"biquad_cutoff_hz\":%u,"
+        "\"notch_enabled\":%s,\"notch_center_hz\":%u,\"notch_q10\":%u,"
+        "\"holt_enabled\":%s,\"holt_alpha\":%u,\"holt_beta\":%u}",
+        (unsigned)cfg.measWindowMs,
+        (unsigned)cfg.sampleRateHz,
+        (cfg.filterFlags & Tasks::ENC_FILT_EMA) ? "true" : "false",
+        (unsigned)cfg.emaAlpha,
+        (cfg.filterFlags & Tasks::ENC_FILT_SMA) ? "true" : "false",
+        (unsigned)cfg.smaWindow,
+        (cfg.filterFlags & Tasks::ENC_FILT_PADE) ? "true" : "false",
+        pGain, pMax,
+        (cfg.filterFlags & Tasks::ENC_FILT_BIQUAD) ? "true" : "false",
+        bqCut,
+        (cfg.filterFlags & Tasks::ENC_FILT_NOTCH) ? "true" : "false",
+        ntCtr, ntQ,
+        (cfg.filterFlags & Tasks::ENC_FILT_HOLT) ? "true" : "false",
+        hAlph, hBeta);
       respondJsonOk(m_currentCmd, buf);
     } else {
-      if (type == 1) {
-        snprintf(buf, sizeof(buf), "EMA alpha=%u", (unsigned)param);
-      } else if (type == 2) {
-        snprintf(buf, sizeof(buf), "SMA window=%u", (unsigned)param);
-      } else {
-        snprintf(buf, sizeof(buf), "NONE");
-      }
+      snprintf(buf, sizeof(buf),
+        "window=%ums rate=%uHz EMA=%s alpha=%u SMA=%s window=%u"
+        " PADE=%s gain=%u%% max=%utps BIQUAD=%s cut=%uHz"
+        " NOTCH=%s ctr=%uHz Q=%u.%u HOLT=%s a=%u b=%u",
+        (unsigned)cfg.measWindowMs,
+        (unsigned)cfg.sampleRateHz,
+        (cfg.filterFlags & Tasks::ENC_FILT_EMA) ? "ON" : "OFF",
+        (unsigned)cfg.emaAlpha,
+        (cfg.filterFlags & Tasks::ENC_FILT_SMA) ? "ON" : "OFF",
+        (unsigned)cfg.smaWindow,
+        (cfg.filterFlags & Tasks::ENC_FILT_PADE) ? "ON" : "OFF",
+        pGain, pMax,
+        (cfg.filterFlags & Tasks::ENC_FILT_BIQUAD) ? "ON" : "OFF",
+        bqCut,
+        (cfg.filterFlags & Tasks::ENC_FILT_NOTCH) ? "ON" : "OFF",
+        ntCtr, ntQ / 10, ntQ % 10,
+        (cfg.filterFlags & Tasks::ENC_FILT_HOLT) ? "ON" : "OFF",
+        hAlph, hBeta);
       respondOk(buf);
     }
     return;
   }
 
-  // Check if first arg is a filter type name
+  // Legacy set commands: NONE / EMA <alpha> / SMA <window>
   if (strcmp(cmd.args[0], "NONE") == 0) {
-    applyAndPersistFilter(0, 0);
+    Tasks::EncoderTask_SetFilter(0, 0);
+    Services::g_motorConfig.setEncFilter(0, 0);
     respondOk("NONE");
     return;
   }
@@ -2898,7 +3033,8 @@ void CommandParser::cmdEncFilter(const ParsedCommand &cmd) {
       respondErr("EMA alpha must be 0-255");
       return;
     }
-    applyAndPersistFilter(1, static_cast<uint8_t>(val));
+    Tasks::EncoderTask_SetFilter(1, static_cast<uint8_t>(val));
+    Services::g_motorConfig.setEncFilter(Tasks::ENC_FILT_EMA, static_cast<uint8_t>(val));
     char buf[48];
     snprintf(buf, sizeof(buf), "EMA alpha=%u", (unsigned)val);
     respondOk(buf);
@@ -2915,24 +3051,324 @@ void CommandParser::cmdEncFilter(const ParsedCommand &cmd) {
       respondErr("SMA window must be 2-32");
       return;
     }
-    applyAndPersistFilter(2, static_cast<uint8_t>(val));
+    Tasks::EncoderTask_SetFilter(2, static_cast<uint8_t>(val));
+    Services::g_motorConfig.setEncFilter(Tasks::ENC_FILT_SMA, 0);
+    Services::g_motorConfig.getConfigMutable().encSmaWindow = static_cast<uint8_t>(val);
     char buf[48];
     snprintf(buf, sizeof(buf), "SMA window=%u", (unsigned)val);
     respondOk(buf);
     return;
   }
 
-  // Legacy: bare number treated as EMA alpha (backward compatible)
+  // Legacy: bare number treated as EMA alpha
   long val = strtol(cmd.args[0], nullptr, 10);
   if (val < 0 || val > 255) {
     respondErr("Unknown filter type or alpha out of range (0-255)");
     return;
   }
-
   Tasks::EncoderTask_SetFilter(1, static_cast<uint8_t>(val));
   char buf[48];
   snprintf(buf, sizeof(buf), "EMA alpha=%u", (unsigned)val);
   respondOk(buf);
+}
+
+// CTRL:ENC:FILT:* sub-commands
+void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
+  // CTRL:ENC:FILT:WINDOW <ms>
+  if (strcmp(sub, "WINDOW") == 0) {
+    if (cmd.argCount < 1) {
+      respondErr("WINDOW requires ms (1-255)");
+      return;
+    }
+    long val = strtol(cmd.args[0], nullptr, 10);
+    if (val < 1 || val > 255) {
+      respondErr("Window must be 1-255 ms");
+      return;
+    }
+    Tasks::EncoderFilterConfig cfg;
+    Tasks::EncoderTask_GetFilterConfig(cfg);
+    cfg.measWindowMs = static_cast<uint8_t>(val);
+    Tasks::EncoderTask_SetFilterConfig(cfg);
+    char buf[32];
+    snprintf(buf, sizeof(buf), "window=%ums", (unsigned)val);
+    respondOk(buf);
+    return;
+  }
+
+  // CTRL:ENC:FILT:EMA <0|1> [alpha]
+  if (strcmp(sub, "EMA") == 0) {
+    if (cmd.argCount < 1) {
+      respondErr("EMA requires 0|1 [alpha]");
+      return;
+    }
+    long enable = strtol(cmd.args[0], nullptr, 10);
+    Tasks::EncoderFilterConfig cfg;
+    Tasks::EncoderTask_GetFilterConfig(cfg);
+    if (enable) {
+      cfg.filterFlags |= Tasks::ENC_FILT_EMA;
+      if (cmd.argCount >= 2) {
+        long alpha = strtol(cmd.args[1], nullptr, 10);
+        if (alpha < 0 || alpha > 255) {
+          respondErr("EMA alpha must be 0-255");
+          return;
+        }
+        cfg.emaAlpha = static_cast<uint8_t>(alpha);
+      }
+    } else {
+      cfg.filterFlags &= ~Tasks::ENC_FILT_EMA;
+    }
+    Tasks::EncoderTask_SetFilterConfig(cfg);
+    char buf[48];
+    snprintf(buf, sizeof(buf), "EMA %s alpha=%u",
+             (cfg.filterFlags & Tasks::ENC_FILT_EMA) ? "ON" : "OFF",
+             (unsigned)cfg.emaAlpha);
+    respondOk(buf);
+    return;
+  }
+
+  // CTRL:ENC:FILT:SMA <0|1> [window]
+  if (strcmp(sub, "SMA") == 0) {
+    if (cmd.argCount < 1) {
+      respondErr("SMA requires 0|1 [window]");
+      return;
+    }
+    long enable = strtol(cmd.args[0], nullptr, 10);
+    Tasks::EncoderFilterConfig cfg;
+    Tasks::EncoderTask_GetFilterConfig(cfg);
+    if (enable) {
+      cfg.filterFlags |= Tasks::ENC_FILT_SMA;
+      if (cmd.argCount >= 2) {
+        long win = strtol(cmd.args[1], nullptr, 10);
+        if (win < 0 || win > 32) {
+          respondErr("SMA window must be 0-32");
+          return;
+        }
+        cfg.smaWindow = static_cast<uint8_t>(win);
+      }
+    } else {
+      cfg.filterFlags &= ~Tasks::ENC_FILT_SMA;
+    }
+    Tasks::EncoderTask_SetFilterConfig(cfg);
+    char buf[48];
+    snprintf(buf, sizeof(buf), "SMA %s window=%u",
+             (cfg.filterFlags & Tasks::ENC_FILT_SMA) ? "ON" : "OFF",
+             (unsigned)cfg.smaWindow);
+    respondOk(buf);
+    return;
+  }
+
+  // CTRL:ENC:FILT:PADE <0|1> [gain%] [maxCorr]
+  if (strcmp(sub, "PADE") == 0) {
+    if (cmd.argCount < 1) {
+      respondErr("PADE requires 0|1 [gain% 1-100] [maxCorr 1-255]");
+      return;
+    }
+    long enable = strtol(cmd.args[0], nullptr, 10);
+    Tasks::EncoderFilterConfig cfg;
+    Tasks::EncoderTask_GetFilterConfig(cfg);
+    if (enable) {
+      cfg.filterFlags |= Tasks::ENC_FILT_PADE;
+      if (cmd.argCount >= 2) {
+        long gain = strtol(cmd.args[1], nullptr, 10);
+        if (gain < 1 || gain > 100) {
+          respondErr("Gain must be 1-100%%");
+          return;
+        }
+        cfg.padeGainPct = static_cast<uint8_t>(gain);
+      }
+      if (cmd.argCount >= 3) {
+        long maxC = strtol(cmd.args[2], nullptr, 10);
+        if (maxC < 1 || maxC > 255) {
+          respondErr("MaxCorr must be 1-255 tps");
+          return;
+        }
+        cfg.padeMaxCorr = static_cast<uint8_t>(maxC);
+      }
+    } else {
+      cfg.filterFlags &= ~Tasks::ENC_FILT_PADE;
+    }
+    Tasks::EncoderTask_SetFilterConfig(cfg);
+    char buf[64];
+    snprintf(buf, sizeof(buf), "PADE %s gain=%u%% max=%utps",
+             (cfg.filterFlags & Tasks::ENC_FILT_PADE) ? "ON" : "OFF",
+             (unsigned)((cfg.padeGainPct > 0) ? cfg.padeGainPct : 50),
+             (unsigned)((cfg.padeMaxCorr > 0) ? cfg.padeMaxCorr : 50));
+    respondOk(buf);
+    return;
+  }
+
+  // CTRL:ENC:FILT:BIQUAD <0|1> [cutoffHz]
+  if (strcmp(sub, "BIQUAD") == 0) {
+    if (cmd.argCount < 1) {
+      respondErr("BIQUAD requires 0|1 [cutoff 1-50 Hz]");
+      return;
+    }
+    long enable = strtol(cmd.args[0], nullptr, 10);
+    Tasks::EncoderFilterConfig cfg;
+    Tasks::EncoderTask_GetFilterConfig(cfg);
+    if (enable) {
+      cfg.filterFlags |= Tasks::ENC_FILT_BIQUAD;
+      if (cmd.argCount >= 2) {
+        long cutoff = strtol(cmd.args[1], nullptr, 10);
+        if (cutoff < 1 || cutoff > 50) {
+          respondErr("Cutoff must be 1-50 Hz");
+          return;
+        }
+        cfg.biquadCutoffHz = static_cast<uint8_t>(cutoff);
+      }
+    } else {
+      cfg.filterFlags &= ~Tasks::ENC_FILT_BIQUAD;
+    }
+    Tasks::EncoderTask_SetFilterConfig(cfg);
+    char buf[64];
+    snprintf(buf, sizeof(buf), "BIQUAD %s cutoff=%uHz",
+             (cfg.filterFlags & Tasks::ENC_FILT_BIQUAD) ? "ON" : "OFF",
+             (unsigned)((cfg.biquadCutoffHz > 0) ? cfg.biquadCutoffHz : 10));
+    respondOk(buf);
+    return;
+  }
+
+  // CTRL:ENC:FILT:NOTCH <0|1> [centerHz] [Q×10]
+  if (strcmp(sub, "NOTCH") == 0) {
+    if (cmd.argCount < 1) {
+      respondErr("NOTCH requires 0|1 [center 1-50 Hz] [Q*10 1-100]");
+      return;
+    }
+    long enable = strtol(cmd.args[0], nullptr, 10);
+    Tasks::EncoderFilterConfig cfg;
+    Tasks::EncoderTask_GetFilterConfig(cfg);
+    if (enable) {
+      cfg.filterFlags |= Tasks::ENC_FILT_NOTCH;
+      if (cmd.argCount >= 2) {
+        long center = strtol(cmd.args[1], nullptr, 10);
+        if (center < 1 || center > 50) {
+          respondErr("Center must be 1-50 Hz");
+          return;
+        }
+        cfg.notchCenterHz = static_cast<uint8_t>(center);
+      }
+      if (cmd.argCount >= 3) {
+        long q10 = strtol(cmd.args[2], nullptr, 10);
+        if (q10 < 1 || q10 > 100) {
+          respondErr("Q*10 must be 1-100");
+          return;
+        }
+        cfg.notchQ10 = static_cast<uint8_t>(q10);
+      }
+    } else {
+      cfg.filterFlags &= ~Tasks::ENC_FILT_NOTCH;
+    }
+    Tasks::EncoderTask_SetFilterConfig(cfg);
+    char buf[64];
+    unsigned ctr = (cfg.notchCenterHz > 0) ? cfg.notchCenterHz : 25;
+    unsigned q = (cfg.notchQ10 > 0) ? cfg.notchQ10 : 50;
+    snprintf(buf, sizeof(buf), "NOTCH %s center=%uHz Q=%u.%u",
+             (cfg.filterFlags & Tasks::ENC_FILT_NOTCH) ? "ON" : "OFF",
+             ctr, q / 10, q % 10);
+    respondOk(buf);
+    return;
+  }
+
+  // CTRL:ENC:FILT:HOLT <0|1> [alpha] [beta]
+  if (strcmp(sub, "HOLT") == 0) {
+    if (cmd.argCount < 1) {
+      respondErr("HOLT requires 0|1 [alpha 0-255] [beta 0-255]");
+      return;
+    }
+    long enable = strtol(cmd.args[0], nullptr, 10);
+    Tasks::EncoderFilterConfig cfg;
+    Tasks::EncoderTask_GetFilterConfig(cfg);
+    if (enable) {
+      cfg.filterFlags |= Tasks::ENC_FILT_HOLT;
+      if (cmd.argCount >= 2) {
+        long alpha = strtol(cmd.args[1], nullptr, 10);
+        if (alpha < 0 || alpha > 255) {
+          respondErr("Alpha must be 0-255");
+          return;
+        }
+        cfg.holtAlpha = static_cast<uint8_t>(alpha);
+      }
+      if (cmd.argCount >= 3) {
+        long beta = strtol(cmd.args[2], nullptr, 10);
+        if (beta < 0 || beta > 255) {
+          respondErr("Beta must be 0-255");
+          return;
+        }
+        cfg.holtBeta = static_cast<uint8_t>(beta);
+      }
+    } else {
+      cfg.filterFlags &= ~Tasks::ENC_FILT_HOLT;
+    }
+    Tasks::EncoderTask_SetFilterConfig(cfg);
+    char buf[64];
+    snprintf(buf, sizeof(buf), "HOLT %s alpha=%u beta=%u",
+             (cfg.filterFlags & Tasks::ENC_FILT_HOLT) ? "ON" : "OFF",
+             (unsigned)((cfg.holtAlpha > 0) ? cfg.holtAlpha : 51),
+             (unsigned)((cfg.holtBeta > 0) ? cfg.holtBeta : 13));
+    respondOk(buf);
+    return;
+  }
+
+  // CTRL:ENC:FILT:RATE <hz>
+  if (strcmp(sub, "RATE") == 0) {
+    if (cmd.argCount < 1) {
+      respondErr("RATE requires hz (100-10000)");
+      return;
+    }
+    long val = strtol(cmd.args[0], nullptr, 10);
+    if (val < 100 || val > 10000) {
+      respondErr("Rate must be 100-10000 Hz");
+      return;
+    }
+    Tasks::EncoderFilterConfig cfg;
+    Tasks::EncoderTask_GetFilterConfig(cfg);
+    cfg.sampleRateHz = static_cast<uint16_t>(val);
+    Tasks::EncoderTask_SetFilterConfig(cfg);
+    char buf[32];
+    snprintf(buf, sizeof(buf), "rate=%uHz", (unsigned)val);
+    respondOk(buf);
+    return;
+  }
+
+  // CTRL:ENC:FILT:SAVE
+  if (strcmp(sub, "SAVE") == 0) {
+    Tasks::EncoderFilterConfig cfg;
+    Tasks::EncoderTask_GetFilterConfig(cfg);
+    uint8_t rateDiv = (cfg.sampleRateHz != 1000)
+                    ? static_cast<uint8_t>(cfg.sampleRateHz / 100) : 0;
+    Services::g_motorConfig.setEncFilterFull(
+        cfg.filterFlags, cfg.emaAlpha, cfg.smaWindow,
+        cfg.measWindowMs, rateDiv);
+    if (Services::g_motorConfig.saveToFlash()) {
+      respondOk("Filter config saved");
+    } else {
+      respondErr("Flash write failed");
+    }
+    return;
+  }
+
+  // CTRL:ENC:FILT:RESET
+  if (strcmp(sub, "RESET") == 0) {
+    Tasks::EncoderFilterConfig cfg = {};
+    cfg.filterFlags = Tasks::ENC_FILT_EMA | Tasks::ENC_FILT_SMA
+                    | Tasks::ENC_FILT_PADE | Tasks::ENC_FILT_BIQUAD;
+    cfg.emaAlpha = 200;
+    cfg.smaWindow = 8;
+    cfg.measWindowMs = 40;
+    cfg.sampleRateHz = 1000;
+    cfg.padeGainPct = 25;
+    cfg.padeMaxCorr = 50;
+    cfg.biquadCutoffHz = 5;
+    cfg.notchCenterHz = 0;
+    cfg.notchQ10 = 0;
+    cfg.holtAlpha = 0;
+    cfg.holtBeta = 0;
+    Tasks::EncoderTask_SetFilterConfig(cfg);
+    respondOk("Filter reset to defaults");
+    return;
+  }
+
+  respondErr("Unknown ENC:FILT sub-command");
 }
 
 // ============================================================================
@@ -2998,22 +3434,23 @@ void CommandParser::cmdGetMode() {
 
 void CommandParser::cmdSetMode(const ParsedCommand &cmd) {
   if (cmd.argCount < 1) {
-    respondErr("Usage: SET_MODE <OPEN_LOOP|CLOSED_LOOP>");
+    respondErr("Usage: CTRL:MODE OPEN_LOOP|MONITOR|PID");
     return;
   }
 
   Services::ControlMode mode = Services::parseMode(cmd.args[0]);
 
-  // Attempt to set mode (will fail if CLOSED_LOOP requested without encoder)
+  // Attempt to set mode (will fail if closed-loop requested without encoder)
   if (Services::g_controlMode.setMode(mode)) {
     respondOk(Services::modeToString(mode));
   } else {
-    // Mode change failed
-    if (mode == Services::ControlMode::CLOSED_LOOP) {
+    // Mode change failed — closed-loop modes require encoder READY
+    if (mode != Services::ControlMode::OPEN_LOOP) {
       Services::EncoderStatus encStatus =
           Services::g_controlMode.getEncoderStatus();
-      char buf[64];
-      snprintf(buf, sizeof(buf), "Cannot enter CLOSED_LOOP: encoder %s",
+      char buf[80];
+      snprintf(buf, sizeof(buf), "Cannot enter %s: encoder %s",
+               Services::modeToString(mode),
                Services::encoderStatusToString(encStatus));
       respondErr(buf);
     } else {
@@ -4667,6 +5104,765 @@ void CommandParser::cmdFlashUploadRle(const ParsedCommand &cmd) {
            static_cast<unsigned long>(decodedPixels),
            verify[0], verify[1], verify[2], verify[3]);
   respondOk(okBuf);
+}
+
+// ============================================================================
+// Phase A: Unit model, safety, and infrastructure commands
+// ============================================================================
+
+// DRV:STEP_MODE <0-7> — Hi-Z safe microstep mode change
+void CommandParser::cmdDrvStepMode(const ParsedCommand &cmd) {
+  if (cmd.argCount < 1) {
+    respondErr("Usage: DRV:STEP_MODE <0-7>");
+    return;
+  }
+
+  unsigned long mode = strtoul(cmd.args[0], nullptr, 10);
+  if (mode > 7) {
+    respondErr("Step mode must be 0-7");
+    return;
+  }
+
+  // Check motor is not busy
+  Comms::TelemetrySnapshot snap = Comms::g_telemetry.getSnapshot();
+  if (snap.motor.busy) {
+    if (m_format == ResponseFormat::JSON) {
+      respondJsonErr("DRV:STEP_MODE", "MOTOR_BUSY",
+                     "Motor must be idle to change microstep mode");
+    } else {
+      respondErr("MOTOR_BUSY: Motor must be idle to change microstep mode");
+    }
+    return;
+  }
+
+  // Suspend motor task, perform Hi-Z safe write, resume
+  Tasks::MotorTask_Suspend();
+  uint8_t readback = 0;
+  bool ok = Tasks::MotorTask_SetStepModeSafe(static_cast<uint8_t>(mode), readback);
+  Tasks::MotorTask_Resume();
+
+  if (!ok) {
+    if (m_format == ResponseFormat::JSON) {
+      respondJsonErr("DRV:STEP_MODE", "VERIFY_FAILED",
+                     "STEP_MODE readback mismatch");
+    } else {
+      respondErr("VERIFY_FAILED: STEP_MODE readback mismatch");
+    }
+    return;
+  }
+
+  // Update persistent config (RAM only — user must DRV:CFG:SAVE to persist)
+  Services::g_motorConfig.setStepMode(readback);
+  uint32_t ustepsPerRev = Services::g_motorConfig.getMicrostepsPerRev();
+
+  if (m_format == ResponseFormat::JSON) {
+    char json[128];
+    snprintf(json, sizeof(json),
+             "{\"step_mode\":%u,\"microstep_ratio\":%u,\"microsteps_per_rev\":%lu}",
+             (unsigned)readback, 1U << readback,
+             static_cast<unsigned long>(ustepsPerRev));
+    respondJsonOk("DRV:STEP_MODE", json);
+  } else {
+    char buf[80];
+    snprintf(buf, sizeof(buf), "STEP_MODE=%u MICROSTEP_RATIO=1/%u MICROSTEPS_PER_REV=%lu",
+             (unsigned)readback, 1U << readback,
+             static_cast<unsigned long>(ustepsPerRev));
+    respondOk(buf);
+  }
+}
+
+// DRV:STEP_MODE? — read step mode from hardware
+void CommandParser::cmdDrvStepModeQuery() {
+  Tasks::MotorDebugInfo info = {};
+  Tasks::MotorTask_GetDebugInfo(info);
+  uint8_t mode = info.stepMode;
+  uint32_t ustepsPerRev = static_cast<uint32_t>(Services::g_motorConfig.getFullStepsPerRev()) * (1U << mode);
+
+  if (m_format == ResponseFormat::JSON) {
+    char json[128];
+    snprintf(json, sizeof(json),
+             "{\"step_mode\":%u,\"microstep_ratio\":%u,\"microsteps_per_rev\":%lu}",
+             (unsigned)mode, 1U << mode,
+             static_cast<unsigned long>(ustepsPerRev));
+    respondJsonOk("DRV:STEP_MODE?", json);
+  } else {
+    char buf[80];
+    snprintf(buf, sizeof(buf), "STEP_MODE=%u MICROSTEP_RATIO=1/%u MICROSTEPS_PER_REV=%lu",
+             (unsigned)mode, 1U << mode,
+             static_cast<unsigned long>(ustepsPerRev));
+    respondOk(buf);
+  }
+}
+
+// DRV:FULL_STEPS <n> — set motor full steps per revolution
+void CommandParser::cmdDrvFullSteps(const ParsedCommand &cmd) {
+  if (cmd.argCount < 1) {
+    respondErr("Usage: DRV:FULL_STEPS <steps_per_rev>");
+    return;
+  }
+
+  unsigned long steps = strtoul(cmd.args[0], nullptr, 10);
+  if (steps == 0 || steps > 10000) {
+    respondErr("Full steps/rev must be 1-10000");
+    return;
+  }
+
+  Services::g_motorConfig.setFullStepsPerRev(static_cast<uint16_t>(steps));
+  uint32_t ustepsPerRev = Services::g_motorConfig.getMicrostepsPerRev();
+
+  if (m_format == ResponseFormat::JSON) {
+    char json[96];
+    snprintf(json, sizeof(json),
+             "{\"full_steps_per_rev\":%lu,\"microsteps_per_rev\":%lu}",
+             steps, static_cast<unsigned long>(ustepsPerRev));
+    respondJsonOk("DRV:FULL_STEPS", json);
+  } else {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "FULL_STEPS=%lu MICROSTEPS_PER_REV=%lu",
+             steps, static_cast<unsigned long>(ustepsPerRev));
+    respondOk(buf);
+  }
+}
+
+// DRV:FULL_STEPS? — query motor full steps per revolution
+void CommandParser::cmdDrvFullStepsQuery() {
+  uint16_t steps = Services::g_motorConfig.getFullStepsPerRev();
+  uint32_t ustepsPerRev = Services::g_motorConfig.getMicrostepsPerRev();
+
+  if (m_format == ResponseFormat::JSON) {
+    char json[96];
+    snprintf(json, sizeof(json),
+             "{\"full_steps_per_rev\":%u,\"microsteps_per_rev\":%lu}",
+             (unsigned)steps, static_cast<unsigned long>(ustepsPerRev));
+    respondJsonOk("DRV:FULL_STEPS?", json);
+  } else {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "FULL_STEPS=%u MICROSTEPS_PER_REV=%lu",
+             (unsigned)steps, static_cast<unsigned long>(ustepsPerRev));
+    respondOk(buf);
+  }
+}
+
+// DRV:ENC_PPR <n> — set encoder pulses per revolution
+void CommandParser::cmdDrvEncoderPPR(const ParsedCommand &cmd) {
+  if (cmd.argCount < 1) {
+    respondErr("Usage: DRV:ENC_PPR <pulses_per_rev>");
+    return;
+  }
+
+  unsigned long ppr = strtoul(cmd.args[0], nullptr, 10);
+  if (ppr == 0 || ppr > 65535) {
+    respondErr("Encoder PPR must be 1-65535");
+    return;
+  }
+
+  Services::g_motorConfig.setEncoderPPR(static_cast<uint16_t>(ppr));
+
+  if (m_format == ResponseFormat::JSON) {
+    char json[48];
+    snprintf(json, sizeof(json), "{\"encoder_ppr\":%lu}", ppr);
+    respondJsonOk("DRV:ENC_PPR", json);
+  } else {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "ENC_PPR=%lu", ppr);
+    respondOk(buf);
+  }
+}
+
+// DRV:ENC_PPR? — query encoder pulses per revolution
+void CommandParser::cmdDrvEncoderPPRQuery() {
+  uint16_t ppr = Services::g_motorConfig.getEncoderPPR();
+
+  if (m_format == ResponseFormat::JSON) {
+    char json[48];
+    snprintf(json, sizeof(json), "{\"encoder_ppr\":%u}", (unsigned)ppr);
+    respondJsonOk("DRV:ENC_PPR?", json);
+  } else {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "ENC_PPR=%u", (unsigned)ppr);
+    respondOk(buf);
+  }
+}
+
+// SYST:DELAY <ms> — set transport delay compensation
+void CommandParser::cmdSystDelay(const ParsedCommand &cmd) {
+  if (cmd.argCount < 1) {
+    respondErr("Usage: SYST:DELAY <ms>");
+    return;
+  }
+
+  unsigned long ms = strtoul(cmd.args[0], nullptr, 10);
+  if (ms > 1000) {
+    respondErr("Delay must be 0-1000 ms");
+    return;
+  }
+
+  Services::Timing::setTransportDelay(static_cast<uint32_t>(ms));
+
+  if (m_format == ResponseFormat::JSON) {
+    char json[48];
+    snprintf(json, sizeof(json), "{\"transport_delay_ms\":%lu}", ms);
+    respondJsonOk("SYST:DELAY", json);
+  } else {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "DELAY=%lu", ms);
+    respondOk(buf);
+  }
+}
+
+// SYST:DELAY? — query transport delay compensation
+void CommandParser::cmdSystDelayQuery() {
+  uint32_t ms = Services::Timing::getTransportDelay();
+
+  if (m_format == ResponseFormat::JSON) {
+    char json[48];
+    snprintf(json, sizeof(json), "{\"transport_delay_ms\":%lu}",
+             static_cast<unsigned long>(ms));
+    respondJsonOk("SYST:DELAY?", json);
+  } else {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "DELAY=%lu", static_cast<unsigned long>(ms));
+    respondOk(buf);
+  }
+}
+
+// CTRL:FOLLOW? — query following error
+void CommandParser::cmdFollowingError() {
+  // Expanded supervisor status including state, tier, and following error
+  Services::SupervisorTelemetry st = Services::g_supervisor.getTelemetry();
+  auto mode = Services::g_controlMode.getMode();
+
+  static const char* stateNames[] = {"IDLE", "MOVING", "HOLDING", "RECOVERY", "FAULT"};
+  static const char* tierNames[] = {"OBSERVE", "SOFT_CORRECT", "PAUSE_RECOVER", "FAULT_LATCH"};
+  uint8_t si = static_cast<uint8_t>(st.state);
+  uint8_t ti = static_cast<uint8_t>(st.tier);
+  const char* stateName = (si < 5) ? stateNames[si] : "UNKNOWN";
+  const char* tierName  = (ti < 4) ? tierNames[ti] : "UNKNOWN";
+
+  if (m_format == ResponseFormat::JSON) {
+    char json[256];
+    snprintf(json, sizeof(json),
+             "{\"state\":\"%s\",\"tier\":\"%s\",\"mode\":%u,"
+             "\"pos_error\":%ld,\"vel_error\":%ld,"
+             "\"setpoint\":%ld,\"pid_out\":%d,"
+             "\"retries\":%u,\"error_ms\":%lu}",
+             stateName, tierName, (unsigned)mode,
+             static_cast<long>(st.posError),
+             static_cast<long>(st.velError),
+             static_cast<long>(st.setpoint),
+             (int)st.pidOutput,
+             (unsigned)st.retryCount,
+             static_cast<unsigned long>(st.errorDurationMs));
+    respondJsonOk("CTRL:FOLLOW?", json);
+  } else {
+    char buf[128];
+    snprintf(buf, sizeof(buf),
+             "state=%s tier=%s err=%ld vel_err=%ld retries=%u",
+             stateName, tierName,
+             static_cast<long>(st.posError),
+             static_cast<long>(st.velError),
+             (unsigned)st.retryCount);
+    respondOk(buf);
+  }
+}
+
+void CommandParser::cmdFollowThreshQuery() {
+  int16_t  me = Services::g_motorConfig.getFollowMoveError();
+  uint16_t mt = Services::g_motorConfig.getFollowMoveTimeMs();
+  int16_t  he = Services::g_motorConfig.getFollowHoldError();
+  uint16_t ht = Services::g_motorConfig.getFollowHoldTimeMs();
+  int16_t  hl = Services::g_motorConfig.getFollowHardLimit();
+  uint8_t  mr = Services::g_motorConfig.getFollowMaxRetries();
+
+  if (m_format == ResponseFormat::JSON) {
+    char json[160];
+    snprintf(json, sizeof(json),
+             "{\"move_error\":%d,\"move_time_ms\":%u,"
+             "\"hold_error\":%d,\"hold_time_ms\":%u,"
+             "\"hard_limit\":%d,\"max_retries\":%u}",
+             (int)me, (unsigned)mt, (int)he, (unsigned)ht,
+             (int)hl, (unsigned)mr);
+    respondJsonOk("CTRL:FOLLOW:THRESH?", json);
+  } else {
+    char buf[128];
+    snprintf(buf, sizeof(buf),
+             "E_MOVE=%d T_MOVE=%u E_HOLD=%d T_HOLD=%u E_HARD=%d N_RETRY=%u",
+             (int)me, (unsigned)mt, (int)he, (unsigned)ht,
+             (int)hl, (unsigned)mr);
+    respondOk(buf);
+  }
+}
+
+void CommandParser::cmdFollowThreshSet(const ParsedCommand &cmd) {
+  if (cmd.argCount < 6) {
+    respondErr("Usage: CTRL:FOLLOW:THRESH <E_MOVE> <T_MOVE> <E_HOLD> <T_HOLD> <E_HARD> <N_RETRY>");
+    return;
+  }
+
+  int16_t  moveErr   = static_cast<int16_t>(strtol(cmd.args[0], nullptr, 10));
+  uint16_t moveTime  = static_cast<uint16_t>(strtoul(cmd.args[1], nullptr, 10));
+  int16_t  holdErr   = static_cast<int16_t>(strtol(cmd.args[2], nullptr, 10));
+  uint16_t holdTime  = static_cast<uint16_t>(strtoul(cmd.args[3], nullptr, 10));
+  int16_t  hardLimit = static_cast<int16_t>(strtol(cmd.args[4], nullptr, 10));
+  uint8_t  maxRetry  = static_cast<uint8_t>(strtoul(cmd.args[5], nullptr, 10));
+
+  Services::g_motorConfig.setFollowThresholds(
+      moveErr, moveTime, holdErr, holdTime, hardLimit, maxRetry);
+
+  // Apply immediately to supervisor
+  Services::SupervisorConfig scfg{};
+  scfg.moveError      = Services::g_motorConfig.getFollowMoveError();
+  scfg.moveTimeMs     = Services::g_motorConfig.getFollowMoveTimeMs();
+  scfg.holdError      = Services::g_motorConfig.getFollowHoldError();
+  scfg.holdTimeMs     = Services::g_motorConfig.getFollowHoldTimeMs();
+  scfg.hardLimit      = Services::g_motorConfig.getFollowHardLimit();
+  scfg.maxRetries     = Services::g_motorConfig.getFollowMaxRetries();
+  scfg.maxDeltaVRaw   = 0;
+  scfg.recoveryTimeMs = 2000;
+  Services::g_supervisor.configure(scfg);
+
+  respondOk("Thresholds set");
+}
+
+void CommandParser::cmdFollowSave() {
+  if (Services::g_motorConfig.saveToFlash()) {
+    respondOk("Follow config saved");
+  } else {
+    respondErr("Flash write failed");
+  }
+}
+
+void CommandParser::cmdFollowClear() {
+  if (Services::g_supervisor.clearFault()) {
+    respondOk("Supervisor fault cleared");
+  } else {
+    respondErr("No fault to clear");
+  }
+}
+
+// =========================================================================
+// CTRL:TRIM:* — Speed-trim PI controller commands
+// =========================================================================
+
+// Helper: parse "1.50" → 150 (×100 fixed-point)
+static int16_t parseGain100(const char *s) {
+  int sign = 1;
+  if (*s == '-') { sign = -1; s++; }
+  int integer = 0;
+  while (*s >= '0' && *s <= '9') { integer = integer * 10 + (*s - '0'); s++; }
+  int frac = 0;
+  int fracDigits = 0;
+  if (*s == '.') {
+    s++;
+    while (*s >= '0' && *s <= '9' && fracDigits < 2) {
+      frac = frac * 10 + (*s - '0'); s++; fracDigits++;
+    }
+    while (fracDigits < 2) { frac *= 10; fracDigits++; }
+  }
+  return static_cast<int16_t>(sign * (integer * 100 + frac));
+}
+
+void CommandParser::cmdTrimQuery() {
+  int16_t kp100 = Services::g_motorConfig.getPidKp100();
+  int16_t ki100 = Services::g_motorConfig.getPidKi100();
+  int16_t kd100 = Services::g_motorConfig.getPidKd100();  // reinterpreted as trimMaxPercent
+  uint16_t outLim = Services::g_motorConfig.getPidOutputLimit();
+  uint16_t iLim = Services::g_motorConfig.getPidIntegralLimit();
+  uint8_t maxPct = (kd100 > 0 && kd100 <= 50) ? static_cast<uint8_t>(kd100) : 8;
+
+  TelemetrySnapshot snap = g_telemetry.getSnapshot();
+  bool active = snap.control.tracking;
+  bool frozen = snap.control.trimFrozen != 0;
+
+  if (m_format == ResponseFormat::JSON) {
+    char json[256];
+    snprintf(json, sizeof(json),
+             "{\"kp\":\"%d.%02d\",\"ki\":\"%d.%02d\","
+             "\"out_limit\":%u,\"i_limit\":%u,\"max_pct\":%u,"
+             "\"active\":%s,\"frozen\":%s,"
+             "\"base_spd\":%ld,\"trim_spd\":%ld,\"final_spd\":%ld,"
+             "\"vel_quality\":%u}",
+             kp100 / 100, (kp100 < 0 ? -kp100 : kp100) % 100,
+             ki100 / 100, (ki100 < 0 ? -ki100 : ki100) % 100,
+             (unsigned)outLim, (unsigned)iLim, (unsigned)maxPct,
+             active ? "true" : "false",
+             frozen ? "true" : "false",
+             static_cast<long>(snap.control.baseSpeedRaw),
+             static_cast<long>(snap.control.trimSpeedRaw),
+             static_cast<long>(snap.control.finalSpeedRaw),
+             static_cast<unsigned>(snap.control.velQuality));
+    respondJsonOk("CTRL:TRIM?", json);
+  } else {
+    char buf[128];
+    snprintf(buf, sizeof(buf),
+             "TRIM Kp=%d.%02d Ki=%d.%02d out=%u i=%u maxPct=%u %s%s",
+             kp100 / 100, (kp100 < 0 ? -kp100 : kp100) % 100,
+             ki100 / 100, (ki100 < 0 ? -ki100 : ki100) % 100,
+             (unsigned)outLim, (unsigned)iLim, (unsigned)maxPct,
+             active ? "ACTIVE" : "IDLE",
+             frozen ? " FROZEN" : "");
+    respondOk(buf);
+  }
+}
+
+void CommandParser::cmdTrimSetGains(const ParsedCommand &cmd) {
+  if (cmd.argCount < 2) {
+    respondErr("Usage: CTRL:TRIM:GAINS <kp> <ki>");
+    return;
+  }
+
+  int16_t kp100 = parseGain100(cmd.args[0]);
+  int16_t ki100 = parseGain100(cmd.args[1]);
+
+  // Preserve existing kd100 (trimMaxPercent) when setting gains
+  int16_t kd100 = Services::g_motorConfig.getPidKd100();
+  Services::g_motorConfig.setPidGains(kp100, ki100, kd100);
+
+  // Reconfigure live trim controller if active
+  Services::SpeedTrimConfig tcfg{};
+  tcfg.kp = static_cast<float>(kp100) / 100.0F;
+  tcfg.ki = static_cast<float>(ki100) / 100.0F;
+  tcfg.trimMaxPercent = (kd100 > 0 && kd100 <= 50) ? static_cast<uint8_t>(kd100) : 0;
+  tcfg.outputLimit = static_cast<float>(Services::g_motorConfig.getPidOutputLimit());
+  tcfg.integralLimit = static_cast<float>(Services::g_motorConfig.getPidIntegralLimit());
+  Services::g_speedTrim.configure(tcfg);
+
+  if (m_format == ResponseFormat::JSON) {
+    char json[64];
+    snprintf(json, sizeof(json),
+             "{\"kp\":\"%d.%02d\",\"ki\":\"%d.%02d\"}",
+             kp100 / 100, (kp100 < 0 ? -kp100 : kp100) % 100,
+             ki100 / 100, (ki100 < 0 ? -ki100 : ki100) % 100);
+    respondJsonOk("CTRL:TRIM:GAINS", json);
+  } else {
+    respondOk("Trim gains set");
+  }
+}
+
+void CommandParser::cmdTrimSetLimits(const ParsedCommand &cmd) {
+  if (cmd.argCount < 2) {
+    respondErr("Usage: CTRL:TRIM:LIMITS <output_limit> <integral_limit>");
+    return;
+  }
+
+  uint16_t outLim = static_cast<uint16_t>(strtoul(cmd.args[0], nullptr, 10));
+  uint16_t iLim = static_cast<uint16_t>(strtoul(cmd.args[1], nullptr, 10));
+
+  Services::g_motorConfig.setPidLimits(outLim, iLim);
+
+  // Reconfigure live trim controller
+  Services::SpeedTrimConfig tcfg{};
+  tcfg.kp = Services::g_motorConfig.getPidKp();
+  tcfg.ki = Services::g_motorConfig.getPidKi();
+  int16_t kd100 = Services::g_motorConfig.getPidKd100();
+  tcfg.trimMaxPercent = (kd100 > 0 && kd100 <= 50) ? static_cast<uint8_t>(kd100) : 0;
+  tcfg.outputLimit = static_cast<float>(Services::g_motorConfig.getPidOutputLimit());
+  tcfg.integralLimit = static_cast<float>(Services::g_motorConfig.getPidIntegralLimit());
+  Services::g_speedTrim.configure(tcfg);
+
+  if (m_format == ResponseFormat::JSON) {
+    char json[64];
+    snprintf(json, sizeof(json),
+             "{\"out_limit\":%u,\"i_limit\":%u}",
+             (unsigned)Services::g_motorConfig.getPidOutputLimit(),
+             (unsigned)Services::g_motorConfig.getPidIntegralLimit());
+    respondJsonOk("CTRL:TRIM:LIMITS", json);
+  } else {
+    respondOk("Trim limits set");
+  }
+}
+
+void CommandParser::cmdTrimSetMaxPct(const ParsedCommand &cmd) {
+  if (cmd.argCount < 1) {
+    respondErr("Usage: CTRL:TRIM:MAXPCT <1-50>");
+    return;
+  }
+
+  int val = atoi(cmd.args[0]);
+  if (val < 1 || val > 50) {
+    respondErr("maxPct must be 1-50");
+    return;
+  }
+
+  // Store in pidKd100 field (repurposed)
+  int16_t kp100 = Services::g_motorConfig.getPidKp100();
+  int16_t ki100 = Services::g_motorConfig.getPidKi100();
+  Services::g_motorConfig.setPidGains(kp100, ki100, static_cast<int16_t>(val));
+
+  // Reconfigure live trim controller
+  Services::SpeedTrimConfig tcfg{};
+  tcfg.kp = static_cast<float>(kp100) / 100.0F;
+  tcfg.ki = static_cast<float>(ki100) / 100.0F;
+  tcfg.trimMaxPercent = static_cast<uint8_t>(val);
+  tcfg.outputLimit = static_cast<float>(Services::g_motorConfig.getPidOutputLimit());
+  tcfg.integralLimit = static_cast<float>(Services::g_motorConfig.getPidIntegralLimit());
+  Services::g_speedTrim.configure(tcfg);
+
+  if (m_format == ResponseFormat::JSON) {
+    char json[32];
+    snprintf(json, sizeof(json), "{\"max_pct\":%d}", val);
+    respondJsonOk("CTRL:TRIM:MAXPCT", json);
+  } else {
+    respondOk("Trim max percent set");
+  }
+}
+
+void CommandParser::cmdTrimReset() {
+  Services::g_speedTrim.reset();
+  respondOk("Trim reset");
+}
+
+void CommandParser::cmdTrimSave() {
+  if (Services::g_motorConfig.saveToFlash()) {
+    respondOk("Trim config saved");
+  } else {
+    respondErr("Flash write failed");
+  }
+}
+
+// =========================================================================
+// CTRL:PID:* — Legacy aliases (route to trim commands)
+// =========================================================================
+
+void CommandParser::cmdPidQuery() {
+  cmdTrimQuery();  // Same output
+}
+
+void CommandParser::cmdPidSetGains(const ParsedCommand &cmd) {
+  // Accept 2 or 3 args: CTRL:PID:GAINS <kp> <ki> [<kd>]
+  // kd is ignored (always 0 for PI trim), but don't reject old 3-arg callers
+  if (cmd.argCount < 2) {
+    respondErr("Usage: CTRL:PID:GAINS <kp> <ki> [<kd>]");
+    return;
+  }
+  cmdTrimSetGains(cmd);  // Uses first 2 args
+}
+
+void CommandParser::cmdPidSetLimits(const ParsedCommand &cmd) {
+  cmdTrimSetLimits(cmd);
+}
+
+void CommandParser::cmdPidReset() {
+  cmdTrimReset();
+}
+
+void CommandParser::cmdPidSave() {
+  cmdTrimSave();
+}
+
+// --- System Identification commands ---
+
+void CommandParser::cmdSysIdStep(const ParsedCommand &cmd) {
+  if (cmd.argCount < 2) {
+    respondErr("Usage: CTRL:SYSID:STEP <speed_sps> <dir> [dur_ms] [settle_ms]");
+    return;
+  }
+
+  Services::SysIdConfig cfg{};
+  cfg.type = Services::SysIdTestType::STEP;
+  cfg.targetSpeed_sps = static_cast<uint16_t>(atol(cmd.args[0]));
+  cfg.startSpeed_sps = 0;
+  cfg.forward = (atol(cmd.args[1]) != 0);
+  cfg.activeDuration_ms = (cmd.argCount >= 3)
+      ? static_cast<uint16_t>(atol(cmd.args[2])) : 5000;
+  cfg.settleDuration_ms = (cmd.argCount >= 4)
+      ? static_cast<uint16_t>(atol(cmd.args[3])) : 1000;
+
+  if (cfg.targetSpeed_sps == 0 || cfg.targetSpeed_sps > 15625) {
+    respondErr("speed_sps must be 1-15625");
+    return;
+  }
+
+  if (Services::g_sysId.start(cfg)) {
+    respondOk("SYSID step started");
+  } else {
+    respondErr("SYSID already running");
+  }
+}
+
+void CommandParser::cmdSysIdRamp(const ParsedCommand &cmd) {
+  if (cmd.argCount < 3) {
+    respondErr("Usage: CTRL:SYSID:RAMP <start_sps> <end_sps> <dir> [dur_ms] [settle_ms]");
+    return;
+  }
+
+  Services::SysIdConfig cfg{};
+  cfg.type = Services::SysIdTestType::RAMP;
+  cfg.startSpeed_sps = static_cast<uint16_t>(atol(cmd.args[0]));
+  cfg.targetSpeed_sps = static_cast<uint16_t>(atol(cmd.args[1]));
+  cfg.forward = (atol(cmd.args[2]) != 0);
+  cfg.activeDuration_ms = (cmd.argCount >= 4)
+      ? static_cast<uint16_t>(atol(cmd.args[3])) : 5000;
+  cfg.settleDuration_ms = (cmd.argCount >= 5)
+      ? static_cast<uint16_t>(atol(cmd.args[4])) : 1000;
+
+  if (cfg.targetSpeed_sps > 15625 || cfg.startSpeed_sps > 15625) {
+    respondErr("speed must be 0-15625 sps");
+    return;
+  }
+
+  if (Services::g_sysId.start(cfg)) {
+    respondOk("SYSID ramp started");
+  } else {
+    respondErr("SYSID already running");
+  }
+}
+
+void CommandParser::cmdSysIdStatus() {
+  auto phase = Services::g_sysId.getPhase();
+  uint16_t count = Services::g_sysId.getSampleCount();
+
+  if (m_format == ResponseFormat::JSON) {
+    char data[64];
+    snprintf(data, sizeof(data),
+             "{\"phase\":%u,\"samples\":%u}",
+             static_cast<unsigned>(phase), static_cast<unsigned>(count));
+    respondJsonOk("CTRL:SYSID:STATUS", data);
+  } else {
+    char buf[48];
+    snprintf(buf, sizeof(buf), "phase=%u samples=%u",
+             static_cast<unsigned>(phase), static_cast<unsigned>(count));
+    respondOk(buf);
+  }
+}
+
+void CommandParser::cmdSysIdData(const ParsedCommand &cmd) {
+  if (Services::g_sysId.getPhase() != Services::SysIdPhase::DONE) {
+    respondErr("No data ready (test not DONE)");
+    return;
+  }
+
+  uint16_t offset = (cmd.argCount >= 1)
+      ? static_cast<uint16_t>(atol(cmd.args[0])) : 0;
+  uint16_t count = (cmd.argCount >= 2)
+      ? static_cast<uint16_t>(atol(cmd.args[1])) : 20;
+  uint16_t total = Services::g_sysId.getSampleCount();
+  const auto *samples = Services::g_sysId.getSamples();
+
+  if (offset >= total) {
+    respondErr("offset past end");
+    return;
+  }
+  if (offset + count > total) {
+    count = total - offset;
+  }
+
+  // Header line
+  char buf[64];
+  snprintf(buf, sizeof(buf), "SYSID_DATA %u %u %u",
+           static_cast<unsigned>(offset), static_cast<unsigned>(count),
+           static_cast<unsigned>(total));
+  m_transport.println(buf);
+
+  // CSV data: time_ms,setpoint_tps,actual_tps,pos_error
+  for (uint16_t i = 0; i < count; i++) {
+    const auto &s = samples[offset + i];
+    snprintf(buf, sizeof(buf), "%u,%d,%d,%d",
+             static_cast<unsigned>(s.time_ms),
+             static_cast<int>(s.setpoint_tps),
+             static_cast<int>(s.actual_tps),
+             static_cast<int>(s.pos_error));
+    m_transport.println(buf);
+  }
+
+  m_transport.println("END");
+}
+
+void CommandParser::cmdSysIdSine(const ParsedCommand &cmd) {
+  // CTRL:SYSID:SINE <baseline_sps> <amplitude_sps> <freq_mHz> <dir> [dur_ms] [settle_ms]
+  if (cmd.argCount < 4) {
+    respondErr("Usage: CTRL:SYSID:SINE <baseline> <amplitude> <freq_mHz> <dir> [dur] [settle]");
+    return;
+  }
+
+  Services::SysIdConfig cfg{};
+  cfg.type = Services::SysIdTestType::SINE;
+  cfg.startSpeed_sps = static_cast<uint16_t>(atol(cmd.args[0]));   // baseline
+  cfg.targetSpeed_sps = static_cast<uint16_t>(atol(cmd.args[1]));  // amplitude
+  cfg.frequency_mHz = static_cast<uint16_t>(atol(cmd.args[2]));
+  cfg.forward = (atol(cmd.args[3]) != 0);
+  cfg.activeDuration_ms = (cmd.argCount >= 5)
+      ? static_cast<uint16_t>(atol(cmd.args[4])) : 10000;
+  cfg.settleDuration_ms = (cmd.argCount >= 6)
+      ? static_cast<uint16_t>(atol(cmd.args[5])) : 1000;
+
+  if (cfg.startSpeed_sps > 15625 || cfg.targetSpeed_sps > 15625) {
+    respondErr("speed must be 0-15625 sps");
+    return;
+  }
+  if (cfg.frequency_mHz == 0 || cfg.frequency_mHz > 5000) {
+    respondErr("freq_mHz must be 1-5000 (0.001-5.0 Hz)");
+    return;
+  }
+
+  if (Services::g_sysId.start(cfg)) {
+    respondOk("SYSID sine started");
+  } else {
+    respondErr("SYSID already running");
+  }
+}
+
+void CommandParser::cmdSysIdTrapezoid(const ParsedCommand &cmd) {
+  // CTRL:SYSID:TRAPEZOID <speed_sps> <dir> [dur_ms] [settle_ms]
+  if (cmd.argCount < 2) {
+    respondErr("Usage: CTRL:SYSID:TRAPEZOID <speed_sps> <dir> [dur_ms] [settle_ms]");
+    return;
+  }
+
+  Services::SysIdConfig cfg{};
+  cfg.type = Services::SysIdTestType::TRAPEZOID;
+  cfg.targetSpeed_sps = static_cast<uint16_t>(atol(cmd.args[0]));
+  cfg.startSpeed_sps = 0;
+  cfg.forward = (atol(cmd.args[1]) != 0);
+  cfg.activeDuration_ms = (cmd.argCount >= 3)
+      ? static_cast<uint16_t>(atol(cmd.args[2])) : 8000;
+  cfg.settleDuration_ms = (cmd.argCount >= 4)
+      ? static_cast<uint16_t>(atol(cmd.args[3])) : 1000;
+
+  if (cfg.targetSpeed_sps == 0 || cfg.targetSpeed_sps > 15625) {
+    respondErr("speed_sps must be 1-15625");
+    return;
+  }
+
+  if (Services::g_sysId.start(cfg)) {
+    respondOk("SYSID trapezoid started");
+  } else {
+    respondErr("SYSID already running");
+  }
+}
+
+void CommandParser::cmdSysIdRect(const ParsedCommand &cmd) {
+  // CTRL:SYSID:RECT <speed_sps> <dir> [dur_ms] [settle_ms]
+  if (cmd.argCount < 2) {
+    respondErr("Usage: CTRL:SYSID:RECT <speed_sps> <dir> [dur_ms] [settle_ms]");
+    return;
+  }
+
+  Services::SysIdConfig cfg{};
+  cfg.type = Services::SysIdTestType::RECTANGLE;
+  cfg.targetSpeed_sps = static_cast<uint16_t>(atol(cmd.args[0]));
+  cfg.startSpeed_sps = 0;
+  cfg.forward = (atol(cmd.args[1]) != 0);
+  cfg.activeDuration_ms = (cmd.argCount >= 3)
+      ? static_cast<uint16_t>(atol(cmd.args[2])) : 6000;
+  cfg.settleDuration_ms = (cmd.argCount >= 4)
+      ? static_cast<uint16_t>(atol(cmd.args[3])) : 1000;
+
+  if (cfg.targetSpeed_sps == 0 || cfg.targetSpeed_sps > 15625) {
+    respondErr("speed_sps must be 1-15625");
+    return;
+  }
+
+  if (Services::g_sysId.start(cfg)) {
+    respondOk("SYSID rect started");
+  } else {
+    respondErr("SYSID already running");
+  }
+}
+
+void CommandParser::cmdSysIdAbort() {
+  Services::g_sysId.abort();
+  respondOk("SYSID aborted");
 }
 
 } // namespace Comms

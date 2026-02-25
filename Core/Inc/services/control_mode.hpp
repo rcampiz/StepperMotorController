@@ -3,8 +3,9 @@
  * @brief Control mode management with encoder status tracking
  *
  * Manages runtime control mode state:
- *   - OPEN_LOOP: Motion by step count only, no encoder feedback
- *   - CLOSED_LOOP: Encoder verification (requires encoder hardware)
+ *   - OPEN_LOOP:            No encoder feedback (step-based only)
+ *   - CLOSED_LOOP_MONITOR:  Encoder detects slip, Tier 2/3 response (no trim)
+ *   - SPEED_TRIM:           PI speed-trim correction (final = base + trim)
  *
  * Also tracks encoder hardware availability for mode validation.
  */
@@ -21,8 +22,11 @@ namespace Services {
  * @brief Control mode for motion execution
  */
 enum class ControlMode : uint8_t {
-  OPEN_LOOP = 0,  // Step-based motion, no encoder feedback
-  CLOSED_LOOP = 1 // Encoder verification (not correction in v1)
+  OPEN_LOOP            = 0,  // Step-based motion, no encoder feedback
+  CLOSED_LOOP_MONITOR  = 1,  // Encoder slip detection, fault response only
+  SPEED_TRIM           = 2,  // PI speed-trim correction (final = base + trim)
+  // Legacy alias — existing code referencing CLOSED_LOOP_PID still compiles
+  CLOSED_LOOP_PID      = SPEED_TRIM
 };
 
 /**
@@ -75,7 +79,7 @@ public:
   /**
    * @brief Set control mode
    *
-   * CLOSED_LOOP mode requires encoder to be READY.
+   * CLOSED_LOOP_MONITOR and SPEED_TRIM require encoder to be READY.
    *
    * @param mode Desired control mode
    * @return true if mode change succeeded

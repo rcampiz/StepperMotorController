@@ -16,6 +16,11 @@ if exist "%PROJECT_ROOT%\client\.venv\Scripts\activate.bat" (
     call "%PROJECT_ROOT%\client\.venv\Scripts\activate.bat"
 )
 
+REM Install/update dependencies from requirements.txt
+if exist "%PROJECT_ROOT%\client\requirements.txt" (
+    pip install -q -r "%PROJECT_ROOT%\client\requirements.txt"
+)
+
 pushd "%CLIENT_SRC%"
 echo Working directory: %CD%
 echo.

@@ -26,6 +26,7 @@ static constexpr uint16_t VALUE_COLOR = 0xFFFF;    // White
 static constexpr uint16_t VEL_COLOR = 0x07E0;      // Green
 static constexpr uint16_t SPD_COLOR = 0x07FF;      // Cyan
 static constexpr uint16_t POS_COLOR = 0xFBE0;      // Yellow
+static constexpr uint16_t SLIP_COLOR = 0xF81F;     // Magenta
 static constexpr uint16_t AXIS_COLOR = 0x8410;     // Medium gray
 
 // Layout
@@ -94,6 +95,7 @@ const char* GraphScreen::channelName() const
         case Channel::VELOCITY: return "RPM";
         case Channel::SPEED:    return "Speed";
         case Channel::POSITION: return "Position";
+        case Channel::SLIP:     return "Slip";
     }
     return "?";
 }
@@ -104,6 +106,7 @@ const char* GraphScreen::channelUnit() const
         case Channel::VELOCITY: return "rpm";
         case Channel::SPEED:    return "st/s";
         case Channel::POSITION: return "steps";
+        case Channel::SLIP:     return "ticks";
     }
     return "";
 }
@@ -114,6 +117,7 @@ uint16_t GraphScreen::channelColor() const
         case Channel::VELOCITY: return VEL_COLOR;
         case Channel::SPEED:    return SPD_COLOR;
         case Channel::POSITION: return POS_COLOR;
+        case Channel::SLIP:     return SLIP_COLOR;
     }
     return VALUE_COLOR;
 }
@@ -278,6 +282,9 @@ void GraphScreen::render(LCD& lcd)
             break;
         case Channel::POSITION:
             value = telem.motor.position;
+            break;
+        case Channel::SLIP:
+            value = telem.control.followingError;
             break;
     }
     pushSample(value);

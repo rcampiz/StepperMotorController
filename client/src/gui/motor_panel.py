@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QPushButton,
     QSpinBox,
+    QDoubleSpinBox,
     QSlider,
     QGroupBox,
 )
@@ -77,6 +78,8 @@ class MotorControlPanel(QWidget):
         self._motion_buttons = []  # Buttons disabled during FAULT/ESTOP
         self._motor_enabled = False  # Track Hi-Z state from telemetry
         self._is_fault = False
+        self._full_steps_per_rev = 200  # Updated from DRV:FULL_STEPS? response
+        self._syncing = False  # Prevents infinite recursion between linked spinboxes
 
         # Jog minimum-duration timer
         self._jog_timer = QTimer(self)
@@ -203,14 +206,26 @@ class MotorControlPanel(QWidget):
         self._speed_spin.setMinimumWidth(90)
         fader_col.addWidget(self._speed_spin)
 
+        self._rpm_spin = QDoubleSpinBox()
+        self._rpm_spin.setDecimals(1)
+        self._rpm_spin.setRange(0, 15609 * 60.0 / self._full_steps_per_rev)
+        self._rpm_spin.setValue(500 * 60.0 / self._full_steps_per_rev)
+        self._rpm_spin.setSuffix(" RPM")
+        self._rpm_spin.setAlignment(Qt.AlignCenter)
+        self._rpm_spin.setFont(QFont("Consolas", 9))
+        self._rpm_spin.setMinimumWidth(90)
+        fader_col.addWidget(self._rpm_spin)
+
         self._maxspd_note = QLabel("Max: 15609 (from MAX SPD)")
         self._maxspd_note.setAlignment(Qt.AlignCenter)
         self._maxspd_note.setStyleSheet("font-size: 8px; color: #888;")
         fader_col.addWidget(self._maxspd_note)
 
-        # Bidirectional sync
+        # Bidirectional sync: slider ↔ steps/s ↔ RPM
         self._speed_slider.valueChanged.connect(self._speed_spin.setValue)
         self._speed_spin.valueChanged.connect(self._speed_slider.setValue)
+        self._speed_spin.valueChanged.connect(self._on_speed_steps_changed)
+        self._rpm_spin.valueChanged.connect(self._on_speed_rpm_changed)
 
         main_layout.addLayout(fader_col)
 
@@ -253,6 +268,7 @@ class MotorControlPanel(QWidget):
         current = self._speed_spin.value()
         self._speed_slider.setRange(0, value)
         self._speed_spin.setRange(0, value)
+        self._rpm_spin.setMaximum(value * 60.0 / self._full_steps_per_rev)
         if current > value:
             self._speed_spin.setValue(value)
         self._maxspd_note.setText(f"Max: {value} (from MAX SPD)")
@@ -294,15 +310,27 @@ class MotorControlPanel(QWidget):
         self._move_steps.setMinimumWidth(90)
         fader_col.addWidget(self._move_steps)
 
+        self._rev_spin = QDoubleSpinBox()
+        self._rev_spin.setDecimals(2)
+        self._rev_spin.setRange(0.01, 2097151.0 / self._full_steps_per_rev)
+        self._rev_spin.setValue(1000.0 / self._full_steps_per_rev)
+        self._rev_spin.setSuffix(" rev")
+        self._rev_spin.setAlignment(Qt.AlignCenter)
+        self._rev_spin.setFont(QFont("Consolas", 9))
+        self._rev_spin.setMinimumWidth(90)
+        fader_col.addWidget(self._rev_spin)
+
         desc_lbl = QLabel("Relative\nmove")
         desc_lbl.setAlignment(Qt.AlignCenter)
         desc_lbl.setStyleSheet("font-size: 9px; color: #888;")
         fader_col.addWidget(desc_lbl)
 
-        # Bidirectional sync (slider range is capped at 100k, spinbox goes to 2M)
+        # Bidirectional sync: slider ↔ steps ↔ revolutions
         self._move_slider.valueChanged.connect(self._move_steps.setValue)
         self._move_steps.valueChanged.connect(
             lambda v: self._move_slider.setValue(min(v, 100000)))
+        self._move_steps.valueChanged.connect(self._on_move_steps_changed)
+        self._rev_spin.valueChanged.connect(self._on_move_rev_changed)
 
         main_layout.addLayout(fader_col)
 
@@ -502,6 +530,63 @@ class MotorControlPanel(QWidget):
 
         # Enable button: available unless in fault
         self._enable_btn.setEnabled(not self._is_fault)
+
+    # =========================================================================
+    # Unit conversion sync (steps/s ↔ RPM, steps ↔ revolutions)
+    # =========================================================================
+
+    def _on_speed_steps_changed(self, val):
+        """Sync RPM spinbox when steps/s changes."""
+        if self._syncing:
+            return
+        self._syncing = True
+        self._rpm_spin.setValue(val * 60.0 / self._full_steps_per_rev)
+        self._syncing = False
+
+    def _on_speed_rpm_changed(self, val):
+        """Sync steps/s spinbox when RPM changes."""
+        if self._syncing:
+            return
+        self._syncing = True
+        steps_s = round(val * self._full_steps_per_rev / 60.0)
+        self._speed_spin.setValue(steps_s)
+        self._syncing = False
+
+    def _on_move_steps_changed(self, val):
+        """Sync revolutions spinbox when steps changes."""
+        if self._syncing:
+            return
+        self._syncing = True
+        self._rev_spin.setValue(val / self._full_steps_per_rev)
+        self._syncing = False
+
+    def _on_move_rev_changed(self, val):
+        """Sync steps spinbox when revolutions changes."""
+        if self._syncing:
+            return
+        self._syncing = True
+        steps = max(1, round(val * self._full_steps_per_rev))
+        self._move_steps.setValue(steps)
+        self._syncing = False
+
+    @Slot(dict)
+    def update_drv_config(self, data: dict):
+        """Update motor configuration from DRV:* query responses."""
+        if "full_steps_per_rev" in data:
+            self._full_steps_per_rev = data["full_steps_per_rev"]
+            # Recalculate RPM and rev spinbox ranges
+            max_steps_s = self._speed_spin.maximum()
+            self._rpm_spin.setMaximum(
+                max_steps_s * 60.0 / self._full_steps_per_rev)
+            self._rev_spin.setMaximum(
+                2097151.0 / self._full_steps_per_rev)
+            # Re-sync current values
+            self._syncing = True
+            self._rpm_spin.setValue(
+                self._speed_spin.value() * 60.0 / self._full_steps_per_rev)
+            self._rev_spin.setValue(
+                self._move_steps.value() / self._full_steps_per_rev)
+            self._syncing = False
 
     # =========================================================================
     # Command handlers
