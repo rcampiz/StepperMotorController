@@ -82,6 +82,9 @@ class SerialWorker(QObject):
         # Coalesced indicator: only latest value is sent (replaces queue backlog)
         self._pending_indicator = None  # str or None
 
+        # Coalesced live command: latest-wins, highest priority (e.g. live speed)
+        self._pending_live = None  # str or None
+
         # Heartbeat state
         self._heartbeat_enabled = False
         self._heartbeat_interval = 0.050  # seconds (50ms default)
@@ -144,6 +147,14 @@ class SerialWorker(QObject):
         """
         self._pending_indicator = cmd_str
 
+    def set_live_command(self, cmd_str: str):
+        """Set a coalesced live command (latest-wins, thread-safe).
+
+        For real-time controls like speed faders — only the most recent
+        value is kept, sent with highest priority (before queued commands).
+        """
+        self._pending_live = cmd_str
+
     @Slot()
     def run(self):
         """Main worker loop - runs in background thread."""
@@ -151,6 +162,12 @@ class SerialWorker(QObject):
         last_poll = 0
 
         while self._running:
+            # Send coalesced live command first (highest priority, latest-wins)
+            live_cmd = self._pending_live
+            if live_cmd is not None:
+                self._pending_live = None
+                self._send_command(QueuedCommand(live_cmd, CommandTag.GENERIC))
+
             # Process ONE queued command per iteration (not all at once)
             # so heartbeats can interleave between long command sequences
             try:
@@ -349,6 +366,10 @@ class SerialThread:
     def send_command(self, command: str):
         """Queue a command to be sent."""
         self._worker.queue_command(command)
+
+    def set_live_command(self, command: str):
+        """Set a coalesced live command (latest-wins, highest priority)."""
+        self._worker.set_live_command(command)
 
     def queue_refresh(self):
         """Queue the three refresh commands (MOTOR_DEBUG, ENC, MCONFIG)."""

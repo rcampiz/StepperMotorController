@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QPushButton,
     QSpinBox,
+    QDoubleSpinBox,
     QSlider,
     QTabWidget,
 )
@@ -62,6 +63,8 @@ class DriverPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._full_steps_per_rev = 200
+        self._syncing = False
         self._setup_ui()
 
     # ========================================================================
@@ -111,6 +114,17 @@ class DriverPanel(QWidget):
         spin.valueChanged.connect(slider.setValue)
 
         return ch, slider, spin
+
+    def _create_rpm_spinbox(self, min_val, max_val, suffix):
+        """Create a QDoubleSpinBox for RPM / RPM/s display."""
+        spin = QDoubleSpinBox()
+        spin.setRange(min_val, max_val)
+        spin.setDecimals(1)
+        spin.setSuffix(suffix)
+        spin.setAlignment(Qt.AlignCenter)
+        spin.setFont(QFont("Consolas", 9))
+        spin.setMinimumWidth(70)
+        return spin
 
     # ========================================================================
     # Setup
@@ -332,22 +346,33 @@ class DriverPanel(QWidget):
         faders = QHBoxLayout()
         faders.setSpacing(16)
 
+        f = self._full_steps_per_rev
+
         ch, self._acc_slider, self._acc_spin = \
             self._create_fader_channel("ACC", "Acceleration",
                                        15, 59590, " steps/s\u00b2", 10000,
                                        style=FADER_STYLE_GREEN)
+        self._acc_rpm_spin = self._create_rpm_spinbox(
+            15 * 60.0 / f, 59590 * 60.0 / f, " RPM/s")
+        ch.insertWidget(3, self._acc_rpm_spin)
         faders.addLayout(ch)
 
         ch, self._dec_slider, self._dec_spin = \
             self._create_fader_channel("DEC", "Deceleration",
                                        15, 59590, " steps/s\u00b2", 10000,
                                        style=FADER_STYLE_GREEN)
+        self._dec_rpm_spin = self._create_rpm_spinbox(
+            15 * 60.0 / f, 59590 * 60.0 / f, " RPM/s")
+        ch.insertWidget(3, self._dec_rpm_spin)
         faders.addLayout(ch)
 
         ch, self._maxspd_slider, self._maxspd_spin = \
             self._create_fader_channel("MAX SPD", "Max speed",
                                        15, 15609, " steps/s", 2500,
                                        style=FADER_STYLE_GREEN)
+        self._maxspd_rpm_spin = self._create_rpm_spinbox(
+            15 * 60.0 / f, 15609 * 60.0 / f, " RPM")
+        ch.insertWidget(3, self._maxspd_rpm_spin)
         faders.addLayout(ch)
 
         top_row.addLayout(faders)
@@ -393,6 +418,25 @@ class DriverPanel(QWidget):
         self._dec_spin.valueChanged.connect(self._update_motion_profile)
         self._maxspd_spin.valueChanged.connect(self._update_motion_profile)
         self._maxspd_spin.valueChanged.connect(self.maxspd_changed.emit)
+
+        # Bidirectional sync: steps/s ↔ RPM
+        self._acc_spin.valueChanged.connect(self._on_acc_steps_changed)
+        self._acc_rpm_spin.valueChanged.connect(self._on_acc_rpm_changed)
+        self._dec_spin.valueChanged.connect(self._on_dec_steps_changed)
+        self._dec_rpm_spin.valueChanged.connect(self._on_dec_rpm_changed)
+        self._maxspd_spin.valueChanged.connect(self._on_maxspd_steps_changed)
+        self._maxspd_rpm_spin.valueChanged.connect(self._on_maxspd_rpm_changed)
+
+        # Initial sync
+        self._syncing = True
+        self._acc_rpm_spin.setValue(
+            self._acc_spin.value() * 60.0 / self._full_steps_per_rev)
+        self._dec_rpm_spin.setValue(
+            self._dec_spin.value() * 60.0 / self._full_steps_per_rev)
+        self._maxspd_rpm_spin.setValue(
+            self._maxspd_spin.value() * 60.0 / self._full_steps_per_rev)
+        self._syncing = False
+
         self._update_motion_profile()
 
         return group
@@ -653,3 +697,70 @@ class DriverPanel(QWidget):
         self._acc_spin.setValue(15)
         self._dec_spin.setValue(15)
         self._maxspd_spin.setValue(15)
+
+    # ========================================================================
+    # Unit sync: steps/s ↔ RPM (bidirectional)
+    # ========================================================================
+
+    def _on_acc_steps_changed(self, val):
+        if self._syncing:
+            return
+        self._syncing = True
+        self._acc_rpm_spin.setValue(val * 60.0 / self._full_steps_per_rev)
+        self._syncing = False
+
+    def _on_acc_rpm_changed(self, val):
+        if self._syncing:
+            return
+        self._syncing = True
+        self._acc_spin.setValue(round(val * self._full_steps_per_rev / 60.0))
+        self._syncing = False
+
+    def _on_dec_steps_changed(self, val):
+        if self._syncing:
+            return
+        self._syncing = True
+        self._dec_rpm_spin.setValue(val * 60.0 / self._full_steps_per_rev)
+        self._syncing = False
+
+    def _on_dec_rpm_changed(self, val):
+        if self._syncing:
+            return
+        self._syncing = True
+        self._dec_spin.setValue(round(val * self._full_steps_per_rev / 60.0))
+        self._syncing = False
+
+    def _on_maxspd_steps_changed(self, val):
+        if self._syncing:
+            return
+        self._syncing = True
+        self._maxspd_rpm_spin.setValue(val * 60.0 / self._full_steps_per_rev)
+        self._syncing = False
+
+    def _on_maxspd_rpm_changed(self, val):
+        if self._syncing:
+            return
+        self._syncing = True
+        self._maxspd_spin.setValue(
+            round(val * self._full_steps_per_rev / 60.0))
+        self._syncing = False
+
+    @Slot(dict)
+    def update_drv_config(self, data: dict):
+        """Update motor configuration (full_steps_per_rev) for RPM conversion."""
+        if "full_steps_per_rev" in data:
+            self._full_steps_per_rev = data["full_steps_per_rev"]
+            f = self._full_steps_per_rev
+            # Update RPM spinbox ranges
+            self._acc_rpm_spin.setRange(15 * 60.0 / f, 59590 * 60.0 / f)
+            self._dec_rpm_spin.setRange(15 * 60.0 / f, 59590 * 60.0 / f)
+            self._maxspd_rpm_spin.setRange(15 * 60.0 / f, 15609 * 60.0 / f)
+            # Re-sync current values
+            self._syncing = True
+            self._acc_rpm_spin.setValue(
+                self._acc_spin.value() * 60.0 / f)
+            self._dec_rpm_spin.setValue(
+                self._dec_spin.value() * 60.0 / f)
+            self._maxspd_rpm_spin.setValue(
+                self._maxspd_spin.value() * 60.0 / f)
+            self._syncing = False

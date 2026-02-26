@@ -209,6 +209,7 @@ class MainWindow(QMainWindow):
 
         # Motor panel commands
         self._motor_panel.command_requested.connect(self._send_command)
+        self._motor_panel.live_command_requested.connect(self._send_live_command)
 
         # Driver panel refresh and parameter apply
         self._driver_panel.refresh_requested.connect(self._on_refresh_params)
@@ -503,6 +504,12 @@ class MainWindow(QMainWindow):
                 QueuedCommand(command, CommandTag.APPLY_PID))
         else:
             self._serial_thread.send_command(command)
+
+    @Slot(str)
+    def _send_live_command(self, command: str):
+        """Send a coalesced live command (latest-wins, highest priority)."""
+        if self._serial_thread:
+            self._serial_thread.set_live_command(command)
 
     def _on_sysid_tagged_command(self, command: str, tag_name: str):
         """Send a tagged command from the SysIdPanel."""
@@ -891,6 +898,8 @@ class MainWindow(QMainWindow):
                 self._motion_panel.update_drv_config(response.data)
                 self._motor_panel.update_drv_config(response.data)
                 self._graph_panel.update_drv_config(response.data)
+                self._driver_panel.update_drv_config(response.data)
+                self._telemetry_panel.update_drv_config(response.data)
 
         elif tag == CommandTag.REFRESH_PID_CONFIG.name:
             if response.data:

@@ -157,6 +157,9 @@ public:
 
         writeCmd(0x21);  // Inversion on (required for IPS panel driving)
 
+        writeCmd(0x35);  // TEON — enable Tearing Effect output on TE pin (PA0)
+        writeData(0x00); // Mode 0: V-blank only
+
         writeCmd(0x29);  // Display on
         delayMs(20);
     }

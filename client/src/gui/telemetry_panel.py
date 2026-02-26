@@ -32,6 +32,8 @@ class TelemetryPanel(QWidget):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._full_steps_per_rev = 200
+        self._step_mode = 7  # default 128 microsteps
         self._setup_ui()
 
     def _setup_ui(self):
@@ -64,6 +66,12 @@ class TelemetryPanel(QWidget):
         layout.addWidget(self._position_label, 0, 1)
         layout.addWidget(QLabel("steps"), 0, 2)
 
+        self._position_rev_label = QLabel("")
+        self._position_rev_label.setFont(QFont("Consolas", 9))
+        self._position_rev_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._position_rev_label.setStyleSheet("color: #888;")
+        layout.addWidget(self._position_rev_label, 0, 3)
+
         layout.addWidget(QLabel("Speed:"), 1, 0)
         self._speed_label = QLabel("---")
         self._speed_label.setFont(QFont("Consolas", 12, QFont.Bold))
@@ -71,11 +79,17 @@ class TelemetryPanel(QWidget):
         layout.addWidget(self._speed_label, 1, 1)
         layout.addWidget(QLabel("steps/s"), 1, 2)
 
+        self._speed_rpm_label = QLabel("")
+        self._speed_rpm_label.setFont(QFont("Consolas", 9))
+        self._speed_rpm_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self._speed_rpm_label.setStyleSheet("color: #888;")
+        layout.addWidget(self._speed_rpm_label, 1, 3)
+
         self._speed_bar = QProgressBar()
         self._speed_bar.setRange(0, 15625)  # powerSTEP01 max speed in steps/s
         self._speed_bar.setValue(0)
         self._speed_bar.setTextVisible(False)
-        layout.addWidget(self._speed_bar, 2, 0, 1, 3)
+        layout.addWidget(self._speed_bar, 2, 0, 1, 4)
 
         layout.setColumnStretch(1, 1)
         return group
@@ -624,10 +638,16 @@ class TelemetryPanel(QWidget):
             pos = motor.get("position", motor.get("pos"))
             if pos is not None:
                 self._position_label.setText(f"{pos:,}")
+                usteps_per_rev = self._full_steps_per_rev * (
+                    1 << self._step_mode)
+                rev = pos / usteps_per_rev
+                self._position_rev_label.setText(f"{rev:,.2f} rev")
             speed = motor.get("speed", motor.get("spd"))
             if speed is not None:
                 self._speed_label.setText(f"{speed:,}")
                 self._speed_bar.setValue(min(abs(speed), self._speed_bar.maximum()))
+                rpm = speed * 60.0 / self._full_steps_per_rev
+                self._speed_rpm_label.setText(f"{rpm:,.1f} RPM")
             busy = motor.get("busy")
             if busy is not None:
                 self._set_indicator_active(self._busy_indicator, busy, "#ff9900")
@@ -761,11 +781,21 @@ class TelemetryPanel(QWidget):
         value = max(1, value)
         self._speed_bar.setMaximum(value)
 
+    @Slot(dict)
+    def update_drv_config(self, data: dict):
+        """Update motor config for unit conversions."""
+        if "step_mode" in data:
+            self._step_mode = data["step_mode"]
+        if "full_steps_per_rev" in data:
+            self._full_steps_per_rev = data["full_steps_per_rev"]
+
     @Slot()
     def clear(self):
         """Clear all telemetry displays."""
         self._position_label.setText("---")
+        self._position_rev_label.setText("")
         self._speed_label.setText("---")
+        self._speed_rpm_label.setText("")
         self._speed_bar.setValue(0)
         self._encoder_count_label.setText("---")
         self._encoder_velocity_label.setText("---")

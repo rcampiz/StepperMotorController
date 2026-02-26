@@ -66,6 +66,7 @@ class MotorControlPanel(QWidget):
 
     # Signal emitted when a command should be sent
     command_requested = Signal(str)
+    live_command_requested = Signal(str)  # Coalesced: latest-wins, no queue
 
     # Minimum jog duration (ms) — ensures each tap produces visible motion
     # even if the button press/release is very quick.
@@ -79,7 +80,9 @@ class MotorControlPanel(QWidget):
         self._motor_enabled = False  # Track Hi-Z state from telemetry
         self._is_fault = False
         self._full_steps_per_rev = 200  # Updated from DRV:FULL_STEPS? response
+        self._step_mode = 7  # 0-7; microsteps = 1 << step_mode (default 128)
         self._syncing = False  # Prevents infinite recursion between linked spinboxes
+        self._run_direction = None  # None=stopped, 0=CCW, 1=CW — for live speed update
 
         # Jog minimum-duration timer
         self._jog_timer = QTimer(self)
@@ -90,6 +93,10 @@ class MotorControlPanel(QWidget):
         self._jog_start_time = 0.0
 
         self._setup_ui()
+
+    @property
+    def _microsteps_per_rev(self):
+        return self._full_steps_per_rev * (1 << self._step_mode)
 
     def _setup_ui(self):
         """Set up the user interface."""
@@ -312,8 +319,8 @@ class MotorControlPanel(QWidget):
 
         self._rev_spin = QDoubleSpinBox()
         self._rev_spin.setDecimals(2)
-        self._rev_spin.setRange(0.01, 2097151.0 / self._full_steps_per_rev)
-        self._rev_spin.setValue(1000.0 / self._full_steps_per_rev)
+        self._rev_spin.setRange(0.01, 2097151.0 / self._microsteps_per_rev)
+        self._rev_spin.setValue(1000.0 / self._microsteps_per_rev)
         self._rev_spin.setSuffix(" rev")
         self._rev_spin.setAlignment(Qt.AlignCenter)
         self._rev_spin.setFont(QFont("Consolas", 9))
@@ -369,7 +376,7 @@ class MotorControlPanel(QWidget):
         move_row.addWidget(self._move_cw_btn)
         btn_col.addLayout(move_row)
 
-        # GoTo row
+        # GoTo row (steps)
         goto_row = QHBoxLayout()
         goto_lbl = QLabel("GoTo:")
         goto_lbl.setFixedWidth(35)
@@ -377,7 +384,7 @@ class MotorControlPanel(QWidget):
         self._goto_pos = QSpinBox()
         self._goto_pos.setRange(-2097152, 2097151)
         self._goto_pos.setValue(0)
-        self._goto_pos.setToolTip("Target position")
+        self._goto_pos.setToolTip("Target position (microsteps)")
         goto_row.addWidget(self._goto_pos)
         self._goto_btn = QPushButton("Go")
         self._goto_btn.setToolTip("Go to absolute position")
@@ -385,6 +392,25 @@ class MotorControlPanel(QWidget):
         self._goto_btn.setFixedWidth(50)
         goto_row.addWidget(self._goto_btn)
         btn_col.addLayout(goto_row)
+
+        # GoTo row (revolutions)
+        goto_rev_row = QHBoxLayout()
+        goto_rev_row.addSpacing(39)  # align with steps row
+        self._goto_rev = QDoubleSpinBox()
+        self._goto_rev.setDecimals(3)
+        self._goto_rev.setRange(
+            -2097152.0 / self._microsteps_per_rev,
+            2097151.0 / self._microsteps_per_rev)
+        self._goto_rev.setValue(0)
+        self._goto_rev.setSuffix(" rev")
+        self._goto_rev.setToolTip("Target position (revolutions)")
+        goto_rev_row.addWidget(self._goto_rev)
+        goto_rev_row.addSpacing(54)  # align with Go button
+        btn_col.addLayout(goto_rev_row)
+
+        # Bidirectional sync: goto steps ↔ goto rev
+        self._goto_pos.valueChanged.connect(self._on_goto_steps_changed)
+        self._goto_rev.valueChanged.connect(self._on_goto_rev_changed)
 
         # Home / Zero Motor row
         home_row = QHBoxLayout()
@@ -495,7 +521,9 @@ class MotorControlPanel(QWidget):
         self._is_fault = state in ("FAULT", "ESTOP")
         self._clear_fault_btn.setVisible(self._is_fault)
         self._force_clear_btn.setVisible(self._is_fault)
-        if not self._is_fault:
+        if self._is_fault:
+            self._run_direction = None  # Motor stopped — disable live speed update
+        else:
             self.clear_fault_error()
 
         self._update_motion_buttons()
@@ -504,6 +532,8 @@ class MotorControlPanel(QWidget):
     def update_hiz(self, hiz: bool):
         """Update motor enabled state from telemetry Hi-Z flag."""
         self._motor_enabled = not hiz
+        if hiz:
+            self._run_direction = None  # Motor disabled — stop live speed update
         self._update_motion_buttons()
 
         # Visual feedback on enable/disable and hold toggle buttons
@@ -536,12 +566,15 @@ class MotorControlPanel(QWidget):
     # =========================================================================
 
     def _on_speed_steps_changed(self, val):
-        """Sync RPM spinbox when steps/s changes."""
+        """Sync RPM spinbox when steps/s changes. Live-update motor if running."""
         if self._syncing:
             return
         self._syncing = True
         self._rpm_spin.setValue(val * 60.0 / self._full_steps_per_rev)
         self._syncing = False
+        # Live speed update: coalesced (latest-wins, no queue backup)
+        if self._run_direction is not None:
+            self.live_command_requested.emit(f"RUN {val} {self._run_direction}")
 
     def _on_speed_rpm_changed(self, val):
         """Sync steps/s spinbox when RPM changes."""
@@ -553,40 +586,60 @@ class MotorControlPanel(QWidget):
         self._syncing = False
 
     def _on_move_steps_changed(self, val):
-        """Sync revolutions spinbox when steps changes."""
+        """Sync revolutions spinbox when steps (microsteps) changes."""
         if self._syncing:
             return
         self._syncing = True
-        self._rev_spin.setValue(val / self._full_steps_per_rev)
+        self._rev_spin.setValue(val / self._microsteps_per_rev)
         self._syncing = False
 
     def _on_move_rev_changed(self, val):
-        """Sync steps spinbox when revolutions changes."""
+        """Sync steps (microsteps) spinbox when revolutions changes."""
         if self._syncing:
             return
         self._syncing = True
-        steps = max(1, round(val * self._full_steps_per_rev))
+        steps = max(1, round(val * self._microsteps_per_rev))
         self._move_steps.setValue(steps)
+        self._syncing = False
+
+    def _on_goto_steps_changed(self, val):
+        """Sync goto rev spinbox when goto steps changes."""
+        if self._syncing:
+            return
+        self._syncing = True
+        self._goto_rev.setValue(val / self._microsteps_per_rev)
+        self._syncing = False
+
+    def _on_goto_rev_changed(self, val):
+        """Sync goto steps spinbox when goto rev changes."""
+        if self._syncing:
+            return
+        self._syncing = True
+        self._goto_pos.setValue(round(val * self._microsteps_per_rev))
         self._syncing = False
 
     @Slot(dict)
     def update_drv_config(self, data: dict):
         """Update motor configuration from DRV:* query responses."""
+        if "step_mode" in data:
+            self._step_mode = data["step_mode"]
         if "full_steps_per_rev" in data:
             self._full_steps_per_rev = data["full_steps_per_rev"]
-            # Recalculate RPM and rev spinbox ranges
-            max_steps_s = self._speed_spin.maximum()
-            self._rpm_spin.setMaximum(
-                max_steps_s * 60.0 / self._full_steps_per_rev)
-            self._rev_spin.setMaximum(
-                2097151.0 / self._full_steps_per_rev)
-            # Re-sync current values
-            self._syncing = True
-            self._rpm_spin.setValue(
-                self._speed_spin.value() * 60.0 / self._full_steps_per_rev)
-            self._rev_spin.setValue(
-                self._move_steps.value() / self._full_steps_per_rev)
-            self._syncing = False
+
+        # Recalculate RPM (uses full_steps) and rev (uses microsteps) ranges
+        usteps = self._microsteps_per_rev
+        max_steps_s = self._speed_spin.maximum()
+        self._rpm_spin.setMaximum(
+            max_steps_s * 60.0 / self._full_steps_per_rev)
+        self._rev_spin.setMaximum(2097151.0 / usteps)
+        self._goto_rev.setRange(-2097152.0 / usteps, 2097151.0 / usteps)
+        # Re-sync current values
+        self._syncing = True
+        self._rpm_spin.setValue(
+            self._speed_spin.value() * 60.0 / self._full_steps_per_rev)
+        self._rev_spin.setValue(self._move_steps.value() / usteps)
+        self._goto_rev.setValue(self._goto_pos.value() / usteps)
+        self._syncing = False
 
     # =========================================================================
     # Command handlers
@@ -644,6 +697,7 @@ class MotorControlPanel(QWidget):
     @Slot()
     def _on_stop(self):
         """Stop motion."""
+        self._run_direction = None
         self.command_requested.emit("STOP")
 
     def _on_move(self, direction: int):
@@ -691,6 +745,7 @@ class MotorControlPanel(QWidget):
 
     def _on_run(self, direction: int):
         """Start continuous run."""
+        self._run_direction = direction
         speed = self._speed_spin.value()
         self.command_requested.emit(f"RUN {speed} {direction}")
 

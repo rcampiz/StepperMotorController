@@ -11,6 +11,60 @@
 #include "drivers/lcd_st7789.hpp"
 #include "graphics/trig_lut.hpp"
 #include "graphics/primitives.hpp"
+#include "stm32f401xe.h"
+
+// DWT cycle counter for accurate TE timeout (same guard pattern as spi_bitbang.hpp)
+#ifndef DWT_CTRL_CYCCNTENA_Msk
+#define DWT_BASE            (0xE0001000UL)
+#define DWT                 ((DWT_Type*)DWT_BASE)
+typedef struct {
+    volatile uint32_t CTRL;
+    volatile uint32_t CYCCNT;
+    volatile uint32_t CPICNT;
+    volatile uint32_t EXCCNT;
+    volatile uint32_t SLEEPCNT;
+    volatile uint32_t LSUCNT;
+    volatile uint32_t FOLDCNT;
+    volatile uint32_t PCSR;
+} DWT_Type;
+#define DWT_CTRL_CYCCNTENA_Msk  (1UL << 0)
+#endif
+
+#ifndef CoreDebug_DEMCR_TRCENA_Msk
+#define CoreDebug_BASE      (0xE000EDF0UL)
+#define CoreDebug           ((CoreDebug_Type*)CoreDebug_BASE)
+typedef struct {
+    volatile uint32_t DHCSR;
+    volatile uint32_t DCRSR;
+    volatile uint32_t DCRDR;
+    volatile uint32_t DEMCR;
+} CoreDebug_Type;
+#define CoreDebug_DEMCR_TRCENA_Msk  (1UL << 24)
+#endif
+
+extern uint32_t SystemCoreClock;
+
+// ============================================================================
+// Tearing Effect (TE) sync — EXTI0 on PA0
+// ============================================================================
+
+static volatile bool s_teFlag = false;
+
+extern "C" void EXTI0_IRQHandler(void) {
+    if (EXTI->PR & (1U << 0)) {
+        EXTI->PR = (1U << 0);  // Clear pending (write-1-to-clear)
+        s_teFlag = true;
+    }
+}
+
+static void waitForTE() {
+    s_teFlag = false;
+    uint32_t start = DWT->CYCCNT;
+    uint32_t timeout = (SystemCoreClock / 1000) * 18;  // 18ms > one frame @ 60Hz
+    while (!s_teFlag) {
+        if ((DWT->CYCCNT - start) >= timeout) break;
+    }
+}
 
 // ============================================================================
 // Triangle edge-equation helpers (file-local)
@@ -61,6 +115,19 @@ IndicatorService g_indicatorService;
 
 void IndicatorService::init(LCD* lcd) {
     m_lcd = lcd;
+
+    // Enable DWT cycle counter (idempotent if already enabled)
+    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
+    // Configure EXTI0 on PA0 (TE pin) — rising edge
+    RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
+    SYSCFG->EXTICR[0] = (SYSCFG->EXTICR[0] & ~0xFU) | 0x0U;  // PA0 → EXTI0
+    EXTI->RTSR |= (1U << 0);    // Rising edge trigger
+    EXTI->FTSR &= ~(1U << 0);   // No falling edge
+    EXTI->IMR  |= (1U << 0);    // Unmask line 0
+    NVIC_SetPriority(EXTI0_IRQn, 4);  // Above FreeRTOS syscall threshold — no API calls in ISR
+    NVIC_EnableIRQ(EXTI0_IRQn);
 }
 
 // ============================================================================
@@ -232,46 +299,17 @@ void IndicatorService::drawComposited(const Params& p) {
     int16_t rMinX, rMinY, rMaxX, rMaxY;
 
     if (needFullRedraw) {
-        // Full composited render
+        // Full composited render (ring toggle or first draw)
         rMinX = -halfW; rMinY = -halfW;
         rMaxX = halfW;  rMaxY = halfW;
         m_compositedValid = true;
     } else {
-        // Dirty rectangle: union of old + new arrow bounding boxes
-        rMinX = halfW; rMinY = halfW;
-        rMaxX = -halfW; rMaxY = -halfW;
-
-        // Expand by new arrow vertices
-        for (int i = 0; i < newNumVerts; i++) {
-            int16_t dx = static_cast<int16_t>(newVerts[i][0] - SCREEN_CX);
-            int16_t dy = static_cast<int16_t>(newVerts[i][1] - SCREEN_CY);
-            if (dx < rMinX) rMinX = dx;
-            if (dy < rMinY) rMinY = dy;
-            if (dx > rMaxX) rMaxX = dx;
-            if (dy > rMaxY) rMaxY = dy;
-        }
-
-        // Expand by previous arrow vertices
-        for (int i = 0; i < m_prevNumArrowVerts; i++) {
-            int16_t dx = static_cast<int16_t>(m_prevArrowVerts[i][0] - SCREEN_CX);
-            int16_t dy = static_cast<int16_t>(m_prevArrowVerts[i][1] - SCREEN_CY);
-            if (dx < rMinX) rMinX = dx;
-            if (dy < rMinY) rMinY = dy;
-            if (dx > rMaxX) rMaxX = dx;
-            if (dy > rMaxY) rMaxY = dy;
-        }
-
-        // Margin for rasterization edges
-        rMinX -= 2; rMinY -= 2;
-        rMaxX += 2; rMaxY += 2;
-
-        // Clamp to composited window
-        if (rMinX < -halfW) rMinX = -halfW;
-        if (rMinY < -halfW) rMinY = -halfW;
-        if (rMaxX > halfW)  rMaxX = halfW;
-        if (rMaxY > halfW)  rMaxY = halfW;
-
-        if (rMinX > rMaxX || rMinY > rMaxY) return;  // No dirty area
+        // Fixed-size arrow region — consistent frame time eliminates jitter.
+        // The arrow's max vertex radius is ~55px; ARROW_COMPOSITED_HALF_W (57)
+        // always covers the full arrow at any rotation with margin.
+        int16_t arrowHalf = ARROW_COMPOSITED_HALF_W;
+        rMinX = -arrowHalf; rMinY = -arrowHalf;
+        rMaxX = arrowHalf;  rMaxY = arrowHalf;
     }
 
     // Save arrow vertices for next frame's dirty rect
@@ -280,6 +318,13 @@ void IndicatorService::drawComposited(const Params& p) {
         m_prevArrowVerts[i][1] = newVerts[i][1];
     }
     m_prevNumArrowVerts = newNumVerts;
+
+    // --- Precompute combined Y-range of all arrow triangles for early-out ---
+    int16_t arrowYmin = 32767, arrowYmax = -32768;
+    for (int i = 0; i < numArrow; i++) {
+        if (arrowE[i].minY < arrowYmin) arrowYmin = arrowE[i].minY;
+        if (arrowE[i].maxY > arrowYmax) arrowYmax = arrowE[i].maxY;
+    }
 
     // --- Stream scanlines for the render region ---
     int32_t outerR2 = static_cast<int32_t>(RING_OUTER_R) * RING_OUTER_R;
@@ -292,11 +337,19 @@ void IndicatorService::drawComposited(const Params& p) {
 
     static uint8_t scanline[2 * (2 * COMPOSITED_HALF_W + 1)];
 
+    // Sync to V-blank to avoid tearing
+    waitForTE();
+
     m_lcd->streamBitmapStart(wx, wy, ww, wh);
 
     for (int16_t dy = rMinY; dy <= rMaxY; dy++) {
         int16_t screenY = static_cast<int16_t>(SCREEN_CY + dy);
         int32_t dy2 = static_cast<int32_t>(dy) * dy;
+
+        // Y-range early-out: skip arrow triangle tests for scanlines
+        // entirely above or below all arrow geometry
+        bool arrowOnScanline = (numArrow > 0 &&
+                                screenY >= arrowYmin && screenY <= arrowYmax);
 
         for (int16_t dx = rMinX; dx <= rMaxX; dx++) {
             int16_t screenX = static_cast<int16_t>(SCREEN_CX + dx);
@@ -311,7 +364,7 @@ void IndicatorService::drawComposited(const Params& p) {
                 bool isInterior = (!hasRing || dist2 < innerR2);
 
                 // Check arrow (highest z-order, interior only)
-                if (isInterior) {
+                if (arrowOnScanline && isInterior) {
                     for (int i = 0; i < numArrow; i++) {
                         if (screenY >= arrowE[i].minY && screenY <= arrowE[i].maxY &&
                             testTri(arrowE[i], screenX, screenY)) {
