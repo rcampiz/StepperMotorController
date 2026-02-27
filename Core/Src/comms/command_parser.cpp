@@ -2057,12 +2057,32 @@ void CommandParser::respondJsonErr(const char *command, const char *code, const 
 
 void CommandParser::cmdMove(const ParsedCommand &cmd) {
   if (cmd.argCount < 2) {
-    respondErr("Usage: MOVE <steps> <dir>");
+    respondErr("Usage: MOVE <steps> <dir> [speed] | MOVE <rev> REV <dir> [speed]");
     return;
   }
 
-  int32_t steps = static_cast<int32_t>(atol(cmd.args[0]));
-  int32_t dir = static_cast<int32_t>(atol(cmd.args[1]));
+  // Check for REV unit: MOVE <rev> REV <dir> [speed]
+  bool isRev = (cmd.argCount >= 2 && strcmp(cmd.args[1], "REV") == 0);
+  int32_t steps;
+  int dirArgIdx, speedArgIdx;
+
+  if (isRev) {
+    if (cmd.argCount < 3) {
+      respondErr("Usage: MOVE <rev> REV <dir> [speed]");
+      return;
+    }
+    double rev = atof(cmd.args[0]);
+    uint32_t ustepsPerRev = Services::g_motorConfig.getMicrostepsPerRev();
+    steps = static_cast<int32_t>(rev * static_cast<double>(ustepsPerRev) + 0.5);
+    dirArgIdx = 2;
+    speedArgIdx = 3;
+  } else {
+    steps = static_cast<int32_t>(atol(cmd.args[0]));
+    dirArgIdx = 1;
+    speedArgIdx = 2;
+  }
+
+  int32_t dir = static_cast<int32_t>(atol(cmd.args[dirArgIdx]));
 
   // Validate direction (must be 0 or 1)
   if (dir < Limits::DIR_MIN || dir > Limits::DIR_MAX) {
@@ -2080,8 +2100,8 @@ void CommandParser::cmdMove(const ParsedCommand &cmd) {
 
   // Optional speed override (steps/s) — temporarily sets MAX_SPEED for this move
   uint32_t speedOverride = 0;
-  if (cmd.argCount >= 3) {
-    int32_t spd = static_cast<int32_t>(atol(cmd.args[2]));
+  if (cmd.argCount > speedArgIdx) {
+    int32_t spd = static_cast<int32_t>(atol(cmd.args[speedArgIdx]));
     if (spd < 1 || spd > Limits::SPEED_MAX) {
       respondErr("speed out of range (1-15625 steps/s)");
       return;
@@ -2099,11 +2119,26 @@ void CommandParser::cmdMove(const ParsedCommand &cmd) {
 
 void CommandParser::cmdGoTo(const ParsedCommand &cmd) {
   if (cmd.argCount < 1) {
-    respondErr("Usage: GOTO <position> [speed_steps_s]");
+    respondErr("Usage: GOTO <pos> [speed] | GOTO <rev> REV [speed]");
     return;
   }
 
-  int32_t position = static_cast<int32_t>(atol(cmd.args[0]));
+  // Check for REV unit: GOTO <rev> REV [speed]
+  bool isRev = (cmd.argCount >= 2 && strcmp(cmd.args[1], "REV") == 0);
+  int32_t position;
+  int speedArgIdx;
+
+  if (isRev) {
+    double rev = atof(cmd.args[0]);
+    uint32_t ustepsPerRev = Services::g_motorConfig.getMicrostepsPerRev();
+    double usteps = rev * static_cast<double>(ustepsPerRev);
+    position = (usteps >= 0) ? static_cast<int32_t>(usteps + 0.5)
+                             : static_cast<int32_t>(usteps - 0.5);
+    speedArgIdx = 2;
+  } else {
+    position = static_cast<int32_t>(atol(cmd.args[0]));
+    speedArgIdx = 1;
+  }
 
   // Validate position (22-bit signed range)
   if (position < Limits::POS_MIN || position > Limits::POS_MAX) {
@@ -2113,8 +2148,8 @@ void CommandParser::cmdGoTo(const ParsedCommand &cmd) {
 
   // Optional speed override (steps/s) — temporarily sets MAX_SPEED for this move
   uint32_t speedOverride = 0;
-  if (cmd.argCount >= 2) {
-    int32_t spd = static_cast<int32_t>(atol(cmd.args[1]));
+  if (cmd.argCount > speedArgIdx) {
+    int32_t spd = static_cast<int32_t>(atol(cmd.args[speedArgIdx]));
     if (spd < 1 || spd > Limits::SPEED_MAX) {
       respondErr("speed out of range (1-15625 steps/s)");
       return;
@@ -2132,12 +2167,30 @@ void CommandParser::cmdGoTo(const ParsedCommand &cmd) {
 
 void CommandParser::cmdRun(const ParsedCommand &cmd) {
   if (cmd.argCount < 2) {
-    respondErr("Usage: RUN <speed> <dir>");
+    respondErr("Usage: RUN <speed> <dir> | RUN <rpm> RPM <dir>");
     return;
   }
 
-  int32_t speed = static_cast<int32_t>(atol(cmd.args[0]));
-  int32_t dir = static_cast<int32_t>(atol(cmd.args[1]));
+  // Check for RPM unit: RUN <rpm> RPM <dir>
+  bool isRpm = (cmd.argCount >= 2 && strcmp(cmd.args[1], "RPM") == 0);
+  int32_t speed;
+  int dirArgIdx;
+
+  if (isRpm) {
+    if (cmd.argCount < 3) {
+      respondErr("Usage: RUN <rpm> RPM <dir>");
+      return;
+    }
+    double rpm = atof(cmd.args[0]);
+    uint16_t fullSteps = Services::g_motorConfig.getFullStepsPerRev();
+    speed = static_cast<int32_t>(rpm * static_cast<double>(fullSteps) / 60.0 + 0.5);
+    dirArgIdx = 2;
+  } else {
+    speed = static_cast<int32_t>(atol(cmd.args[0]));
+    dirArgIdx = 1;
+  }
+
+  int32_t dir = static_cast<int32_t>(atol(cmd.args[dirArgIdx]));
 
   // Validate direction (must be 0 or 1)
   if (dir < Limits::DIR_MIN || dir > Limits::DIR_MAX) {

@@ -574,7 +574,9 @@ class MotorControlPanel(QWidget):
         self._syncing = False
         # Live speed update: coalesced (latest-wins, no queue backup)
         if self._run_direction is not None:
-            self.live_command_requested.emit(f"RUN {val} {self._run_direction}")
+            rpm = self._rpm_spin.value()
+            self.live_command_requested.emit(
+                f"RUN {rpm:.1f} RPM {self._run_direction}")
 
     def _on_speed_rpm_changed(self, val):
         """Sync steps/s spinbox when RPM changes."""
@@ -623,6 +625,9 @@ class MotorControlPanel(QWidget):
         """Update motor configuration from DRV:* query responses."""
         if "step_mode" in data:
             self._step_mode = data["step_mode"]
+            log.info("step_mode updated to %d (1/%d, %d usteps/rev)",
+                     self._step_mode, 1 << self._step_mode,
+                     self._microsteps_per_rev)
         if "full_steps_per_rev" in data:
             self._full_steps_per_rev = data["full_steps_per_rev"]
 
@@ -654,13 +659,13 @@ class MotorControlPanel(QWidget):
         if self._jog_active:
             log.debug("Jog already active — ignoring repeated press")
             return
-        speed = self._speed_spin.value()
+        rpm = self._rpm_spin.value()
         self._jog_active = True
         self._jog_release_pending = False
         self._jog_start_time = time.monotonic()
-        log.debug("Jog START: RUN %d dir=%d (min %dms)",
-                  speed, direction, self.MIN_JOG_DURATION_MS)
-        self.command_requested.emit(f"RUN {speed} {direction}")
+        log.debug("Jog START: RUN %.1f RPM dir=%d (min %dms)",
+                  rpm, direction, self.MIN_JOG_DURATION_MS)
+        self.command_requested.emit(f"RUN {rpm:.1f} RPM {direction}")
         self._jog_timer.start(self.MIN_JOG_DURATION_MS)
 
     def _stop_jog(self):
@@ -703,21 +708,21 @@ class MotorControlPanel(QWidget):
     def _on_move(self, direction: int):
         """Execute relative move at the current speed fader value."""
         speed = self._speed_spin.value()
-        steps = self._move_steps.value()
+        rev = self._rev_spin.value()
         if speed > 0:
-            self.command_requested.emit(f"MOVE {steps} {direction} {speed}")
+            self.command_requested.emit(f"MOVE {rev:.4f} REV {direction} {speed}")
         else:
-            self.command_requested.emit(f"MOVE {steps} {direction}")
+            self.command_requested.emit(f"MOVE {rev:.4f} REV {direction}")
 
     @Slot()
     def _on_goto(self):
         """Execute absolute move at the current speed fader value."""
         speed = self._speed_spin.value()
-        pos = self._goto_pos.value()
+        rev = self._goto_rev.value()
         if speed > 0:
-            self.command_requested.emit(f"GOTO {pos} {speed}")
+            self.command_requested.emit(f"GOTO {rev:.4f} REV {speed}")
         else:
-            self.command_requested.emit(f"GOTO {pos}")
+            self.command_requested.emit(f"GOTO {rev:.4f} REV")
 
     @Slot()
     def _on_home(self):
@@ -746,8 +751,8 @@ class MotorControlPanel(QWidget):
     def _on_run(self, direction: int):
         """Start continuous run."""
         self._run_direction = direction
-        speed = self._speed_spin.value()
-        self.command_requested.emit(f"RUN {speed} {direction}")
+        rpm = self._rpm_spin.value()
+        self.command_requested.emit(f"RUN {rpm:.1f} RPM {direction}")
 
     @Slot()
     def _on_hold_toggle(self):
