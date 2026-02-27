@@ -12,11 +12,20 @@ CompileFlags:
     - -fno-exceptions
     - -fno-rtti
     - -Wall
-    - -IMiddlewares/Third_Party/FreeRTOS-Kernel/include
-    - -IMiddlewares/Third_Party/FreeRTOS-Kernel/portable/GCC/ARM_CM4F
-    - -IMiddlewares/SEGGER/RTT
-    - -IMiddlewares/SEGGER/SystemView
-    - -ICore/Inc/services
+    - -Iserver
+    - -Iserver/layers
+    - -Iserver/layers/L1_transport
+    - -Iserver/layers/L2_protocol
+    - -Iserver/layers/L3_services
+    - -Iserver/layers/L4_drivers
+    - -Iserver/layers/L5_board
+    - -Iserver/foundation
+    - -Iserver/foundation/F_platform
+    - -Iserver/external/X_vendor/CMSIS
+    - -Iserver/external/X_middlewares/Third_Party/FreeRTOS-Kernel/include
+    - -Iserver/external/X_middlewares/Third_Party/FreeRTOS-Kernel/portable/GCC/ARM_CM4F
+    - -Iserver/external/X_middlewares/SEGGER/RTT
+    - -Iserver/external/X_middlewares/SEGGER/SystemView
   Remove:
     - -Wa,*
     - -mno-*

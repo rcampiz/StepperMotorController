@@ -38,7 +38,7 @@ set(CMAKE_C_FLAGS_RELEASE "-O2")
 set(CMAKE_CXX_FLAGS_RELEASE "-O2")
 
 # Linker flags
-set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/STM32F401RETx_FLASH.ld")
+set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/server/foundation/F_platform/STM32F401RETx_FLASH.ld")
 set(CMAKE_EXE_LINKER_FLAGS "${MCU_FLAGS} -specs=nano.specs -T${LINKER_SCRIPT} -Wl,-Map=${PROJECT_NAME}.map,--cref -Wl,--gc-sections -lc -lm -lnosys")
 
 # C/C++ standards
@@ -49,22 +49,21 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Include directories
 include_directories(
-    Core/Inc
-    Core/Inc/board
-    Core/Inc/comms
-    Core/Inc/drivers
-    Core/Inc/tasks
-    Core/Inc/services
-    Core/Inc/ui
-    Drivers/CMSIS
-    Drivers/CMSIS/Device/ST/STM32F4xx/Include
-    Drivers/CMSIS/Include
-    Drivers/STM32F4xx_HAL_Driver/Inc
-    Middlewares/Third_Party/FreeRTOS-Kernel/include
-    Middlewares/Third_Party/FreeRTOS-Kernel/portable/GCC/ARM_CM4F
+    server
+    server/layers
+    server/layers/L1_transport
+    server/layers/L2_protocol
+    server/layers/L3_services
+    server/layers/L4_drivers
+    server/layers/L5_board
+    server/foundation
+    server/foundation/F_platform
+    server/external/X_vendor/CMSIS
+    server/external/X_middlewares/Third_Party/FreeRTOS-Kernel/include
+    server/external/X_middlewares/Third_Party/FreeRTOS-Kernel/portable/GCC/ARM_CM4F
     # SEGGER RTT and SystemView
-    Middlewares/SEGGER/RTT
-    Middlewares/SEGGER/SystemView
+    server/external/X_middlewares/SEGGER/RTT
+    server/external/X_middlewares/SEGGER/SystemView
 )
 
 # Defines
@@ -77,7 +76,7 @@ add_compile_definitions(
 )
 
 # FreeRTOS source files
-set(FREERTOS_DIR Middlewares/Third_Party/FreeRTOS-Kernel)
+set(FREERTOS_DIR server/external/X_middlewares/Third_Party/FreeRTOS-Kernel)
 set(FREERTOS_SOURCES
     ${FREERTOS_DIR}/tasks.c
     ${FREERTOS_DIR}/queue.c
@@ -91,73 +90,123 @@ set(FREERTOS_SOURCES
 
 # SEGGER RTT sources
 set(SEGGER_RTT_SOURCES
-    Middlewares/SEGGER/RTT/SEGGER_RTT.c
-    Middlewares/SEGGER/RTT/SEGGER_RTT_printf.c
+    server/external/X_middlewares/SEGGER/RTT/SEGGER_RTT.c
+    server/external/X_middlewares/SEGGER/RTT/SEGGER_RTT_printf.c
 )
 
 # SEGGER SystemView sources
 set(SEGGER_SYSVIEW_SOURCES
-    Middlewares/SEGGER/SystemView/SEGGER_SYSVIEW.c
-    Middlewares/SEGGER/SystemView/SEGGER_SYSVIEW_Config_FreeRTOS.c
-    Middlewares/SEGGER/SystemView/SEGGER_SYSVIEW_FreeRTOS.c
+    server/external/X_middlewares/SEGGER/SystemView/SEGGER_SYSVIEW.c
+    server/external/X_middlewares/SEGGER/SystemView/SEGGER_SYSVIEW_Config_FreeRTOS.c
+    server/external/X_middlewares/SEGGER/SystemView/SEGGER_SYSVIEW_FreeRTOS.c
 )
 
 # Source files
 set(C_SOURCES
-    Core/Src/system_stm32f4xx.c
-    Core/Src/syscalls.c
+    server/foundation/F_platform/system_stm32f4xx.c
+    server/foundation/F_platform/syscalls.c
     ${FREERTOS_SOURCES}
     ${SEGGER_RTT_SOURCES}
     ${SEGGER_SYSVIEW_SOURCES}
 )
 
-# Communications module sources
-set(COMMS_SOURCES
-    Core/Src/comms/uart_transport.cpp
-    Core/Src/comms/rtt_transport.cpp
-    Core/Src/comms/command_parser.cpp
-    Core/Src/comms/telemetry.cpp
+# Transport module sources (byte-level I/O)
+set(TRANSPORT_SOURCES
+    server/layers/L1_transport/uart_transport.cpp
+    server/layers/L1_transport/rtt_transport.cpp
+)
+
+# Protocol module sources (command framing/dispatch)
+set(PROTOCOL_SOURCES
+    server/layers/L2_protocol/command_parser.cpp
+    server/layers/L2_protocol/telemetry.cpp
+    server/layers/L2_protocol/event_codec.cpp
 )
 
 # Task sources
 set(TASK_SOURCES
-    Core/Src/tasks/motor_task.cpp
-    Core/Src/tasks/encoder_task.cpp
-    Core/Src/tasks/display_task.cpp
-    Core/Src/tasks/comms_task.cpp
-    Core/Src/tasks/bringup_task.cpp
+    server/foundation/F_platform/tasks/motor_task.cpp
+    server/foundation/F_platform/tasks/encoder_task.cpp
+    server/foundation/F_platform/tasks/display_task.cpp
+    server/foundation/F_platform/tasks/comms_task.cpp
+    server/foundation/F_platform/tasks/bringup_task.cpp
 )
 
-# Service sources
-set(SERVICE_SOURCES
-    Core/Src/services/tick_timer.cpp
-    Core/Src/services/command_queue.cpp
-    Core/Src/services/device_config.cpp
-    Core/Src/services/control_mode.cpp
-    Core/Src/services/motor_config.cpp
+# Service sources — motion
+set(SERVICE_MOTION_SOURCES
+    server/layers/L3_services/motion/motion_service.cpp
+    server/layers/L3_services/motion/motor_config.cpp
+    server/layers/L3_services/motion/control_mode.cpp
+    server/layers/L3_services/motion/following_supervisor.cpp
+    server/layers/L3_services/motion/pid_controller.cpp
+    server/layers/L3_services/motion/speed_trim_controller.cpp
+    server/layers/L3_services/motion/sysid.cpp
+)
+
+# Service sources — safety
+set(SERVICE_SAFETY_SOURCES
+    server/layers/L3_services/safety/safety_service.cpp
+)
+
+# Service sources — config
+set(SERVICE_CONFIG_SOURCES
+    server/layers/L3_services/config/config_service.cpp
+    server/layers/L3_services/config/device_config.cpp
+)
+
+# Service sources — dispatch
+set(SERVICE_DISPATCH_SOURCES
+    server/layers/L3_services/dispatch/command_queue.cpp
+    server/layers/L3_services/dispatch/event_service.cpp
+)
+
+# Service sources — infra
+set(SERVICE_INFRA_SOURCES
+    server/layers/L3_services/infra/tick_timer.cpp
+    server/layers/L3_services/infra/timing_service.cpp
+    server/layers/L3_services/infra/trace.cpp
+    server/layers/L3_services/infra/unit_conversion.cpp
+    server/layers/L3_services/infra/indicator_service.cpp
+    server/layers/L3_services/infra/flash_image_service.cpp
 )
 
 # UI sources
 set(UI_SOURCES
-    Core/Src/ui/ui_mode.cpp
+    server/layers/L3_services/ui/ui_mode.cpp
+    server/layers/L3_services/ui/menu_screen.cpp
+    server/layers/L3_services/ui/terminal_screen.cpp
+    server/layers/L3_services/ui/screen_manager.cpp
+    server/layers/L3_services/ui/screens/boot_color_screen.cpp
+    server/layers/L3_services/ui/screens/device_info_screen.cpp
+    server/layers/L3_services/ui/screens/encoder_screen.cpp
+    server/layers/L3_services/ui/screens/motion_screen.cpp
+    server/layers/L3_services/ui/screens/config_screen.cpp
+    server/layers/L3_services/ui/screens/graph_screen.cpp
+    server/layers/L3_services/ui/screens/image_view_screen.cpp
+    server/layers/L3_services/ui/screens/trace_screen.cpp
 )
 
 # Driver sources
 set(DRIVER_SOURCES
-    Core/Src/drivers/spi_manager.cpp
+    server/layers/L4_drivers/spi/spi_manager.cpp
 )
 
 set(CXX_SOURCES
-    Core/Src/main.cpp
-    ${COMMS_SOURCES}
+    server/main.cpp
+    ${TRANSPORT_SOURCES}
+    ${PROTOCOL_SOURCES}
     ${TASK_SOURCES}
-    ${SERVICE_SOURCES}
+    ${SERVICE_MOTION_SOURCES}
+    ${SERVICE_SAFETY_SOURCES}
+    ${SERVICE_CONFIG_SOURCES}
+    ${SERVICE_DISPATCH_SOURCES}
+    ${SERVICE_INFRA_SOURCES}
     ${UI_SOURCES}
     ${DRIVER_SOURCES}
 )
 
 set(ASM_SOURCES
-    Core/Src/startup_stm32f401xe.s
+    server/foundation/F_platform/startup_stm32f401xe.s
 )
 
 # Create executable

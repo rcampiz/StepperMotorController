@@ -22,15 +22,15 @@ BUILD_DIR = build
 ######################################
 # C sources
 C_SOURCES = \
-Core/Src/system_stm32f4xx.c
+server/foundation/F_platform/system_stm32f4xx.c
 
 # CPP sources
 CXX_SOURCES = \
-Core/Src/main.cpp
+server/main.cpp
 
 # ASM sources
 ASM_SOURCES = \
-Core/Src/startup_stm32f401xe.s
+server/foundation/F_platform/startup_stm32f401xe.s
 
 #######################################
 # Binaries
@@ -64,8 +64,16 @@ AS_INCLUDES =
 
 # C includes
 C_INCLUDES = \
--ICore/Inc \
--IDrivers/CMSIS
+-Iserver \
+-Iserver/layers \
+-Iserver/layers/L1_transport \
+-Iserver/layers/L2_protocol \
+-Iserver/layers/L3_services \
+-Iserver/layers/L4_drivers \
+-Iserver/layers/L5_board \
+-Iserver/foundation \
+-Iserver/foundation/F_platform \
+-Iserver/external/X_vendor/CMSIS
 
 # Compile gcc flags
 ASFLAGS = $(MCU) $(AS_INCLUDES) $(OPT) -Wall -fdata-sections -ffunction-sections
@@ -90,7 +98,7 @@ CXXFLAGS += -fno-use-cxa-atexit
 # LDFLAGS
 #######################################
 # Link script
-LDSCRIPT = STM32F401RETx_FLASH.ld
+LDSCRIPT = server/foundation/F_platform/STM32F401RETx_FLASH.ld
 
 # Libraries
 LIBS = -lc -lm -lnosys

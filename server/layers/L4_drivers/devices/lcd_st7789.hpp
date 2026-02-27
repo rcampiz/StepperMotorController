@@ -1,0 +1,987 @@
+/**
+ * @file lcd_st7789.hpp
+ * @brief SPI LCD driver for X-NUCLEO-GFX01M2 (ST7789-based display)
+ */
+
+#ifndef LCD_ST7789_HPP
+#define LCD_ST7789_HPP
+
+#include <stdint.h>
+#include "stm32f401xe.h"
+#include "L5_board/board_pins.hpp"
+#include "L4_drivers/spi/spi_bus.hpp"
+
+// 5x7 bitmap font (ASCII 32-126)
+// Each character is 5 columns, each column is 7 bits (LSB = top)
+static const uint8_t FONT_5X7[][5] = {
+    {0x00, 0x00, 0x00, 0x00, 0x00}, // 32 ' '
+    {0x00, 0x00, 0x5F, 0x00, 0x00}, // 33 '!'
+    {0x00, 0x07, 0x00, 0x07, 0x00}, // 34 '"'
+    {0x14, 0x7F, 0x14, 0x7F, 0x14}, // 35 '#'
+    {0x24, 0x2A, 0x7F, 0x2A, 0x12}, // 36 '$'
+    {0x23, 0x13, 0x08, 0x64, 0x62}, // 37 '%'
+    {0x36, 0x49, 0x55, 0x22, 0x50}, // 38 '&'
+    {0x00, 0x05, 0x03, 0x00, 0x00}, // 39 '''
+    {0x00, 0x1C, 0x22, 0x41, 0x00}, // 40 '('
+    {0x00, 0x41, 0x22, 0x1C, 0x00}, // 41 ')'
+    {0x08, 0x2A, 0x1C, 0x2A, 0x08}, // 42 '*'
+    {0x08, 0x08, 0x3E, 0x08, 0x08}, // 43 '+'
+    {0x00, 0x50, 0x30, 0x00, 0x00}, // 44 ','
+    {0x08, 0x08, 0x08, 0x08, 0x08}, // 45 '-'
+    {0x00, 0x60, 0x60, 0x00, 0x00}, // 46 '.'
+    {0x20, 0x10, 0x08, 0x04, 0x02}, // 47 '/'
+    {0x3E, 0x51, 0x49, 0x45, 0x3E}, // 48 '0'
+    {0x00, 0x42, 0x7F, 0x40, 0x00}, // 49 '1'
+    {0x42, 0x61, 0x51, 0x49, 0x46}, // 50 '2'
+    {0x21, 0x41, 0x45, 0x4B, 0x31}, // 51 '3'
+    {0x18, 0x14, 0x12, 0x7F, 0x10}, // 52 '4'
+    {0x27, 0x45, 0x45, 0x45, 0x39}, // 53 '5'
+    {0x3C, 0x4A, 0x49, 0x49, 0x30}, // 54 '6'
+    {0x01, 0x71, 0x09, 0x05, 0x03}, // 55 '7'
+    {0x36, 0x49, 0x49, 0x49, 0x36}, // 56 '8'
+    {0x06, 0x49, 0x49, 0x29, 0x1E}, // 57 '9'
+    {0x00, 0x36, 0x36, 0x00, 0x00}, // 58 ':'
+    {0x00, 0x56, 0x36, 0x00, 0x00}, // 59 ';'
+    {0x00, 0x08, 0x14, 0x22, 0x41}, // 60 '<'
+    {0x14, 0x14, 0x14, 0x14, 0x14}, // 61 '='
+    {0x41, 0x22, 0x14, 0x08, 0x00}, // 62 '>'
+    {0x02, 0x01, 0x51, 0x09, 0x06}, // 63 '?'
+    {0x32, 0x49, 0x79, 0x41, 0x3E}, // 64 '@'
+    {0x7E, 0x11, 0x11, 0x11, 0x7E}, // 65 'A'
+    {0x7F, 0x49, 0x49, 0x49, 0x36}, // 66 'B'
+    {0x3E, 0x41, 0x41, 0x41, 0x22}, // 67 'C'
+    {0x7F, 0x41, 0x41, 0x22, 0x1C}, // 68 'D'
+    {0x7F, 0x49, 0x49, 0x49, 0x41}, // 69 'E'
+    {0x7F, 0x09, 0x09, 0x01, 0x01}, // 70 'F'
+    {0x3E, 0x41, 0x41, 0x51, 0x32}, // 71 'G'
+    {0x7F, 0x08, 0x08, 0x08, 0x7F}, // 72 'H'
+    {0x00, 0x41, 0x7F, 0x41, 0x00}, // 73 'I'
+    {0x20, 0x40, 0x41, 0x3F, 0x01}, // 74 'J'
+    {0x7F, 0x08, 0x14, 0x22, 0x41}, // 75 'K'
+    {0x7F, 0x40, 0x40, 0x40, 0x40}, // 76 'L'
+    {0x7F, 0x02, 0x04, 0x02, 0x7F}, // 77 'M'
+    {0x7F, 0x04, 0x08, 0x10, 0x7F}, // 78 'N'
+    {0x3E, 0x41, 0x41, 0x41, 0x3E}, // 79 'O'
+    {0x7F, 0x09, 0x09, 0x09, 0x06}, // 80 'P'
+    {0x3E, 0x41, 0x51, 0x21, 0x5E}, // 81 'Q'
+    {0x7F, 0x09, 0x19, 0x29, 0x46}, // 82 'R'
+    {0x46, 0x49, 0x49, 0x49, 0x31}, // 83 'S'
+    {0x01, 0x01, 0x7F, 0x01, 0x01}, // 84 'T'
+    {0x3F, 0x40, 0x40, 0x40, 0x3F}, // 85 'U'
+    {0x1F, 0x20, 0x40, 0x20, 0x1F}, // 86 'V'
+    {0x7F, 0x20, 0x18, 0x20, 0x7F}, // 87 'W'
+    {0x63, 0x14, 0x08, 0x14, 0x63}, // 88 'X'
+    {0x03, 0x04, 0x78, 0x04, 0x03}, // 89 'Y'
+    {0x61, 0x51, 0x49, 0x45, 0x43}, // 90 'Z'
+    {0x00, 0x00, 0x7F, 0x41, 0x41}, // 91 '['
+    {0x02, 0x04, 0x08, 0x10, 0x20}, // 92 '\'
+    {0x41, 0x41, 0x7F, 0x00, 0x00}, // 93 ']'
+    {0x04, 0x02, 0x01, 0x02, 0x04}, // 94 '^'
+    {0x40, 0x40, 0x40, 0x40, 0x40}, // 95 '_'
+    {0x00, 0x01, 0x02, 0x04, 0x00}, // 96 '`'
+    {0x20, 0x54, 0x54, 0x54, 0x78}, // 97 'a'
+    {0x7F, 0x48, 0x44, 0x44, 0x38}, // 98 'b'
+    {0x38, 0x44, 0x44, 0x44, 0x20}, // 99 'c'
+    {0x38, 0x44, 0x44, 0x48, 0x7F}, // 100 'd'
+    {0x38, 0x54, 0x54, 0x54, 0x18}, // 101 'e'
+    {0x08, 0x7E, 0x09, 0x01, 0x02}, // 102 'f'
+    {0x08, 0x14, 0x54, 0x54, 0x3C}, // 103 'g'
+    {0x7F, 0x08, 0x04, 0x04, 0x78}, // 104 'h'
+    {0x00, 0x44, 0x7D, 0x40, 0x00}, // 105 'i'
+    {0x20, 0x40, 0x44, 0x3D, 0x00}, // 106 'j'
+    {0x00, 0x7F, 0x10, 0x28, 0x44}, // 107 'k'
+    {0x00, 0x41, 0x7F, 0x40, 0x00}, // 108 'l'
+    {0x7C, 0x04, 0x18, 0x04, 0x78}, // 109 'm'
+    {0x7C, 0x08, 0x04, 0x04, 0x78}, // 110 'n'
+    {0x38, 0x44, 0x44, 0x44, 0x38}, // 111 'o'
+    {0x7C, 0x14, 0x14, 0x14, 0x08}, // 112 'p'
+    {0x08, 0x14, 0x14, 0x18, 0x7C}, // 113 'q'
+    {0x7C, 0x08, 0x04, 0x04, 0x08}, // 114 'r'
+    {0x48, 0x54, 0x54, 0x54, 0x20}, // 115 's'
+    {0x04, 0x3F, 0x44, 0x40, 0x20}, // 116 't'
+    {0x3C, 0x40, 0x40, 0x20, 0x7C}, // 117 'u'
+    {0x1C, 0x20, 0x40, 0x20, 0x1C}, // 118 'v'
+    {0x3C, 0x40, 0x30, 0x40, 0x3C}, // 119 'w'
+    {0x44, 0x28, 0x10, 0x28, 0x44}, // 120 'x'
+    {0x0C, 0x50, 0x50, 0x50, 0x3C}, // 121 'y'
+    {0x44, 0x64, 0x54, 0x4C, 0x44}, // 122 'z'
+    {0x00, 0x08, 0x36, 0x41, 0x00}, // 123 '{'
+    {0x00, 0x00, 0x7F, 0x00, 0x00}, // 124 '|'
+    {0x00, 0x41, 0x36, 0x08, 0x00}, // 125 '}'
+    {0x08, 0x08, 0x2A, 0x1C, 0x08}, // 126 '~'
+};
+
+class LCD {
+public:
+    static constexpr uint16_t WIDTH = 240;
+    static constexpr uint16_t HEIGHT = 320;
+
+    // Row offset: GFX01M2 is 240x320, uses full ST7789 RAM (no offset)
+    static constexpr uint16_t ROW_OFFSET = 0;
+
+    // Font dimensions
+    static constexpr uint8_t CHAR_WIDTH = 6;   // 5 pixels + 1 spacing
+    static constexpr uint8_t CHAR_HEIGHT = 8;  // 7 pixels + 1 spacing
+
+    // Common colors (RGB565)
+    static constexpr uint16_t BLACK   = 0x0000;
+    static constexpr uint16_t WHITE   = 0xFFFF;
+    static constexpr uint16_t RED     = 0xF800;
+    static constexpr uint16_t GREEN   = 0x07E0;
+    static constexpr uint16_t BLUE    = 0x001F;
+    static constexpr uint16_t YELLOW  = 0xFFE0;
+    static constexpr uint16_t CYAN    = 0x07FF;
+    static constexpr uint16_t MAGENTA = 0xF81F;
+    static constexpr uint16_t GRAY    = 0x8410;
+
+    LCD(SPIBus& spi) : m_spi(spi) {
+        initPins();
+    }
+
+    void init() {
+        // Try hardware reset first
+        reset();
+
+        // Software reset as backup
+        writeCmd(0x01);  // Software reset
+        delayMs(150);
+
+        writeCmd(0x11);  // Sleep out
+        delayMs(120);
+
+        writeCmd(0x36);  // MADCTL
+        writeData(0x48); // MX (column mirror) + BGR subpixel order
+
+        writeCmd(0x3A);  // Color mode
+        writeData(0x55); // 16-bit RGB565
+
+        writeCmd(0x21);  // Inversion on (required for IPS panel driving)
+
+        writeCmd(0x35);  // TEON — enable Tearing Effect output on TE pin (PA0)
+        writeData(0x00); // Mode 0: V-blank only
+
+        writeCmd(0x29);  // Display on
+        delayMs(20);
+    }
+
+    void reset() {
+        // Hardware reset - may not work if GPIOH has issues
+        nresetHigh();
+        delayMs(10);
+        nresetLow();
+        delayMs(10);
+        nresetHigh();
+        delayMs(120);
+    }
+
+    void setWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
+        m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
+        csLow();
+        setWindowLocked(x0, y0, x1, y1);
+        csHigh();
+        m_spi.unlock();
+    }
+
+    void fillScreen(uint16_t color) {
+        fillRect(0, 0, WIDTH, HEIGHT, color);
+    }
+
+    void fillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) {
+        m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
+        csLow();
+        setWindowLocked(x, y, x + w - 1, y + h - 1);
+
+        // Compensate for INVON (required for IPS panel, inverts pixel data)
+        uint16_t c = ~color;
+        uint8_t pattern[2] = { static_cast<uint8_t>(c >> 8), static_cast<uint8_t>(c & 0xFF) };
+        m_spi.writeFill(pattern, 2, static_cast<uint32_t>(w) * h);
+
+        csHigh();
+        m_spi.unlock();
+    }
+
+    void drawPixel(uint16_t x, uint16_t y, uint16_t color) {
+        if (x >= WIDTH || y >= HEIGHT) return;
+
+        m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
+        csLow();
+        setWindowLocked(x, y, x, y);
+
+        uint16_t c = ~color;  // INVON compensation
+        m_spi.transfer(c >> 8);
+        m_spi.transfer(c & 0xFF);
+        csHigh();
+        m_spi.unlock();
+    }
+
+    /**
+     * @brief RGB565 gray from 8-bit intensity
+     */
+    static constexpr uint16_t rgb565Gray(uint8_t v) {
+        return (static_cast<uint16_t>(v >> 3) << 11)
+             | (static_cast<uint16_t>(v >> 2) << 5)
+             | (v >> 3);
+    }
+
+    /**
+     * @brief Comprehensive display diagnostic pattern
+     *
+     * Layout (240x320):
+     *   Rows   0-139  Color bars (SMPTE 7-bar)
+     *   Rows 140-159  Reverse castellations
+     *   Rows 160-179  Red channel gradient
+     *   Rows 180-199  Green channel gradient
+     *   Rows 200-219  Blue channel gradient
+     *   Rows 220-251  16-step grayscale ramp
+     *   Rows 252-283  Sharpness: checkerboard + 1px line pairs
+     *   Rows 284-319  Info text + PLUGE near-black patches
+     *   + 1px white border + center crosshair
+     */
+    void drawTestPattern() {
+        // --- Constants ---
+        constexpr uint16_t bw = WIDTH / 7;          // 34px per color bar
+        constexpr uint16_t bwLast = WIDTH - 6 * bw;  // last bar absorbs remainder
+        constexpr int gSteps = 16;
+        constexpr uint16_t gStepW = WIDTH / gSteps;  // 15px per gradient step
+
+        // === 1. SMPTE 75% color bars (0-139) ===
+        constexpr uint16_t s1H = 140;
+        const uint16_t s1[] = {WHITE, YELLOW, CYAN, GREEN, MAGENTA, RED, BLUE};
+        for (int i = 0; i < 7; i++) {
+            fillRect(i * bw, 0, (i == 6) ? bwLast : bw, s1H, s1[i]);
+        }
+
+        // === 2. Reverse castellations (140-159) ===
+        constexpr uint16_t s2Y = 140, s2H = 20;
+        const uint16_t s2[] = {BLUE, BLACK, MAGENTA, BLACK, CYAN, BLACK, WHITE};
+        for (int i = 0; i < 7; i++) {
+            fillRect(i * bw, s2Y, (i == 6) ? bwLast : bw, s2H, s2[i]);
+        }
+
+        // === 3. Individual RGB channel gradients (160-219, 20px each) ===
+        constexpr uint16_t s3Y = 160, chanH = 20;
+
+        // Red gradient
+        for (int i = 0; i < gSteps; i++) {
+            uint16_t r = static_cast<uint16_t>(i * 31 / (gSteps - 1));
+            fillRect(i * gStepW, s3Y, gStepW, chanH, r << 11);
+        }
+        // Green gradient
+        for (int i = 0; i < gSteps; i++) {
+            uint16_t g = static_cast<uint16_t>(i * 63 / (gSteps - 1));
+            fillRect(i * gStepW, s3Y + chanH, gStepW, chanH, g << 5);
+        }
+        // Blue gradient
+        for (int i = 0; i < gSteps; i++) {
+            uint16_t b = static_cast<uint16_t>(i * 31 / (gSteps - 1));
+            fillRect(i * gStepW, s3Y + 2 * chanH, gStepW, chanH, b);
+        }
+
+        // === 4. 16-step grayscale ramp (220-251) ===
+        constexpr uint16_t s4Y = 220, s4H = 32;
+        for (int i = 0; i < gSteps; i++) {
+            uint8_t v = static_cast<uint8_t>(i * 255 / (gSteps - 1));
+            fillRect(i * gStepW, s4Y, gStepW, s4H, rgb565Gray(v));
+        }
+
+        // === 5. Sharpness test (252-283) ===
+        constexpr uint16_t s5Y = 252, s5H = 32;
+
+        // Left half: 8x8 checkerboard
+        for (uint16_t y = 0; y < s5H; y += 8) {
+            for (uint16_t x = 0; x < WIDTH / 2; x += 8) {
+                bool white = ((x / 8) + (y / 8)) % 2 == 0;
+                fillRect(x, s5Y + y, 8, 8, white ? WHITE : BLACK);
+            }
+        }
+        // Right half: alternating 1px horizontal lines
+        for (uint16_t y = 0; y < s5H; y++) {
+            fillRect(WIDTH / 2, s5Y + y, WIDTH / 2, 1, (y % 2) ? BLACK : WHITE);
+        }
+
+        // === 6. Info text + PLUGE (284-319) ===
+        constexpr uint16_t s6Y = 284, s6H = HEIGHT - s6Y;
+
+        fillRect(0, s6Y, WIDTH, s6H, BLACK);
+
+        drawString(4, s6Y + 4,  "240x320 ST7789 IPS", WHITE, BLACK);
+        drawString(4, s6Y + 14, "BGR INVON  SPI1 Mode0", WHITE, BLACK);
+        drawString(4, s6Y + 26, "X-NUCLEO-GFX01M2", GRAY, BLACK);
+
+        // PLUGE near-black calibration bars (right side)
+        constexpr uint16_t pX = 180, pW = 15;
+        fillRect(pX,          s6Y, pW, s6H, BLACK);           //  0%
+        fillRect(pX + pW,     s6Y, pW, s6H, rgb565Gray(13));  //  5%
+        fillRect(pX + 2 * pW, s6Y, pW, s6H, rgb565Gray(26));  // 10%
+        fillRect(pX + 3 * pW, s6Y, pW, s6H, WHITE);           // 100%
+
+        // === Geometry overlays ===
+        drawRect(0, 0, WIDTH, HEIGHT, WHITE);
+
+        constexpr uint16_t cx = WIDTH / 2, cy = HEIGHT / 2;
+        drawHLine(cx - 15, cy, 31, WHITE);
+        drawVLine(cx, cy - 15, 31, WHITE);
+    }
+
+    void drawHLine(uint16_t x, uint16_t y, uint16_t w, uint16_t color) {
+        fillRect(x, y, w, 1, color);
+    }
+
+    void drawVLine(uint16_t x, uint16_t y, uint16_t h, uint16_t color) {
+        fillRect(x, y, 1, h, color);
+    }
+
+    void drawRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) {
+        drawHLine(x, y, w, color);
+        drawHLine(x, y + h - 1, w, color);
+        drawVLine(x, y, h, color);
+        drawVLine(x + w - 1, y, h, color);
+    }
+
+    // Medium font (scale=3): 8×12 cell from 5×7 base, selective row/col doubling
+    static constexpr uint8_t MED_CHAR_W = 8;
+    static constexpr uint8_t MED_CHAR_H = 12;
+
+    /**
+     * @brief Draw a single character
+     * @param x X position (top-left)
+     * @param y Y position (top-left)
+     * @param c Character to draw (ASCII 32-126)
+     * @param fg Foreground color
+     * @param bg Background color
+     * @param scale 1 = 6×8 (small), 2 = 12×16 (large), 3 = 8×12 (medium)
+     */
+    void drawChar(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t bg,
+                  uint8_t scale = 1) {
+        if (c < 32 || c > 126) c = '?';
+
+        const uint8_t* glyph = FONT_5X7[c - 32];
+        uint16_t fgInv = ~fg;  // INVON compensation
+        uint16_t bgInv = ~bg;
+
+        if (scale == 3) {
+            // Medium: 8×12 via selective doubling of cols 1,3 and rows 0,1,3,5
+            static constexpr uint8_t COL_SRC[] = {0, 1, 1, 2, 3, 3, 4};
+            static constexpr uint8_t ROW_DUP[] = {2, 2, 1, 2, 1, 2, 1}; // 11 data rows + 1 spacing
+
+            if (x + MED_CHAR_W > WIDTH || y + MED_CHAR_H > HEIGHT) return;
+
+            uint8_t buf[MED_CHAR_W * MED_CHAR_H * 2]; // 192 bytes
+            uint16_t idx = 0;
+
+            for (uint8_t srcRow = 0; srcRow < 7; srcRow++) {
+                for (uint8_t d = 0; d < ROW_DUP[srcRow]; d++) {
+                    for (uint8_t oc = 0; oc < 7; oc++) {
+                        uint16_t color = (glyph[COL_SRC[oc]] & (1 << srcRow)) ? fgInv : bgInv;
+                        buf[idx++] = static_cast<uint8_t>(color >> 8);
+                        buf[idx++] = static_cast<uint8_t>(color & 0xFF);
+                    }
+                    buf[idx++] = static_cast<uint8_t>(bgInv >> 8);
+                    buf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+                }
+            }
+            // Spacing row
+            for (uint8_t c = 0; c < MED_CHAR_W; c++) {
+                buf[idx++] = static_cast<uint8_t>(bgInv >> 8);
+                buf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+            }
+
+            m_spi.lock();
+            m_spi.setMode(SPIBus::Mode::Mode0);
+            m_spi.setPrescaler(m_prescaler);
+            csLow();
+            setWindowLocked(x, y, static_cast<uint16_t>(x + MED_CHAR_W - 1),
+                            static_cast<uint16_t>(y + MED_CHAR_H - 1));
+            m_spi.writeOnly(buf, idx);
+            csHigh();
+            m_spi.unlock();
+            return;
+        }
+
+        // Scale 1 or 2: uniform pixel doubling
+        if (scale < 1) scale = 1;
+        if (scale > 2) scale = 2;
+
+        uint16_t charW = CHAR_WIDTH * scale;
+        uint16_t charH = CHAR_HEIGHT * scale;
+        if (x + charW > WIDTH || y + charH > HEIGHT) return;
+
+        // Max buffer: 12×16×2 = 384 bytes at scale=2
+        uint8_t buf[CHAR_WIDTH * 2 * CHAR_HEIGHT * 2 * 2];
+        uint16_t idx = 0;
+
+        // Rows 0-6: font data (each font row produces `scale` pixel rows)
+        for (uint8_t row = 0; row < 7; row++) {
+            for (uint8_t sy = 0; sy < scale; sy++) {
+                for (uint8_t col = 0; col < 5; col++) {
+                    uint16_t color = (glyph[col] & (1 << row)) ? fgInv : bgInv;
+                    for (uint8_t sx = 0; sx < scale; sx++) {
+                        buf[idx++] = static_cast<uint8_t>(color >> 8);
+                        buf[idx++] = static_cast<uint8_t>(color & 0xFF);
+                    }
+                }
+                // Spacing column (scale pixels wide)
+                for (uint8_t sx = 0; sx < scale; sx++) {
+                    buf[idx++] = static_cast<uint8_t>(bgInv >> 8);
+                    buf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+                }
+            }
+        }
+        // Row 7: all background (scale pixel rows)
+        for (uint8_t sy = 0; sy < scale; sy++) {
+            for (uint16_t px = 0; px < charW; px++) {
+                buf[idx++] = static_cast<uint8_t>(bgInv >> 8);
+                buf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+            }
+        }
+
+        m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
+        csLow();
+        setWindowLocked(x, y, static_cast<uint16_t>(x + charW - 1),
+                        static_cast<uint16_t>(y + charH - 1));
+        m_spi.writeOnly(buf, idx);
+        csHigh();
+        m_spi.unlock();
+    }
+
+    /**
+     * @brief Draw a string
+     * @param x X position (top-left of first character)
+     * @param y Y position (top-left)
+     * @param str Null-terminated string
+     * @param fg Foreground color
+     * @param bg Background color
+     * @param scale 1 = 6×8 (small), 2 = 12×16 (large), 3 = 8×12 (medium)
+     */
+    void drawString(uint16_t x, uint16_t y, const char* str, uint16_t fg, uint16_t bg,
+                    uint8_t scale = 1) {
+        if (str == nullptr) return;
+
+        // Medium font: separate rendering path
+        if (scale == 3) {
+            drawStringMedium(x, y, str, fg, bg);
+            return;
+        }
+
+        if (scale < 1) scale = 1;
+        if (scale > 2) scale = 2;
+        uint16_t cw = CHAR_WIDTH * scale;
+        uint16_t ch = CHAR_HEIGHT * scale;
+
+        if (y + ch > HEIGHT) return;
+
+        // Process string in line segments for wrapping support
+        while (*str && y + ch <= HEIGHT) {
+            // Count characters that fit on this line
+            uint16_t len = 0;
+            while (str[len] && (x + (len + 1) * cw) <= WIDTH) len++;
+            if (len == 0) {
+                x = 0;
+                y += ch;
+                continue;
+            }
+
+            uint16_t pixelW = len * cw;
+            uint16_t fgInv = ~fg;  // INVON compensation
+            uint16_t bgInv = ~bg;
+
+            // Row buffer: max 480 bytes (fits 20 chars at scale=2 or 40 at scale=1)
+            uint8_t rowBuf[WIDTH * 2];
+
+            m_spi.lock();
+            m_spi.setMode(SPIBus::Mode::Mode0);
+            m_spi.setPrescaler(m_prescaler);
+            csLow();
+            setWindowLocked(x, y, static_cast<uint16_t>(x + pixelW - 1),
+                            static_cast<uint16_t>(y + ch - 1));
+
+            // Render rows 0-6 (font data): each font row → scale pixel rows
+            for (uint8_t row = 0; row < 7; row++) {
+                // Build one pixel row
+                uint16_t idx = 0;
+                for (uint16_t c = 0; c < len; c++) {
+                    char cc = str[c];
+                    if (cc < 32 || cc > 126) cc = '?';
+                    const uint8_t* glyph = FONT_5X7[cc - 32];
+                    for (uint8_t col = 0; col < 5; col++) {
+                        uint16_t color = (glyph[col] & (1 << row)) ? fgInv : bgInv;
+                        for (uint8_t sx = 0; sx < scale; sx++) {
+                            rowBuf[idx++] = static_cast<uint8_t>(color >> 8);
+                            rowBuf[idx++] = static_cast<uint8_t>(color & 0xFF);
+                        }
+                    }
+                    // Spacing column (scale pixels wide)
+                    for (uint8_t sx = 0; sx < scale; sx++) {
+                        rowBuf[idx++] = static_cast<uint8_t>(bgInv >> 8);
+                        rowBuf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+                    }
+                }
+                // Send same pixel row `scale` times (vertical scaling)
+                for (uint8_t sy = 0; sy < scale; sy++) {
+                    m_spi.writeOnly(rowBuf, idx);
+                }
+            }
+
+            // Row 7: all background (scale pixel rows)
+            {
+                uint16_t idx = 0;
+                for (uint16_t px = 0; px < pixelW; px++) {
+                    rowBuf[idx++] = static_cast<uint8_t>(bgInv >> 8);
+                    rowBuf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+                }
+                for (uint8_t sy = 0; sy < scale; sy++) {
+                    m_spi.writeOnly(rowBuf, idx);
+                }
+            }
+
+            csHigh();
+            m_spi.unlock();
+
+            str += len;
+            x += pixelW;
+
+            if (*str) {
+                x = 0;
+                y += ch;
+            }
+        }
+    }
+
+    /**
+     * @brief Draw a string using medium font (8×12 from 5×7 base)
+     *
+     * Cols 1 and 3 doubled, rows 0/1/3/5 doubled → 7+1=8 wide, 11+1=12 tall.
+     * Row buffer: 30 chars × 8px × 2 bytes = 480 bytes (fits WIDTH*2).
+     */
+    void drawStringMedium(uint16_t x, uint16_t y, const char* str,
+                          uint16_t fg, uint16_t bg) {
+        static constexpr uint8_t COL_SRC[] = {0, 1, 1, 2, 3, 3, 4};
+        static constexpr uint8_t ROW_DUP[] = {2, 2, 1, 2, 1, 2, 1};
+        uint16_t cw = MED_CHAR_W;
+        uint16_t ch = MED_CHAR_H;
+
+        if (str == nullptr || y + ch > HEIGHT) return;
+
+        while (*str && y + ch <= HEIGHT) {
+            uint16_t len = 0;
+            while (str[len] && (x + (len + 1) * cw) <= WIDTH) len++;
+            if (len == 0) { x = 0; y += ch; continue; }
+
+            uint16_t pixelW = len * cw;
+            uint16_t fgInv = ~fg;
+            uint16_t bgInv = ~bg;
+            uint8_t rowBuf[WIDTH * 2];
+
+            m_spi.lock();
+            m_spi.setMode(SPIBus::Mode::Mode0);
+            m_spi.setPrescaler(m_prescaler);
+            csLow();
+            setWindowLocked(x, y, static_cast<uint16_t>(x + pixelW - 1),
+                            static_cast<uint16_t>(y + ch - 1));
+
+            for (uint8_t srcRow = 0; srcRow < 7; srcRow++) {
+                // Build one pixel row with medium column mapping
+                uint16_t idx = 0;
+                for (uint16_t c = 0; c < len; c++) {
+                    char cc = str[c];
+                    if (cc < 32 || cc > 126) cc = '?';
+                    const uint8_t* glyph = FONT_5X7[cc - 32];
+                    for (uint8_t oc = 0; oc < 7; oc++) {
+                        uint16_t color = (glyph[COL_SRC[oc]] & (1 << srcRow)) ? fgInv : bgInv;
+                        rowBuf[idx++] = static_cast<uint8_t>(color >> 8);
+                        rowBuf[idx++] = static_cast<uint8_t>(color & 0xFF);
+                    }
+                    // Spacing column
+                    rowBuf[idx++] = static_cast<uint8_t>(bgInv >> 8);
+                    rowBuf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+                }
+                // Send row ROW_DUP[srcRow] times (selective vertical doubling)
+                for (uint8_t d = 0; d < ROW_DUP[srcRow]; d++) {
+                    m_spi.writeOnly(rowBuf, idx);
+                }
+            }
+
+            // Spacing row (1 row)
+            {
+                uint16_t idx = 0;
+                for (uint16_t px = 0; px < pixelW; px++) {
+                    rowBuf[idx++] = static_cast<uint8_t>(bgInv >> 8);
+                    rowBuf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+                }
+                m_spi.writeOnly(rowBuf, idx);
+            }
+
+            csHigh();
+            m_spi.unlock();
+
+            str += len;
+            x += pixelW;
+            if (*str) { x = 0; y += ch; }
+        }
+    }
+
+    /**
+     * @brief Draw an integer value (right-aligned in field)
+     * @param x X position (right edge of field)
+     * @param y Y position (top-left)
+     * @param value Integer to display
+     * @param fieldWidth Minimum field width (for right alignment)
+     * @param fg Foreground color
+     * @param bg Background color
+     */
+    void drawInt(uint16_t x, uint16_t y, int32_t value, uint8_t fieldWidth,
+                 uint16_t fg, uint16_t bg, uint8_t scale = 1) {
+        char buf[12];
+        int idx = 0;
+        bool neg = false;
+
+        if (value < 0) {
+            neg = true;
+            value = -value;
+        }
+
+        if (value == 0) {
+            buf[idx++] = '0';
+        } else {
+            while (value > 0) {
+                buf[idx++] = '0' + (value % 10);
+                value /= 10;
+            }
+        }
+        if (neg) buf[idx++] = '-';
+
+        while (idx < fieldWidth) {
+            buf[idx++] = ' ';
+        }
+
+        uint16_t cw = (scale == 3) ? MED_CHAR_W : CHAR_WIDTH * scale;
+        uint16_t px = x - cw;
+        for (int i = 0; i < idx; i++) {
+            drawChar(px, y, buf[i], fg, bg, scale);
+            px -= cw;
+        }
+    }
+
+    /**
+     * @brief Draw an unsigned integer value (right-aligned in field)
+     */
+    void drawUInt(uint16_t x, uint16_t y, uint32_t value, uint8_t fieldWidth,
+                  uint16_t fg, uint16_t bg, uint8_t scale = 1) {
+        char buf[12];
+        int idx = 0;
+
+        if (value == 0) {
+            buf[idx++] = '0';
+        } else {
+            while (value > 0) {
+                buf[idx++] = '0' + (value % 10);
+                value /= 10;
+            }
+        }
+
+        while (idx < fieldWidth) {
+            buf[idx++] = ' ';
+        }
+
+        uint16_t cw = (scale == 3) ? MED_CHAR_W : CHAR_WIDTH * scale;
+        uint16_t px = x - cw;
+        for (int i = 0; i < idx; i++) {
+            drawChar(px, y, buf[i], fg, bg, scale);
+            px -= cw;
+        }
+    }
+
+    /**
+     * @brief Draw a line using Bresenham's algorithm
+     * @param x0, y0 Start point
+     * @param x1, y1 End point
+     * @param color Line color
+     */
+    void drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color) {
+        int16_t dx = static_cast<int16_t>(x1 > x0 ? x1 - x0 : x0 - x1);
+        int16_t dy = static_cast<int16_t>(y1 > y0 ? y1 - y0 : y0 - y1);
+        int16_t sx = static_cast<int16_t>(x0 < x1 ? 1 : -1);
+        int16_t sy = static_cast<int16_t>(y0 < y1 ? 1 : -1);
+        int16_t err = static_cast<int16_t>(dx - dy);
+
+        while (true) {
+            if (x0 >= 0 && x0 < WIDTH && y0 >= 0 && y0 < HEIGHT) {
+                drawPixel(x0, y0, color);
+            }
+            if (x0 == x1 && y0 == y1) {
+                break;
+            }
+            int16_t e2 = static_cast<int16_t>(2 * err);
+            if (e2 > -dy) {
+                err = static_cast<int16_t>(err - dy);
+                x0 = static_cast<int16_t>(x0 + sx);
+            }
+            if (e2 < dx) {
+                err = static_cast<int16_t>(err + dx);
+                y0 = static_cast<int16_t>(y0 + sy);
+            }
+        }
+    }
+
+    /**
+     * @brief Draw a bitmap from RGB565 pixel data
+     * @param x, y Top-left position
+     * @param w, h Bitmap dimensions
+     * @param data Pointer to RGB565 pixel data (big-endian)
+     */
+    void drawBitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint16_t* data) {
+        if (x >= WIDTH || y >= HEIGHT) {
+            return;
+        }
+
+        // Clip to screen bounds
+        uint16_t drawW = (x + w > WIDTH) ? WIDTH - x : w;
+        uint16_t drawH = (y + h > HEIGHT) ? HEIGHT - y : h;
+
+        m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
+        csLow();
+        setWindowLocked(x, y, x + drawW - 1, y + drawH - 1);
+
+        for (uint16_t row = 0; row < drawH; row++) {
+            for (uint16_t col = 0; col < drawW; col++) {
+                uint16_t pixel = ~data[(row * w) + col];  // INVON compensation
+                m_spi.transfer(pixel >> 8);
+                m_spi.transfer(pixel & 0xFF);
+            }
+        }
+
+        csHigh();
+        m_spi.unlock();
+    }
+
+    /**
+     * @brief Draw a bitmap from raw byte data (RGB565 big-endian)
+     * @param x, y Top-left position
+     * @param w, h Bitmap dimensions
+     * @param data Pointer to raw byte data (2 bytes per pixel, big-endian)
+     * @param len Length of data in bytes
+     */
+    void drawBitmapRaw(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+                       const uint8_t* data, size_t len) {
+        if (x >= WIDTH || y >= HEIGHT) {
+            return;
+        }
+
+        uint16_t drawW = (x + w > WIDTH) ? WIDTH - x : w;
+        uint16_t drawH = (y + h > HEIGHT) ? HEIGHT - y : h;
+
+        m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
+        csLow();
+        setWindowLocked(x, y, x + drawW - 1, y + drawH - 1);
+
+        // Transfer raw bytes with INVON compensation (invert each byte)
+        size_t maxBytes = static_cast<size_t>(drawW) * drawH * 2;
+        size_t transferLen = len < maxBytes ? len : maxBytes;
+        for (size_t i = 0; i < transferLen; i++) {
+            m_spi.transfer(~data[i]);
+        }
+
+        csHigh();
+        m_spi.unlock();
+    }
+
+    /**
+     * @brief Blit a pre-built column buffer to the display (flicker-free)
+     *
+     * Writes a 1-pixel-wide column of RGB565 pixel data in a single DMA transfer.
+     * Used by graph rendering to avoid full-screen clear flicker.
+     * Data is big-endian RGB565, h pixels (h*2 bytes).
+     *
+     * @param x Column X position
+     * @param y Top Y position
+     * @param h Column height in pixels
+     * @param data Pre-built pixel data (h * 2 bytes, RGB565 big-endian)
+     */
+    void blitColumn(uint16_t x, uint16_t y, uint16_t h, const uint8_t* data) {
+        if (x >= WIDTH || y >= HEIGHT) return;
+        uint16_t drawH = (y + h > HEIGHT) ? static_cast<uint16_t>(HEIGHT - y) : h;
+
+        m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
+        csLow();
+        setWindowLocked(x, y, x, static_cast<uint16_t>(y + drawH - 1));
+
+        // Invert for INVON compensation, then DMA write
+        static uint8_t invBuf[600];
+        size_t len = static_cast<size_t>(drawH) * 2;
+        for (size_t i = 0; i < len; i++) {
+            invBuf[i] = ~data[i];
+        }
+        m_spi.writeOnly(invBuf, len);
+
+        csHigh();
+        m_spi.unlock();
+    }
+
+    /**
+     * @brief Start streaming bitmap data (for chunked transfers)
+     *
+     * Call this before streamBitmapData(). Must call streamBitmapEnd() when done.
+     * Holds the SPI lock until streamBitmapEnd() is called.
+     *
+     * @param x, y Top-left position
+     * @param w, h Bitmap dimensions
+     */
+    void streamBitmapStart(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+        if (x >= WIDTH || y >= HEIGHT) {
+            return;
+        }
+
+        uint16_t drawW = (x + w > WIDTH) ? WIDTH - x : w;
+        uint16_t drawH = (y + h > HEIGHT) ? HEIGHT - y : h;
+
+        m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
+        csLow();
+        setWindowLocked(x, y, x + drawW - 1, y + drawH - 1);
+        m_streaming = true;
+    }
+
+    /**
+     * @brief Stream bitmap data chunk
+     *
+     * Must be called between streamBitmapStart() and streamBitmapEnd().
+     *
+     * @param data Pointer to raw RGB565 byte data
+     * @param len Number of bytes to transfer
+     */
+    void streamBitmapData(const uint8_t* data, size_t len) {
+        if (!m_streaming) {
+            return;
+        }
+        // Bulk-invert into static buffer, then TX-only write (DMA on SPI1)
+        static uint8_t invBuf[512];
+        size_t offset = 0;
+        while (offset < len) {
+            size_t chunk = len - offset;
+            if (chunk > sizeof(invBuf)) chunk = sizeof(invBuf);
+            for (size_t i = 0; i < chunk; i++) {
+                invBuf[i] = ~data[offset + i];
+            }
+            m_spi.writeOnly(invBuf, chunk);
+            offset += chunk;
+        }
+    }
+
+    /**
+     * @brief End bitmap streaming
+     *
+     * Releases the SPI lock held by streamBitmapStart().
+     */
+    void streamBitmapEnd() {
+        if (!m_streaming) {
+            return;
+        }
+        csHigh();
+        m_spi.unlock();
+        m_streaming = false;
+    }
+
+    /**
+     * @brief Check if currently streaming bitmap data
+     * @return true if streaming is active
+     */
+    bool isStreaming() const { return m_streaming; }
+
+    void setSPIPrescaler(SPIBus::Prescaler p) { m_prescaler = p; }
+    SPIBus::Prescaler getSPIPrescaler() const { return m_prescaler; }
+
+private:
+    bool m_streaming = false;
+    SPIBus& m_spi;
+    SPIBus::Prescaler m_prescaler = SPIBus::Prescaler::Div2;  // 42 MHz (84 MHz APB2 / 2)
+
+    void initPins() {
+        RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_GPIOBEN
+                     | RCC_AHB1ENR_GPIOCEN;
+
+        // CS - output
+        configureOutput(Pins::GFX_LCD::CS_PORT, Pins::GFX_LCD::CS_PIN);
+        csHigh();
+
+        // DC - output
+        configureOutput(Pins::GFX_LCD::DC_PORT, Pins::GFX_LCD::DC_PIN);
+        dcLow();
+
+        // NRESET - output
+        configureOutput(Pins::GFX_LCD::NRESET_PORT, Pins::GFX_LCD::NRESET_PIN);
+        nresetHigh();
+
+        // TE - input (optional tearing effect sync)
+        Pins::GFX_LCD::TE_PORT->MODER &= ~(0x3 << (Pins::GFX_LCD::TE_PIN * 2));
+    }
+
+    void configureOutput(GPIO_TypeDef* port, uint8_t pin) {
+        port->MODER &= ~(0x3 << (pin * 2));
+        port->MODER |= (0x1 << (pin * 2));
+        port->OTYPER &= ~(1 << pin);
+        port->OSPEEDR |= (0x3 << (pin * 2));
+    }
+
+    void csLow()      { Pins::GFX_LCD::CS_PORT->BSRR = (1 << (Pins::GFX_LCD::CS_PIN + 16)); }
+    void csHigh()     { Pins::GFX_LCD::CS_PORT->BSRR = (1 << Pins::GFX_LCD::CS_PIN); }
+    void dcLow()      { Pins::GFX_LCD::DC_PORT->BSRR = (1 << (Pins::GFX_LCD::DC_PIN + 16)); }
+    void dcHigh()     { Pins::GFX_LCD::DC_PORT->BSRR = (1 << Pins::GFX_LCD::DC_PIN); }
+    void nresetLow()  { Pins::GFX_LCD::NRESET_PORT->BSRR = (1 << (Pins::GFX_LCD::NRESET_PIN + 16)); }
+    void nresetHigh() { Pins::GFX_LCD::NRESET_PORT->BSRR = (1 << Pins::GFX_LCD::NRESET_PIN); }
+
+    void setWindowLocked(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
+        uint16_t r0 = y0 + ROW_OFFSET;
+        uint16_t r1 = y1 + ROW_OFFSET;
+        dcLow();  m_spi.transfer(0x2A);  // CASET
+        dcHigh(); m_spi.transfer(x0 >> 8); m_spi.transfer(x0 & 0xFF);
+                  m_spi.transfer(x1 >> 8); m_spi.transfer(x1 & 0xFF);
+        dcLow();  m_spi.transfer(0x2B);  // RASET
+        dcHigh(); m_spi.transfer(r0 >> 8); m_spi.transfer(r0 & 0xFF);
+                  m_spi.transfer(r1 >> 8); m_spi.transfer(r1 & 0xFF);
+        dcLow();  m_spi.transfer(0x2C);  // RAMWR
+        dcHigh();
+    }
+
+    void writeCmd(uint8_t cmd) {
+        m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
+        csLow();
+        dcLow();
+        m_spi.transfer(cmd);
+        csHigh();
+        m_spi.unlock();
+    }
+
+    void writeData(uint8_t data) {
+        m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
+        csLow();
+        dcHigh();
+        m_spi.transfer(data);
+        csHigh();
+        m_spi.unlock();
+    }
+
+    void delayMs(uint32_t ms) {
+        for (volatile uint32_t i = 0; i < ms * 8000; i++);
+    }
+};
+
+#endif // LCD_HPP
