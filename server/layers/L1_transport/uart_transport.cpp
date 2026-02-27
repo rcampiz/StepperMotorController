@@ -7,8 +7,8 @@
  */
 
 #include "L1_transport/uart_transport.hpp"
-#include "FreeRTOS.h"
-#include "task.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
 #include <string.h>
 
 // Debug: IRQ call counter

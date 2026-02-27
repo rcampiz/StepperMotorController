@@ -7,8 +7,8 @@
  */
 
 #include "L3_services/infra/trace.hpp"
-#include "FreeRTOS.h"
-#include "task.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
 
 namespace Trace {
 

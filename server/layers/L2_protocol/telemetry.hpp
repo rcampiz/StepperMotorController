@@ -9,8 +9,8 @@
 #define TELEMETRY_HPP
 
 #include <stdint.h>
-#include "FreeRTOS.h"
-#include "semphr.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/semphr.h"
 
 namespace Comms {
 

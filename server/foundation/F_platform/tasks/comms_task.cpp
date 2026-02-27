@@ -13,8 +13,8 @@
 #include "L3_services/dispatch/command_queue.hpp"
 #include "L3_services/dispatch/event_service.hpp"
 #include "ui/ui_mode.hpp"
-#include "FreeRTOS.h"
-#include "task.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
 #include <stdint.h>
 
 namespace Tasks {

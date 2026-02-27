@@ -22,8 +22,8 @@
 #include "ui/screens/image_view_screen.hpp"
 #include "ui/screens/trace_screen.hpp"
 #include "L3_services/infra/flash_image_service.hpp"
-#include "FreeRTOS.h"
-#include "task.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>

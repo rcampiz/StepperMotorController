@@ -10,8 +10,8 @@
 #ifndef COMMS_TASK_HPP
 #define COMMS_TASK_HPP
 
-#include "FreeRTOS.h"
-#include "task.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
 #include <stdint.h>
 
 namespace Tasks {

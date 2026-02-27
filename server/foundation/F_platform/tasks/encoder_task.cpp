@@ -24,11 +24,11 @@
 #include "L3_services/infra/tick_timer.hpp"
 #include "L3_services/motion/motor_config.hpp"
 #include "L2_protocol/telemetry.hpp"
-#include "stm32f401xe.h"
+#include "X_vendor/CMSIS/stm32f401xe.h"
 #include <math.h>
-#include "core_cm4.h"
-#include "FreeRTOS.h"
-#include "task.h"
+#include "X_vendor/CMSIS/core_cm4.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
 
 namespace Tasks {
 

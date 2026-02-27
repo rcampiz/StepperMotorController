@@ -9,8 +9,8 @@
 #ifndef PLATFORM_FREERTOS_LOCK_HPP
 #define PLATFORM_FREERTOS_LOCK_HPP
 
-#include "FreeRTOS.h"
-#include "semphr.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/semphr.h"
 #include "F_platform/ilock.hpp"
 
 class FreeRTOSMutex : public ILock {

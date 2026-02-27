@@ -73,6 +73,7 @@ C_INCLUDES = \
 -Iserver/layers/L5_board \
 -Iserver/foundation \
 -Iserver/foundation/F_platform \
+-Iserver/external \
 -Iserver/external/X_vendor/CMSIS
 
 # Compile gcc flags

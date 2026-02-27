@@ -24,7 +24,7 @@ if not exist "build" mkdir build
 REM Compiler flags
 set "MCU_FLAGS=-mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard"
 set "FREERTOS_INC=-Iserver/external/X_middlewares/Third_Party/FreeRTOS-Kernel/include -Iserver/external/X_middlewares/Third_Party/FreeRTOS-Kernel/portable/GCC/ARM_CM4F"
-set "INCLUDES=-Iserver -Iserver/layers -Iserver/layers/L1_transport -Iserver/layers/L2_protocol -Iserver/layers/L3_services -Iserver/layers/L4_drivers -Iserver/layers/L5_board -Iserver/foundation -Iserver/foundation/F_platform -Iserver/external/X_vendor/CMSIS %FREERTOS_INC% -Iserver/external/X_middlewares/SEGGER/RTT -Iserver/external/X_middlewares/SEGGER/SystemView"
+set "INCLUDES=-Iserver -Iserver/layers -Iserver/layers/L1_transport -Iserver/layers/L2_protocol -Iserver/layers/L3_services -Iserver/layers/L4_drivers -Iserver/layers/L5_board -Iserver/foundation -Iserver/foundation/F_platform -Iserver/external -Iserver/external/X_vendor/CMSIS %FREERTOS_INC% -Iserver/external/X_middlewares/SEGGER/RTT -Iserver/external/X_middlewares/SEGGER/SystemView"
 set "DEFINES=-DSTM32F401xE -D__FPU_PRESENT=1 -D__FPU_USED=1 -DENABLE_SEGGER_SYSTEMVIEW -DRTT_USE_ASM=0"
 set "CFLAGS=%MCU_FLAGS% %INCLUDES% %DEFINES% -Og -Wall -fdata-sections -ffunction-sections -g -gdwarf-2"
 set "CXXFLAGS=%CFLAGS% -std=c++14 -fno-exceptions -fno-rtti -fno-use-cxa-atexit"

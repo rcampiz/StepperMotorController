@@ -17,7 +17,7 @@
  * @note clangd errors expected until compile_commands.json is generated.
  *       Actual build uses ARM GCC toolchain which resolves all includes.
  */
-#include "stm32f401xe.h"
+#include "X_vendor/CMSIS/stm32f401xe.h"
 
 namespace Pins {
 

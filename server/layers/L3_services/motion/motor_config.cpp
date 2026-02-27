@@ -7,7 +7,7 @@
  */
 
 #include "L3_services/motion/motor_config.hpp"
-#include "stm32f401xe.h"
+#include "X_vendor/CMSIS/stm32f401xe.h"
 #include <string.h>
 
 // FLASH register bit definitions (STM32F401)

@@ -12,8 +12,8 @@
 
 #pragma once
 
-#include "FreeRTOS.h"
-#include "semphr.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/semphr.h"
 #include <stdint.h>
 
 namespace Services {

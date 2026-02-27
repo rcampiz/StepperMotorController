@@ -16,45 +16,46 @@
  *   - DisplayTask (Pri 1): LCD refresh at 10Hz
  */
 
-#include "FreeRTOS.h"
-#include "task.h"
+// Standard library
+#include <string.h>
 
-// Board and peripheral configuration
-#include "L5_board/board_pins.hpp"
+// External — FreeRTOS
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
 
-// Communication layer
-#include "L2_protocol/telemetry.hpp"
+// External — CMSIS
+#include "X_vendor/CMSIS/stm32f401xe.h"
 
-// Services
-#include "L3_services/infra/tick_timer.hpp"
-#include "L3_services/dispatch/command_queue.hpp"
-#include "L3_services/config/device_config.hpp"
-#include "L3_services/motion/control_mode.hpp"
-#include "L3_services/dispatch/event_service.hpp"
-#include "L3_services/motion/motor_config.hpp"
-#include "L3_services/infra/flash_image_service.hpp"
-
-// Drivers
-#include "L4_drivers/spi/spi_manager.hpp"
-#include "L4_drivers/devices/flash_nor.hpp"
-
-// Platform (FreeRTOS is only referenced here — the composition root)
-#include "F_platform/freertos_lock.hpp"
-
-// Task headers
-#include "F_platform/tasks/motor_task.hpp"
-#include "F_platform/tasks/encoder_task.hpp"
-#include "F_platform/tasks/display_task.hpp"
-#include "F_platform/tasks/comms_task.hpp"
-
-// Optional SystemView support
+// External — SEGGER
 #ifdef ENABLE_SEGGER_SYSTEMVIEW
-#include "SEGGER_SYSVIEW.h"
+#include "X_middlewares/SEGGER/SystemView/SEGGER_SYSVIEW.h"
 #endif
 
-// CMSIS device header (provides RCC, GPIO, SPI, etc.)
-#include "stm32f401xe.h"
-#include <string.h>
+// Foundation
+#include "F_platform/freertos_lock.hpp"
+#include "F_platform/tasks/comms_task.hpp"
+#include "F_platform/tasks/display_task.hpp"
+#include "F_platform/tasks/encoder_task.hpp"
+#include "F_platform/tasks/motor_task.hpp"
+
+// Layers — protocol
+#include "L2_protocol/telemetry.hpp"
+
+// Layers — services
+#include "L3_services/config/device_config.hpp"
+#include "L3_services/dispatch/command_queue.hpp"
+#include "L3_services/dispatch/event_service.hpp"
+#include "L3_services/infra/flash_image_service.hpp"
+#include "L3_services/infra/tick_timer.hpp"
+#include "L3_services/motion/control_mode.hpp"
+#include "L3_services/motion/motor_config.hpp"
+
+// Layers — drivers
+#include "L4_drivers/devices/flash_nor.hpp"
+#include "L4_drivers/spi/spi_manager.hpp"
+
+// Layers — board
+#include "L5_board/board_pins.hpp"
 
 // NOR flash driver (uses SPI manager internally now)
 static SPIFlash* s_norFlash = nullptr;

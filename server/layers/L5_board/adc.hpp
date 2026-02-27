@@ -9,7 +9,7 @@
 #ifndef ADC_HPP
 #define ADC_HPP
 
-#include "stm32f401xe.h"
+#include "X_vendor/CMSIS/stm32f401xe.h"
 #include "L5_board/gpio.hpp"
 
 /**

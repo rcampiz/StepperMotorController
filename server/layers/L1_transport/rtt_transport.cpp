@@ -4,7 +4,7 @@
  */
 
 #include "L1_transport/rtt_transport.hpp"
-#include "SEGGER_RTT.h"
+#include "X_middlewares/SEGGER/RTT/SEGGER_RTT.h"
 #include <string.h>
 
 namespace Comms {

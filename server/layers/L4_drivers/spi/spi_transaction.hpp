@@ -18,11 +18,11 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
-#include "FreeRTOS.h"
-#include "queue.h"
-#include "semphr.h"
-#include "task.h"
-#include "stm32f401xe.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/queue.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/semphr.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
+#include "X_vendor/CMSIS/stm32f401xe.h"
 #include "L4_drivers/spi/ispi_bus.hpp"
 
 /**

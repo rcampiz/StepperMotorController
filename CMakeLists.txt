@@ -58,6 +58,7 @@ include_directories(
     server/layers/L5_board
     server/foundation
     server/foundation/F_platform
+    server/external
     server/external/X_vendor/CMSIS
     server/external/X_middlewares/Third_Party/FreeRTOS-Kernel/include
     server/external/X_middlewares/Third_Party/FreeRTOS-Kernel/portable/GCC/ARM_CM4F

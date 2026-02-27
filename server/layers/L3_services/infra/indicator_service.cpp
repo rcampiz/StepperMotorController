@@ -11,7 +11,7 @@
 #include "L4_drivers/devices/lcd_st7789.hpp"
 #include "graphics/trig_lut.hpp"
 #include "graphics/primitives.hpp"
-#include "stm32f401xe.h"
+#include "X_vendor/CMSIS/stm32f401xe.h"
 
 // DWT cycle counter for accurate TE timeout (same guard pattern as spi_bitbang.hpp)
 #ifndef DWT_CTRL_CYCCNTENA_Msk

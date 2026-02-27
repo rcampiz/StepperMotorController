@@ -6,8 +6,8 @@
 #include "L3_services/dispatch/command_queue.hpp"
 #include "L3_services/infra/tick_timer.hpp"
 #include "F_platform/tasks/motor_task.hpp"
-#include "FreeRTOS.h"
-#include "semphr.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/semphr.h"
 
 namespace Services {
 

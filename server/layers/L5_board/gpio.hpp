@@ -9,7 +9,7 @@
 #ifndef GPIO_HPP
 #define GPIO_HPP
 
-#include "stm32f401xe.h"
+#include "X_vendor/CMSIS/stm32f401xe.h"
 
 /**
  * @brief GPIO pin modes

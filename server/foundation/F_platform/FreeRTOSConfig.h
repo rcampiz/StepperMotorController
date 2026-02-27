@@ -116,7 +116,7 @@ standard names. */
  * RTT Channel 1 is used for SystemView (Channel 0 reserved for console).
  *----------------------------------------------------------*/
 #ifdef ENABLE_SEGGER_SYSTEMVIEW
-  #include "SEGGER_SYSVIEW_FreeRTOS.h"
+  #include "X_middlewares/SEGGER/SystemView/SEGGER_SYSVIEW_FreeRTOS.h"
 #endif
 
 #endif /* FREERTOS_CONFIG_H */

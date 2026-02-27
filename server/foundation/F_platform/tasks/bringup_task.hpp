@@ -6,8 +6,8 @@
 #ifndef BRINGUP_TASK_HPP
 #define BRINGUP_TASK_HPP
 
-#include "FreeRTOS.h"
-#include "task.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
 
 // Task configuration
 #define BRINGUP_TASK_STACK_SIZE  512

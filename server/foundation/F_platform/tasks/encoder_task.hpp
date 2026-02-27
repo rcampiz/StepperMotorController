@@ -13,8 +13,8 @@
 #ifndef ENCODER_TASK_HPP
 #define ENCODER_TASK_HPP
 
-#include "FreeRTOS.h"
-#include "task.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
 #include "L3_services/motion/speed_trim_controller.hpp"
 #include <stdint.h>
 

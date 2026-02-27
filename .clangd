@@ -21,6 +21,7 @@ CompileFlags:
     - -Iserver/layers/L5_board
     - -Iserver/foundation
     - -Iserver/foundation/F_platform
+    - -Iserver/external
     - -Iserver/external/X_vendor/CMSIS
     - -Iserver/external/X_middlewares/Third_Party/FreeRTOS-Kernel/include
     - -Iserver/external/X_middlewares/Third_Party/FreeRTOS-Kernel/portable/GCC/ARM_CM4F

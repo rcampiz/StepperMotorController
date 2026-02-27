@@ -9,7 +9,7 @@
 #ifndef BOARD_CONFIG_HPP
 #define BOARD_CONFIG_HPP
 
-#include "stm32f401xe.h"
+#include "X_vendor/CMSIS/stm32f401xe.h"
 
 namespace BoardConfig {
 

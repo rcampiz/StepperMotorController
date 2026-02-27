@@ -6,7 +6,7 @@
 #ifndef POWERSTEP01_HPP
 #define POWERSTEP01_HPP
 
-#include "stm32f401xe.h"
+#include "X_vendor/CMSIS/stm32f401xe.h"
 #include "L5_board/board_pins.hpp"
 #include "L4_drivers/spi/spi_bus.hpp"
 

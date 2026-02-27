@@ -13,9 +13,9 @@
 
 #pragma once
 
-#include "FreeRTOS.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
 #include "L4_drivers/devices/flash_nor.hpp"
-#include "semphr.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/semphr.h"
 #include <stdint.h>
 
 namespace Services {

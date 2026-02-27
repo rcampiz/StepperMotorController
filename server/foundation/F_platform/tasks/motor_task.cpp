@@ -15,9 +15,9 @@
 #include "L3_services/motion/control_mode.hpp"
 #include "L3_services/motion/sysid.hpp"
 #include "L3_services/motion/speed_trim_controller.hpp"
-#include "FreeRTOS.h"
-#include "task.h"
-#include "queue.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/queue.h"
 
 namespace Tasks {
 

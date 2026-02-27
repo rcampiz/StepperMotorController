@@ -4,8 +4,8 @@
  */
 
 #include "L2_protocol/telemetry.hpp"
-#include "FreeRTOS.h"
-#include "task.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
 #include <string.h>
 
 namespace Comms {

@@ -16,7 +16,7 @@
 #pragma once
 
 #include "L5_board/board_pins.hpp"
-#include "stm32f401xe.h"
+#include "X_vendor/CMSIS/stm32f401xe.h"
 #include <stdint.h>
 
 /**

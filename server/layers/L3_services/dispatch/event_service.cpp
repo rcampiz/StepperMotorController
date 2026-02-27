@@ -6,8 +6,8 @@
  */
 
 #include "L3_services/dispatch/event_service.hpp"
-#include "FreeRTOS.h"
-#include "queue.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
+#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/queue.h"
 
 namespace Services::Event {
 

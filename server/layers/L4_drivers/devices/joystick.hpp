@@ -13,7 +13,7 @@
 #ifndef JOYSTICK_HPP
 #define JOYSTICK_HPP
 
-#include "stm32f401xe.h"
+#include "X_vendor/CMSIS/stm32f401xe.h"
 #include "L5_board/board_pins.hpp"
 
 class Joystick {
