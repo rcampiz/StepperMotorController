@@ -8,24 +8,18 @@
 
 #include "L2_protocol/command_parser.hpp"
 #include "L2_protocol/telemetry.hpp"
-#include "L3_services/dispatch/command_queue.hpp"
-#include "L3_services/dispatch/event_service.hpp"
-#include "F_platform/tasks/comms_task.hpp"
-#include "L3_services/config/config_service.hpp"
-#include "L3_services/motion/control_mode.hpp"
-#include "L3_services/config/device_config.hpp"
-#include "L3_services/motion/motion_service.hpp"
-#include "L3_services/motion/motor_config.hpp"
-#include "L3_services/safety/safety_service.hpp"
-#include "L3_services/infra/tick_timer.hpp"
-#include "L3_services/infra/timing_service.hpp"
-#include "L3_services/motion/following_supervisor.hpp"
-#include "L3_services/motion/sysid.hpp"
-#include "L3_services/motion/speed_trim_controller.hpp"
+#include "L2_protocol/async_event.hpp"
+// L3 includes eliminated via ICommandDispatcher:
+//   command_queue, config_service, control_mode, device_config,
+//   motion_service, safety_service, tick_timer, timing_service,
+//   event_service, motor_config, following_supervisor, sysid,
+//   speed_trim_controller, unit_conversion
+// Remaining L3 (debug commands only):
 #include "L3_services/infra/trace.hpp"
-#include "L3_services/infra/unit_conversion.hpp"
 #include "L3_services/infra/flash_image_service.hpp"
 #include "F_util/crc32.hpp"
+#include "L5_board/board_pins.hpp"
+#include "F_platform/tasks/comms_task.hpp"
 #include "F_platform/tasks/display_task.hpp"
 #include "F_platform/tasks/encoder_task.hpp"
 #include "F_platform/tasks/motor_task.hpp"
@@ -81,8 +75,9 @@ namespace Limits {
     constexpr int32_t DIR_MAX = 1;
 }
 
-CommandParser::CommandParser(ITransport &transport)
-    : m_transport(transport), m_bufIndex(0), m_format(ResponseFormat::ASCII) {
+CommandParser::CommandParser(ITransport &transport, ICommandDispatcher &dispatcher)
+    : m_transport(transport), m_dispatcher(dispatcher),
+      m_bufIndex(0), m_format(ResponseFormat::ASCII) {
   memset(m_buffer, 0, sizeof(m_buffer));
   memset(m_currentCmd, 0, sizeof(m_currentCmd));
 }
@@ -2030,7 +2025,7 @@ void CommandParser::respondData(const char **lines, size_t count) {
 }
 
 void CommandParser::respondJsonOk(const char *command, const char *dataJson) {
-  char buf[256];
+  char buf[1024];
   if (dataJson != nullptr && dataJson[0] != '\0') {
     snprintf(buf, sizeof(buf),
              "{\"status\":\"ok\",\"command\":\"%s\",\"data\":%s}",
@@ -2072,7 +2067,7 @@ void CommandParser::cmdMove(const ParsedCommand &cmd) {
       return;
     }
     double rev = atof(cmd.args[0]);
-    uint32_t ustepsPerRev = Services::g_motorConfig.getMicrostepsPerRev();
+    uint32_t ustepsPerRev = m_dispatcher.getMicrostepsPerRev();
     steps = static_cast<int32_t>(rev * static_cast<double>(ustepsPerRev) + 0.5);
     dirArgIdx = 2;
     speedArgIdx = 3;
@@ -2109,11 +2104,11 @@ void CommandParser::cmdMove(const ParsedCommand &cmd) {
     speedOverride = static_cast<uint32_t>(spd);
   }
 
-  auto result = Services::Motion::move(signedSteps, speedOverride);
-  if (result == Services::Motion::Result::OK) {
+  auto r = m_dispatcher.motionMove(signedSteps, speedOverride);
+  if (r.ok) {
     respondOk("");
   } else {
-    respondErr(Services::Motion::resultToString(result));
+    respondErr(r.message);
   }
 }
 
@@ -2130,7 +2125,7 @@ void CommandParser::cmdGoTo(const ParsedCommand &cmd) {
 
   if (isRev) {
     double rev = atof(cmd.args[0]);
-    uint32_t ustepsPerRev = Services::g_motorConfig.getMicrostepsPerRev();
+    uint32_t ustepsPerRev = m_dispatcher.getMicrostepsPerRev();
     double usteps = rev * static_cast<double>(ustepsPerRev);
     position = (usteps >= 0) ? static_cast<int32_t>(usteps + 0.5)
                              : static_cast<int32_t>(usteps - 0.5);
@@ -2157,11 +2152,11 @@ void CommandParser::cmdGoTo(const ParsedCommand &cmd) {
     speedOverride = static_cast<uint32_t>(spd);
   }
 
-  auto result = Services::Motion::goTo(position, speedOverride);
-  if (result == Services::Motion::Result::OK) {
+  auto r = m_dispatcher.motionGoTo(position, speedOverride);
+  if (r.ok) {
     respondOk("");
   } else {
-    respondErr(Services::Motion::resultToString(result));
+    respondErr(r.message);
   }
 }
 
@@ -2182,7 +2177,7 @@ void CommandParser::cmdRun(const ParsedCommand &cmd) {
       return;
     }
     double rpm = atof(cmd.args[0]);
-    uint16_t fullSteps = Services::g_motorConfig.getFullStepsPerRev();
+    uint16_t fullSteps = m_dispatcher.getFullStepsPerRev();
     speed = static_cast<int32_t>(rpm * static_cast<double>(fullSteps) / 60.0 + 0.5);
     dirArgIdx = 2;
   } else {
@@ -2204,11 +2199,11 @@ void CommandParser::cmdRun(const ParsedCommand &cmd) {
     return;
   }
 
-  auto result = Services::Motion::run(static_cast<uint32_t>(speed), dir == 1);
-  if (result == Services::Motion::Result::OK) {
+  auto r = m_dispatcher.motionRun(static_cast<uint32_t>(speed), dir == 1);
+  if (r.ok) {
     respondOk("");
   } else {
-    respondErr(Services::Motion::resultToString(result));
+    respondErr(r.message);
   }
 }
 
@@ -2216,16 +2211,16 @@ void CommandParser::cmdStop(const ParsedCommand &cmd) {
   // Optional "hard" argument
   bool hard = (cmd.argCount > 0 && strcmp(cmd.args[0], "hard") == 0);
 
-  auto result = Services::Motion::stop(hard);
-  if (result == Services::Motion::Result::OK) {
+  auto r = m_dispatcher.motionStop(hard);
+  if (r.ok) {
     respondOk("");
   } else {
-    respondErr(Services::Motion::resultToString(result));
+    respondErr(r.message);
   }
 }
 
 void CommandParser::cmdEstop() {
-  Services::Safety::emergencyStop();
+  m_dispatcher.safetyEstop();
   respondOk("ESTOP");
 }
 
@@ -2234,20 +2229,20 @@ void CommandParser::cmdEstop() {
 // ============================================================================
 
 void CommandParser::cmdEnable() {
-  auto result = Services::Motion::enable();
-  if (result == Services::Motion::Result::OK) {
+  auto r = m_dispatcher.motionEnable();
+  if (r.ok) {
     respondOk("ENABLED");
   } else {
-    respondErr(Services::Motion::resultToString(result));
+    respondErr(r.message);
   }
 }
 
 void CommandParser::cmdDisable() {
-  auto result = Services::Motion::disable();
-  if (result == Services::Motion::Result::OK) {
+  auto r = m_dispatcher.motionDisable();
+  if (r.ok) {
     respondOk("HI-Z");
   } else {
-    respondErr(Services::Motion::resultToString(result));
+    respondErr(r.message);
   }
 }
 
@@ -2265,11 +2260,11 @@ void CommandParser::cmdAccel(const ParsedCommand &cmd) {
     return;
   }
 
-  auto result = Services::Config::setAccelRaw(static_cast<uint16_t>(value));
-  if (result == Services::Config::Result::OK) {
+  auto r = m_dispatcher.configSetAccelRaw(static_cast<uint16_t>(value));
+  if (r.ok) {
     respondOk("");
   } else {
-    respondErr(Services::Config::resultToString(result));
+    respondErr(r.message);
   }
 }
 
@@ -2287,11 +2282,11 @@ void CommandParser::cmdDecel(const ParsedCommand &cmd) {
     return;
   }
 
-  auto result = Services::Config::setDecelRaw(static_cast<uint16_t>(value));
-  if (result == Services::Config::Result::OK) {
+  auto r = m_dispatcher.configSetDecelRaw(static_cast<uint16_t>(value));
+  if (r.ok) {
     respondOk("");
   } else {
-    respondErr(Services::Config::resultToString(result));
+    respondErr(r.message);
   }
 }
 
@@ -2309,11 +2304,11 @@ void CommandParser::cmdMaxSpd(const ParsedCommand &cmd) {
     return;
   }
 
-  auto result = Services::Config::setMaxSpeedRaw(static_cast<uint16_t>(value));
-  if (result == Services::Config::Result::OK) {
+  auto r = m_dispatcher.configSetMaxSpeedRaw(static_cast<uint16_t>(value));
+  if (r.ok) {
     respondOk("");
   } else {
-    respondErr(Services::Config::resultToString(result));
+    respondErr(r.message);
   }
 }
 
@@ -2333,13 +2328,11 @@ void CommandParser::cmdAccelPhysical(const ParsedCommand &cmd) {
     return;
   }
 
-  auto result = Services::Config::setAccelPhysical(static_cast<uint32_t>(value));
-  if (result == Services::Config::Result::OK) {
+  auto r = m_dispatcher.configSetAccelPhysical(static_cast<uint32_t>(value));
+  if (r.ok) {
     respondOk("");
-  } else if (result == Services::Config::Result::INVALID_PARAM) {
-    respondErr("accel out of range (1-59590 steps/s^2)");
   } else {
-    respondErr(Services::Config::resultToString(result));
+    respondErr(r.message);
   }
 }
 
@@ -2355,13 +2348,11 @@ void CommandParser::cmdDecelPhysical(const ParsedCommand &cmd) {
     return;
   }
 
-  auto result = Services::Config::setDecelPhysical(static_cast<uint32_t>(value));
-  if (result == Services::Config::Result::OK) {
+  auto r = m_dispatcher.configSetDecelPhysical(static_cast<uint32_t>(value));
+  if (r.ok) {
     respondOk("");
-  } else if (result == Services::Config::Result::INVALID_PARAM) {
-    respondErr("decel out of range (1-59590 steps/s^2)");
   } else {
-    respondErr(Services::Config::resultToString(result));
+    respondErr(r.message);
   }
 }
 
@@ -2377,13 +2368,11 @@ void CommandParser::cmdMaxSpdPhysical(const ParsedCommand &cmd) {
     return;
   }
 
-  auto result = Services::Config::setMaxSpeedPhysical(static_cast<uint32_t>(value));
-  if (result == Services::Config::Result::OK) {
+  auto r = m_dispatcher.configSetMaxSpeedPhysical(static_cast<uint32_t>(value));
+  if (r.ok) {
     respondOk("");
-  } else if (result == Services::Config::Result::INVALID_PARAM) {
-    respondErr("maxspd out of range (1-15609 steps/s)");
   } else {
-    respondErr(Services::Config::resultToString(result));
+    respondErr(r.message);
   }
 }
 
@@ -2397,9 +2386,9 @@ void CommandParser::cmdQueue(const ParsedCommand &cmd) {
     return;
   }
 
-  // Parse the queued command type and build MotorCommand
-  Tasks::MotorCommand motorCmd = {};
+  // Parse the queued command type, validate, and dispatch
   const char *subCmd = cmd.args[0];
+  Comms::DispatchResult r = {false, nullptr};
 
   if (strcmp(subCmd, "MOVE") == 0 || strcmp(subCmd, "move") == 0) {
     if (cmd.argCount < 3) {
@@ -2408,31 +2397,26 @@ void CommandParser::cmdQueue(const ParsedCommand &cmd) {
     }
     int32_t steps = static_cast<int32_t>(atol(cmd.args[1]));
     int32_t dir = static_cast<int32_t>(atol(cmd.args[2]));
-    // Validate direction
     if (dir < Limits::DIR_MIN || dir > Limits::DIR_MAX) {
       respondErr("dir must be 0 or 1");
       return;
     }
-    // Validate steps
     if (steps < 0 || steps > Limits::POS_MAX) {
       respondErr("steps out of range (0-2097151)");
       return;
     }
-    motorCmd.type = Tasks::MotorCmdType::Move;
-    motorCmd.param1 = (dir == 0) ? -steps : steps;
+    r = m_dispatcher.queueMove((dir == 0) ? -steps : steps);
   } else if (strcmp(subCmd, "GOTO") == 0 || strcmp(subCmd, "goto") == 0) {
     if (cmd.argCount < 2) {
       respondErr("Usage: QUEUE GOTO <position>");
       return;
     }
     int32_t position = static_cast<int32_t>(atol(cmd.args[1]));
-    // Validate position
     if (position < Limits::POS_MIN || position > Limits::POS_MAX) {
       respondErr("position out of range (-2097152 to 2097151)");
       return;
     }
-    motorCmd.type = Tasks::MotorCmdType::GoTo;
-    motorCmd.param1 = position;
+    r = m_dispatcher.queueGoTo(position);
   } else if (strcmp(subCmd, "RUN") == 0 || strcmp(subCmd, "run") == 0) {
     if (cmd.argCount < 3) {
       respondErr("Usage: QUEUE RUN <speed> <dir>");
@@ -2440,12 +2424,10 @@ void CommandParser::cmdQueue(const ParsedCommand &cmd) {
     }
     int32_t speed = static_cast<int32_t>(atol(cmd.args[1]));
     int32_t dir = static_cast<int32_t>(atol(cmd.args[2]));
-    // Validate direction
     if (dir < Limits::DIR_MIN || dir > Limits::DIR_MAX) {
       respondErr("dir must be 0 or 1");
       return;
     }
-    // Validate speed (in steps/s)
     if (speed < Limits::SPEED_MIN || speed > Limits::SPEED_MAX) {
       respondErr("speed out of range (0-15625 steps/s)");
       return;
@@ -2453,50 +2435,44 @@ void CommandParser::cmdQueue(const ParsedCommand &cmd) {
     // Convert steps/s to raw register value for powerSTEP01
     uint32_t speedRaw = static_cast<uint32_t>(
         (static_cast<uint64_t>(speed) * 1048576ULL) / 15625ULL);
-    motorCmd.type = Tasks::MotorCmdType::Run;
-    motorCmd.param1 = static_cast<int32_t>(speedRaw);
-    motorCmd.param2 = dir;
+    r = m_dispatcher.queueRun(speedRaw, dir);
   } else if (strcmp(subCmd, "STOP") == 0 || strcmp(subCmd, "stop") == 0) {
     bool hard = (cmd.argCount > 1 && strcmp(cmd.args[1], "hard") == 0);
-    motorCmd.type =
-        hard ? Tasks::MotorCmdType::HardStop : Tasks::MotorCmdType::SoftStop;
+    r = m_dispatcher.queueStop(hard);
   } else if (strcmp(subCmd, "HOME") == 0 || strcmp(subCmd, "home") == 0) {
-    motorCmd.type = Tasks::MotorCmdType::GoHome;
+    r = m_dispatcher.queueHome();
   } else if (strcmp(subCmd, "ZERO") == 0 || strcmp(subCmd, "zero") == 0) {
-    motorCmd.type = Tasks::MotorCmdType::ResetPos;
+    r = m_dispatcher.queueZero();
   } else {
     respondErr("Unknown queue command");
     return;
   }
 
-  // Add to command queue
-  Services::QueueResult result =
-      Services::g_commandQueue.queueCommand(motorCmd);
-  if (result == Services::QueueResult::OK) {
+  if (r.ok) {
     char buf[32];
     snprintf(buf, sizeof(buf), "QUEUED %u",
-             static_cast<unsigned>(Services::g_commandQueue.getQueueDepth()));
+             static_cast<unsigned>(m_dispatcher.getQueueDepth()));
     respondOk(buf);
   } else {
-    respondErr(Services::resultToString(result));
+    respondErr(r.message);
   }
 }
 
 void CommandParser::cmdArm() {
-  Services::QueueResult result = Services::g_commandQueue.arm();
-  if (result == Services::QueueResult::OK) {
+  auto r = m_dispatcher.queueArm();
+  if (r.ok) {
     respondOk("ARMED");
   } else {
-    respondErr(Services::resultToString(result));
+    respondErr(r.message);
   }
 }
 
 void CommandParser::cmdStart() {
-  Services::QueueResult result = Services::g_commandQueue.start();
-  if (result == Services::QueueResult::OK) {
+  auto r = m_dispatcher.queueStart();
+  if (r.ok) {
     respondOk("RUNNING");
   } else {
-    respondErr(Services::resultToString(result));
+    respondErr(r.message);
   }
 }
 
@@ -2508,20 +2484,20 @@ void CommandParser::cmdStartAt(const ParsedCommand &cmd) {
 
   uint32_t targetTick =
       static_cast<uint32_t>(strtoul(cmd.args[0], nullptr, 10));
-  Services::QueueResult result = Services::g_commandQueue.startAt(targetTick);
-  if (result == Services::QueueResult::OK) {
+  auto r = m_dispatcher.queueStartAt(targetTick);
+  if (r.ok) {
     respondOk("RUNNING");
   } else {
-    respondErr(Services::resultToString(result));
+    respondErr(r.message);
   }
 }
 
 void CommandParser::cmdClearQueue() {
-  Services::QueueResult result = Services::g_commandQueue.clearQueue();
-  if (result == Services::QueueResult::OK) {
+  auto r = m_dispatcher.queueClear();
+  if (r.ok) {
     respondOk("CLEARED");
   } else {
-    respondErr(Services::resultToString(result));
+    respondErr(r.message);
   }
 }
 
@@ -2532,7 +2508,7 @@ void CommandParser::cmdClearQueue() {
 void CommandParser::cmdPing(const ParsedCommand &cmd) {
   // Capture RX timestamp (ideally would be captured at byte reception, but
   // capturing at dispatch start is a reasonable approximation)
-  uint32_t rx_tick = Services::TickTimer_GetTick();
+  uint32_t rx_tick = m_dispatcher.getTickUs();
 
   // Parse sequence number
   uint32_t seq = 0;
@@ -2545,10 +2521,10 @@ void CommandParser::cmdPing(const ParsedCommand &cmd) {
   }
 
   // Capture TX timestamp just before transmit
-  uint32_t tx_tick = Services::TickTimer_GetTick();
+  uint32_t tx_tick = m_dispatcher.getTickUs();
 
   // Get current state
-  Services::ControllerState state = Services::g_commandQueue.getState();
+  const char* stateStr = m_dispatcher.controllerStateString();
 
   if (m_format == ResponseFormat::JSON) {
     char buf[128];
@@ -2557,20 +2533,20 @@ void CommandParser::cmdPing(const ParsedCommand &cmd) {
              static_cast<unsigned long>(seq),
              static_cast<unsigned long>(rx_tick),
              static_cast<unsigned long>(tx_tick),
-             Services::stateToString(state));
+             stateStr);
     respondJsonOk("PING", buf);
   } else {
     // ASCII format: PONG <seq> <mcu_rx_tick> <mcu_tx_tick> <state>
     char buf[80];
     snprintf(buf, sizeof(buf), "PONG %lu %lu %lu %s",
              static_cast<unsigned long>(seq), static_cast<unsigned long>(rx_tick),
-             static_cast<unsigned long>(tx_tick), Services::stateToString(state));
+             static_cast<unsigned long>(tx_tick), stateStr);
     m_transport.println(buf);
   }
 }
 
 void CommandParser::cmdGetTick() {
-  uint32_t tick = Services::TickTimer_GetTick();
+  uint32_t tick = m_dispatcher.getTickUs();
 
   if (m_format == ResponseFormat::JSON) {
     char buf[48];
@@ -2584,12 +2560,11 @@ void CommandParser::cmdGetTick() {
 }
 
 void CommandParser::cmdGetStatus() {
-  uint32_t tick = Services::TickTimer_GetTick();
-  Services::ControllerState state = Services::g_commandQueue.getState();
-  size_t queueDepth = Services::g_commandQueue.getQueueDepth();
-  Services::ControlMode mode = Services::g_controlMode.getMode();
-  Services::EncoderStatus encStatus =
-      Services::g_controlMode.getEncoderStatus();
+  uint32_t tick = m_dispatcher.getTickUs();
+  const char* stateStr = m_dispatcher.controllerStateString();
+  uint32_t queueDepth = m_dispatcher.getQueueDepth();
+  const char* modeStr = m_dispatcher.controlModeString();
+  const char* encStatusStr = m_dispatcher.encoderStatusString();
 
   // Get actual position and velocity from motor telemetry
   TelemetrySnapshot snap = g_telemetry.getSnapshot();
@@ -2613,24 +2588,23 @@ void CommandParser::cmdGetStatus() {
     // Filter faults against ALARM_EN config — only report faults the user
     // has enabled. STATUS register always reflects raw hardware state, but
     // disabled faults (e.g. OCD noise) should not cause GUI error state.
-    const auto& faultEn = Services::g_motorConfig.getFaultEnable();
-    bool ocdEn       = ocd && faultEn.ocd;
-    bool thermalSDEn = thermalSD && faultEn.thermalSD;
-    bool thermalWarnEn = thermalWarn && faultEn.thermalWarn;
-    bool uvloEn      = uvlo && faultEn.uvlo;
-    bool stallAEn    = stallA && faultEn.stallA && snap.motor.speed > 0;
-    bool stallBEn    = stallB && faultEn.stallB && snap.motor.speed > 0;
-    bool cmdErrEn    = cmdErr && faultEn.cmdErr;
+    bool feOcd, feThermalSD, feThermalWarn, feUvlo, feStallA, feStallB, feCmdErr;
+    m_dispatcher.getFaultEnable(feOcd, feThermalSD, feThermalWarn,
+                                feUvlo, feStallA, feStallB, feCmdErr);
+    bool ocdEn       = ocd && feOcd;
+    bool thermalSDEn = thermalSD && feThermalSD;
+    bool thermalWarnEn = thermalWarn && feThermalWarn;
+    bool uvloEn      = uvlo && feUvlo;
+    bool stallAEn    = stallA && feStallA && snap.motor.speed > 0;
+    bool stallBEn    = stallB && feStallB && snap.motor.speed > 0;
+    bool cmdErrEn    = cmdErr && feCmdErr;
     bool anyError    = cmdErrEn || uvloEn || thermalSDEn || thermalWarnEn
                        || stallAEn || stallBEn || ocdEn;
 
     // Get heartbeat watchdog status
-    Services::Safety::HeartbeatStatus hbStatus;
-    Services::Safety::getHeartbeatStatus(hbStatus);
-    bool hbEnabled = hbStatus.enabled;
-    uint32_t hbTimeout = hbStatus.timeoutMs;
-    uint32_t hbRemaining = hbStatus.remainingMs;
-    bool hbTimedOut = hbStatus.timedOut;
+    bool hbEnabled; uint32_t hbTimeout, hbLastSeq, hbRemaining; bool hbTimedOut;
+    m_dispatcher.safetyGetHeartbeatStatus(hbEnabled, hbTimeout, hbLastSeq,
+                                           hbRemaining, hbTimedOut);
 
     // Bypass respondJsonOk (256-byte buffer too small) — format full envelope
     // newlib-nano: no %lld — pre-format int64_t as string
@@ -2656,7 +2630,7 @@ void CommandParser::cmdGetStatus() {
              "\"heartbeat\":{\"enabled\":%s,\"timeout_ms\":%lu,"
              "\"remaining_ms\":%lu,\"timed_out\":%s},"
              "\"mode\":\"%s\",\"encoder_status\":\"%s\",\"error\":%s}}",
-             Services::stateToString(state),
+             stateStr,
              static_cast<unsigned long>(tick),
              static_cast<unsigned>(queueDepth),
              static_cast<long>(snap.motor.position),
@@ -2698,17 +2672,17 @@ void CommandParser::cmdGetStatus() {
              static_cast<unsigned long>(hbTimeout),
              static_cast<unsigned long>(hbRemaining),
              hbTimedOut ? "true" : "false",
-             Services::modeToString(mode),
-             Services::encoderStatusToString(encStatus),
+             modeStr,
+             encStatusStr,
              anyError ? "true" : "false");
     m_transport.println(buf);
   } else {
     // ASCII format: STATUS <state> <tick> <queue_depth> <mode> <encoder_status> <position> <velocity>
     char buf[96];
     snprintf(buf, sizeof(buf), "STATUS %s %lu %u %s %s %ld %lu",
-             Services::stateToString(state), static_cast<unsigned long>(tick),
-             static_cast<unsigned>(queueDepth), Services::modeToString(mode),
-             Services::encoderStatusToString(encStatus),
+             stateStr, static_cast<unsigned long>(tick),
+             static_cast<unsigned>(queueDepth), modeStr,
+             encStatusStr,
              static_cast<long>(snap.motor.position),
              static_cast<unsigned long>(snap.motor.speed));
     m_transport.println(buf);
@@ -2717,22 +2691,20 @@ void CommandParser::cmdGetStatus() {
 
 void CommandParser::cmdClearFault() {
   char faultBuf[80] = {};
-  auto result = Services::Safety::clearFault(faultBuf, sizeof(faultBuf));
-  if (result == Services::Safety::Result::OK) {
+  auto r = m_dispatcher.safetyClearFault(faultBuf, sizeof(faultBuf));
+  if (r.ok) {
     respondOk("IDLE");
-  } else if (result == Services::Safety::Result::FAULT_ACTIVE) {
-    respondErr(faultBuf);
   } else {
-    respondErr("Not in fault/estop state");
+    respondErr(r.message);
   }
 }
 
 void CommandParser::cmdForceClearFault() {
-  auto result = Services::Safety::forceClearFault();
-  if (result == Services::Safety::Result::OK) {
+  auto r = m_dispatcher.safetyForceClearFault();
+  if (r.ok) {
     respondOk("IDLE");
   } else {
-    respondErr("Not in fault/estop state");
+    respondErr(r.message);
   }
 }
 
@@ -2746,12 +2718,12 @@ void CommandParser::cmdHeartbeat(const ParsedCommand &cmd) {
     seq = static_cast<uint32_t>(atol(cmd.args[0]));
   }
 
-  Services::Safety::heartbeatReceived(seq);
+  m_dispatcher.safetyHeartbeatReceived(seq);
 
-  Services::Safety::HeartbeatStatus hb;
-  Services::Safety::getHeartbeatStatus(hb);
+  bool hbEnabled; uint32_t hbTimeout, hbLastSeq, hbRemaining; bool hbTimedOut;
+  m_dispatcher.safetyGetHeartbeatStatus(hbEnabled, hbTimeout, hbLastSeq, hbRemaining, hbTimedOut);
 
-  uint32_t mcu_tick = Services::TickTimer_GetTick();
+  uint32_t mcu_tick = m_dispatcher.getTickUs();
 
   if (m_format == ResponseFormat::JSON) {
     char buf[128];
@@ -2759,14 +2731,14 @@ void CommandParser::cmdHeartbeat(const ParsedCommand &cmd) {
              "{\"seq\":%lu,\"mcu_tick\":%lu,\"remaining_ms\":%lu}",
              static_cast<unsigned long>(seq),
              static_cast<unsigned long>(mcu_tick),
-             static_cast<unsigned long>(hb.remainingMs));
+             static_cast<unsigned long>(hbRemaining));
     respondJsonOk("HEARTBEAT", buf);
   } else {
     char buf[64];
     snprintf(buf, sizeof(buf), "HEARTBEAT_ACK %lu %lu %lu",
              static_cast<unsigned long>(seq),
              static_cast<unsigned long>(mcu_tick),
-             static_cast<unsigned long>(hb.remainingMs));
+             static_cast<unsigned long>(hbRemaining));
     m_transport.println(buf);
   }
 }
@@ -2778,7 +2750,7 @@ void CommandParser::cmdSetHeartbeat(const ParsedCommand &cmd) {
   }
 
   uint32_t requested = static_cast<uint32_t>(atol(cmd.args[0]));
-  uint32_t accepted = Services::Safety::setHeartbeatTimeout(requested);
+  uint32_t accepted = m_dispatcher.safetySetHeartbeatTimeout(requested);
 
   if (m_format == ResponseFormat::JSON) {
     char buf[96];
@@ -2797,28 +2769,28 @@ void CommandParser::cmdSetHeartbeat(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdGetHeartbeatStatus() {
-  Services::Safety::HeartbeatStatus hb;
-  Services::Safety::getHeartbeatStatus(hb);
+  bool hbEnabled; uint32_t hbTimeout, hbLastSeq, hbRemaining; bool hbTimedOut;
+  m_dispatcher.safetyGetHeartbeatStatus(hbEnabled, hbTimeout, hbLastSeq, hbRemaining, hbTimedOut);
 
   if (m_format == ResponseFormat::JSON) {
     char buf[160];
     snprintf(buf, sizeof(buf),
              "{\"enabled\":%s,\"timeout_ms\":%lu,\"last_seq\":%lu,"
              "\"remaining_ms\":%lu,\"timed_out\":%s}",
-             hb.enabled ? "true" : "false",
-             static_cast<unsigned long>(hb.timeoutMs),
-             static_cast<unsigned long>(hb.lastSeq),
-             static_cast<unsigned long>(hb.remainingMs),
-             hb.timedOut ? "true" : "false");
+             hbEnabled ? "true" : "false",
+             static_cast<unsigned long>(hbTimeout),
+             static_cast<unsigned long>(hbLastSeq),
+             static_cast<unsigned long>(hbRemaining),
+             hbTimedOut ? "true" : "false");
     respondJsonOk("GET_HEARTBEAT_STATUS", buf);
   } else {
     char buf[80];
     snprintf(buf, sizeof(buf), "HEARTBEAT_STATUS %s %lu %lu %lu %s",
-             hb.enabled ? "ENABLED" : "DISABLED",
-             static_cast<unsigned long>(hb.timeoutMs),
-             static_cast<unsigned long>(hb.lastSeq),
-             static_cast<unsigned long>(hb.remainingMs),
-             hb.timedOut ? "TIMED_OUT" : "OK");
+             hbEnabled ? "ENABLED" : "DISABLED",
+             static_cast<unsigned long>(hbTimeout),
+             static_cast<unsigned long>(hbLastSeq),
+             static_cast<unsigned long>(hbRemaining),
+             hbTimedOut ? "TIMED_OUT" : "OK");
     m_transport.println(buf);
   }
 }
@@ -2888,19 +2860,16 @@ void CommandParser::cmdVersion() {
 
   // Show device identification
   char buf[48];
-  uint16_t deviceId = Services::g_deviceConfig.getDeviceId();
-  Services::WheelRole role = Services::g_deviceConfig.getRole();
+  uint16_t deviceId; const char* roleStr;
+  m_dispatcher.getDeviceInfo(deviceId, roleStr);
   snprintf(buf, sizeof(buf), "Device: %u (%s)", static_cast<unsigned>(deviceId),
-           Services::roleToString(role));
+           roleStr);
   m_transport.println(buf);
 
   // Show control mode
-  Services::ControlMode mode = Services::g_controlMode.getMode();
-  Services::EncoderStatus encStatus =
-      Services::g_controlMode.getEncoderStatus();
   snprintf(buf, sizeof(buf), "Mode: %s (encoder: %s)",
-           Services::modeToString(mode),
-           Services::encoderStatusToString(encStatus));
+           m_dispatcher.controlModeString(),
+           m_dispatcher.encoderStatusString());
   m_transport.println(buf);
 }
 
@@ -2916,35 +2885,35 @@ void CommandParser::cmdHome(const ParsedCommand &cmd) {
     speedOverride = static_cast<uint32_t>(spd);
   }
 
-  auto result = Services::Motion::home(speedOverride);
-  if (result == Services::Motion::Result::OK) {
+  auto r = m_dispatcher.motionHome(speedOverride);
+  if (r.ok) {
     respondOk("");
   } else {
-    respondErr(Services::Motion::resultToString(result));
+    respondErr(r.message);
   }
 }
 
 void CommandParser::cmdZero() {
-  auto result = Services::Motion::zero();
-  if (result == Services::Motion::Result::OK) {
+  auto r = m_dispatcher.motionZero();
+  if (r.ok) {
     respondOk("");
   } else {
-    respondErr(Services::Motion::resultToString(result));
+    respondErr(r.message);
   }
 }
 
 void CommandParser::cmdEncoderZero() {
-  Tasks::EncoderTask_ResetCount();
+  m_dispatcher.encoderResetCount();
   respondOk("ENCODER_ZEROED");
 }
 
 void CommandParser::cmdZeroAll() {
-  auto result = Services::Motion::zero();
-  Tasks::EncoderTask_ResetCount();
-  if (result == Services::Motion::Result::OK) {
+  auto r = m_dispatcher.motionZero();
+  m_dispatcher.encoderResetCount();
+  if (r.ok) {
     respondOk("ALL_ZEROED");
   } else {
-    respondErr(Services::Motion::resultToString(result));
+    respondErr(r.message);
   }
 }
 
@@ -3071,7 +3040,7 @@ void CommandParser::cmdEncFilter(const ParsedCommand &cmd) {
   // Legacy set commands: NONE / EMA <alpha> / SMA <window>
   if (strcmp(cmd.args[0], "NONE") == 0) {
     Tasks::EncoderTask_SetFilter(0, 0);
-    Services::g_motorConfig.setEncFilter(0, 0);
+    m_dispatcher.configSetEncFilter(0, 0);
     respondOk("NONE");
     return;
   }
@@ -3087,7 +3056,7 @@ void CommandParser::cmdEncFilter(const ParsedCommand &cmd) {
       return;
     }
     Tasks::EncoderTask_SetFilter(1, static_cast<uint8_t>(val));
-    Services::g_motorConfig.setEncFilter(Tasks::ENC_FILT_EMA, static_cast<uint8_t>(val));
+    m_dispatcher.configSetEncFilter(Tasks::ENC_FILT_EMA, static_cast<uint8_t>(val));
     char buf[48];
     snprintf(buf, sizeof(buf), "EMA alpha=%u", (unsigned)val);
     respondOk(buf);
@@ -3105,8 +3074,8 @@ void CommandParser::cmdEncFilter(const ParsedCommand &cmd) {
       return;
     }
     Tasks::EncoderTask_SetFilter(2, static_cast<uint8_t>(val));
-    Services::g_motorConfig.setEncFilter(Tasks::ENC_FILT_SMA, 0);
-    Services::g_motorConfig.getConfigMutable().encSmaWindow = static_cast<uint8_t>(val);
+    m_dispatcher.configSetEncFilter(Tasks::ENC_FILT_SMA, 0);
+    m_dispatcher.configSetEncSmaWindow(static_cast<uint8_t>(val));
     char buf[48];
     snprintf(buf, sizeof(buf), "SMA window=%u", (unsigned)val);
     respondOk(buf);
@@ -3389,10 +3358,10 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
     Tasks::EncoderTask_GetFilterConfig(cfg);
     uint8_t rateDiv = (cfg.sampleRateHz != 1000)
                     ? static_cast<uint8_t>(cfg.sampleRateHz / 100) : 0;
-    Services::g_motorConfig.setEncFilterFull(
+    m_dispatcher.configSetEncFilterFull(
         cfg.filterFlags, cfg.emaAlpha, cfg.smaWindow,
         cfg.measWindowMs, rateDiv);
-    if (Services::g_motorConfig.saveToFlash()) {
+    if (m_dispatcher.configSaveToFlash()) {
       respondOk("Filter config saved");
     } else {
       respondErr("Flash write failed");
@@ -3429,12 +3398,11 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
 // ============================================================================
 
 void CommandParser::cmdGetDeviceId() {
-  uint16_t deviceId = Services::g_deviceConfig.getDeviceId();
-  Services::WheelRole role = Services::g_deviceConfig.getRole();
+  uint16_t deviceId; const char* roleStr;
+  m_dispatcher.getDeviceInfo(deviceId, roleStr);
 
   char buf[32];
-  snprintf(buf, sizeof(buf), "%u %s", static_cast<unsigned>(deviceId),
-           Services::roleToString(role));
+  snprintf(buf, sizeof(buf), "%u %s", static_cast<unsigned>(deviceId), roleStr);
   respondOk(buf);
 }
 
@@ -3446,7 +3414,7 @@ void CommandParser::cmdSetDeviceId(const ParsedCommand &cmd) {
 
   uint16_t deviceId = static_cast<uint16_t>(strtoul(cmd.args[0], nullptr, 10));
 
-  if (Services::g_deviceConfig.setDeviceId(deviceId)) {
+  if (m_dispatcher.setDeviceId(deviceId)) {
     respondOk("ID saved");
   } else {
     respondErr("Flash write failed");
@@ -3459,14 +3427,13 @@ void CommandParser::cmdSetRole(const ParsedCommand &cmd) {
     return;
   }
 
-  Services::WheelRole role = Services::parseRole(cmd.args[0]);
-
-  if (Services::g_deviceConfig.setRole(role)) {
+  auto r = m_dispatcher.setRole(cmd.args[0]);
+  if (r.ok) {
     char buf[32];
-    snprintf(buf, sizeof(buf), "Role=%s", Services::roleToString(role));
+    snprintf(buf, sizeof(buf), "Role=%s", r.message);
     respondOk(buf);
   } else {
-    respondErr("Flash write failed");
+    respondErr(r.message);
   }
 }
 
@@ -3475,13 +3442,10 @@ void CommandParser::cmdSetRole(const ParsedCommand &cmd) {
 // ============================================================================
 
 void CommandParser::cmdGetMode() {
-  Services::ControlMode mode = Services::g_controlMode.getMode();
-  Services::EncoderStatus encStatus =
-      Services::g_controlMode.getEncoderStatus();
-
   char buf[48];
-  snprintf(buf, sizeof(buf), "%s encoder=%s", Services::modeToString(mode),
-           Services::encoderStatusToString(encStatus));
+  snprintf(buf, sizeof(buf), "%s encoder=%s",
+           m_dispatcher.controlModeString(),
+           m_dispatcher.encoderStatusString());
   respondOk(buf);
 }
 
@@ -3491,42 +3455,27 @@ void CommandParser::cmdSetMode(const ParsedCommand &cmd) {
     return;
   }
 
-  Services::ControlMode mode = Services::parseMode(cmd.args[0]);
-
-  // Attempt to set mode (will fail if closed-loop requested without encoder)
-  if (Services::g_controlMode.setMode(mode)) {
-    respondOk(Services::modeToString(mode));
+  auto r = m_dispatcher.setControlMode(cmd.args[0]);
+  if (r.ok) {
+    respondOk(r.message);
   } else {
-    // Mode change failed — closed-loop modes require encoder READY
-    if (mode != Services::ControlMode::OPEN_LOOP) {
-      Services::EncoderStatus encStatus =
-          Services::g_controlMode.getEncoderStatus();
-      char buf[80];
-      snprintf(buf, sizeof(buf), "Cannot enter %s: encoder %s",
-               Services::modeToString(mode),
-               Services::encoderStatusToString(encStatus));
-      respondErr(buf);
-    } else {
-      respondErr("Mode change failed");
-    }
+    respondErr(r.message);
   }
 }
 
 void CommandParser::cmdGetEncoderStatus() {
-  Services::EncoderStatus status = Services::g_controlMode.getEncoderStatus();
+  const char* encStr = m_dispatcher.encoderStatusString();
 
   char buf[80];
-  if (status == Services::EncoderStatus::READY &&
-      Tasks::EncoderTask_IsAvailable()) {
-    // Include encoder data if available
-    Tasks::EncoderState state = Tasks::EncoderTask_GetState();
+  if (m_dispatcher.isEncoderAvailable()) {
+    int32_t count, velocity; bool indexSeen;
+    m_dispatcher.getEncoderState(count, velocity, indexSeen);
     snprintf(buf, sizeof(buf), "status=%s count=%ld vel=%ld idx=%d",
-             Services::encoderStatusToString(status),
-             static_cast<long>(state.count), static_cast<long>(state.velocity),
-             state.indexSeen ? 1 : 0);
+             encStr,
+             static_cast<long>(count), static_cast<long>(velocity),
+             indexSeen ? 1 : 0);
   } else {
-    snprintf(buf, sizeof(buf), "status=%s",
-             Services::encoderStatusToString(status));
+    snprintf(buf, sizeof(buf), "status=%s", encStr);
   }
   respondOk(buf);
 }
@@ -4215,35 +4164,13 @@ void CommandParser::cmdTraceReset() {
 // ============================================================================
 
 void CommandParser::cmdMotorConfigShow() {
-  const auto& cfg = Services::g_motorConfig.getConfig();
-  bool valid = Services::g_motorConfig.isValid();
-
   char buf[384];
-  snprintf(buf, sizeof(buf),
-           "Motor Config %s\n"
-           "KVAL: HOLD=%02X RUN=%02X ACC=%02X DEC=%02X\n"
-           "OCD_TH=%02X STALL_TH=%02X\n"
-           "ACC=%u DEC=%u MAXSPD=%u MINSPD=%u FS_SPD=%u\n"
-           "Faults: OCD=%d TH_SD=%d TH_W=%d UVLO=%d STALL_A=%d STALL_B=%d CMD=%d\n"
-           "Action: %s\n"
-           "StepMode: %u (1/%u)",
-           valid ? "(from flash)" : "(defaults)",
-           (unsigned)cfg.kvalHold, (unsigned)cfg.kvalRun,
-           (unsigned)cfg.kvalAcc, (unsigned)cfg.kvalDec,
-           (unsigned)cfg.ocdThreshold, (unsigned)cfg.stallThreshold,
-           (unsigned)cfg.acceleration, (unsigned)cfg.deceleration,
-           (unsigned)cfg.maxSpeed, (unsigned)cfg.minSpeed, (unsigned)cfg.fsSpeed,
-           cfg.faultEnable.ocd, cfg.faultEnable.thermalSD,
-           cfg.faultEnable.thermalWarn, cfg.faultEnable.uvlo,
-           cfg.faultEnable.stallA, cfg.faultEnable.stallB, cfg.faultEnable.cmdErr,
-           cfg.faultAction == 0 ? "HardStop" :
-           cfg.faultAction == 1 ? "HardHiZ" : "SoftStop",
-           (unsigned)(cfg.stepMode & 0x07), 1U << (cfg.stepMode & 0x07));
+  m_dispatcher.formatMotorConfig(buf, sizeof(buf));
   m_transport.println(buf);
 }
 
 void CommandParser::cmdMotorConfigSave() {
-  if (Services::g_motorConfig.saveToFlash()) {
+  if (m_dispatcher.configSaveToFlash()) {
     respondOk("Config saved to flash");
   } else {
     respondErr("Flash write failed");
@@ -4251,7 +4178,7 @@ void CommandParser::cmdMotorConfigSave() {
 }
 
 void CommandParser::cmdMotorConfigLoad() {
-  if (Services::g_motorConfig.loadFromFlash()) {
+  if (m_dispatcher.configLoadFromFlash()) {
     respondOk("Config loaded from flash");
   } else {
     respondErr("No valid config in flash");
@@ -4259,7 +4186,7 @@ void CommandParser::cmdMotorConfigLoad() {
 }
 
 void CommandParser::cmdMotorConfigReset() {
-  if (Services::g_motorConfig.factoryReset()) {
+  if (m_dispatcher.configFactoryReset()) {
     respondOk("Factory defaults restored and saved");
   } else {
     respondErr("Flash write failed");
@@ -4278,7 +4205,7 @@ void CommandParser::cmdMotorConfigKval(const ParsedCommand &cmd) {
   uint8_t acc = static_cast<uint8_t>(strtoul(cmd.args[2], nullptr, 16));
   uint8_t dec = static_cast<uint8_t>(strtoul(cmd.args[3], nullptr, 16));
 
-  Services::g_motorConfig.setKval(hold, run, acc, dec);
+  m_dispatcher.configSetKval(hold, run, acc, dec);
 
   char buf[64];
   snprintf(buf, sizeof(buf), "KVAL set: H=%02X R=%02X A=%02X D=%02X (not saved)",
@@ -4299,7 +4226,7 @@ void CommandParser::cmdMotorConfigOcd(const ParsedCommand &cmd) {
     return;
   }
 
-  Services::g_motorConfig.setOcdThreshold(thresh);
+  m_dispatcher.configSetOcdThreshold(thresh);
 
   char buf[48];
   snprintf(buf, sizeof(buf), "OCD threshold set: %u (not saved)", thresh);
@@ -4320,7 +4247,7 @@ void CommandParser::cmdMotorConfigStall(const ParsedCommand &cmd) {
     return;
   }
 
-  Services::g_motorConfig.setStallThreshold(thresh);
+  m_dispatcher.configSetStallThreshold(thresh);
 
   char buf[48];
   snprintf(buf, sizeof(buf), "Stall threshold set: %u (not saved)", thresh);
@@ -4347,7 +4274,7 @@ void CommandParser::cmdMotorConfigFault(const ParsedCommand &cmd) {
       respondErr("Action must be 0=HardStop, 1=HardHiZ, 2=SoftStop");
       return;
     }
-    Services::g_motorConfig.setFaultAction(action);
+    m_dispatcher.configSetFaultAction(action);
     const char* actionStr = action == 0 ? "HardStop" :
                             action == 1 ? "HardHiZ" : "SoftStop";
     char buf[48];
@@ -4362,16 +4289,16 @@ void CommandParser::cmdMotorConfigFault(const ParsedCommand &cmd) {
     return;
   }
 
-  Services::FaultEnableFlags flags = {};
-  flags.ocd = (strtoul(cmd.args[0], nullptr, 10) != 0) ? 1 : 0;
-  flags.thermalSD = (strtoul(cmd.args[1], nullptr, 10) != 0) ? 1 : 0;
-  flags.thermalWarn = (strtoul(cmd.args[2], nullptr, 10) != 0) ? 1 : 0;
-  flags.uvlo = (strtoul(cmd.args[3], nullptr, 10) != 0) ? 1 : 0;
-  flags.stallA = (strtoul(cmd.args[4], nullptr, 10) != 0) ? 1 : 0;
-  flags.stallB = (strtoul(cmd.args[5], nullptr, 10) != 0) ? 1 : 0;
-  flags.cmdErr = (strtoul(cmd.args[6], nullptr, 10) != 0) ? 1 : 0;
+  bool ocd       = (strtoul(cmd.args[0], nullptr, 10) != 0);
+  bool thermalSD  = (strtoul(cmd.args[1], nullptr, 10) != 0);
+  bool thermalWarn= (strtoul(cmd.args[2], nullptr, 10) != 0);
+  bool uvlo       = (strtoul(cmd.args[3], nullptr, 10) != 0);
+  bool stallA     = (strtoul(cmd.args[4], nullptr, 10) != 0);
+  bool stallB     = (strtoul(cmd.args[5], nullptr, 10) != 0);
+  bool cmdErr     = (strtoul(cmd.args[6], nullptr, 10) != 0);
 
-  Services::g_motorConfig.setFaultEnable(flags);
+  m_dispatcher.configSetFaultEnableFlags(ocd, thermalSD, thermalWarn,
+                                          uvlo, stallA, stallB, cmdErr);
   respondOk("Fault enables set (not saved)");
 }
 
@@ -4396,7 +4323,7 @@ void CommandParser::cmdMotorConfigMotion(const ParsedCommand &cmd) {
     return;
   }
 
-  Services::g_motorConfig.setMotionParams(acc, dec, maxSpd);
+  m_dispatcher.configSetMotionParams(acc, dec, maxSpd);
 
   char buf[64];
   snprintf(buf, sizeof(buf), "Motion params set: ACC=%u DEC=%u MAX=%u (not saved)",
@@ -4435,7 +4362,7 @@ void CommandParser::cmdMotorConfigStepMode(const ParsedCommand &cmd) {
     return;
   }
 
-  Services::g_motorConfig.setStepMode(mode);
+  m_dispatcher.configSetStepMode(mode);
 
   char buf[64];
   snprintf(buf, sizeof(buf), "Step mode set: %u (1/%u microstep, not saved)",
@@ -4451,7 +4378,7 @@ void CommandParser::cmdMotorConfigApply() {
   }
 
   // Persist to flash so config survives reboot
-  if (!Services::g_motorConfig.saveToFlash()) {
+  if (!m_dispatcher.configSaveToFlash()) {
     respondErr("Applied but flash write failed");
     return;
   }
@@ -4491,7 +4418,7 @@ void CommandParser::cmdEventEnable(const ParsedCommand &cmd) {
   Comms::TelemetrySnapshot snap = Comms::g_telemetry.getSnapshot();
   uint16_t currentStatus = snap.motor.statusReg;
 
-  Services::Event::enable(mask, currentStatus);
+  m_dispatcher.enableEvents(mask, currentStatus);
 
   if (m_format == ResponseFormat::JSON) {
     char dataBuf[32];
@@ -4505,12 +4432,14 @@ void CommandParser::cmdEventEnable(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdEventDisable() {
-  Services::Event::disable();
+  m_dispatcher.disableEvents();
   respondOk("");
 }
 
 void CommandParser::cmdEventStatus() {
-  Services::Event::Stats st = Services::Event::getStats();
+  uint32_t sent, lostCritical, lostInfo;
+  uint8_t evtMask, queueDepth;
+  m_dispatcher.getEventStats(sent, lostCritical, lostInfo, evtMask, queueDepth);
   uint32_t lastSeq = Tasks::CommsTask_GetLastEventSeq();
 
   if (m_format == ResponseFormat::JSON) {
@@ -4518,23 +4447,23 @@ void CommandParser::cmdEventStatus() {
     snprintf(buf, sizeof(buf),
              "{\"mask\":%u,\"sent\":%lu,\"lost_critical\":%lu,\"lost_info\":%lu,"
              "\"last_seq\":%lu,\"depth\":%u}",
-             static_cast<unsigned>(st.enableMask),
-             static_cast<unsigned long>(st.sent),
-             static_cast<unsigned long>(st.lostCritical),
-             static_cast<unsigned long>(st.lostInfo),
+             static_cast<unsigned>(evtMask),
+             static_cast<unsigned long>(sent),
+             static_cast<unsigned long>(lostCritical),
+             static_cast<unsigned long>(lostInfo),
              static_cast<unsigned long>(lastSeq),
-             static_cast<unsigned>(st.queueDepth));
+             static_cast<unsigned>(queueDepth));
     respondJsonOk(m_currentCmd, buf);
   } else {
     char buf[128];
     snprintf(buf, sizeof(buf),
              "EVENT_STATUS mask=%u sent=%lu lost_critical=%lu lost_info=%lu last_seq=%lu depth=%u",
-             static_cast<unsigned>(st.enableMask),
-             static_cast<unsigned long>(st.sent),
-             static_cast<unsigned long>(st.lostCritical),
-             static_cast<unsigned long>(st.lostInfo),
+             static_cast<unsigned>(evtMask),
+             static_cast<unsigned long>(sent),
+             static_cast<unsigned long>(lostCritical),
+             static_cast<unsigned long>(lostInfo),
              static_cast<unsigned long>(lastSeq),
-             static_cast<unsigned>(st.queueDepth));
+             static_cast<unsigned>(queueDepth));
     m_transport.println(buf);
   }
 }
@@ -5205,8 +5134,8 @@ void CommandParser::cmdDrvStepMode(const ParsedCommand &cmd) {
   }
 
   // Update persistent config (RAM only — user must DRV:CFG:SAVE to persist)
-  Services::g_motorConfig.setStepMode(readback);
-  uint32_t ustepsPerRev = Services::g_motorConfig.getMicrostepsPerRev();
+  m_dispatcher.configSetStepMode(readback);
+  uint32_t ustepsPerRev = m_dispatcher.getMicrostepsPerRev();
 
   if (m_format == ResponseFormat::JSON) {
     char json[128];
@@ -5229,7 +5158,7 @@ void CommandParser::cmdDrvStepModeQuery() {
   Tasks::MotorDebugInfo info = {};
   Tasks::MotorTask_GetDebugInfo(info);
   uint8_t mode = info.stepMode;
-  uint32_t ustepsPerRev = static_cast<uint32_t>(Services::g_motorConfig.getFullStepsPerRev()) * (1U << mode);
+  uint32_t ustepsPerRev = static_cast<uint32_t>(m_dispatcher.getFullStepsPerRev()) * (1U << mode);
 
   if (m_format == ResponseFormat::JSON) {
     char json[128];
@@ -5260,8 +5189,8 @@ void CommandParser::cmdDrvFullSteps(const ParsedCommand &cmd) {
     return;
   }
 
-  Services::g_motorConfig.setFullStepsPerRev(static_cast<uint16_t>(steps));
-  uint32_t ustepsPerRev = Services::g_motorConfig.getMicrostepsPerRev();
+  m_dispatcher.configSetFullStepsPerRev(static_cast<uint16_t>(steps));
+  uint32_t ustepsPerRev = m_dispatcher.getMicrostepsPerRev();
 
   if (m_format == ResponseFormat::JSON) {
     char json[96];
@@ -5279,8 +5208,8 @@ void CommandParser::cmdDrvFullSteps(const ParsedCommand &cmd) {
 
 // DRV:FULL_STEPS? — query motor full steps per revolution
 void CommandParser::cmdDrvFullStepsQuery() {
-  uint16_t steps = Services::g_motorConfig.getFullStepsPerRev();
-  uint32_t ustepsPerRev = Services::g_motorConfig.getMicrostepsPerRev();
+  uint16_t steps = m_dispatcher.getFullStepsPerRev();
+  uint32_t ustepsPerRev = m_dispatcher.getMicrostepsPerRev();
 
   if (m_format == ResponseFormat::JSON) {
     char json[96];
@@ -5309,7 +5238,7 @@ void CommandParser::cmdDrvEncoderPPR(const ParsedCommand &cmd) {
     return;
   }
 
-  Services::g_motorConfig.setEncoderPPR(static_cast<uint16_t>(ppr));
+  m_dispatcher.configSetEncoderPPR(static_cast<uint16_t>(ppr));
 
   if (m_format == ResponseFormat::JSON) {
     char json[48];
@@ -5324,7 +5253,7 @@ void CommandParser::cmdDrvEncoderPPR(const ParsedCommand &cmd) {
 
 // DRV:ENC_PPR? — query encoder pulses per revolution
 void CommandParser::cmdDrvEncoderPPRQuery() {
-  uint16_t ppr = Services::g_motorConfig.getEncoderPPR();
+  uint16_t ppr = m_dispatcher.configGetEncoderPPR();
 
   if (m_format == ResponseFormat::JSON) {
     char json[48];
@@ -5350,7 +5279,7 @@ void CommandParser::cmdSystDelay(const ParsedCommand &cmd) {
     return;
   }
 
-  Services::Timing::setTransportDelay(static_cast<uint32_t>(ms));
+  m_dispatcher.setTransportDelay(static_cast<uint32_t>(ms));
 
   if (m_format == ResponseFormat::JSON) {
     char json[48];
@@ -5365,7 +5294,7 @@ void CommandParser::cmdSystDelay(const ParsedCommand &cmd) {
 
 // SYST:DELAY? — query transport delay compensation
 void CommandParser::cmdSystDelayQuery() {
-  uint32_t ms = Services::Timing::getTransportDelay();
+  uint32_t ms = m_dispatcher.getTransportDelay();
 
   if (m_format == ResponseFormat::JSON) {
     char json[48];
@@ -5382,13 +5311,19 @@ void CommandParser::cmdSystDelayQuery() {
 // CTRL:FOLLOW? — query following error
 void CommandParser::cmdFollowingError() {
   // Expanded supervisor status including state, tier, and following error
-  Services::SupervisorTelemetry st = Services::g_supervisor.getTelemetry();
-  auto mode = Services::g_controlMode.getMode();
+  uint8_t svState, svTier, svRetryCount;
+  int32_t svPosError, svVelError, svSetpoint;
+  int16_t svPidOutput;
+  uint32_t svErrorDurationMs;
+  m_dispatcher.getSupervisorTelemetry(svState, svTier, svPosError, svVelError,
+                                       svSetpoint, svPidOutput, svRetryCount,
+                                       svErrorDurationMs);
+  uint8_t mode = m_dispatcher.getControlMode();
 
   static const char* stateNames[] = {"IDLE", "MOVING", "HOLDING", "RECOVERY", "FAULT"};
   static const char* tierNames[] = {"OBSERVE", "SOFT_CORRECT", "PAUSE_RECOVER", "FAULT_LATCH"};
-  uint8_t si = static_cast<uint8_t>(st.state);
-  uint8_t ti = static_cast<uint8_t>(st.tier);
+  uint8_t si = svState;
+  uint8_t ti = svTier;
   const char* stateName = (si < 5) ? stateNames[si] : "UNKNOWN";
   const char* tierName  = (ti < 4) ? tierNames[ti] : "UNKNOWN";
 
@@ -5400,32 +5335,30 @@ void CommandParser::cmdFollowingError() {
              "\"setpoint\":%ld,\"pid_out\":%d,"
              "\"retries\":%u,\"error_ms\":%lu}",
              stateName, tierName, (unsigned)mode,
-             static_cast<long>(st.posError),
-             static_cast<long>(st.velError),
-             static_cast<long>(st.setpoint),
-             (int)st.pidOutput,
-             (unsigned)st.retryCount,
-             static_cast<unsigned long>(st.errorDurationMs));
+             static_cast<long>(svPosError),
+             static_cast<long>(svVelError),
+             static_cast<long>(svSetpoint),
+             (int)svPidOutput,
+             (unsigned)svRetryCount,
+             static_cast<unsigned long>(svErrorDurationMs));
     respondJsonOk("CTRL:FOLLOW?", json);
   } else {
     char buf[128];
     snprintf(buf, sizeof(buf),
              "state=%s tier=%s err=%ld vel_err=%ld retries=%u",
              stateName, tierName,
-             static_cast<long>(st.posError),
-             static_cast<long>(st.velError),
-             (unsigned)st.retryCount);
+             static_cast<long>(svPosError),
+             static_cast<long>(svVelError),
+             (unsigned)svRetryCount);
     respondOk(buf);
   }
 }
 
 void CommandParser::cmdFollowThreshQuery() {
-  int16_t  me = Services::g_motorConfig.getFollowMoveError();
-  uint16_t mt = Services::g_motorConfig.getFollowMoveTimeMs();
-  int16_t  he = Services::g_motorConfig.getFollowHoldError();
-  uint16_t ht = Services::g_motorConfig.getFollowHoldTimeMs();
-  int16_t  hl = Services::g_motorConfig.getFollowHardLimit();
-  uint8_t  mr = Services::g_motorConfig.getFollowMaxRetries();
+  int16_t me, he, hl;
+  uint16_t mt, ht;
+  uint8_t mr;
+  m_dispatcher.getFollowThresholds(me, mt, he, ht, hl, mr);
 
   if (m_format == ResponseFormat::JSON) {
     char json[160];
@@ -5459,26 +5392,17 @@ void CommandParser::cmdFollowThreshSet(const ParsedCommand &cmd) {
   int16_t  hardLimit = static_cast<int16_t>(strtol(cmd.args[4], nullptr, 10));
   uint8_t  maxRetry  = static_cast<uint8_t>(strtoul(cmd.args[5], nullptr, 10));
 
-  Services::g_motorConfig.setFollowThresholds(
-      moveErr, moveTime, holdErr, holdTime, hardLimit, maxRetry);
+  m_dispatcher.setFollowThresholds(moveErr, moveTime, holdErr, holdTime,
+                                    hardLimit, maxRetry);
 
   // Apply immediately to supervisor
-  Services::SupervisorConfig scfg{};
-  scfg.moveError      = Services::g_motorConfig.getFollowMoveError();
-  scfg.moveTimeMs     = Services::g_motorConfig.getFollowMoveTimeMs();
-  scfg.holdError      = Services::g_motorConfig.getFollowHoldError();
-  scfg.holdTimeMs     = Services::g_motorConfig.getFollowHoldTimeMs();
-  scfg.hardLimit      = Services::g_motorConfig.getFollowHardLimit();
-  scfg.maxRetries     = Services::g_motorConfig.getFollowMaxRetries();
-  scfg.maxDeltaVRaw   = 0;
-  scfg.recoveryTimeMs = 2000;
-  Services::g_supervisor.configure(scfg);
+  m_dispatcher.applySupervisorConfig();
 
   respondOk("Thresholds set");
 }
 
 void CommandParser::cmdFollowSave() {
-  if (Services::g_motorConfig.saveToFlash()) {
+  if (m_dispatcher.configSaveToFlash()) {
     respondOk("Follow config saved");
   } else {
     respondErr("Flash write failed");
@@ -5486,7 +5410,7 @@ void CommandParser::cmdFollowSave() {
 }
 
 void CommandParser::cmdFollowClear() {
-  if (Services::g_supervisor.clearFault()) {
+  if (m_dispatcher.supervisorClearFault()) {
     respondOk("Supervisor fault cleared");
   } else {
     respondErr("No fault to clear");
@@ -5516,11 +5440,9 @@ static int16_t parseGain100(const char *s) {
 }
 
 void CommandParser::cmdTrimQuery() {
-  int16_t kp100 = Services::g_motorConfig.getPidKp100();
-  int16_t ki100 = Services::g_motorConfig.getPidKi100();
-  int16_t kd100 = Services::g_motorConfig.getPidKd100();  // reinterpreted as trimMaxPercent
-  uint16_t outLim = Services::g_motorConfig.getPidOutputLimit();
-  uint16_t iLim = Services::g_motorConfig.getPidIntegralLimit();
+  int16_t kp100, ki100, kd100;
+  uint16_t outLim, iLim;
+  m_dispatcher.getTrimGains(kp100, ki100, kd100, outLim, iLim);
   uint8_t maxPct = (kd100 > 0 && kd100 <= 50) ? static_cast<uint8_t>(kd100) : 8;
 
   TelemetrySnapshot snap = g_telemetry.getSnapshot();
@@ -5567,18 +5489,10 @@ void CommandParser::cmdTrimSetGains(const ParsedCommand &cmd) {
   int16_t kp100 = parseGain100(cmd.args[0]);
   int16_t ki100 = parseGain100(cmd.args[1]);
 
-  // Preserve existing kd100 (trimMaxPercent) when setting gains
-  int16_t kd100 = Services::g_motorConfig.getPidKd100();
-  Services::g_motorConfig.setPidGains(kp100, ki100, kd100);
+  m_dispatcher.setTrimGains(kp100, ki100);
 
   // Reconfigure live trim controller if active
-  Services::SpeedTrimConfig tcfg{};
-  tcfg.kp = static_cast<float>(kp100) / 100.0F;
-  tcfg.ki = static_cast<float>(ki100) / 100.0F;
-  tcfg.trimMaxPercent = (kd100 > 0 && kd100 <= 50) ? static_cast<uint8_t>(kd100) : 0;
-  tcfg.outputLimit = static_cast<float>(Services::g_motorConfig.getPidOutputLimit());
-  tcfg.integralLimit = static_cast<float>(Services::g_motorConfig.getPidIntegralLimit());
-  Services::g_speedTrim.configure(tcfg);
+  m_dispatcher.applyTrimConfig();
 
   if (m_format == ResponseFormat::JSON) {
     char json[64];
@@ -5601,24 +5515,16 @@ void CommandParser::cmdTrimSetLimits(const ParsedCommand &cmd) {
   uint16_t outLim = static_cast<uint16_t>(strtoul(cmd.args[0], nullptr, 10));
   uint16_t iLim = static_cast<uint16_t>(strtoul(cmd.args[1], nullptr, 10));
 
-  Services::g_motorConfig.setPidLimits(outLim, iLim);
+  m_dispatcher.setTrimLimits(outLim, iLim);
 
   // Reconfigure live trim controller
-  Services::SpeedTrimConfig tcfg{};
-  tcfg.kp = Services::g_motorConfig.getPidKp();
-  tcfg.ki = Services::g_motorConfig.getPidKi();
-  int16_t kd100 = Services::g_motorConfig.getPidKd100();
-  tcfg.trimMaxPercent = (kd100 > 0 && kd100 <= 50) ? static_cast<uint8_t>(kd100) : 0;
-  tcfg.outputLimit = static_cast<float>(Services::g_motorConfig.getPidOutputLimit());
-  tcfg.integralLimit = static_cast<float>(Services::g_motorConfig.getPidIntegralLimit());
-  Services::g_speedTrim.configure(tcfg);
+  m_dispatcher.applyTrimConfig();
 
   if (m_format == ResponseFormat::JSON) {
     char json[64];
     snprintf(json, sizeof(json),
              "{\"out_limit\":%u,\"i_limit\":%u}",
-             (unsigned)Services::g_motorConfig.getPidOutputLimit(),
-             (unsigned)Services::g_motorConfig.getPidIntegralLimit());
+             (unsigned)outLim, (unsigned)iLim);
     respondJsonOk("CTRL:TRIM:LIMITS", json);
   } else {
     respondOk("Trim limits set");
@@ -5637,19 +5543,10 @@ void CommandParser::cmdTrimSetMaxPct(const ParsedCommand &cmd) {
     return;
   }
 
-  // Store in pidKd100 field (repurposed)
-  int16_t kp100 = Services::g_motorConfig.getPidKp100();
-  int16_t ki100 = Services::g_motorConfig.getPidKi100();
-  Services::g_motorConfig.setPidGains(kp100, ki100, static_cast<int16_t>(val));
+  m_dispatcher.setTrimMaxPct(static_cast<int16_t>(val));
 
   // Reconfigure live trim controller
-  Services::SpeedTrimConfig tcfg{};
-  tcfg.kp = static_cast<float>(kp100) / 100.0F;
-  tcfg.ki = static_cast<float>(ki100) / 100.0F;
-  tcfg.trimMaxPercent = static_cast<uint8_t>(val);
-  tcfg.outputLimit = static_cast<float>(Services::g_motorConfig.getPidOutputLimit());
-  tcfg.integralLimit = static_cast<float>(Services::g_motorConfig.getPidIntegralLimit());
-  Services::g_speedTrim.configure(tcfg);
+  m_dispatcher.applyTrimConfig();
 
   if (m_format == ResponseFormat::JSON) {
     char json[32];
@@ -5661,12 +5558,12 @@ void CommandParser::cmdTrimSetMaxPct(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdTrimReset() {
-  Services::g_speedTrim.reset();
+  m_dispatcher.resetTrim();
   respondOk("Trim reset");
 }
 
 void CommandParser::cmdTrimSave() {
-  if (Services::g_motorConfig.saveToFlash()) {
+  if (m_dispatcher.configSaveToFlash()) {
     respondOk("Trim config saved");
   } else {
     respondErr("Flash write failed");
@@ -5711,22 +5608,19 @@ void CommandParser::cmdSysIdStep(const ParsedCommand &cmd) {
     return;
   }
 
-  Services::SysIdConfig cfg{};
-  cfg.type = Services::SysIdTestType::STEP;
-  cfg.targetSpeed_sps = static_cast<uint16_t>(atol(cmd.args[0]));
-  cfg.startSpeed_sps = 0;
-  cfg.forward = (atol(cmd.args[1]) != 0);
-  cfg.activeDuration_ms = (cmd.argCount >= 3)
+  uint16_t targetSpd = static_cast<uint16_t>(atol(cmd.args[0]));
+  bool forward = (atol(cmd.args[1]) != 0);
+  uint16_t durMs = (cmd.argCount >= 3)
       ? static_cast<uint16_t>(atol(cmd.args[2])) : 5000;
-  cfg.settleDuration_ms = (cmd.argCount >= 4)
+  uint16_t settleMs = (cmd.argCount >= 4)
       ? static_cast<uint16_t>(atol(cmd.args[3])) : 1000;
 
-  if (cfg.targetSpeed_sps == 0 || cfg.targetSpeed_sps > 15625) {
+  if (targetSpd == 0 || targetSpd > 15625) {
     respondErr("speed_sps must be 1-15625");
     return;
   }
 
-  if (Services::g_sysId.start(cfg)) {
+  if (m_dispatcher.sysIdStart(0, targetSpd, 0, forward, durMs, settleMs, 0)) {
     respondOk("SYSID step started");
   } else {
     respondErr("SYSID already running");
@@ -5739,22 +5633,20 @@ void CommandParser::cmdSysIdRamp(const ParsedCommand &cmd) {
     return;
   }
 
-  Services::SysIdConfig cfg{};
-  cfg.type = Services::SysIdTestType::RAMP;
-  cfg.startSpeed_sps = static_cast<uint16_t>(atol(cmd.args[0]));
-  cfg.targetSpeed_sps = static_cast<uint16_t>(atol(cmd.args[1]));
-  cfg.forward = (atol(cmd.args[2]) != 0);
-  cfg.activeDuration_ms = (cmd.argCount >= 4)
+  uint16_t startSpd = static_cast<uint16_t>(atol(cmd.args[0]));
+  uint16_t targetSpd = static_cast<uint16_t>(atol(cmd.args[1]));
+  bool forward = (atol(cmd.args[2]) != 0);
+  uint16_t durMs = (cmd.argCount >= 4)
       ? static_cast<uint16_t>(atol(cmd.args[3])) : 5000;
-  cfg.settleDuration_ms = (cmd.argCount >= 5)
+  uint16_t settleMs = (cmd.argCount >= 5)
       ? static_cast<uint16_t>(atol(cmd.args[4])) : 1000;
 
-  if (cfg.targetSpeed_sps > 15625 || cfg.startSpeed_sps > 15625) {
+  if (targetSpd > 15625 || startSpd > 15625) {
     respondErr("speed must be 0-15625 sps");
     return;
   }
 
-  if (Services::g_sysId.start(cfg)) {
+  if (m_dispatcher.sysIdStart(1, targetSpd, startSpd, forward, durMs, settleMs, 0)) {
     respondOk("SYSID ramp started");
   } else {
     respondErr("SYSID already running");
@@ -5762,8 +5654,8 @@ void CommandParser::cmdSysIdRamp(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdSysIdStatus() {
-  auto phase = Services::g_sysId.getPhase();
-  uint16_t count = Services::g_sysId.getSampleCount();
+  uint8_t phase = m_dispatcher.sysIdGetPhase();
+  uint16_t count = m_dispatcher.sysIdGetSampleCount();
 
   if (m_format == ResponseFormat::JSON) {
     char data[64];
@@ -5780,7 +5672,7 @@ void CommandParser::cmdSysIdStatus() {
 }
 
 void CommandParser::cmdSysIdData(const ParsedCommand &cmd) {
-  if (Services::g_sysId.getPhase() != Services::SysIdPhase::DONE) {
+  if (m_dispatcher.sysIdGetPhase() != 4) {  // 4 = DONE
     respondErr("No data ready (test not DONE)");
     return;
   }
@@ -5789,8 +5681,8 @@ void CommandParser::cmdSysIdData(const ParsedCommand &cmd) {
       ? static_cast<uint16_t>(atol(cmd.args[0])) : 0;
   uint16_t count = (cmd.argCount >= 2)
       ? static_cast<uint16_t>(atol(cmd.args[1])) : 20;
-  uint16_t total = Services::g_sysId.getSampleCount();
-  const auto *samples = Services::g_sysId.getSamples();
+  uint16_t total;
+  const auto *samples = m_dispatcher.sysIdGetSamples(total);
 
   if (offset >= total) {
     respondErr("offset past end");
@@ -5828,27 +5720,25 @@ void CommandParser::cmdSysIdSine(const ParsedCommand &cmd) {
     return;
   }
 
-  Services::SysIdConfig cfg{};
-  cfg.type = Services::SysIdTestType::SINE;
-  cfg.startSpeed_sps = static_cast<uint16_t>(atol(cmd.args[0]));   // baseline
-  cfg.targetSpeed_sps = static_cast<uint16_t>(atol(cmd.args[1]));  // amplitude
-  cfg.frequency_mHz = static_cast<uint16_t>(atol(cmd.args[2]));
-  cfg.forward = (atol(cmd.args[3]) != 0);
-  cfg.activeDuration_ms = (cmd.argCount >= 5)
+  uint16_t baseline = static_cast<uint16_t>(atol(cmd.args[0]));
+  uint16_t amplitude = static_cast<uint16_t>(atol(cmd.args[1]));
+  uint16_t freqMHz = static_cast<uint16_t>(atol(cmd.args[2]));
+  bool forward = (atol(cmd.args[3]) != 0);
+  uint16_t durMs = (cmd.argCount >= 5)
       ? static_cast<uint16_t>(atol(cmd.args[4])) : 10000;
-  cfg.settleDuration_ms = (cmd.argCount >= 6)
+  uint16_t settleMs = (cmd.argCount >= 6)
       ? static_cast<uint16_t>(atol(cmd.args[5])) : 1000;
 
-  if (cfg.startSpeed_sps > 15625 || cfg.targetSpeed_sps > 15625) {
+  if (baseline > 15625 || amplitude > 15625) {
     respondErr("speed must be 0-15625 sps");
     return;
   }
-  if (cfg.frequency_mHz == 0 || cfg.frequency_mHz > 5000) {
+  if (freqMHz == 0 || freqMHz > 5000) {
     respondErr("freq_mHz must be 1-5000 (0.001-5.0 Hz)");
     return;
   }
 
-  if (Services::g_sysId.start(cfg)) {
+  if (m_dispatcher.sysIdStart(2, amplitude, baseline, forward, durMs, settleMs, freqMHz)) {
     respondOk("SYSID sine started");
   } else {
     respondErr("SYSID already running");
@@ -5862,22 +5752,19 @@ void CommandParser::cmdSysIdTrapezoid(const ParsedCommand &cmd) {
     return;
   }
 
-  Services::SysIdConfig cfg{};
-  cfg.type = Services::SysIdTestType::TRAPEZOID;
-  cfg.targetSpeed_sps = static_cast<uint16_t>(atol(cmd.args[0]));
-  cfg.startSpeed_sps = 0;
-  cfg.forward = (atol(cmd.args[1]) != 0);
-  cfg.activeDuration_ms = (cmd.argCount >= 3)
+  uint16_t targetSpd = static_cast<uint16_t>(atol(cmd.args[0]));
+  bool forward = (atol(cmd.args[1]) != 0);
+  uint16_t durMs = (cmd.argCount >= 3)
       ? static_cast<uint16_t>(atol(cmd.args[2])) : 8000;
-  cfg.settleDuration_ms = (cmd.argCount >= 4)
+  uint16_t settleMs = (cmd.argCount >= 4)
       ? static_cast<uint16_t>(atol(cmd.args[3])) : 1000;
 
-  if (cfg.targetSpeed_sps == 0 || cfg.targetSpeed_sps > 15625) {
+  if (targetSpd == 0 || targetSpd > 15625) {
     respondErr("speed_sps must be 1-15625");
     return;
   }
 
-  if (Services::g_sysId.start(cfg)) {
+  if (m_dispatcher.sysIdStart(3, targetSpd, 0, forward, durMs, settleMs, 0)) {
     respondOk("SYSID trapezoid started");
   } else {
     respondErr("SYSID already running");
@@ -5891,22 +5778,19 @@ void CommandParser::cmdSysIdRect(const ParsedCommand &cmd) {
     return;
   }
 
-  Services::SysIdConfig cfg{};
-  cfg.type = Services::SysIdTestType::RECTANGLE;
-  cfg.targetSpeed_sps = static_cast<uint16_t>(atol(cmd.args[0]));
-  cfg.startSpeed_sps = 0;
-  cfg.forward = (atol(cmd.args[1]) != 0);
-  cfg.activeDuration_ms = (cmd.argCount >= 3)
+  uint16_t targetSpd = static_cast<uint16_t>(atol(cmd.args[0]));
+  bool forward = (atol(cmd.args[1]) != 0);
+  uint16_t durMs = (cmd.argCount >= 3)
       ? static_cast<uint16_t>(atol(cmd.args[2])) : 6000;
-  cfg.settleDuration_ms = (cmd.argCount >= 4)
+  uint16_t settleMs = (cmd.argCount >= 4)
       ? static_cast<uint16_t>(atol(cmd.args[3])) : 1000;
 
-  if (cfg.targetSpeed_sps == 0 || cfg.targetSpeed_sps > 15625) {
+  if (targetSpd == 0 || targetSpd > 15625) {
     respondErr("speed_sps must be 1-15625");
     return;
   }
 
-  if (Services::g_sysId.start(cfg)) {
+  if (m_dispatcher.sysIdStart(4, targetSpd, 0, forward, durMs, settleMs, 0)) {
     respondOk("SYSID rect started");
   } else {
     respondErr("SYSID already running");
@@ -5914,7 +5798,7 @@ void CommandParser::cmdSysIdRect(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdSysIdAbort() {
-  Services::g_sysId.abort();
+  m_dispatcher.sysIdAbort();
   respondOk("SYSID aborted");
 }
 

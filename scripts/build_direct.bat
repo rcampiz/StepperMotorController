@@ -24,19 +24,19 @@ if not exist "build" mkdir build
 REM Compiler flags
 set "MCU_FLAGS=-mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard"
 set "FREERTOS_INC=-Iserver/external/X_middlewares/Third_Party/FreeRTOS-Kernel/include -Iserver/external/X_middlewares/Third_Party/FreeRTOS-Kernel/portable/GCC/ARM_CM4F"
-set "INCLUDES=-Iserver -Iserver/layers -Iserver/layers/L1_transport -Iserver/layers/L2_protocol -Iserver/layers/L3_services -Iserver/layers/L4_drivers -Iserver/layers/L5_board -Iserver/foundation -Iserver/foundation/F_platform -Iserver/external -Iserver/external/X_vendor/CMSIS %FREERTOS_INC% -Iserver/external/X_middlewares/SEGGER/RTT -Iserver/external/X_middlewares/SEGGER/SystemView"
+set "INCLUDES=-Iserver -Iserver/layers -Iserver/layers/L1_transport -Iserver/layers/L2_protocol -Iserver/layers/L3_services -Iserver/layers/L4_drivers -Iserver/layers/L5_board -Iserver/foundation -Iserver/foundation/F_platform -Iserver/foundation/F_platform/rtos -Iserver/external -Iserver/external/X_vendor/CMSIS %FREERTOS_INC% -Iserver/external/X_middlewares/SEGGER/RTT -Iserver/external/X_middlewares/SEGGER/SystemView"
 set "DEFINES=-DSTM32F401xE -D__FPU_PRESENT=1 -D__FPU_USED=1 -DENABLE_SEGGER_SYSTEMVIEW -DRTT_USE_ASM=0"
 set "CFLAGS=%MCU_FLAGS% %INCLUDES% %DEFINES% -Og -Wall -fdata-sections -ffunction-sections -g -gdwarf-2"
 set "CXXFLAGS=%CFLAGS% -std=c++14 -fno-exceptions -fno-rtti -fno-use-cxa-atexit"
 set "ASFLAGS=%MCU_FLAGS% -x assembler-with-cpp"
-set "LDFLAGS=%MCU_FLAGS% -specs=nano.specs -Tserver/foundation/F_platform/STM32F401RETx_FLASH.ld -Wl,-Map=build/StepperMotorController.map,--cref -Wl,--gc-sections -Wl,--no-warn-rwx-segments -lc -lm -lnosys"
+set "LDFLAGS=%MCU_FLAGS% -specs=nano.specs -Tserver/foundation/F_platform/startup/STM32F401RETx_FLASH.ld -Wl,-Map=build/StepperMotorController.map,--cref -Wl,--gc-sections -Wl,--no-warn-rwx-segments -lc -lm -lnosys"
 
 echo [1/24] Compiling system_stm32f4xx.c...
-arm-none-eabi-gcc -c %CFLAGS% server/foundation/F_platform/system_stm32f4xx.c -o build/system_stm32f4xx.o
+arm-none-eabi-gcc -c %CFLAGS% server/foundation/F_platform/startup/system_stm32f4xx.c -o build/system_stm32f4xx.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile system_stm32f4xx.c & exit /b 1)
 
 echo [2/24] Compiling syscalls.c...
-arm-none-eabi-gcc -c %CFLAGS% server/foundation/F_platform/syscalls.c -o build/syscalls.o
+arm-none-eabi-gcc -c %CFLAGS% server/foundation/F_platform/startup/syscalls.c -o build/syscalls.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile syscalls.c & exit /b 1)
 
 echo [3/24] Compiling FreeRTOS tasks.c...
@@ -114,6 +114,12 @@ arm-none-eabi-g++ -c %CXXFLAGS% server/foundation/F_platform/tasks/comms_task.cp
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile comms_task.cpp & exit /b 1)
 arm-none-eabi-g++ -c %CXXFLAGS% server/foundation/F_platform/tasks/bringup_task.cpp -o build/bringup_task.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile bringup_task.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% server/system_init.cpp -o build/system_init.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile system_init.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% server/foundation/F_platform/rtos/platform_init.cpp -o build/platform_init.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile platform_init.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% server/foundation/F_platform/rtos/freertos_hooks.cpp -o build/freertos_hooks.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile freertos_hooks.cpp & exit /b 1)
 
 echo [17/25] Compiling service sources...
 arm-none-eabi-g++ -c %CXXFLAGS% server/layers/L3_services/motion/motion_service.cpp -o build/motion_service.o
@@ -184,7 +190,7 @@ arm-none-eabi-g++ -c %CXXFLAGS% server/layers/L4_drivers/spi/spi_manager.cpp -o 
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile spi_manager.cpp & exit /b 1)
 
 echo [20/26] Assembling startup_stm32f401xe.s...
-arm-none-eabi-gcc -c %ASFLAGS% server/foundation/F_platform/startup_stm32f401xe.s -o build/startup_stm32f401xe.o
+arm-none-eabi-gcc -c %ASFLAGS% server/foundation/F_platform/startup/startup_stm32f401xe.s -o build/startup_stm32f401xe.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to assemble startup_stm32f401xe.s & exit /b 1)
 
 echo [21/26] Collecting object files...
@@ -192,7 +198,7 @@ set "OBJS=build/system_stm32f4xx.o build/syscalls.o build/tasks.o build/queue.o 
 set "OBJS=%OBJS% build/timers.o build/event_groups.o build/stream_buffer.o build/heap_4.o build/port.o"
 set "OBJS=%OBJS% build/SEGGER_RTT.o build/SEGGER_RTT_printf.o build/SEGGER_SYSVIEW.o build/SEGGER_SYSVIEW_Config_FreeRTOS.o build/SEGGER_SYSVIEW_FreeRTOS.o"
 set "OBJS=%OBJS% build/main.o build/uart_transport.o build/rtt_transport.o build/command_parser.o build/telemetry.o build/event_codec.o"
-set "OBJS=%OBJS% build/motor_task.o build/encoder_task.o build/display_task.o build/comms_task.o build/bringup_task.o"
+set "OBJS=%OBJS% build/motor_task.o build/encoder_task.o build/display_task.o build/comms_task.o build/bringup_task.o build/system_init.o build/platform_init.o build/freertos_hooks.o"
 set "OBJS=%OBJS% build/tick_timer.o build/command_queue.o build/device_config.o build/control_mode.o build/motor_config.o build/motion_service.o build/safety_service.o build/config_service.o build/trace.o build/event_service.o build/flash_image_service.o build/indicator_service.o build/unit_conversion.o build/timing_service.o build/pid_controller.o build/following_supervisor.o build/sysid.o build/speed_trim_controller.o"
 set "OBJS=%OBJS% build/ui_mode.o build/menu_screen.o build/terminal_screen.o build/screen_manager.o"
 set "OBJS=%OBJS% build/boot_color_screen.o build/device_info_screen.o build/encoder_screen.o build/motion_screen.o build/config_screen.o build/graph_screen.o build/image_view_screen.o build/trace_screen.o"

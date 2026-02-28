@@ -148,10 +148,7 @@ static Joystick* s_joystick = nullptr;
 
 bool DisplayTask_Init()
 {
-    // Initialize UI mode manager
-    if (!UI::g_uiMode.init(UI::UIMode::LOCAL)) {
-        return false;
-    }
+    // UI mode manager is initialized by main.cpp (composition root)
 
     // Create SPIBus wrapper around SPI1 from manager
     // LCD (ST7789) uses SPI1 with Mode0

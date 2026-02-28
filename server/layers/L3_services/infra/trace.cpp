@@ -2,13 +2,14 @@
  * @file trace.cpp
  * @brief Trace ring buffer implementation
  *
- * Uses FreeRTOS BASEPRI masking for ISR-safe constant-time writes.
+ * Uses PRIMASK interrupt masking for ISR-safe constant-time writes.
  * Ring buffer overwrites oldest entries when full.
+ * No RTOS dependency.
  */
 
 #include "L3_services/infra/trace.hpp"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
+#include "F_platform/hw/interrupt_guard.hpp"
+#include "L3_services/infra/tick_timer.hpp"
 
 namespace Trace {
 
@@ -17,18 +18,16 @@ static size_t s_head = 0;      // Next write position
 static size_t s_total = 0;     // Total entries ever written
 
 void record(Dir d, const char* tag, uint32_t arg0) {
-    UBaseType_t saved = portSET_INTERRUPT_MASK_FROM_ISR();
+    InterruptGuard guard;
 
     Entry &e = s_ring[s_head];
-    e.tick = xTaskGetTickCount();
+    e.tick = Services::TickTimer_GetTick();
     e.tag = tag;
     e.arg0 = arg0;
     e.dir = d;
 
     s_head = (s_head + 1) % RING_SIZE;
     s_total++;
-
-    portCLEAR_INTERRUPT_MASK_FROM_ISR(saved);
 }
 
 size_t getCount() {
@@ -46,10 +45,9 @@ bool getEntry(size_t index, Entry &out) {
 }
 
 void reset() {
-    UBaseType_t saved = portSET_INTERRUPT_MASK_FROM_ISR();
+    InterruptGuard guard;
     s_head = 0;
     s_total = 0;
-    portCLEAR_INTERRUPT_MASK_FROM_ISR(saved);
 }
 
 } // namespace Trace

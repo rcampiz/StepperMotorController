@@ -66,11 +66,8 @@ const char *encoderStatusToString(EncoderStatus status) {
   }
 }
 
-bool ControlModeManager::init() {
-  m_mutex = xSemaphoreCreateMutex();
-  if (m_mutex == nullptr) {
-    return false;
-  }
+bool ControlModeManager::init(ILock& lock) {
+  m_lock = &lock;
 
   // Start in safe defaults
   m_currentMode = ControlMode::OPEN_LOOP;
@@ -79,16 +76,8 @@ bool ControlModeManager::init() {
   return true;
 }
 
-bool ControlModeManager::lock(TickType_t timeout) {
-  return xSemaphoreTake(m_mutex, timeout) == pdTRUE;
-}
-
-void ControlModeManager::unlock() { xSemaphoreGive(m_mutex); }
-
 bool ControlModeManager::setMode(ControlMode mode) {
-  if (!lock()) {
-    return false;
-  }
+  m_lock->acquire();
 
   bool success = false;
 
@@ -105,16 +94,12 @@ bool ControlModeManager::setMode(ControlMode mode) {
     // else: validation failed, don't change mode
   }
 
-  unlock();
+  m_lock->release();
   return success;
 }
 
 void ControlModeManager::setEncoderStatus(EncoderStatus status) {
-  if (!lock(pdMS_TO_TICKS(100))) {
-    // If we can't get lock, at least update status
-    m_encoderStatus = status;
-    return;
-  }
+  m_lock->acquire();
 
   m_encoderStatus = status;
 
@@ -124,7 +109,7 @@ void ControlModeManager::setEncoderStatus(EncoderStatus status) {
     m_currentMode = ControlMode::OPEN_LOOP;
   }
 
-  unlock();
+  m_lock->release();
 }
 
 } // namespace Services

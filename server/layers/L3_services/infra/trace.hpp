@@ -19,7 +19,7 @@ namespace Trace {
 enum Dir : uint8_t { ENTRY, EXIT };
 
 struct Entry {
-    uint32_t tick;       // FreeRTOS tick at record time
+    uint32_t tick;       // Microsecond timestamp (TickTimer) at record time
     const char* tag;     // String literal tag (e.g. "MOT:RUN")
     uint32_t arg0;       // Context-dependent argument
     Dir dir;             // ENTRY or EXIT

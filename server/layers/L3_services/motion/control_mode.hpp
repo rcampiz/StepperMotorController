@@ -12,8 +12,7 @@
 
 #pragma once
 
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/semphr.h"
+#include "F_platform/interfaces/ilock.hpp"
 #include <stdint.h>
 
 namespace Services {
@@ -69,7 +68,7 @@ public:
    *
    * @return true on success
    */
-  bool init();
+  bool init(ILock& lock);
 
   /**
    * @brief Get current control mode
@@ -118,10 +117,7 @@ public:
 private:
   ControlMode m_currentMode;
   EncoderStatus m_encoderStatus;
-  SemaphoreHandle_t m_mutex;
-
-  bool lock(TickType_t timeout = portMAX_DELAY);
-  void unlock();
+  ILock* m_lock;
 };
 
 // Global instance

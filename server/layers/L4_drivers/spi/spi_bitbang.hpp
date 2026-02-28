@@ -23,8 +23,8 @@
 #include <stddef.h>
 #include "X_vendor/CMSIS/stm32f401xe.h"
 #include "L4_drivers/spi/ispi_bus.hpp"
-#include "F_platform/ilock.hpp"
-#include "F_platform/interrupt_guard.hpp"
+#include "F_platform/interfaces/ilock.hpp"
+#include "F_platform/hw/interrupt_guard.hpp"
 
 // CMSIS standard variable (defined in system_stm32f4xx.c)
 extern uint32_t SystemCoreClock;

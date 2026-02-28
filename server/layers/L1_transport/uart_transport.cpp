@@ -7,8 +7,6 @@
  */
 
 #include "L1_transport/uart_transport.hpp"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
 #include <string.h>
 
 // Debug: IRQ call counter
@@ -20,11 +18,14 @@ namespace Comms {
 // Singleton instance for ISR access
 UartTransport* UartTransport::s_instance = nullptr;
 
-UartTransport::UartTransport(uint32_t baudRate) : m_baudRate(baudRate) {}
+UartTransport::UartTransport(IClock& clock, uint32_t baudRate, uint8_t irqPriority)
+    : m_clock(&clock), m_baudRate(baudRate), m_irqPriority(irqPriority) {}
 
 bool UartTransport::init() {
     // Enforce single instance - ISR can only route to one instance
-    configASSERT(s_instance == nullptr);
+    if (s_instance != nullptr) {
+        return false;
+    }
 
     // Set singleton for ISR access
     s_instance = this;
@@ -121,7 +122,7 @@ void UartTransport::initUsart() {
     usart->CR3 = 0;
 
     // Enable USART2 interrupt in NVIC
-    NVIC_SetPriority(USART2_IRQn, configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 1);
+    NVIC_SetPriority(USART2_IRQn, m_irqPriority);
     NVIC_EnableIRQ(USART2_IRQn);
 
     // Enable USART
@@ -152,15 +153,14 @@ bool UartTransport::readByte(uint8_t& byte, uint32_t timeoutMs) {
     }
 
     // Wait with timeout using 1ms delay to avoid spinning hot
-    TickType_t startTick = xTaskGetTickCount();
-    TickType_t timeoutTicks = pdMS_TO_TICKS(timeoutMs);
+    uint32_t startTick = m_clock->getTickMs();
 
-    while ((xTaskGetTickCount() - startTick) < timeoutTicks) {
+    while ((m_clock->getTickMs() - startTick) < timeoutMs) {
         if (m_rxBuffer.pop(byte)) {
             return true;
         }
         // Sleep 1ms to avoid CPU spin under heavy load
-        vTaskDelay(1);
+        m_clock->delayMs(1);
     }
 
     return false;
@@ -206,7 +206,7 @@ bool UartTransport::setBaudRate(uint32_t baudRate) {
     while ((usart->SR & USART_SR_TC) == 0) {}
 
     // Small delay to let the last byte propagate through the bridge
-    vTaskDelay(pdMS_TO_TICKS(10));
+    m_clock->delayMs(10);
 
     // Disable USART
     usart->CR1 &= ~USART_CR1_UE;

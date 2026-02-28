@@ -1,28 +1,14 @@
 /**
  * @file async_event.hpp
- * @brief Async event types and structures for unsolicited firmware-to-host messages
+ * @brief Async event protocol constants and codec declarations
  *
+ * Core types (EventType, AsyncEvent) live in F_platform/interfaces/async_event_types.hpp.
+ * This header adds protocol-level masks, thresholds, and codec functions.
  * See docs/PROTOCOL_EVENTS_V1.md for wire format and behaviour contract.
  */
 
 #pragma once
-#include <stdint.h>
-
-enum class EventType : uint8_t {
-    FAULT              = 0,
-    FAULT_CLEAR        = 1,
-    STALL              = 2,
-    STALL_CLEAR        = 3,
-    MOTION_DONE        = 4,
-    FOLLOW_FAULT       = 5,   // Supervisor entered FAULT (Tier 3)
-    FOLLOW_RECOVERY    = 6,   // Supervisor entered RECOVERY (Tier 2)
-    FOLLOW_RECOVERED   = 7,   // Recovery succeeded
-};
-
-struct AsyncEvent {
-    EventType type;
-    uint16_t  statusReg;   // raw STATUS register at detection time
-};
+#include "F_platform/interfaces/async_event_types.hpp"
 
 // Enable mask bits (one per event type)
 static constexpr uint8_t EVT_MASK_FAULT       = (1 << 0);

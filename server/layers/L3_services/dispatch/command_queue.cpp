@@ -5,9 +5,6 @@
 
 #include "L3_services/dispatch/command_queue.hpp"
 #include "L3_services/infra/tick_timer.hpp"
-#include "F_platform/tasks/motor_task.hpp"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/semphr.h"
 
 namespace Services {
 
@@ -40,12 +37,11 @@ const char* resultToString(QueueResult result)
     }
 }
 
-bool CommandQueue::init()
+bool CommandQueue::init(ILock& lock, IClock& clock, IMotorCommandSink& sink)
 {
-    m_mutex = xSemaphoreCreateMutex();
-    if (m_mutex == nullptr) {
-        return false;
-    }
+    m_lock = &lock;
+    m_clock = &clock;
+    m_sink = &sink;
 
     m_queueHead = 0;
     m_queueTail = 0;
@@ -55,21 +51,9 @@ bool CommandQueue::init()
     return true;
 }
 
-bool CommandQueue::lock(TickType_t timeout)
+QueueResult CommandQueue::queueCommand(const MotorCommand& cmd)
 {
-    return xSemaphoreTake(m_mutex, timeout) == pdTRUE;
-}
-
-void CommandQueue::unlock()
-{
-    xSemaphoreGive(m_mutex);
-}
-
-QueueResult CommandQueue::queueCommand(const Tasks::MotorCommand& cmd)
-{
-    if (!lock()) {
-        return QueueResult::INVALID_STATE;
-    }
+    m_lock->acquire();
 
     QueueResult result = QueueResult::OK;
 
@@ -88,15 +72,13 @@ QueueResult CommandQueue::queueCommand(const Tasks::MotorCommand& cmd)
         m_queueDepth++;
     }
 
-    unlock();
+    m_lock->release();
     return result;
 }
 
 QueueResult CommandQueue::arm()
 {
-    if (!lock()) {
-        return QueueResult::INVALID_STATE;
-    }
+    m_lock->acquire();
 
     QueueResult result = QueueResult::OK;
 
@@ -110,15 +92,13 @@ QueueResult CommandQueue::arm()
         m_state = ControllerState::ARMED;
     }
 
-    unlock();
+    m_lock->release();
     return result;
 }
 
 QueueResult CommandQueue::start()
 {
-    if (!lock()) {
-        return QueueResult::INVALID_STATE;
-    }
+    m_lock->acquire();
 
     QueueResult result = QueueResult::OK;
 
@@ -131,21 +111,19 @@ QueueResult CommandQueue::start()
         m_state = ControllerState::RUNNING;
     }
 
-    unlock();
+    m_lock->release();
     return result;
 }
 
 QueueResult CommandQueue::startAt(uint32_t targetTick)
 {
-    if (!lock()) {
-        return QueueResult::INVALID_STATE;
-    }
+    m_lock->acquire();
 
     QueueResult result = QueueResult::OK;
 
     if (m_state != ControllerState::ARMED) {
         result = QueueResult::INVALID_STATE;
-        unlock();
+        m_lock->release();
         return result;
     }
 
@@ -156,18 +134,16 @@ QueueResult CommandQueue::startAt(uint32_t targetTick)
     if (delta < 0) {
         // Target tick already passed
         result = QueueResult::TIMEOUT_EXPIRED;
-        unlock();
+        m_lock->release();
         return result;
     }
 
-    // Release mutex during wait (allows other operations)
-    unlock();
+    // Release lock during wait (allows other operations)
+    m_lock->release();
 
-    // Busy-wait until target tick (for precise timing)
-    // For longer waits, could use vTaskDelayUntil for most of the time
+    // For longer waits, sleep for most of it (delta is in microseconds)
     if (delta > 1000) {
-        // For waits > 1ms, sleep for most of it
-        vTaskDelay(pdMS_TO_TICKS(delta / 1000));
+        m_clock->delayMs(delta / 1000);
     }
 
     // Spin-wait for final precision
@@ -176,9 +152,7 @@ QueueResult CommandQueue::startAt(uint32_t targetTick)
     }
 
     // Re-acquire lock and execute
-    if (!lock()) {
-        return QueueResult::INVALID_STATE;
-    }
+    m_lock->acquire();
 
     // Verify still in ARMED state (could have been cancelled)
     if (m_state != ControllerState::ARMED) {
@@ -189,15 +163,13 @@ QueueResult CommandQueue::startAt(uint32_t targetTick)
         m_state = ControllerState::RUNNING;
     }
 
-    unlock();
+    m_lock->release();
     return result;
 }
 
 QueueResult CommandQueue::clearQueue()
 {
-    if (!lock()) {
-        return QueueResult::INVALID_STATE;
-    }
+    m_lock->acquire();
 
     QueueResult result = QueueResult::OK;
 
@@ -219,37 +191,32 @@ QueueResult CommandQueue::clearQueue()
         m_state = ControllerState::IDLE;
     }
 
-    unlock();
+    m_lock->release();
     return result;
 }
 
 void CommandQueue::emergencyStop()
 {
-    // Don't wait for lock - emergency action
-    if (lock(pdMS_TO_TICKS(10))) {
-        // Clear pending queue
-        m_queueHead = 0;
-        m_queueTail = 0;
-        m_queueDepth = 0;
-        m_state = ControllerState::ESTOP;
-        unlock();
-    }
-    else {
-        // Couldn't get lock, force state anyway
-        m_state = ControllerState::ESTOP;
-    }
+    // Acquire lock — held briefly, safe for emergency path
+    m_lock->acquire();
+
+    // Clear pending queue
+    m_queueHead = 0;
+    m_queueTail = 0;
+    m_queueDepth = 0;
+    m_state = ControllerState::ESTOP;
+
+    m_lock->release();
 
     // Send hard stop to motor (outside lock to avoid deadlock)
-    Tasks::MotorCommand stopCmd = {};
-    stopCmd.type = Tasks::MotorCmdType::HardHiZ;
-    Tasks::MotorTask_SendCommand(stopCmd, 0);
+    MotorCommand stopCmd = {};
+    stopCmd.type = MotorCmdType::HardHiZ;
+    m_sink->sendCommand(stopCmd, 0);
 }
 
 QueueResult CommandQueue::clearFault()
 {
-    if (!lock()) {
-        return QueueResult::INVALID_STATE;
-    }
+    m_lock->acquire();
 
     QueueResult result = QueueResult::OK;
 
@@ -264,37 +231,35 @@ QueueResult CommandQueue::clearFault()
         m_state = ControllerState::IDLE;
     }
 
-    unlock();
+    m_lock->release();
     return result;
 }
 
 void CommandQueue::notifyMotionComplete()
 {
-    if (lock(pdMS_TO_TICKS(100))) {
-        if (m_state == ControllerState::RUNNING) {
-            m_state = ControllerState::IDLE;
-        }
-        unlock();
+    m_lock->acquire();
+    if (m_state == ControllerState::RUNNING) {
+        m_state = ControllerState::IDLE;
     }
+    m_lock->release();
 }
 
 void CommandQueue::notifyFault(const char* reason)
 {
     (void)reason; // Could log this
 
-    if (lock(pdMS_TO_TICKS(100))) {
-        m_state = ControllerState::FAULT;
-        // Don't clear queue - allow inspection
-        unlock();
-    }
+    m_lock->acquire();
+    m_state = ControllerState::FAULT;
+    // Don't clear queue - allow inspection
+    m_lock->release();
 }
 
 void CommandQueue::flushToMotorTask()
 {
     // Called with lock held
     while (m_queueDepth > 0) {
-        Tasks::MotorCommand& cmd = m_pendingCmds[m_queueHead];
-        Tasks::MotorTask_SendCommand(cmd, portMAX_DELAY);
+        MotorCommand& cmd = m_pendingCmds[m_queueHead];
+        m_sink->sendCommand(cmd, UINT32_MAX);
         m_queueHead = (m_queueHead + 1) % CMD_QUEUE_MAX_DEPTH;
         m_queueDepth--;
     }

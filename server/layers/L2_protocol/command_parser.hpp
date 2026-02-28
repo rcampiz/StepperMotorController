@@ -19,6 +19,7 @@
 #define COMMAND_PARSER_HPP
 
 #include "L1_transport/transport_interface.hpp"
+#include "L2_protocol/icommand_dispatcher.hpp"
 #include <stdint.h>
 
 namespace Comms {
@@ -87,7 +88,8 @@ public:
    * @brief Construct parser with transport
    * @param transport Transport interface for I/O
    */
-  explicit CommandParser(ITransport &transport);
+  explicit CommandParser(ITransport &transport,
+                        ICommandDispatcher &dispatcher);
 
   /**
    * @brief Process incoming data (call periodically)
@@ -152,6 +154,7 @@ public:
 
 private:
   ITransport &m_transport;
+  ICommandDispatcher &m_dispatcher;
   char m_buffer[CMD_BUFFER_SIZE];
   size_t m_bufIndex;
   ResponseFormat m_format;       // Current response format (ASCII or JSON)

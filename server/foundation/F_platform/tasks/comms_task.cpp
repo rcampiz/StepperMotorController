@@ -4,10 +4,12 @@
  */
 
 #include "F_platform/tasks/comms_task.hpp"
+#include "F_platform/rtos/freertos_clock.hpp"
 #include "L1_transport/transport_interface.hpp"
 #include "L1_transport/uart_transport.hpp"
 #include "L1_transport/rtt_transport.hpp"
 #include "L2_protocol/command_parser.hpp"
+#include "F_platform/adapters/service_dispatcher.hpp"
 #include "L2_protocol/telemetry.hpp"
 #include "L2_protocol/event_codec.hpp"
 #include "L3_services/dispatch/command_queue.hpp"
@@ -74,10 +76,15 @@ bool CommsTask_Init(TransportType transport)
 {
     // NOTE: Telemetry is initialized in main.cpp before tasks are created
 
+    // Clock for transport timing (static — persists for lifetime of transport)
+    static FreeRTOSClock commsClock;
+
     // Create transport based on selection
     switch (transport) {
         case TransportType::VCP_UART:
-            s_transport = new Comms::UartTransport(115200);
+            s_transport = new Comms::UartTransport(
+                commsClock, 115200,
+                configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 1);
             break;
 
         case TransportType::RTT:
@@ -93,8 +100,9 @@ bool CommsTask_Init(TransportType transport)
         return false;
     }
 
-    // Create command parser
-    s_parser = new Comms::CommandParser(*s_transport);
+    // Create command dispatcher and parser
+    static ServiceDispatcher dispatcher;
+    s_parser = new Comms::CommandParser(*s_transport, dispatcher);
     if (s_parser == nullptr) {
         return false;
     }

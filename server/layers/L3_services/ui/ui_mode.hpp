@@ -10,9 +10,8 @@
 #ifndef UI_MODE_HPP
 #define UI_MODE_HPP
 
+#include "F_platform/interfaces/ilock.hpp"
 #include <stdint.h>
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/semphr.h"
 
 namespace UI {
 
@@ -71,7 +70,7 @@ public:
      * @param defaultMode Initial mode (default: LOCAL)
      * @return true on success
      */
-    bool init(UIMode defaultMode = UIMode::LOCAL);
+    bool init(ILock& lock, UIMode defaultMode = UIMode::LOCAL);
 
     /**
      * @brief Get current UI mode
@@ -119,7 +118,7 @@ public:
 private:
     UIMode m_mode = UIMode::LOCAL;
     JoyEventCallback m_joyCallback = nullptr;
-    SemaphoreHandle_t m_mutex = nullptr;
+    ILock* m_lock = nullptr;
 };
 
 // Global UI mode manager instance

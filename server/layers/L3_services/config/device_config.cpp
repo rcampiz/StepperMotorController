@@ -47,14 +47,10 @@ WheelRole parseRole(const char *str) {
   return WheelRole::UNASSIGNED;
 }
 
-bool DeviceConfigManager::init(SPIFlash &flash) {
+bool DeviceConfigManager::init(SPIFlash &flash, ILock& lock) {
   m_flash = &flash;
+  m_lock = &lock;
   m_valid = false;
-
-  m_mutex = xSemaphoreCreateMutex();
-  if (m_mutex == nullptr) {
-    return false;
-  }
 
   // Try to load from flash
   if (loadFromFlash()) {
@@ -68,12 +64,6 @@ bool DeviceConfigManager::init(SPIFlash &flash) {
   return false;
 }
 
-bool DeviceConfigManager::lock(TickType_t timeout) {
-  return xSemaphoreTake(m_mutex, timeout) == pdTRUE;
-}
-
-void DeviceConfigManager::unlock() { xSemaphoreGive(m_mutex); }
-
 uint16_t DeviceConfigManager::getDeviceId() const { return m_config.deviceId; }
 
 WheelRole DeviceConfigManager::getRole() const {
@@ -85,35 +75,32 @@ uint8_t DeviceConfigManager::getDefaultMode() const {
 }
 
 bool DeviceConfigManager::setDeviceId(uint16_t id) {
-  if (!lock())
-    return false;
+  m_lock->acquire();
 
   m_config.deviceId = id;
   bool result = saveToFlash();
 
-  unlock();
+  m_lock->release();
   return result;
 }
 
 bool DeviceConfigManager::setRole(WheelRole role) {
-  if (!lock())
-    return false;
+  m_lock->acquire();
 
   m_config.role = static_cast<uint8_t>(role);
   bool result = saveToFlash();
 
-  unlock();
+  m_lock->release();
   return result;
 }
 
 bool DeviceConfigManager::setDefaultMode(uint8_t mode) {
-  if (!lock())
-    return false;
+  m_lock->acquire();
 
   m_config.defaultMode = mode;
   bool result = saveToFlash();
 
-  unlock();
+  m_lock->release();
   return result;
 }
 
@@ -161,13 +148,12 @@ bool DeviceConfigManager::saveToFlash() {
 }
 
 bool DeviceConfigManager::factoryReset() {
-  if (!lock())
-    return false;
+  m_lock->acquire();
 
   applyDefaults();
   bool result = saveToFlash();
 
-  unlock();
+  m_lock->release();
   return result;
 }
 

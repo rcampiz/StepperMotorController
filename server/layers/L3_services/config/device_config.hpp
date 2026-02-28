@@ -13,9 +13,8 @@
 
 #pragma once
 
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
+#include "F_platform/interfaces/ilock.hpp"
 #include "L4_drivers/devices/flash_nor.hpp"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/semphr.h"
 #include <stdint.h>
 
 namespace Services {
@@ -85,7 +84,7 @@ public:
    * @param flash Reference to initialized SPIFlash driver
    * @return true if valid config loaded, false if defaults applied
    */
-  bool init(SPIFlash &flash);
+  bool init(SPIFlash &flash, ILock& lock);
 
   /**
    * @brief Check if configuration is valid
@@ -136,7 +135,7 @@ public:
 private:
   DeviceConfig m_config;
   SPIFlash *m_flash;
-  SemaphoreHandle_t m_mutex;
+  ILock* m_lock;
   bool m_valid;
 
   // CRC32 calculation (polynomial 0xEDB88320)
@@ -147,10 +146,6 @@ private:
 
   // Validate magic and CRC
   bool validateConfig(const DeviceConfig &cfg);
-
-  // Lock/unlock helpers
-  bool lock(TickType_t timeout = portMAX_DELAY);
-  void unlock();
 };
 
 // Global instance

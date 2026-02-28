@@ -16,6 +16,7 @@
 #define UART_TRANSPORT_HPP
 
 #include "L1_transport/transport_interface.hpp"
+#include "F_platform/interfaces/iclock.hpp"
 #include "X_vendor/CMSIS/stm32f401xe.h"
 #include "L5_board/board_pins.hpp"
 #include <stdint.h>
@@ -140,9 +141,11 @@ class UartTransport : public ITransport {
 public:
     /**
      * @brief Construct UART transport
+     * @param clock Platform clock for delays and timeouts
      * @param baudRate Baud rate (default 115200)
+     * @param irqPriority NVIC priority for USART2 RX interrupt (default 6)
      */
-    explicit UartTransport(uint32_t baudRate = 115200);
+    UartTransport(IClock& clock, uint32_t baudRate = 115200, uint8_t irqPriority = 6);
 
     bool init() override;
     bool available() override;
@@ -187,7 +190,9 @@ public:
     void clearOverflow() { m_rxBuffer.clearOverflow(); }
 
 private:
+    IClock* m_clock;
     uint32_t m_baudRate;
+    uint8_t m_irqPriority;
     RingBuffer<256> m_rxBuffer;
 
     static UartTransport* s_instance;

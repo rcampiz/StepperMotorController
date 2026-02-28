@@ -8,9 +8,9 @@
 #ifndef TELEMETRY_HPP
 #define TELEMETRY_HPP
 
+#include "F_platform/interfaces/ilock.hpp"
+#include "F_platform/interfaces/iclock.hpp"
 #include <stdint.h>
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/semphr.h"
 
 namespace Comms {
 
@@ -97,7 +97,7 @@ public:
      * @brief Initialize telemetry manager
      * @return true on success
      */
-    bool init();
+    bool init(ILock& lock, IClock& clock);
 
     /**
      * @brief Update motor telemetry (call from MotorTask)
@@ -131,7 +131,8 @@ public:
 
 private:
     TelemetrySnapshot m_data;
-    SemaphoreHandle_t m_mutex;
+    ILock* m_lock;
+    IClock* m_clock;
 };
 
 // Global telemetry manager instance

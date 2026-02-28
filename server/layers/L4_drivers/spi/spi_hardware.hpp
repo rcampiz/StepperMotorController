@@ -19,7 +19,7 @@
 #include <stddef.h>
 #include "X_vendor/CMSIS/stm32f401xe.h"
 #include "L4_drivers/spi/ispi_bus.hpp"
-#include "F_platform/ilock.hpp"
+#include "F_platform/interfaces/ilock.hpp"
 
 /**
  * @brief Hardware SPI implementation using STM32 SPI peripheral

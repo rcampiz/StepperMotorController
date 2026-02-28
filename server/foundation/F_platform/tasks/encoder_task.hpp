@@ -13,8 +13,6 @@
 #ifndef ENCODER_TASK_HPP
 #define ENCODER_TASK_HPP
 
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
 #include "L3_services/motion/speed_trim_controller.hpp"
 #include <stdint.h>
 
@@ -22,8 +20,8 @@ namespace Tasks {
 
 // Task configuration
 constexpr uint32_t ENCODER_TASK_STACK_SIZE = 128;
-constexpr UBaseType_t ENCODER_TASK_PRIORITY = tskIDLE_PRIORITY + 2;
-constexpr TickType_t ENCODER_SAMPLE_PERIOD_MS = 10; // 100 Hz task wake
+constexpr uint32_t ENCODER_TASK_PRIORITY = 2;
+constexpr uint32_t ENCODER_SAMPLE_PERIOD_MS = 10; // 100 Hz task wake
 
 // DMA buffer size (must be power of 2 for efficient modulo)
 constexpr uint32_t ENC_DMA_BUF_SIZE = 256;

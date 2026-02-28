@@ -10,17 +10,15 @@
 #ifndef COMMS_TASK_HPP
 #define COMMS_TASK_HPP
 
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
 #include <stdint.h>
 
 namespace Tasks {
 
 // Task configuration
 constexpr uint32_t COMMS_TASK_STACK_SIZE = 2048;  // 8192 bytes (GET_STATUS JSON uses 640B local buf + snprintf)
-constexpr UBaseType_t COMMS_TASK_PRIORITY = tskIDLE_PRIORITY + 3;
-constexpr TickType_t COMMS_POLL_PERIOD_MS = 10; // Command polling
-constexpr TickType_t TELEMETRY_PERIOD_MS = 100; // Telemetry publish rate
+constexpr uint32_t COMMS_TASK_PRIORITY = 3;
+constexpr uint32_t COMMS_POLL_PERIOD_MS = 10; // Command polling
+constexpr uint32_t TELEMETRY_PERIOD_MS = 100; // Telemetry publish rate
 
 /**
  * @brief Transport type selection

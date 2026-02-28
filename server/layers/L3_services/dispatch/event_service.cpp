@@ -1,26 +1,25 @@
 /**
  * @file event_service.cpp
- * @brief Event service — FreeRTOS queue, enable mask, counters
+ * @brief Event service — queue, enable mask, counters
  *
  * See docs/PROTOCOL_EVENTS_V1.md for contract.
  */
 
 #include "L3_services/dispatch/event_service.hpp"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/queue.h"
 
 namespace Services::Event {
 
 static constexpr uint8_t QUEUE_DEPTH = 8;
 
-static QueueHandle_t s_queue = nullptr;
+static IQueue<AsyncEvent, 8>* s_queue = nullptr;
 static uint8_t  s_enableMask   = 0;  // disabled at boot
 static uint32_t s_sentCount    = 0;
 static uint32_t s_lostCritical = 0;  // dropped FAULT/STALL/CLEAR
 static uint32_t s_lostInfo     = 0;  // dropped MOTION_DONE
 
-void init() {
-    s_queue = xQueueCreate(QUEUE_DEPTH, sizeof(AsyncEvent));
+void init(IQueue<AsyncEvent, 8>& queue) {
+    s_queue = &queue;
+    s_queue->reset();
     s_enableMask = 0;
     s_sentCount = 0;
     s_lostCritical = 0;
@@ -69,7 +68,7 @@ Stats getStats() {
     s.lostInfo = s_lostInfo;
     s.enableMask = s_enableMask;
     s.queueDepth = (s_queue != nullptr)
-        ? static_cast<uint8_t>(QUEUE_DEPTH - uxQueueSpacesAvailable(s_queue))
+        ? static_cast<uint8_t>(s_queue->available())
         : 0;
     return s;
 }
@@ -89,7 +88,7 @@ bool post(EventType type, uint16_t statusReg) {
 
     // Reserved-slot policy: informational events only enqueued when depth < threshold
     if (!critical) {
-        UBaseType_t spaces = uxQueueSpacesAvailable(s_queue);
+        size_t spaces = s_queue->freeSlots();
         if (spaces <= (QUEUE_DEPTH - EVT_RESERVED_SLOT_THRESHOLD)) {
             s_lostInfo++;
             return false;
@@ -100,7 +99,7 @@ bool post(EventType type, uint16_t statusReg) {
     evt.type = type;
     evt.statusReg = statusReg;
 
-    if (xQueueSend(s_queue, &evt, 0) == pdTRUE) {
+    if (s_queue->send(evt, 0)) {
         s_sentCount++;
         return true;
     }
@@ -118,7 +117,7 @@ bool receive(AsyncEvent& evt) {
     if (s_queue == nullptr) {
         return false;
     }
-    return xQueueReceive(s_queue, &evt, 0) == pdTRUE;
+    return s_queue->receive(evt, 0);
 }
 
 } // namespace Services::Event

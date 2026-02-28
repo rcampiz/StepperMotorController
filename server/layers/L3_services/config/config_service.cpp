@@ -4,7 +4,7 @@
  */
 
 #include "L3_services/config/config_service.hpp"
-#include "F_platform/tasks/motor_task.hpp"
+#include "L3_services/dispatch/imotor_command_sink.hpp"
 
 namespace Services::Config {
 
@@ -51,11 +51,11 @@ uint16_t maxSpeedPhysicalToRaw(uint32_t stepsPerSec) {
 
 // --- Internal send helper ---
 
-static Result sendParam(Tasks::MotorCmdType type, int32_t value) {
-    Tasks::MotorCommand cmd = {};
+static Result sendParam(MotorCmdType type, int32_t value) {
+    MotorCommand cmd = {};
     cmd.type = type;
     cmd.param1 = value;
-    return Tasks::MotorTask_SendCommand(cmd) ? Result::OK : Result::QUEUE_FULL;
+    return g_motorCommandSink->sendCommand(cmd) ? Result::OK : Result::QUEUE_FULL;
 }
 
 // --- Physical-unit setters (SCPI commands) ---
@@ -67,7 +67,7 @@ Result setAccelPhysical(uint32_t stepsPerSecSq) {
     uint16_t raw = accelPhysicalToRaw(stepsPerSecSq);
     if (raw < ACCEL_RAW_MIN) raw = ACCEL_RAW_MIN;
     if (raw > ACCEL_RAW_MAX) raw = ACCEL_RAW_MAX;
-    return sendParam(Tasks::MotorCmdType::SetAccel, raw);
+    return sendParam(MotorCmdType::SetAccel, raw);
 }
 
 Result setDecelPhysical(uint32_t stepsPerSecSq) {
@@ -77,7 +77,7 @@ Result setDecelPhysical(uint32_t stepsPerSecSq) {
     uint16_t raw = accelPhysicalToRaw(stepsPerSecSq);
     if (raw < ACCEL_RAW_MIN) raw = ACCEL_RAW_MIN;
     if (raw > ACCEL_RAW_MAX) raw = ACCEL_RAW_MAX;
-    return sendParam(Tasks::MotorCmdType::SetDecel, raw);
+    return sendParam(MotorCmdType::SetDecel, raw);
 }
 
 Result setMaxSpeedPhysical(uint32_t stepsPerSec) {
@@ -87,7 +87,7 @@ Result setMaxSpeedPhysical(uint32_t stepsPerSec) {
     uint16_t raw = maxSpeedPhysicalToRaw(stepsPerSec);
     if (raw < MAXSPD_RAW_MIN) raw = MAXSPD_RAW_MIN;
     if (raw > MAXSPD_RAW_MAX) raw = MAXSPD_RAW_MAX;
-    return sendParam(Tasks::MotorCmdType::SetMaxSpeed, raw);
+    return sendParam(MotorCmdType::SetMaxSpeed, raw);
 }
 
 // --- Raw register setters (legacy commands) ---
@@ -96,21 +96,21 @@ Result setAccelRaw(uint16_t raw) {
     if (raw < ACCEL_RAW_MIN || raw > ACCEL_RAW_MAX) {
         return Result::INVALID_PARAM;
     }
-    return sendParam(Tasks::MotorCmdType::SetAccel, raw);
+    return sendParam(MotorCmdType::SetAccel, raw);
 }
 
 Result setDecelRaw(uint16_t raw) {
     if (raw < ACCEL_RAW_MIN || raw > ACCEL_RAW_MAX) {
         return Result::INVALID_PARAM;
     }
-    return sendParam(Tasks::MotorCmdType::SetDecel, raw);
+    return sendParam(MotorCmdType::SetDecel, raw);
 }
 
 Result setMaxSpeedRaw(uint16_t raw) {
     if (raw < MAXSPD_RAW_MIN || raw > MAXSPD_RAW_MAX) {
         return Result::INVALID_PARAM;
     }
-    return sendParam(Tasks::MotorCmdType::SetMaxSpeed, raw);
+    return sendParam(MotorCmdType::SetMaxSpeed, raw);
 }
 
 } // namespace Services::Config

@@ -88,9 +88,18 @@ Additional information:
 
 
 /*********************************************************************
-* TODO: Add your defines here.                                       *
+* Project-specific SystemView configuration                          *
 **********************************************************************
 */
+
+// Use dedicated RTT channel 1 for SystemView (channel 0 = RTT terminal).
+// Default (0) causes SystemView to share channel 0 and skip buffer setup.
+#define SEGGER_SYSVIEW_RTT_CHANNEL      1
+
+// 4 KB trace buffer — default 1024 fills instantly when no viewer is connected.
+// NO_BLOCK_SKIP mode drops events once full, but a larger buffer reduces
+// the chance of ring-buffer pointer corruption under heavy trace load.
+#define SEGGER_SYSVIEW_RTT_BUFFER_SIZE  4096
 
 
 #endif  // SEGGER_SYSVIEW_CONF_H

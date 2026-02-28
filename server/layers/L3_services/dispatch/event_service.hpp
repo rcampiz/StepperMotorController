@@ -9,6 +9,7 @@
  */
 
 #pragma once
+#include "F_platform/interfaces/iqueue.hpp"
 #include "L2_protocol/async_event.hpp"
 #include <stdint.h>
 
@@ -23,9 +24,9 @@ struct Stats {
 };
 
 /**
- * @brief Create the FreeRTOS event queue. Call once before scheduler start.
+ * @brief Initialize with an injected queue. Call once before scheduler start.
  */
-void init();
+void init(IQueue<AsyncEvent, 8>& queue);
 
 /**
  * @brief Set the event enable mask. Also triggers snapshot-on-enable.

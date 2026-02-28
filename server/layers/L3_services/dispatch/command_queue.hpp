@@ -13,14 +13,15 @@
  *                                  |                          |
  *                                  +<-- CLEAR_QUEUE <---------+
  *
- * Thread-safe: Uses FreeRTOS mutex for state protection.
+ * Thread-safe: Uses ILock for state protection.
  */
 
 #pragma once
 
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/semphr.h"
-#include "F_platform/tasks/motor_task.hpp"
+#include "F_platform/interfaces/ilock.hpp"
+#include "F_platform/interfaces/iclock.hpp"
+#include "L3_services/dispatch/imotor_command_sink.hpp"
+#include <stddef.h>
 #include <stdint.h>
 
 namespace Services {
@@ -73,7 +74,7 @@ public:
    * @brief Initialize the command queue service
    * @return true on success
    */
-  bool init();
+  bool init(ILock& lock, IClock& clock, IMotorCommandSink& sink);
 
   /**
    * @brief Get current controller state
@@ -93,7 +94,7 @@ public:
    * @param cmd Motor command to queue
    * @return QueueResult::OK or error code
    */
-  QueueResult queueCommand(const Tasks::MotorCommand &cmd);
+  QueueResult queueCommand(const MotorCommand &cmd);
 
   /**
    * @brief Transition from IDLE to ARMED state
@@ -171,7 +172,7 @@ public:
 
 private:
   // Pending command buffer (simple ring buffer)
-  Tasks::MotorCommand m_pendingCmds[CMD_QUEUE_MAX_DEPTH];
+  MotorCommand m_pendingCmds[CMD_QUEUE_MAX_DEPTH];
   size_t m_queueHead;
   size_t m_queueTail;
   size_t m_queueDepth;
@@ -179,15 +180,13 @@ private:
   // State
   ControllerState m_state;
 
-  // Thread safety
-  SemaphoreHandle_t m_mutex;
+  // Platform abstractions
+  ILock* m_lock;
+  IClock* m_clock;
+  IMotorCommandSink* m_sink;
 
   // Helper to flush pending commands to motor task
   void flushToMotorTask();
-
-  // Lock/unlock helpers
-  bool lock(TickType_t timeout = portMAX_DELAY);
-  void unlock();
 };
 
 // Global instance

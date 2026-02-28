@@ -510,7 +510,7 @@ void vMotorTask(void* pvParameters)
     }
 }
 
-bool MotorTask_SendCommand(const MotorCommand& cmd, TickType_t timeout)
+bool MotorTask_SendCommand(const MotorCommand& cmd, uint32_t timeout)
 {
     if (g_motorCmdQueue == nullptr) {
         return false;

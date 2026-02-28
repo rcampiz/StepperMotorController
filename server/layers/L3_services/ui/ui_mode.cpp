@@ -10,11 +10,8 @@ namespace UI {
 // Global instance
 UIModeManager g_uiMode;
 
-bool UIModeManager::init(UIMode defaultMode) {
-    m_mutex = xSemaphoreCreateMutex();
-    if (m_mutex == nullptr) {
-        return false;
-    }
+bool UIModeManager::init(ILock& lock, UIMode defaultMode) {
+    m_lock = &lock;
     m_mode = defaultMode;
     m_joyCallback = nullptr;
     return true;
@@ -25,22 +22,21 @@ UIMode UIModeManager::getMode() const {
 }
 
 bool UIModeManager::setMode(UIMode mode) {
-    if (m_mutex == nullptr) {
+    if (m_lock == nullptr) {
         return false;
     }
 
-    if (xSemaphoreTake(m_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-        m_mode = mode;
-        xSemaphoreGive(m_mutex);
-        return true;
-    }
-    return false;
+    m_lock->acquire();
+    m_mode = mode;
+    m_lock->release();
+    return true;
 }
 
 void UIModeManager::setJoyEventCallback(JoyEventCallback callback) {
-    if (m_mutex != nullptr && xSemaphoreTake(m_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+    if (m_lock != nullptr) {
+        m_lock->acquire();
         m_joyCallback = callback;
-        xSemaphoreGive(m_mutex);
+        m_lock->release();
     }
 }
 
@@ -51,9 +47,10 @@ void UIModeManager::reportJoyEvent(const JoyEvent& event) {
     }
 
     JoyEventCallback cb = nullptr;
-    if (m_mutex != nullptr && xSemaphoreTake(m_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+    if (m_lock != nullptr) {
+        m_lock->acquire();
         cb = m_joyCallback;
-        xSemaphoreGive(m_mutex);
+        m_lock->release();
     }
 
     if (cb != nullptr) {

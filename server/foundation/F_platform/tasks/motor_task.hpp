@@ -9,6 +9,7 @@
 #ifndef MOTOR_TASK_HPP
 #define MOTOR_TASK_HPP
 
+#include "L3_services/dispatch/imotor_command_sink.hpp"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/queue.h"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
@@ -17,44 +18,13 @@
 namespace Tasks {
 
 // Task configuration
-constexpr uint32_t MOTOR_TASK_STACK_SIZE = 256;
-constexpr UBaseType_t MOTOR_TASK_PRIORITY = tskIDLE_PRIORITY + 4;
+constexpr uint32_t MOTOR_TASK_STACK_SIZE = 1024; // 4096 bytes (sysid + trim + supervisor + telemetry snapshot)
+constexpr uint32_t MOTOR_TASK_PRIORITY = 4;
 constexpr size_t MOTOR_CMD_QUEUE_DEPTH = 8;
 
-/**
- * @brief Motor command types
- */
-enum class MotorCmdType : uint8_t {
-  // Motion commands
-  Move,     // Relative move: param1 = steps (signed)
-  GoTo,     // Absolute move: param1 = position
-  Run,      // Continuous: param1 = speed, param2 = direction (0=rev, 1=fwd)
-  SoftStop, // Decelerate to stop
-  HardStop, // Immediate stop
-  SoftHiZ,  // Decelerate then Hi-Z
-  HardHiZ,  // Immediate Hi-Z
-  GoHome,   // Return to home position
-  GoMark,   // Go to mark position
-  ResetPos, // Set current position as zero
-
-  // Configuration commands
-  SetAccel,    // param1 = acceleration value
-  SetDecel,    // param1 = deceleration value
-  SetMaxSpeed, // param1 = max speed value
-  SetMark,     // param1 = mark position
-
-  // Query (response via telemetry)
-  GetStatus // Trigger status read and telemetry update
-};
-
-/**
- * @brief Motor command structure (sent via queue)
- */
-struct MotorCommand {
-  MotorCmdType type;
-  int32_t param1;
-  int32_t param2;
-};
+// Types moved to Services namespace — aliases for backward compatibility
+using Services::MotorCmdType;
+using Services::MotorCommand;
 
 /**
  * @brief Initialize motor task resources
@@ -79,7 +49,7 @@ void vMotorTask(void *pvParameters);
  * @param timeout Ticks to wait if queue full (0 = don't wait)
  * @return true if command queued successfully
  */
-bool MotorTask_SendCommand(const MotorCommand &cmd, TickType_t timeout = 0);
+bool MotorTask_SendCommand(const MotorCommand &cmd, uint32_t timeout = 0);
 
 /**
  * @brief Convenience: send move command
