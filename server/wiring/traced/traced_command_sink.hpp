@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "L3_services/dispatch/imotor_command_sink.hpp"
+#include "F_platform/interfaces/imotor_command_sink.hpp"
 #include "F_util/interface_trace.hpp"
 
 #ifdef ENABLE_INTERFACE_TRACE

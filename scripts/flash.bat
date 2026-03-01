@@ -9,7 +9,7 @@ set "PATH=F:\OpenOCD\xpack-openocd-0.12.0-7-win32-x64\xpack-openocd-0.12.0-7\bin
 set "LOGFILE=%~dp0..\build\flash_log.txt"
 
 REM Build and flash with real-time output visible to user
-call "%~dp0build.bat" flash
+call "%~dp0build_direct.bat" flash
 set "RESULT=%ERRORLEVEL%"
 
 echo.

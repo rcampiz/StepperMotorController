@@ -11,22 +11,10 @@
 
 #pragma once
 
+#include "F_platform/interfaces/velocity_quality_t.hpp"
 #include <stdint.h>
 
 namespace Services {
-
-/**
- * @brief Encoder velocity measurement quality
- *
- * Produced by encoder_task based on edge activity and filter state.
- * Used by trim controller to gate the integrator.
- */
-enum class VelocityQuality : uint8_t {
-    GOOD            = 0,  // Sufficient edges, filter populated
-    LOW_CONFIDENCE  = 1,  // Fewer than 2 samples in window
-    STALE           = 2,  // No encoder edges for > 200ms
-    INVALID         = 3   // Encoder fault or not initialized
-};
 
 /**
  * @brief Configuration for speed-trim PI controller

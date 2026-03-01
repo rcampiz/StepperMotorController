@@ -13,7 +13,7 @@
 #ifndef ENCODER_TASK_HPP
 #define ENCODER_TASK_HPP
 
-#include "L3_services/motion/speed_trim_controller.hpp"
+#include "F_platform/interfaces/velocity_quality_t.hpp"
 #include <stdint.h>
 
 namespace Tasks {
@@ -65,7 +65,7 @@ struct EncoderState {
   uint32_t indexTick;     // Tick when index was last seen
   int32_t revolutions;    // Revolution count from index pulses (signed)
   uint32_t indexPeriodUs; // Microseconds between last two index pulses
-  Services::VelocityQuality velocityQuality; // Measurement confidence
+  VelocityQuality velocityQuality; // Measurement confidence
 };
 
 /**

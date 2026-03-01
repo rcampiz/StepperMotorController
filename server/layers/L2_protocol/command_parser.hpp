@@ -18,8 +18,8 @@
 #ifndef COMMAND_PARSER_HPP
 #define COMMAND_PARSER_HPP
 
-#include "L1_transport/transport_interface.hpp"
-#include "L2_protocol/icommand_dispatcher.hpp"
+#include "F_platform/interfaces/itransport.hpp"
+#include "F_platform/interfaces/icommand_dispatcher.hpp"
 #include <stdint.h>
 
 namespace Comms {

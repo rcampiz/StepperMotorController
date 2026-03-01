@@ -15,7 +15,17 @@
 
 #include <stdint.h>
 
+class ITraceSink;
+
 namespace ITrace {
+
+/**
+ * @brief Set the trace record sink (call before init)
+ *
+ * The sink receives recordIface() calls to store entries in the ring buffer.
+ * If no sink is set, RTT output still works but no ring buffer recording occurs.
+ */
+void setSink(ITraceSink* sink);
 
 // Per-boundary enable bits
 enum Boundary : uint8_t {

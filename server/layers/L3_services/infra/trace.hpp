@@ -118,5 +118,21 @@ struct ServiceScope {
 
 } // namespace Trace
 
+#include "F_platform/interfaces/itrace_sink.hpp"
+
+/**
+ * @brief Adapter: forwards ITraceSink calls to Trace::recordIface()
+ *
+ * Single static instance created in system_init and passed to ITrace::setSink().
+ */
+class TraceSinkAdapter : public ITraceSink {
+public:
+    void recordIface(uint8_t boundary, const char* label,
+                     const char* method, uint32_t result,
+                     const char* detail = nullptr) override {
+        Trace::recordIface(boundary, label, method, result, detail);
+    }
+};
+
 #define TRACE_ENTRY(tag, ...) Trace::record(Trace::ENTRY, tag, ##__VA_ARGS__)
 #define TRACE_EXIT(tag, ...)  Trace::record(Trace::EXIT,  tag, ##__VA_ARGS__)

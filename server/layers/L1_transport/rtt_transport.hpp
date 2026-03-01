@@ -11,7 +11,7 @@
 #ifndef RTT_TRANSPORT_HPP
 #define RTT_TRANSPORT_HPP
 
-#include "L1_transport/transport_interface.hpp"
+#include "F_platform/interfaces/itransport.hpp"
 
 namespace Comms {
 

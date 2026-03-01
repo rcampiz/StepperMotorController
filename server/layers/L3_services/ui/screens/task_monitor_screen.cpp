@@ -17,7 +17,7 @@
 #include "L4_drivers/devices/lcd_st7789.hpp"
 #include "F_platform/interfaces/itask_stats.hpp"
 #include "F_platform/rtos/platform_init.hpp"
-#include "L2_protocol/telemetry.hpp"
+#include "F_platform/interfaces/telemetry.hpp"
 #include "L3_services/infra/trace.hpp"
 #include <stdio.h>
 #include <string.h>

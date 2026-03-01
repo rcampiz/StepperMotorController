@@ -4,7 +4,7 @@
  */
 
 #include "L3_services/config/config_service.hpp"
-#include "L3_services/dispatch/imotor_command_sink.hpp"
+#include "F_platform/interfaces/imotor_command_sink.hpp"
 #include "L3_services/infra/trace.hpp"
 
 namespace Services::Config {

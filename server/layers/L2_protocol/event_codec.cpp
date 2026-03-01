@@ -4,47 +4,12 @@
  */
 
 #include "L2_protocol/event_codec.hpp"
-#include "L1_transport/transport_interface.hpp"
+#include "F_platform/interfaces/itransport.hpp"
 #include <stdio.h>
 #include <string.h>
 
-// ============================================================================
-// Shared helpers (also used by event_service.cpp for eventTypeToString etc.)
-// ============================================================================
-
-const char* eventTypeToString(EventType t) {
-    switch (t) {
-        case EventType::FAULT:             return "FAULT";
-        case EventType::FAULT_CLEAR:       return "FAULT_CLEAR";
-        case EventType::STALL:             return "STALL";
-        case EventType::STALL_CLEAR:       return "STALL_CLEAR";
-        case EventType::MOTION_DONE:       return "MOTION_DONE";
-        case EventType::FOLLOW_FAULT:      return "FOLLOW_FAULT";
-        case EventType::FOLLOW_RECOVERY:   return "FOLLOW_RECOVERY";
-        case EventType::FOLLOW_RECOVERED:  return "FOLLOW_RECOVERED";
-        default:                           return "UNKNOWN";
-    }
-}
-
-uint8_t eventTypeToMaskBit(EventType t) {
-    return static_cast<uint8_t>(1 << static_cast<uint8_t>(t));
-}
-
-bool eventTypeIsCritical(EventType t) {
-    switch (t) {
-        case EventType::FAULT:
-        case EventType::FAULT_CLEAR:
-        case EventType::STALL:
-        case EventType::STALL_CLEAR:
-        case EventType::FOLLOW_FAULT:
-            return true;
-        case EventType::MOTION_DONE:
-        case EventType::FOLLOW_RECOVERY:
-        case EventType::FOLLOW_RECOVERED:
-        default:
-            return false;
-    }
-}
+// Shared helpers (eventTypeToString etc.) moved to
+// F_platform/interfaces/async_event_types.cpp
 
 namespace Comms::EventCodec {
 

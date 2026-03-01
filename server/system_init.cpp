@@ -15,12 +15,13 @@
 #include "X_vendor/CMSIS/stm32f401xe.h"
 
 // Foundation — adapters
-#include "F_platform/adapters/motor_command_sink.hpp"
-#include "F_platform/adapters/safety_actions.hpp"
+#include "wiring/motor_command_sink.hpp"
+#include "wiring/safety_actions.hpp"
 #include "F_util/interface_trace.hpp"
+#include "L3_services/infra/trace.hpp"
 #ifdef ENABLE_INTERFACE_TRACE
-#include "F_platform/adapters/traced/traced_safety_actions.hpp"
-#include "F_platform/adapters/traced/traced_command_sink.hpp"
+#include "wiring/traced/traced_safety_actions.hpp"
+#include "wiring/traced/traced_command_sink.hpp"
 #endif
 
 // Foundation — tasks
@@ -30,7 +31,7 @@
 #include "F_platform/tasks/motor_task.hpp"
 
 // Layers
-#include "L2_protocol/telemetry.hpp"
+#include "F_platform/interfaces/telemetry.hpp"
 #include "L3_services/config/device_config.hpp"
 #include "L3_services/dispatch/command_queue.hpp"
 #include "L3_services/dispatch/event_service.hpp"
@@ -40,7 +41,7 @@
 #include "L3_services/motion/motor_config.hpp"
 #include "L3_services/ui/ui_mode.hpp"
 #include "L4_drivers/devices/flash_nor.hpp"
-#include "L5_board/spi/spi_manager.hpp"
+#include "L4_drivers/spi/spi_manager.hpp"
 
 // --- Globals (composition root owns these) ---
 Services::IMotorCommandSink* Services::g_motorCommandSink = nullptr;
@@ -112,6 +113,8 @@ void initHardware()
     logOk("Clock config");
     Services::TickTimer_Init();
     logOk("TickTimer");
+    static TraceSinkAdapter s_traceSink;
+    ITrace::setSink(&s_traceSink);
     ITrace::init();
 }
 

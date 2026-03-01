@@ -3,7 +3,7 @@
  * @brief Telemetry manager implementation
  */
 
-#include "L2_protocol/telemetry.hpp"
+#include "F_platform/interfaces/telemetry.hpp"
 #include <string.h>
 
 namespace Comms {

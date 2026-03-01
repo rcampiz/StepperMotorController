@@ -18,8 +18,9 @@ namespace Comms {
 // Singleton instance for ISR access
 UartTransport* UartTransport::s_instance = nullptr;
 
-UartTransport::UartTransport(IClock& clock, uint32_t baudRate, uint8_t irqPriority)
-    : m_clock(&clock), m_baudRate(baudRate), m_irqPriority(irqPriority) {}
+UartTransport::UartTransport(const UartConfig& config, IClock& clock,
+                             uint32_t baudRate, uint8_t irqPriority)
+    : m_config(config), m_clock(&clock), m_baudRate(baudRate), m_irqPriority(irqPriority) {}
 
 bool UartTransport::init() {
     // Enforce single instance - ISR can only route to one instance
@@ -43,10 +44,10 @@ void UartTransport::initGpio() {
     volatile uint32_t dummy = RCC->AHB1ENR;
     (void)dummy;
 
-    GPIO_TypeDef* port = Pins::VCP_UART::PORT;
-    constexpr uint8_t txPin = Pins::VCP_UART::TX_PIN;
-    constexpr uint8_t rxPin = Pins::VCP_UART::RX_PIN;
-    constexpr uint8_t af = Pins::VCP_UART::AF;
+    GPIO_TypeDef* port = m_config.gpioPort;
+    uint8_t txPin = m_config.txPin;
+    uint8_t rxPin = m_config.rxPin;
+    uint8_t af = m_config.af;
 
     // Configure PA2 (TX) as alternate function, push-pull, high speed
     // MODER: 10 = Alternate function
@@ -86,7 +87,7 @@ void UartTransport::initUsart() {
     volatile uint32_t dummy = RCC->APB1ENR;
     (void)dummy;
 
-    USART_TypeDef* usart = Pins::VCP_UART::INSTANCE;
+    USART_TypeDef* usart = m_config.usart;
 
     // Disable USART for configuration
     usart->CR1 = 0;
@@ -99,7 +100,7 @@ void UartTransport::initUsart() {
     // For 115200: BRR = 42000000 / (16 * 115200) = 22.786 ≈ 22 + 13/16
     // USARTDIV = fPCLK / (16 * baud)
     // Mantissa = integer part, Fraction = (fractional part * 16)
-    uint32_t integerdivider = ((25 * Pins::VCP_UART::APB1_CLOCK_HZ) / (4 * m_baudRate));
+    uint32_t integerdivider = ((25 * m_config.apb1ClockHz) / (4 * m_baudRate));
     uint32_t mantissa = integerdivider / 100;
     uint32_t fraction = ((integerdivider - (mantissa * 100)) * 16 + 50) / 100;
 
@@ -167,7 +168,7 @@ bool UartTransport::readByte(uint8_t& byte, uint32_t timeoutMs) {
 }
 
 size_t UartTransport::write(const uint8_t* data, size_t len) {
-    USART_TypeDef* usart = Pins::VCP_UART::INSTANCE;
+    USART_TypeDef* usart = m_config.usart;
 
     for (size_t i = 0; i < len; i++) {
         // Wait for TXE (transmit data register empty)
@@ -191,7 +192,7 @@ size_t UartTransport::println(const char* str) {
 }
 
 void UartTransport::flush() {
-    USART_TypeDef* usart = Pins::VCP_UART::INSTANCE;
+    USART_TypeDef* usart = m_config.usart;
 
     // Wait for TC (transmission complete)
     while ((usart->SR & USART_SR_TC) == 0) {
@@ -200,7 +201,7 @@ void UartTransport::flush() {
 }
 
 bool UartTransport::setBaudRate(uint32_t baudRate) {
-    USART_TypeDef* usart = Pins::VCP_UART::INSTANCE;
+    USART_TypeDef* usart = m_config.usart;
 
     // Wait for transmission complete (all bits shifted out)
     while ((usart->SR & USART_SR_TC) == 0) {}
@@ -212,7 +213,7 @@ bool UartTransport::setBaudRate(uint32_t baudRate) {
     usart->CR1 &= ~USART_CR1_UE;
 
     // Recalculate BRR (same formula as initUsart)
-    uint32_t integerdivider = ((25 * Pins::VCP_UART::APB1_CLOCK_HZ) / (4 * baudRate));
+    uint32_t integerdivider = ((25 * m_config.apb1ClockHz) / (4 * baudRate));
     uint32_t mantissa = integerdivider / 100;
     uint32_t fraction = ((integerdivider - (mantissa * 100)) * 16 + 50) / 100;
     if (fraction >= 16) {
@@ -235,7 +236,7 @@ bool UartTransport::setBaudRate(uint32_t baudRate) {
 void UartTransport::handleIRQ() {
     ::g_usart2IrqCount++;  // Use global scope
 
-    USART_TypeDef* usart = Pins::VCP_UART::INSTANCE;
+    USART_TypeDef* usart = m_config.usart;
     uint32_t sr = usart->SR;
 
     // Check for receive data ready

@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "L1_transport/transport_interface.hpp"
+#include "F_platform/interfaces/itransport.hpp"
 #include "F_util/interface_trace.hpp"
 
 #ifdef ENABLE_INTERFACE_TRACE

@@ -15,7 +15,7 @@
 #define ENCODER_SCREEN_HPP
 
 #include "ui/screen.hpp"
-#include "L2_protocol/telemetry.hpp"
+#include "F_platform/interfaces/telemetry.hpp"
 #include <stdint.h>
 
 class LCD;

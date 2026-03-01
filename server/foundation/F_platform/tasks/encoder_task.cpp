@@ -24,7 +24,7 @@
 #include "L3_services/infra/tick_timer.hpp"
 #include "L3_services/infra/trace.hpp"
 #include "L3_services/motion/motor_config.hpp"
-#include "L2_protocol/telemetry.hpp"
+#include "F_platform/interfaces/telemetry.hpp"
 #include "X_vendor/CMSIS/stm32f401xe.h"
 #include <math.h>
 #include "X_vendor/CMSIS/core_cm4.h"
@@ -99,7 +99,7 @@ static uint8_t s_holtBeta = 13;    // ~0.05
 
 // Velocity quality tracking
 static uint32_t s_lastEdgeUs = 0;       // Timestamp of last non-zero delta
-static Services::VelocityQuality s_velQuality = Services::VelocityQuality::INVALID;
+static VelocityQuality s_velQuality = VelocityQuality::INVALID;
 
 // Filtered velocity output
 static int32_t s_filteredVelocity = 0;
@@ -546,11 +546,11 @@ void vEncoderTask(void* pvParameters)
         {
             uint32_t edgeAgeUs = tickUs - s_lastEdgeUs;
             if (edgeAgeUs > 200000 && s_lastEdgeUs != 0) {
-                s_velQuality = Services::VelocityQuality::STALE;
+                s_velQuality = VelocityQuality::STALE;
             } else if (s_lastEdgeUs == 0) {
-                s_velQuality = Services::VelocityQuality::LOW_CONFIDENCE;
+                s_velQuality = VelocityQuality::LOW_CONFIDENCE;
             } else {
-                s_velQuality = Services::VelocityQuality::GOOD;
+                s_velQuality = VelocityQuality::GOOD;
             }
         }
 

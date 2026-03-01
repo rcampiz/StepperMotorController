@@ -10,7 +10,7 @@
 
 #include "ui/screens/encoder_screen.hpp"
 #include "L4_drivers/devices/lcd_st7789.hpp"
-#include "L2_protocol/telemetry.hpp"
+#include "F_platform/interfaces/telemetry.hpp"
 #include "graphics/trig_lut.hpp"
 #include "graphics/primitives.hpp"
 #include <stdio.h>

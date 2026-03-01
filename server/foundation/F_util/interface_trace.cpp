@@ -8,13 +8,18 @@
 #ifdef ENABLE_INTERFACE_TRACE
 
 #include "F_util/interface_trace.hpp"
-#include "L3_services/infra/trace.hpp"
+#include "F_platform/interfaces/itrace_sink.hpp"
 #include "X_middlewares/SEGGER/RTT/SEGGER_RTT.h"
 #include <string.h>
 
 namespace ITrace {
 
 static uint8_t s_enableMask = ALL;
+static ITraceSink* s_sink = nullptr;
+
+void setSink(ITraceSink* sink) {
+    s_sink = sink;
+}
 
 // ANSI color escape sequences (short, to minimize RTT bandwidth)
 // Colors chosen per layer:
@@ -113,7 +118,7 @@ void log(uint8_t boundary, const char* label, const char* method,
     if (!(s_enableMask & boundary)) return;
 
     rttEmit(boundary, label, method, detail);
-    Trace::recordIface(boundary, label, method, 0, detail);
+    if (s_sink) s_sink->recordIface(boundary, label, method, 0, detail);
 }
 
 void logResult(uint8_t boundary, const char* label, const char* method,
@@ -135,7 +140,7 @@ void logResult(uint8_t boundary, const char* label, const char* method,
     }
 
     // Ring buffer: store method literal + numeric result
-    Trace::recordIface(boundary, label, method, result);
+    if (s_sink) s_sink->recordIface(boundary, label, method, result);
 }
 
 } // namespace ITrace

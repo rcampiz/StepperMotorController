@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "L3_services/motion/imotor_driver.hpp"
+#include "F_platform/interfaces/imotor_driver.hpp"
 #include "L4_drivers/devices/powerstep01.hpp"
 
 class PowerSTEP01Adapter : public Services::IMotorDriver {

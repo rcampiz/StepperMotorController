@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "L3_services/motion/iencoder.hpp"
+#include "F_platform/interfaces/iencoder.hpp"
 #include "F_platform/tasks/encoder_task.hpp"
 
 class EncoderAdapter : public Services::IEncoder {

@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "L3_services/dispatch/imotor_command_sink.hpp"
+#include "F_platform/interfaces/imotor_command_sink.hpp"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/queue.h"
 

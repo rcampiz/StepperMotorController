@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "L2_protocol/icommand_dispatcher.hpp"
+#include "F_platform/interfaces/icommand_dispatcher.hpp"
 #include <stdio.h>
 #include "L3_services/motion/motion_service.hpp"
 #include "L3_services/safety/safety_service.hpp"
@@ -23,7 +23,7 @@
 #include "L3_services/dispatch/event_service.hpp"
 #include "L3_services/infra/tick_timer.hpp"
 #include "L3_services/infra/timing_service.hpp"
-#include "L3_services/motion/iencoder.hpp"
+#include "F_platform/interfaces/iencoder.hpp"
 
 class ServiceDispatcher : public Comms::ICommandDispatcher {
 public:

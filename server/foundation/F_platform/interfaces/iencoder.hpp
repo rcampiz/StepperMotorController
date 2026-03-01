@@ -2,14 +2,14 @@
  * @file iencoder.hpp
  * @brief Interface for encoder hardware abstraction
  *
- * Defined in L3 (consumer owns interface). Implemented by
- * EncoderAdapter in Foundation. Enables mock injection
- * for unit testing without real encoder hardware.
+ * Foundation interface for encoder hardware abstraction.
+ * Implemented by EncoderAdapter in wiring/. Enables mock
+ * injection for unit testing without real encoder hardware.
  */
 
 #pragma once
 
-#include "L3_services/motion/speed_trim_controller.hpp"  // VelocityQuality
+#include "F_platform/interfaces/velocity_quality_t.hpp"
 #include <stdint.h>
 
 namespace Services {

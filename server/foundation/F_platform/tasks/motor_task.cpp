@@ -5,16 +5,16 @@
 
 #include "F_platform/tasks/motor_task.hpp"
 #include <stdint.h>
-#include "L3_services/motion/imotor_driver.hpp"
+#include "F_platform/interfaces/imotor_driver.hpp"
 #include "L4_drivers/devices/powerstep01.hpp"
 #include "L4_drivers/spi/spi_bus.hpp"
-#include "L5_board/spi/spi_manager.hpp"
-#include "F_platform/adapters/powerstep01_adapter.hpp"
+#include "L4_drivers/spi/spi_manager.hpp"
+#include "wiring/powerstep01_adapter.hpp"
 #include "F_util/interface_trace.hpp"
 #ifdef ENABLE_INTERFACE_TRACE
-#include "F_platform/adapters/traced/traced_motor_driver.hpp"
+#include "wiring/traced/traced_motor_driver.hpp"
 #endif
-#include "L2_protocol/telemetry.hpp"
+#include "F_platform/interfaces/telemetry.hpp"
 #include "L3_services/motion/motor_config.hpp"
 #include "L3_services/dispatch/event_service.hpp"
 #include "L3_services/motion/following_supervisor.hpp"
@@ -388,7 +388,7 @@ void vMotorTask(void* pvParameters)
             if (!sysidActive && Services::g_speedTrim.isActive()) {
                 Services::SpeedTrimInput ti{};
                 ti.encVelTps       = snap.encoder.velocity;
-                ti.velQuality      = static_cast<Services::VelocityQuality>(
+                ti.velQuality      = static_cast<VelocityQuality>(
                                          snap.encoder.velocityQuality);
                 ti.forward         = s_lastRunForward;
                 ti.fullStepsPerRev = fpr;

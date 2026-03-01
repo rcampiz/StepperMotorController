@@ -18,7 +18,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "X_vendor/CMSIS/stm32f401xe.h"
-#include "L4_drivers/spi/ispi_bus.hpp"
+#include "F_platform/interfaces/ispi_bus.hpp"
 #include "F_platform/interfaces/ilock.hpp"
 
 /**

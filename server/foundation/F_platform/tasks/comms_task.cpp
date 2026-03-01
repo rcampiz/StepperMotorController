@@ -5,18 +5,19 @@
 
 #include "F_platform/tasks/comms_task.hpp"
 #include "F_platform/rtos/freertos_clock.hpp"
-#include "L1_transport/transport_interface.hpp"
+#include "F_platform/interfaces/itransport.hpp"
 #include "L1_transport/uart_transport.hpp"
 #include "L1_transport/rtt_transport.hpp"
+#include "L5_board/board_pins.hpp"
 #include "L2_protocol/command_parser.hpp"
-#include "F_platform/adapters/service_dispatcher.hpp"
-#include "F_platform/adapters/encoder_adapter.hpp"
+#include "wiring/service_dispatcher.hpp"
+#include "wiring/encoder_adapter.hpp"
 #include "F_util/interface_trace.hpp"
 #ifdef ENABLE_INTERFACE_TRACE
-#include "F_platform/adapters/traced/traced_transport.hpp"
-#include "F_platform/adapters/traced/traced_encoder.hpp"
+#include "wiring/traced/traced_transport.hpp"
+#include "wiring/traced/traced_encoder.hpp"
 #endif
-#include "L2_protocol/telemetry.hpp"
+#include "F_platform/interfaces/telemetry.hpp"
 #include "L2_protocol/event_codec.hpp"
 #include "L3_services/infra/trace.hpp"
 #include "L3_services/dispatch/command_queue.hpp"
@@ -90,9 +91,19 @@ bool CommsTask_Init(TransportType transport)
     // Create transport based on selection
     switch (transport) {
         case TransportType::VCP_UART:
-            s_transport = new Comms::UartTransport(
-                commsClock, 115200,
-                configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 1);
+            {
+                static const Comms::UartConfig vcpConfig = {
+                    Pins::VCP_UART::INSTANCE,
+                    Pins::VCP_UART::PORT,
+                    Pins::VCP_UART::TX_PIN,
+                    Pins::VCP_UART::RX_PIN,
+                    Pins::VCP_UART::AF,
+                    Pins::VCP_UART::APB1_CLOCK_HZ,
+                };
+                s_transport = new Comms::UartTransport(
+                    vcpConfig, commsClock, 115200,
+                    configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 1);
+            }
             break;
 
         case TransportType::RTT:

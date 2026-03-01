@@ -7,7 +7,7 @@
  */
 
 #pragma once
-#include "L2_protocol/async_event.hpp"
+#include "F_platform/interfaces/async_event_types.hpp"
 #include "L2_protocol/command_parser.hpp"
 
 namespace Comms::EventCodec {

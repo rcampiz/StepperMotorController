@@ -7,8 +7,8 @@
  */
 
 #include "L2_protocol/command_parser.hpp"
-#include "L2_protocol/telemetry.hpp"
-#include "L2_protocol/async_event.hpp"
+#include "F_platform/interfaces/telemetry.hpp"
+#include "F_platform/interfaces/async_event_types.hpp"
 // L3 includes eliminated via ICommandDispatcher:
 //   command_queue, config_service, control_mode, device_config,
 //   motion_service, safety_service, tick_timer, timing_service,
@@ -18,7 +18,8 @@
 #include "L3_services/infra/trace.hpp"
 #include "L3_services/infra/flash_image_service.hpp"
 #include "F_util/crc32.hpp"
-#include "L5_board/board_pins.hpp"
+// board_pins.hpp removed — L2 must not depend on L5. Diag commands use GPIO literals.
+#include "X_vendor/CMSIS/stm32f401xe.h"
 #include "F_platform/tasks/comms_task.hpp"
 #include "F_platform/tasks/display_task.hpp"
 #include "F_platform/tasks/encoder_task.hpp"
@@ -4139,8 +4140,8 @@ void CommandParser::cmdMotorDebug() {
            (unsigned)((GPIOA->MODER >> 10) & 0x3),
            (unsigned)((GPIOA->MODER >> 12) & 0x3),
            (unsigned)((GPIOA->MODER >> 14) & 0x3),
-           (unsigned)((Pins::IHM03A1::FLAG_PORT->IDR >> Pins::IHM03A1::FLAG_PIN) & 0x1),
-           (unsigned)((Pins::IHM03A1::BUSY_PORT->IDR >> Pins::IHM03A1::BUSY_PIN) & 0x1));
+           (unsigned)((GPIOA->IDR >> 10) & 0x1),   // IHM03A1 FLAG = PA10
+           (unsigned)((GPIOB->IDR >> 5) & 0x1));   // IHM03A1 BUSY = PB5
   m_transport.println(buf);
 }
 
@@ -4792,20 +4793,17 @@ void CommandParser::cmdFlashTest() {
 
   // Step 0c: Dump SPI2 pin config (MODER + AFR for SCK/MISO/MOSI)
   {
-    // SCK = PB13
-    auto sp = Pins::SPI2_Bus::SCK_PORT;
-    auto sn = Pins::SPI2_Bus::SCK_PIN;
+    // SCK = PB13 (SPI2_Bus)
+    auto sp = GPIOB; constexpr uint8_t sn = 13;
     uint32_t sckM = (sp->MODER >> (sn * 2)) & 0x3;
     uint32_t sckAF = (sp->AFR[sn / 8] >> ((sn % 8) * 4)) & 0xF;
-    // MISO = PC2
-    auto mp = Pins::SPI2_Bus::MISO_PORT;
-    auto mn = Pins::SPI2_Bus::MISO_PIN;
+    // MISO = PC2 (SPI2_Bus)
+    auto mp = GPIOC; constexpr uint8_t mn = 2;
     uint32_t misoM = (mp->MODER >> (mn * 2)) & 0x3;
     uint32_t misoAF = (mp->AFR[mn / 8] >> ((mn % 8) * 4)) & 0xF;
     uint32_t misoIDR = (mp->IDR >> mn) & 0x1;
-    // MOSI = PC3
-    auto op = Pins::SPI2_Bus::MOSI_PORT;
-    auto on = Pins::SPI2_Bus::MOSI_PIN;
+    // MOSI = PC3 (SPI2_Bus)
+    auto op = GPIOC; constexpr uint8_t on = 3;
     uint32_t mosiM = (op->MODER >> (on * 2)) & 0x3;
     uint32_t mosiAF = (op->AFR[on / 8] >> ((on % 8) * 4)) & 0xF;
     rpos += snprintf(result + rpos, sizeof(result) - rpos,

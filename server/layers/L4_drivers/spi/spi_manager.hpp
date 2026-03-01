@@ -1,14 +1,15 @@
 /**
  * @file spi_manager.hpp
- * @brief Unified SPI manager for multiple buses
+ * @brief Unified SPI bus manager — arbitration, locking, CS control
  *
  * Manages two SPI buses:
  *   - SPI1: Shared between Motor (powerSTEP01) and LCD (ST7789)
  *   - SPI2: NOR Flash only
  *
  * All transactions are atomic - complete read/write finishes before
- * the bus lock is released. SPI1 uses hardware peripheral, SPI2 uses bit-bang.
+ * the bus lock is released.
  *
+ * Board-specific pin mappings come from L5_board/spi/spi_board_config.hpp.
  * Locking is delegated to the ISPIBus implementations via injected ILock.
  * No RTOS headers appear in this file.
  */
@@ -20,6 +21,7 @@
 #include <stddef.h>
 #include <string.h>
 #include "X_vendor/CMSIS/stm32f401xe.h"
+#include "L5_board/spi/spi_board_config.hpp"
 #include "L5_board/spi/spi_hardware.hpp"
 #include "L5_board/board_pins.hpp"
 #include "F_platform/interfaces/ilock.hpp"
@@ -28,59 +30,6 @@
  * @brief Maximum transaction data size
  */
 constexpr size_t SPI_MAX_TXN_SIZE = 64;
-
-/**
- * @brief SPI device identifier (determines bus and CS)
- */
-enum class SPIDevice : uint8_t {
-    Motor,      // SPI1, Mode 3, CS=PC8
-    LCD,        // SPI1, Mode 0, CS=PC6
-    NORFlash    // SPI2, Mode 0, CS=PA8
-};
-
-/**
- * @brief Get the SPI bus for a device
- */
-inline uint8_t getDeviceBus(SPIDevice device) {
-    switch (device) {
-        case SPIDevice::Motor:    return 1;
-        case SPIDevice::LCD:      return 1;
-        case SPIDevice::NORFlash: return 2;
-        default:                  return 1;
-    }
-}
-
-/**
- * @brief Get the default SPI mode for a device
- */
-inline SPIMode getDeviceMode(SPIDevice device) {
-    switch (device) {
-        case SPIDevice::Motor:    return SPIMode::Mode3;
-        case SPIDevice::LCD:      return SPIMode::Mode0;
-        case SPIDevice::NORFlash: return SPIMode::Mode0;
-        default:                  return SPIMode::Mode0;
-    }
-}
-
-/**
- * @brief CS pin descriptor
- */
-struct CSPin {
-    GPIO_TypeDef* port;
-    uint8_t pin;
-};
-
-/**
- * @brief Get CS pin for a device
- */
-inline CSPin getDeviceCS(SPIDevice device) {
-    switch (device) {
-        case SPIDevice::Motor:    return {Pins::IHM03A1::CS_PORT, Pins::IHM03A1::CS_PIN};
-        case SPIDevice::LCD:      return {Pins::GFX_LCD::CS_PORT, Pins::GFX_LCD::CS_PIN};
-        case SPIDevice::NORFlash: return {Pins::GFX_Flash::CS_PORT, Pins::GFX_Flash::CS_PIN};
-        default:                  return {Pins::IHM03A1::CS_PORT, Pins::IHM03A1::CS_PIN};
-    }
-}
 
 /**
  * @brief SPI transaction descriptor
@@ -232,48 +181,27 @@ public:
     // Convenience methods for specific devices
     // ========================================================================
 
-    /**
-     * @brief Execute motor (powerSTEP01) transaction
-     */
     bool motorTransfer(const uint8_t* tx, uint8_t* rx, size_t len) {
         SPITransaction txn;
         txn.init(SPIDevice::Motor, tx, len);
-        if (!execute(txn)) {
-            return false;
-        }
-        if (rx != nullptr) {
-            memcpy(rx, txn.rxData, len);
-        }
+        if (!execute(txn)) return false;
+        if (rx != nullptr) memcpy(rx, txn.rxData, len);
         return true;
     }
 
-    /**
-     * @brief Execute LCD transaction
-     */
     bool lcdTransfer(const uint8_t* tx, uint8_t* rx, size_t len) {
         SPITransaction txn;
         txn.init(SPIDevice::LCD, tx, len);
-        if (!execute(txn)) {
-            return false;
-        }
-        if (rx != nullptr) {
-            memcpy(rx, txn.rxData, len);
-        }
+        if (!execute(txn)) return false;
+        if (rx != nullptr) memcpy(rx, txn.rxData, len);
         return true;
     }
 
-    /**
-     * @brief Execute NOR Flash transaction
-     */
     bool flashTransfer(const uint8_t* tx, uint8_t* rx, size_t len) {
         SPITransaction txn;
         txn.init(SPIDevice::NORFlash, tx, len);
-        if (!execute(txn)) {
-            return false;
-        }
-        if (rx != nullptr) {
-            memcpy(rx, txn.rxData, len);
-        }
+        if (!execute(txn)) return false;
+        if (rx != nullptr) memcpy(rx, txn.rxData, len);
         return true;
     }
 
@@ -281,33 +209,17 @@ public:
     // Debug methods
     // ========================================================================
 
-    /**
-     * @brief Read MISO pin state for SPI1
-     */
     bool readMISO1() const {
         return (Pins::SPI1_Bus::PORT->IDR & (1UL << Pins::SPI1_Bus::MISO_PIN)) != 0;
     }
 
-    /**
-     * @brief Read MISO pin state for SPI2
-     */
     bool readMISO2() const {
         return (Pins::SPI2_Bus::MISO_PORT->IDR & (1UL << Pins::SPI2_Bus::MISO_PIN)) != 0;
     }
 
-    /**
-     * @brief Check if initialized
-     */
     bool isInitialized() const { return m_initialized; }
 
-    /**
-     * @brief Get SPI1 instance for direct access (use with care)
-     */
     ISPIBus* getSPI1() { return m_spi1; }
-
-    /**
-     * @brief Get SPI2 instance for direct access (use with care)
-     */
     ISPIBus* getSPI2() { return m_spi2; }
 
 private:
@@ -319,27 +231,20 @@ private:
         // Enable GPIO clocks
         RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_GPIOBEN | RCC_AHB1ENR_GPIOCEN;
 
-        // Motor CS (PC8)
         configureCS(getDeviceCS(SPIDevice::Motor));
-        // LCD CS (PC6)
         configureCS(getDeviceCS(SPIDevice::LCD));
-        // NOR Flash CS (PA8)
         configureCS(getDeviceCS(SPIDevice::NORFlash));
 
         // PB15: formerly SPI2 MOSI, now unused — force input, no pull
-        GPIOB->MODER &= ~(0x3UL << (15 * 2));   // Input mode (00)
-        GPIOB->PUPDR &= ~(0x3UL << (15 * 2));   // No pull-up/pull-down (00)
+        GPIOB->MODER &= ~(0x3UL << (15 * 2));
+        GPIOB->PUPDR &= ~(0x3UL << (15 * 2));
     }
 
     void configureCS(const CSPin& cs) {
-        // Output mode
         cs.port->MODER &= ~(0x3UL << (cs.pin * 2));
         cs.port->MODER |= (0x1UL << (cs.pin * 2));
-        // Push-pull
         cs.port->OTYPER &= ~(1UL << cs.pin);
-        // High speed
         cs.port->OSPEEDR |= (0x3UL << (cs.pin * 2));
-        // Start high (deselected)
         cs.port->BSRR = (1UL << cs.pin);
     }
 };

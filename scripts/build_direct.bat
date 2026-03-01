@@ -24,7 +24,7 @@ if not exist "build" mkdir build
 REM Compiler flags
 set "MCU_FLAGS=-mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard"
 set "FREERTOS_INC=-Iserver/external/X_middlewares/Third_Party/FreeRTOS-Kernel/include -Iserver/external/X_middlewares/Third_Party/FreeRTOS-Kernel/portable/GCC/ARM_CM4F"
-set "INCLUDES=-Iserver -Iserver/layers -Iserver/layers/L1_transport -Iserver/layers/L2_protocol -Iserver/layers/L3_services -Iserver/layers/L4_drivers -Iserver/layers/L5_board -Iserver/foundation -Iserver/foundation/F_platform -Iserver/foundation/F_platform/rtos -Iserver/external -Iserver/external/X_vendor/CMSIS %FREERTOS_INC% -Iserver/external/X_middlewares/SEGGER/RTT -Iserver/external/X_middlewares/SEGGER/SystemView"
+set "INCLUDES=-Iserver -Iserver/layers -Iserver/layers/L1_transport -Iserver/layers/L2_protocol -Iserver/layers/L3_services -Iserver/layers/L4_drivers -Iserver/layers/L5_board -Iserver/foundation -Iserver/foundation/F_platform -Iserver/foundation/F_platform/rtos -Iserver/wiring -Iserver/external -Iserver/external/X_vendor/CMSIS %FREERTOS_INC% -Iserver/external/X_middlewares/SEGGER/RTT -Iserver/external/X_middlewares/SEGGER/SystemView"
 set "DEFINES=-DSTM32F401xE -D__FPU_PRESENT=1 -D__FPU_USED=1 -DENABLE_SEGGER_SYSTEMVIEW -DRTT_USE_ASM=0 -DENABLE_INTERFACE_TRACE"
 set "CFLAGS=%MCU_FLAGS% %INCLUDES% %DEFINES% -Og -Wall -fdata-sections -ffunction-sections -g -gdwarf-2"
 set "CXXFLAGS=%CFLAGS% -std=c++14 -fno-exceptions -fno-rtti -fno-use-cxa-atexit"
@@ -98,7 +98,7 @@ if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile rtt_transport.cpp & exit /b
 echo [15/24] Compiling protocol sources...
 arm-none-eabi-g++ -c %CXXFLAGS% server/layers/L2_protocol/command_parser.cpp -o build/command_parser.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile command_parser.cpp & exit /b 1)
-arm-none-eabi-g++ -c %CXXFLAGS% server/layers/L2_protocol/telemetry.cpp -o build/telemetry.o
+arm-none-eabi-g++ -c %CXXFLAGS% server/foundation/F_platform/interfaces/telemetry.cpp -o build/telemetry.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile telemetry.cpp & exit /b 1)
 arm-none-eabi-g++ -c %CXXFLAGS% server/layers/L2_protocol/event_codec.cpp -o build/event_codec.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile event_codec.cpp & exit /b 1)
@@ -196,10 +196,12 @@ arm-none-eabi-g++ -c %CXXFLAGS% server/layers/L3_services/ui/screens/arch_screen
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile arch_screen.cpp & exit /b 1)
 
 echo [19/26] Compiling driver sources...
-arm-none-eabi-g++ -c %CXXFLAGS% server/layers/L5_board/spi/spi_manager.cpp -o build/spi_manager.o
+arm-none-eabi-g++ -c %CXXFLAGS% server/layers/L4_drivers/spi/spi_manager.cpp -o build/spi_manager.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile spi_manager.cpp & exit /b 1)
 arm-none-eabi-g++ -c %CXXFLAGS% server/foundation/F_util/interface_trace.cpp -o build/interface_trace.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile interface_trace.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% server/foundation/F_platform/interfaces/async_event_types.cpp -o build/async_event_types.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile async_event_types.cpp & exit /b 1)
 
 echo [20/27] Assembling startup_stm32f401xe.s...
 arm-none-eabi-gcc -c %ASFLAGS% server/foundation/F_platform/startup/startup_stm32f401xe.s -o build/startup_stm32f401xe.o
@@ -214,7 +216,7 @@ set "OBJS=%OBJS% build/motor_task.o build/encoder_task.o build/display_task.o bu
 set "OBJS=%OBJS% build/tick_timer.o build/command_queue.o build/device_config.o build/control_mode.o build/motor_config.o build/motion_service.o build/safety_service.o build/config_service.o build/trace.o build/event_service.o build/flash_image_service.o build/indicator_service.o build/unit_conversion.o build/timing_service.o build/pid_controller.o build/following_supervisor.o build/sysid.o build/speed_trim_controller.o"
 set "OBJS=%OBJS% build/ui_mode.o build/menu_screen.o build/terminal_screen.o build/screen_manager.o"
 set "OBJS=%OBJS% build/boot_color_screen.o build/device_info_screen.o build/encoder_screen.o build/motion_screen.o build/config_screen.o build/graph_screen.o build/image_view_screen.o build/trace_screen.o build/task_monitor_screen.o build/dispatcher_screen.o build/arch_screen.o"
-set "OBJS=%OBJS% build/spi_manager.o build/interface_trace.o"
+set "OBJS=%OBJS% build/spi_manager.o build/interface_trace.o build/async_event_types.o"
 set "OBJS=%OBJS% build/startup_stm32f401xe.o"
 
 echo [22/26] Linking...

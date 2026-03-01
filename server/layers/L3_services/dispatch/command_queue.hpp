@@ -20,7 +20,7 @@
 
 #include "F_platform/interfaces/ilock.hpp"
 #include "F_platform/interfaces/iclock.hpp"
-#include "L3_services/dispatch/imotor_command_sink.hpp"
+#include "F_platform/interfaces/imotor_command_sink.hpp"
 #include <stddef.h>
 #include <stdint.h>
 

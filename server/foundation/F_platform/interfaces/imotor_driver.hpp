@@ -2,9 +2,9 @@
  * @file imotor_driver.hpp
  * @brief Interface for motor driver hardware abstraction
  *
- * Defined in L3 (consumer owns interface). Implemented by
- * PowerSTEP01Adapter in Foundation. Enables mock injection
- * for unit testing motor_task logic without real hardware.
+ * Foundation interface for motor driver hardware abstraction.
+ * Implemented by PowerSTEP01Adapter in wiring/. Enables mock
+ * injection for unit testing motor_task logic without real hardware.
  */
 
 #pragma once

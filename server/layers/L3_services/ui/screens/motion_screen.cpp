@@ -6,7 +6,7 @@
 #include "ui/screens/motion_screen.hpp"
 #include "L4_drivers/devices/lcd_st7789.hpp"
 #include "L3_services/motion/motion_service.hpp"
-#include "L2_protocol/telemetry.hpp"
+#include "F_platform/interfaces/telemetry.hpp"
 #include <stdio.h>
 
 namespace UI {

@@ -1,11 +1,10 @@
 /**
  * @file async_event_types.hpp
- * @brief Core event data types (layer-independent)
+ * @brief Core event data types, constants, and helpers (layer-independent)
  *
- * EventType enum and AsyncEvent struct live here in Foundation
- * so they can be used by IQueue<AsyncEvent, N> without pulling
- * in L2 protocol headers. Protocol-specific constants (masks,
- * thresholds, codec functions) remain in L2_protocol/async_event.hpp.
+ * EventType enum, AsyncEvent struct, enable-mask constants, and utility
+ * functions all live here in Foundation so both L2 (codec) and L3
+ * (event_service) can use them without cross-layer violations.
  */
 
 #ifndef ASYNC_EVENT_TYPES_HPP
@@ -28,5 +27,24 @@ struct AsyncEvent {
     EventType type;
     uint16_t  statusReg;   // raw STATUS register at detection time
 };
+
+// Enable mask bits (one per event type)
+static constexpr uint8_t EVT_MASK_FAULT       = (1 << 0);
+static constexpr uint8_t EVT_MASK_FAULT_CLR   = (1 << 1);
+static constexpr uint8_t EVT_MASK_STALL       = (1 << 2);
+static constexpr uint8_t EVT_MASK_STALL_CLR   = (1 << 3);
+static constexpr uint8_t EVT_MASK_MOTION_DONE      = (1 << 4);
+static constexpr uint8_t EVT_MASK_FOLLOW_FAULT     = (1 << 5);
+static constexpr uint8_t EVT_MASK_FOLLOW_RECOVERY  = (1 << 6);
+static constexpr uint8_t EVT_MASK_FOLLOW_RECOVERED = (1 << 7);
+static constexpr uint8_t EVT_MASK_ALL              = 0xFF;
+
+// Reserved-slot threshold: informational events only enqueued when depth < this
+static constexpr uint8_t EVT_RESERVED_SLOT_THRESHOLD = 4;
+
+// Utility functions (defined in async_event_types.cpp)
+const char* eventTypeToString(EventType t);
+uint8_t eventTypeToMaskBit(EventType t);
+bool eventTypeIsCritical(EventType t);
 
 #endif // ASYNC_EVENT_TYPES_HPP

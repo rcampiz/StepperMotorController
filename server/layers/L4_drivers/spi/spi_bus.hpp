@@ -13,7 +13,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include "L4_drivers/spi/ispi_bus.hpp"
+#include "F_platform/interfaces/ispi_bus.hpp"
 
 /**
  * @brief SPI bus wrapper that delegates to an ISPIBus implementation
