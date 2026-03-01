@@ -8,7 +8,7 @@
 #include "L5_board/uart.hpp"
 
 #include "L4_drivers/spi/spi_bus.hpp"
-#include "L4_drivers/spi/spi_manager.hpp"
+#include "L5_board/spi/spi_manager.hpp"
 #include "L4_drivers/devices/powerstep01.hpp"
 #include "L4_drivers/devices/lcd_st7789.hpp"
 #include "L4_drivers/devices/flash_nor.hpp"

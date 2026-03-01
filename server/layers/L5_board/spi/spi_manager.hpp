@@ -20,7 +20,7 @@
 #include <stddef.h>
 #include <string.h>
 #include "X_vendor/CMSIS/stm32f401xe.h"
-#include "L4_drivers/spi/spi_hardware.hpp"
+#include "L5_board/spi/spi_hardware.hpp"
 #include "L5_board/board_pins.hpp"
 #include "F_platform/interfaces/ilock.hpp"
 

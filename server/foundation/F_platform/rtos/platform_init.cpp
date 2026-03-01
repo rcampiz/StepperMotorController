@@ -10,6 +10,7 @@
 #include "F_platform/rtos/freertos_lock.hpp"
 #include "F_platform/rtos/freertos_clock.hpp"
 #include "F_platform/rtos/freertos_queue.hpp"
+#include "F_platform/rtos/freertos_task_stats.hpp"
 
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
@@ -35,6 +36,7 @@ static FreeRTOSMutex s_uiModeLock;
 static FreeRTOSMutex s_telemetryLock;
 static FreeRTOSClock s_clock;
 static FreeRTOSQueue<AsyncEvent, 8> s_eventQueue;
+static FreeRTOSTaskStats s_taskStats;
 
 static Platform::Resources s_resources;
 
@@ -57,7 +59,8 @@ void init()
         &s_spi1Lock, &s_spi2Lock,
         &s_controlModeLock, &s_commandQueueLock,
         &s_uiModeLock, &s_telemetryLock,
-        &s_clock, &s_eventQueue
+        &s_clock, &s_eventQueue,
+        &s_taskStats
     };
 }
 

@@ -12,6 +12,7 @@
 namespace Services::Safety {
 
 Result emergencyStop() {
+    Trace::ServiceScope svc(Trace::SVC_SAFETY);
     TRACE_ENTRY("SAFE:ESTOP");
     Services::g_commandQueue.emergencyStop();
     TRACE_EXIT("SAFE:ESTOP");
@@ -19,6 +20,7 @@ Result emergencyStop() {
 }
 
 Result clearFault(char *activeFaults, uint32_t activeFaultsSize) {
+    Trace::ServiceScope svc(Trace::SVC_SAFETY);
     TRACE_ENTRY("SAFE:CLR");
     // Safety check: read powerSTEP01 STATUS register before allowing clear
     uint16_t statusReg = g_safetyActions->getMotorStatusReg();
@@ -50,6 +52,7 @@ Result clearFault(char *activeFaults, uint32_t activeFaultsSize) {
 }
 
 Result forceClearFault() {
+    Trace::ServiceScope svc(Trace::SVC_SAFETY);
     TRACE_ENTRY("SAFE:FCLR");
     // Skip hardware fault check — force clear regardless
     Services::QueueResult result = Services::g_commandQueue.clearFault();
@@ -63,6 +66,7 @@ Result forceClearFault() {
 }
 
 uint32_t setHeartbeatTimeout(uint32_t ms) {
+    Trace::ServiceScope svc(Trace::SVC_SAFETY);
     TRACE_ENTRY("SAFE:HB:TO", ms);
     uint32_t accepted = g_safetyActions->setHeartbeatTimeout(ms);
     TRACE_EXIT("SAFE:HB:TO", accepted);
@@ -70,6 +74,7 @@ uint32_t setHeartbeatTimeout(uint32_t ms) {
 }
 
 void heartbeatReceived(uint32_t seq) {
+    Trace::ServiceScope svc(Trace::SVC_SAFETY);
     TRACE_ENTRY("SAFE:HB", seq);
     g_safetyActions->heartbeatReceived(seq);
     TRACE_EXIT("SAFE:HB", seq);

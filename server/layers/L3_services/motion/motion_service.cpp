@@ -38,9 +38,8 @@ static int32_t speedOverrideRaw(uint32_t stepsPerSec) {
 }
 
 Result run(uint32_t stepsPerSec, bool forward) {
+    Trace::ServiceScope svc(Trace::SVC_MOTION);
     TRACE_ENTRY("MOT:RUN", stepsPerSec);
-    // Convert steps/s to raw register value for powerSTEP01
-    // Formula: raw = steps_s * 1048576 / 15625
     uint32_t speedRaw = static_cast<uint32_t>(
         (static_cast<uint64_t>(stepsPerSec) * 1048576ULL) / 15625ULL);
     Result r = sendCmd(MotorCmdType::Run,
@@ -51,6 +50,7 @@ Result run(uint32_t stepsPerSec, bool forward) {
 }
 
 Result move(int32_t steps, uint32_t maxSpeedStepsPerSec) {
+    Trace::ServiceScope svc(Trace::SVC_MOTION);
     TRACE_ENTRY("MOT:MOVE", static_cast<uint32_t>(steps));
     Result r = sendCmd(MotorCmdType::Move, steps,
                        speedOverrideRaw(maxSpeedStepsPerSec));
@@ -59,6 +59,7 @@ Result move(int32_t steps, uint32_t maxSpeedStepsPerSec) {
 }
 
 Result goTo(int32_t position, uint32_t maxSpeedStepsPerSec) {
+    Trace::ServiceScope svc(Trace::SVC_MOTION);
     TRACE_ENTRY("MOT:GOTO", static_cast<uint32_t>(position));
     Result r = sendCmd(MotorCmdType::GoTo, position,
                        speedOverrideRaw(maxSpeedStepsPerSec));
@@ -67,6 +68,7 @@ Result goTo(int32_t position, uint32_t maxSpeedStepsPerSec) {
 }
 
 Result stop(bool hard) {
+    Trace::ServiceScope svc(Trace::SVC_MOTION);
     TRACE_ENTRY("MOT:STOP", hard ? 1U : 0U);
     Result r = sendCmd(hard ? MotorCmdType::HardStop
                             : MotorCmdType::SoftStop);
@@ -75,9 +77,8 @@ Result stop(bool hard) {
 }
 
 Result enable() {
+    Trace::ServiceScope svc(Trace::SVC_MOTION);
     TRACE_ENTRY("MOT:EN");
-    // HardStop exits Hi-Z and enables the gate driver (holds position).
-    // Then read STATUS to clear any latched fault flags.
     Result r = sendCmd(MotorCmdType::HardStop);
     if (r == Result::OK) {
         sendCmd(MotorCmdType::GetStatus);
@@ -87,6 +88,7 @@ Result enable() {
 }
 
 Result disable() {
+    Trace::ServiceScope svc(Trace::SVC_MOTION);
     TRACE_ENTRY("MOT:DIS");
     Result r = sendCmd(MotorCmdType::SoftHiZ);
     TRACE_EXIT("MOT:DIS", static_cast<uint32_t>(r));
@@ -94,6 +96,7 @@ Result disable() {
 }
 
 Result home(uint32_t maxSpeedStepsPerSec) {
+    Trace::ServiceScope svc(Trace::SVC_MOTION);
     TRACE_ENTRY("MOT:HOME");
     Result r = sendCmd(MotorCmdType::GoHome, 0,
                        speedOverrideRaw(maxSpeedStepsPerSec));
@@ -102,6 +105,7 @@ Result home(uint32_t maxSpeedStepsPerSec) {
 }
 
 Result zero() {
+    Trace::ServiceScope svc(Trace::SVC_MOTION);
     TRACE_ENTRY("MOT:ZERO");
     Result r = sendCmd(MotorCmdType::ResetPos);
     TRACE_EXIT("MOT:ZERO", static_cast<uint32_t>(r));

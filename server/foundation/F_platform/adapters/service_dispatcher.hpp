@@ -23,10 +23,15 @@
 #include "L3_services/dispatch/event_service.hpp"
 #include "L3_services/infra/tick_timer.hpp"
 #include "L3_services/infra/timing_service.hpp"
-#include "F_platform/tasks/encoder_task.hpp"
+#include "L3_services/motion/iencoder.hpp"
 
 class ServiceDispatcher : public Comms::ICommandDispatcher {
 public:
+    explicit ServiceDispatcher(Services::IEncoder* encoder = nullptr)
+        : m_encoder(encoder) {}
+
+    void setEncoder(Services::IEncoder* encoder) { m_encoder = encoder; }
+
     // =================================================================
     // Motion
     // =================================================================
@@ -348,11 +353,12 @@ public:
     // =================================================================
 
     bool isEncoderAvailable() override {
-        return Tasks::EncoderTask_IsAvailable();
+        return m_encoder != nullptr && m_encoder->isAvailable();
     }
 
     void getEncoderState(int32_t& count, int32_t& velocity, bool& indexSeen) override {
-        Tasks::EncoderState st = Tasks::EncoderTask_GetState();
+        if (m_encoder == nullptr) { count = 0; velocity = 0; indexSeen = false; return; }
+        Services::EncoderSnapshot st = m_encoder->getState();
         count = static_cast<int32_t>(st.count);
         velocity = st.velocity;
         indexSeen = st.indexSeen;
@@ -379,7 +385,7 @@ public:
     // =================================================================
 
     void encoderResetCount() override {
-        Tasks::EncoderTask_ResetCount();
+        if (m_encoder != nullptr) m_encoder->resetCount();
     }
 
     // =================================================================
@@ -654,4 +660,6 @@ public:
         queueDepth = st.queueDepth;
     }
 
+private:
+    Services::IEncoder* m_encoder;
 };

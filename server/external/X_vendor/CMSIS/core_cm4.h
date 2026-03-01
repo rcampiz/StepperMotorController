@@ -76,9 +76,34 @@ typedef struct {
 #define NVIC_BASE           (SCS_BASE +  0x0100UL)
 #define SCB_BASE            (SCS_BASE +  0x0D00UL)
 
+// DWT (Data Watchpoint and Trace) — cycle counter for profiling
+typedef struct {
+    __IO uint32_t CTRL;
+    __IO uint32_t CYCCNT;
+    __IO uint32_t CPICNT;
+    __IO uint32_t EXCCNT;
+    __IO uint32_t SLEEPCNT;
+    __IO uint32_t LSUCNT;
+    __IO uint32_t FOLDCNT;
+    __I  uint32_t PCSR;
+} DWT_Type;
+
+// CoreDebug — debug control (needed to enable DWT)
+typedef struct {
+    __IO uint32_t DHCSR;
+    __O  uint32_t DCRSR;
+    __IO uint32_t DCRDR;
+    __IO uint32_t DEMCR;
+} CoreDebug_Type;
+
 #define SCB                 ((SCB_Type       *)     SCB_BASE)
 #define SysTick             ((SysTick_Type   *)     SysTick_BASE)
 #define NVIC                ((NVIC_Type      *)     NVIC_BASE)
+#define DWT                 ((DWT_Type       *)     DWT_BASE)
+#define CoreDebug           ((CoreDebug_Type *)     CoreDebug_BASE)
+
+#define CoreDebug_DEMCR_TRCENA_Msk    (1UL << 24)
+#define DWT_CTRL_CYCCNTENA_Msk        (1UL)
 
 // Core functions
 static inline void __enable_irq(void)  { __asm volatile ("cpsie i" : : : "memory"); }

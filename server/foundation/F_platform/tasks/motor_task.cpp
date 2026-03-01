@@ -5,9 +5,15 @@
 
 #include "F_platform/tasks/motor_task.hpp"
 #include <stdint.h>
+#include "L3_services/motion/imotor_driver.hpp"
 #include "L4_drivers/devices/powerstep01.hpp"
 #include "L4_drivers/spi/spi_bus.hpp"
-#include "L4_drivers/spi/spi_manager.hpp"
+#include "L5_board/spi/spi_manager.hpp"
+#include "F_platform/adapters/powerstep01_adapter.hpp"
+#include "F_util/interface_trace.hpp"
+#ifdef ENABLE_INTERFACE_TRACE
+#include "F_platform/adapters/traced/traced_motor_driver.hpp"
+#endif
 #include "L2_protocol/telemetry.hpp"
 #include "L3_services/motion/motor_config.hpp"
 #include "L3_services/dispatch/event_service.hpp"
@@ -15,6 +21,7 @@
 #include "L3_services/motion/control_mode.hpp"
 #include "L3_services/motion/sysid.hpp"
 #include "L3_services/motion/speed_trim_controller.hpp"
+#include "L3_services/infra/trace.hpp"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/queue.h"
@@ -29,7 +36,8 @@ TaskHandle_t g_motorTaskHandle = nullptr;
 
 // Motor driver instance (created in init)
 static SPIBus* s_spi = nullptr;
-static PowerSTEP01* s_motor = nullptr;
+static PowerSTEP01* s_rawMotor = nullptr;
+static Services::IMotorDriver* s_motor = nullptr;
 
 // Temporary MAX_SPEED override for GOTO/MOVE/HOME with speed parameter
 static uint32_t s_savedMaxSpeed = 0;
@@ -47,14 +55,14 @@ static bool s_continuousRunActive = false;
 static Services::SpeedTrimResult s_lastTrimResult = {};
 
 static void applySpeedOverride(uint32_t rawMaxSpeed) {
-    s_savedMaxSpeed = s_motor->getParam(PowerSTEP01::Reg::MAX_SPEED);
-    s_motor->setParam(PowerSTEP01::Reg::MAX_SPEED, rawMaxSpeed);
+    s_savedMaxSpeed = s_motor->getParam(Services::MotorReg::MAX_SPEED);
+    s_motor->setParam(Services::MotorReg::MAX_SPEED, rawMaxSpeed);
     s_speedOverrideActive = true;
 }
 
 static void restoreSpeedIfOverridden() {
     if (s_speedOverrideActive) {
-        s_motor->setParam(PowerSTEP01::Reg::MAX_SPEED, s_savedMaxSpeed);
+        s_motor->setParam(Services::MotorReg::MAX_SPEED, s_savedMaxSpeed);
         s_speedOverrideActive = false;
     }
 }
@@ -79,11 +87,20 @@ bool MotorTask_Init()
     }
 
     // Initialize PowerSTEP01 motor driver
-    s_motor = new PowerSTEP01(*s_spi);
-    if (s_motor == nullptr) {
+    s_rawMotor = new PowerSTEP01(*s_spi);
+    if (s_rawMotor == nullptr) {
         return false;
     }
-    s_motor->init();
+    s_rawMotor->init();
+
+    // Wrap in IMotorDriver adapter
+    static PowerSTEP01Adapter s_adapter(*s_rawMotor);
+#ifdef ENABLE_INTERFACE_TRACE
+    static TracedMotorDriver s_tracedMotor(s_adapter);
+    s_motor = &s_tracedMotor;
+#else
+    s_motor = &s_adapter;
+#endif
 
     // Load motor configuration from flash (or apply defaults)
     Services::g_motorConfig.init();
@@ -116,8 +133,22 @@ void vMotorTask(void* pvParameters)
     constexpr TickType_t STATUS_UPDATE_PERIOD = pdMS_TO_TICKS(50);
 
     while (true) {
+        Trace::setCurrentTaskId(Trace::TASK_MOTOR);
+
         // Wait for command with timeout (allows periodic status updates)
         if (xQueueReceive(g_motorCmdQueue, &cmd, STATUS_UPDATE_PERIOD) == pdTRUE) {
+            // Set service context based on command type
+            switch (cmd.type) {
+                case MotorCmdType::SetAccel:
+                case MotorCmdType::SetDecel:
+                case MotorCmdType::SetMaxSpeed:
+                    Trace::setCurrentServiceId(Trace::SVC_CONFIG);
+                    break;
+                default:
+                    Trace::setCurrentServiceId(Trace::SVC_MOTION);
+                    break;
+            }
+
             // Process command
             switch (cmd.type) {
                 case MotorCmdType::Move: {
@@ -259,19 +290,19 @@ void vMotorTask(void* pvParameters)
                     break;
 
                 case MotorCmdType::SetAccel:
-                    s_motor->setParam(PowerSTEP01::Reg::ACC, static_cast<uint32_t>(cmd.param1));
+                    s_motor->setParam(Services::MotorReg::ACC, static_cast<uint32_t>(cmd.param1));
                     break;
 
                 case MotorCmdType::SetDecel:
-                    s_motor->setParam(PowerSTEP01::Reg::DEC, static_cast<uint32_t>(cmd.param1));
+                    s_motor->setParam(Services::MotorReg::DEC, static_cast<uint32_t>(cmd.param1));
                     break;
 
                 case MotorCmdType::SetMaxSpeed:
-                    s_motor->setParam(PowerSTEP01::Reg::MAX_SPEED, static_cast<uint32_t>(cmd.param1));
+                    s_motor->setParam(Services::MotorReg::MAX_SPEED, static_cast<uint32_t>(cmd.param1));
                     break;
 
                 case MotorCmdType::SetMark:
-                    s_motor->setParam(PowerSTEP01::Reg::MARK, static_cast<uint32_t>(cmd.param1));
+                    s_motor->setParam(Services::MotorReg::MARK, static_cast<uint32_t>(cmd.param1));
                     break;
 
                 case MotorCmdType::GetStatus:
@@ -287,9 +318,9 @@ void vMotorTask(void* pvParameters)
             lastStatusUpdate = now;
 
             // Read motor status and update telemetry
-            PowerSTEP01::Status status = s_motor->getStatus();
-            uint32_t rawPos = s_motor->getParam(PowerSTEP01::Reg::ABS_POS);
-            uint32_t rawSpeed = s_motor->getParam(PowerSTEP01::Reg::SPEED);
+            Services::MotorStatus status = s_motor->getStatus();
+            uint32_t rawPos = s_motor->getParam(Services::MotorReg::ABS_POS);
+            uint32_t rawSpeed = s_motor->getParam(Services::MotorReg::SPEED);
 
             // Convert raw SPEED register (20-bit) to steps/s
             // Formula: steps_s = raw * 15625 / 1048576
@@ -327,6 +358,7 @@ void vMotorTask(void* pvParameters)
             int32_t followError = cmdTicks - measTicks;
 
             // System identification — overrides normal control when active
+            Trace::setCurrentServiceId(Trace::SVC_SYSID);
             bool sysidActive = false;
             {
                 auto& sysid = Services::g_sysId;
@@ -352,6 +384,7 @@ void vMotorTask(void* pvParameters)
             }
 
             // Speed-trim controller (skipped during sysid)
+            Trace::setCurrentServiceId(Trace::SVC_MOTION);
             if (!sysidActive && Services::g_speedTrim.isActive()) {
                 Services::SpeedTrimInput ti{};
                 ti.encVelTps       = snap.encoder.velocity;
@@ -360,7 +393,7 @@ void vMotorTask(void* pvParameters)
                 ti.forward         = s_lastRunForward;
                 ti.fullStepsPerRev = fpr;
                 ti.encoderPPR      = encPPR;
-                ti.maxSpeedRaw     = s_motor->getParam(PowerSTEP01::Reg::MAX_SPEED);
+                ti.maxSpeedRaw     = s_motor->getParam(Services::MotorReg::MAX_SPEED);
                 ti.dtSec           = 0.050f;
 
                 Services::SpeedTrimResult trimResult = Services::g_speedTrim.update(ti);
@@ -371,6 +404,7 @@ void vMotorTask(void* pvParameters)
             }
 
             // Following Error Supervisor evaluation (skipped during sysid)
+            Trace::setCurrentServiceId(Trace::SVC_SAFETY);
             if (!sysidActive) {
                 auto mode = Services::g_controlMode.getMode();
                 auto& sup = Services::g_supervisor;
@@ -390,7 +424,7 @@ void vMotorTask(void* pvParameters)
                 si.baseSpeedRaw    = 0;  // Stored internally by supervisor
                 si.motorBusy       = status.busy();
                 si.forward         = s_lastRunForward;
-                si.maxSpeedRaw     = s_motor->getParam(PowerSTEP01::Reg::MAX_SPEED);
+                si.maxSpeedRaw     = s_motor->getParam(Services::MotorReg::MAX_SPEED);
                 si.fullStepsPerRev = fpr;
                 si.encoderPPR      = encPPR;
                 si.dtSec           = 0.050f;
@@ -555,16 +589,16 @@ bool MotorTask_GetDebugInfo(MotorDebugInfo& info)
 
     // Read all debug registers directly
     info.status = s_motor->getStatus().raw;
-    info.kvalHold = static_cast<uint8_t>(s_motor->getParam(PowerSTEP01::Reg::KVAL_HOLD));
-    info.kvalRun = static_cast<uint8_t>(s_motor->getParam(PowerSTEP01::Reg::KVAL_RUN));
-    info.kvalAcc = static_cast<uint8_t>(s_motor->getParam(PowerSTEP01::Reg::KVAL_ACC));
-    info.kvalDec = static_cast<uint8_t>(s_motor->getParam(PowerSTEP01::Reg::KVAL_DEC));
-    info.accel = static_cast<uint16_t>(s_motor->getParam(PowerSTEP01::Reg::ACC));
-    info.decel = static_cast<uint16_t>(s_motor->getParam(PowerSTEP01::Reg::DEC));
-    info.maxSpeed = static_cast<uint16_t>(s_motor->getParam(PowerSTEP01::Reg::MAX_SPEED));
+    info.kvalHold = static_cast<uint8_t>(s_motor->getParam(Services::MotorReg::KVAL_HOLD));
+    info.kvalRun = static_cast<uint8_t>(s_motor->getParam(Services::MotorReg::KVAL_RUN));
+    info.kvalAcc = static_cast<uint8_t>(s_motor->getParam(Services::MotorReg::KVAL_ACC));
+    info.kvalDec = static_cast<uint8_t>(s_motor->getParam(Services::MotorReg::KVAL_DEC));
+    info.accel = static_cast<uint16_t>(s_motor->getParam(Services::MotorReg::ACC));
+    info.decel = static_cast<uint16_t>(s_motor->getParam(Services::MotorReg::DEC));
+    info.maxSpeed = static_cast<uint16_t>(s_motor->getParam(Services::MotorReg::MAX_SPEED));
 
     // Sign-extend 22-bit position
-    uint32_t rawPos = s_motor->getParam(PowerSTEP01::Reg::ABS_POS);
+    uint32_t rawPos = s_motor->getParam(Services::MotorReg::ABS_POS);
     if ((rawPos & 0x200000) != 0) {
         info.absPos = static_cast<int32_t>(rawPos | 0xFFC00000U);
     } else {
@@ -572,12 +606,12 @@ bool MotorTask_GetDebugInfo(MotorDebugInfo& info)
     }
 
     // Readback protection/config registers for verification
-    info.ocdTh = static_cast<uint8_t>(s_motor->getParam(PowerSTEP01::Reg::OCD_TH));
-    info.stallTh = static_cast<uint8_t>(s_motor->getParam(PowerSTEP01::Reg::STALL_TH));
-    info.config = static_cast<uint16_t>(s_motor->getParam(PowerSTEP01::Reg::CONFIG));
-    info.alarmEn = static_cast<uint8_t>(s_motor->getParam(PowerSTEP01::Reg::ALARM_EN));
-    info.fsSpd = static_cast<uint16_t>(s_motor->getParam(PowerSTEP01::Reg::FS_SPD));
-    info.stepMode = static_cast<uint8_t>(s_motor->getParam(PowerSTEP01::Reg::STEP_MODE)) & 0x07;
+    info.ocdTh = static_cast<uint8_t>(s_motor->getParam(Services::MotorReg::OCD_TH));
+    info.stallTh = static_cast<uint8_t>(s_motor->getParam(Services::MotorReg::STALL_TH));
+    info.config = static_cast<uint16_t>(s_motor->getParam(Services::MotorReg::CONFIG));
+    info.alarmEn = static_cast<uint8_t>(s_motor->getParam(Services::MotorReg::ALARM_EN));
+    info.fsSpd = static_cast<uint16_t>(s_motor->getParam(Services::MotorReg::FS_SPD));
+    info.stepMode = static_cast<uint8_t>(s_motor->getParam(Services::MotorReg::STEP_MODE)) & 0x07;
 
     return true;
 }
@@ -591,21 +625,21 @@ bool MotorTask_ApplyConfig()
     const auto& cfg = Services::g_motorConfig.getConfig();
 
     // Apply KVAL values
-    s_motor->setParam(PowerSTEP01::Reg::KVAL_HOLD, cfg.kvalHold);
-    s_motor->setParam(PowerSTEP01::Reg::KVAL_RUN, cfg.kvalRun);
-    s_motor->setParam(PowerSTEP01::Reg::KVAL_ACC, cfg.kvalAcc);
-    s_motor->setParam(PowerSTEP01::Reg::KVAL_DEC, cfg.kvalDec);
+    s_motor->setParam(Services::MotorReg::KVAL_HOLD, cfg.kvalHold);
+    s_motor->setParam(Services::MotorReg::KVAL_RUN, cfg.kvalRun);
+    s_motor->setParam(Services::MotorReg::KVAL_ACC, cfg.kvalAcc);
+    s_motor->setParam(Services::MotorReg::KVAL_DEC, cfg.kvalDec);
 
     // Apply protection thresholds
-    s_motor->setParam(PowerSTEP01::Reg::OCD_TH, cfg.ocdThreshold);
-    s_motor->setParam(PowerSTEP01::Reg::STALL_TH, cfg.stallThreshold);
+    s_motor->setParam(Services::MotorReg::OCD_TH, cfg.ocdThreshold);
+    s_motor->setParam(Services::MotorReg::STALL_TH, cfg.stallThreshold);
 
     // Apply motion parameters
-    s_motor->setParam(PowerSTEP01::Reg::ACC, cfg.acceleration);
-    s_motor->setParam(PowerSTEP01::Reg::DEC, cfg.deceleration);
-    s_motor->setParam(PowerSTEP01::Reg::MAX_SPEED, cfg.maxSpeed);
-    s_motor->setParam(PowerSTEP01::Reg::MIN_SPEED, cfg.minSpeed);
-    s_motor->setParam(PowerSTEP01::Reg::FS_SPD, cfg.fsSpeed);
+    s_motor->setParam(Services::MotorReg::ACC, cfg.acceleration);
+    s_motor->setParam(Services::MotorReg::DEC, cfg.deceleration);
+    s_motor->setParam(Services::MotorReg::MAX_SPEED, cfg.maxSpeed);
+    s_motor->setParam(Services::MotorReg::MIN_SPEED, cfg.minSpeed);
+    s_motor->setParam(Services::MotorReg::FS_SPD, cfg.fsSpeed);
 
     // Build ALARM_EN register based on fault enable flags
     // ALARM_EN bits: 0=OCD, 1=TH_SD, 2=TH_WRN, 3=UVLO, 4=UVLO_ADC, 5=STALL_A, 6=STALL_B, 7=CMD_ERR
@@ -633,12 +667,12 @@ bool MotorTask_ApplyConfig()
     if (cfg.faultEnable.cmdErr) {
         alarmEn |= (1 << 7);
     }
-    s_motor->setParam(PowerSTEP01::Reg::ALARM_EN, alarmEn);
+    s_motor->setParam(Services::MotorReg::ALARM_EN, alarmEn);
 
     // Apply microstep mode (read-modify-write to preserve CM_VM and SYNC bits)
-    uint32_t stepMode = s_motor->getParam(PowerSTEP01::Reg::STEP_MODE);
+    uint32_t stepMode = s_motor->getParam(Services::MotorReg::STEP_MODE);
     stepMode = (stepMode & 0xF8) | (cfg.stepMode & 0x07);
-    s_motor->setParam(PowerSTEP01::Reg::STEP_MODE, stepMode);
+    s_motor->setParam(Services::MotorReg::STEP_MODE, stepMode);
 
     // Clear any latched fault bits from the register write sequence
     s_motor->getStatus();
@@ -660,12 +694,12 @@ bool MotorTask_SetStepModeSafe(uint8_t mode, uint8_t& readback)
     vTaskDelay(pdMS_TO_TICKS(5));
 
     // Read-modify-write STEP_MODE (preserve CM_VM and SYNC_SEL bits)
-    uint32_t reg = s_motor->getParam(PowerSTEP01::Reg::STEP_MODE);
+    uint32_t reg = s_motor->getParam(Services::MotorReg::STEP_MODE);
     reg = (reg & 0xF8) | (mode & 0x07);
-    s_motor->setParam(PowerSTEP01::Reg::STEP_MODE, reg);
+    s_motor->setParam(Services::MotorReg::STEP_MODE, reg);
 
     // Read back and verify
-    uint32_t verify = s_motor->getParam(PowerSTEP01::Reg::STEP_MODE);
+    uint32_t verify = s_motor->getParam(Services::MotorReg::STEP_MODE);
     readback = static_cast<uint8_t>(verify & 0x07);
 
     // Clear any latched fault bits

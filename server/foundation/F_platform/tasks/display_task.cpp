@@ -7,7 +7,7 @@
 #include "L4_drivers/devices/lcd_st7789.hpp"
 #include "L4_drivers/devices/joystick.hpp"
 #include "L4_drivers/spi/spi_bus.hpp"
-#include "L4_drivers/spi/spi_manager.hpp"
+#include "L5_board/spi/spi_manager.hpp"
 #include "L2_protocol/telemetry.hpp"
 #include "L3_services/infra/indicator_service.hpp"
 #include "ui/ui_mode.hpp"
@@ -21,7 +21,11 @@
 #include "ui/screens/graph_screen.hpp"
 #include "ui/screens/image_view_screen.hpp"
 #include "ui/screens/trace_screen.hpp"
+#include "ui/screens/task_monitor_screen.hpp"
+#include "ui/screens/dispatcher_screen.hpp"
+#include "ui/screens/arch_screen.hpp"
 #include "L3_services/infra/flash_image_service.hpp"
+#include "L3_services/infra/trace.hpp"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
 #include <stddef.h>
@@ -48,6 +52,9 @@ static UI::ImageViewScreen s_imageViewScreen;
 static uint32_t s_imageSlotMap[UI::MENU_MAX_ITEMS];
 static uint32_t s_activeSlot = 0;
 static UI::TraceScreen s_traceScreen;
+static UI::TaskMonitorScreen s_taskMonitorScreen;
+static UI::DispatcherScreen s_dispatcherScreen;
+static UI::ArchScreen s_archScreen;
 
 // Forward declaration
 static void populateImageMenu();
@@ -133,13 +140,24 @@ static bool onMainMenuSelect(uint8_t index) {
         s_screenManager.push(&s_imageMenu);
     } else if (index == 7) {
         s_screenManager.push(&s_traceScreen);
+    } else if (index == 8) {
+        s_screenManager.push(&s_taskMonitorScreen);
+    } else if (index == 9) {
+        s_screenManager.push(&s_dispatcherScreen);
+    } else if (index == 10) {
+        s_screenManager.push(&s_archScreen);
     }
     return true;  // Stay in menu (it remains on the stack under the new screen)
 }
 
 // Long-press detection
 static uint8_t s_centerHoldCount = 0;
-static constexpr uint8_t LONG_PRESS_POLLS = 5;  // 500ms at 10Hz
+static constexpr uint8_t LONG_PRESS_POLLS = 20; // 1000ms at 20Hz
+
+// Auto-repeat for held directional buttons (UP/DOWN/LEFT/RIGHT)
+static uint8_t s_holdCount = 0;
+static constexpr uint8_t HOLD_DELAY_POLLS = 8;   // 400ms before repeat starts
+static constexpr uint8_t HOLD_REPEAT_POLLS = 2;  // 100ms between repeats
 
 // Driver instances (created in init)
 static SPIBus* s_spi = nullptr;
@@ -183,6 +201,9 @@ bool DisplayTask_Init()
     s_mainMenu.addItem("Telemetry Graph");
     s_mainMenu.addItem("Flash Images");
     s_mainMenu.addItem("Trace Monitor");
+    s_mainMenu.addItem("Task Monitor");
+    s_mainMenu.addItem("Dispatcher");
+    s_mainMenu.addItem("Architecture");
     s_mainMenu.setSelectionCallback(onMainMenuSelect);
 
     // Initialize screen manager with main menu as root
@@ -202,6 +223,9 @@ void vDisplayTask(void* pvParameters)
     Joystick::Direction lastDir = Joystick::Direction::None;
 
     while (true) {
+        Trace::setCurrentTaskId(Trace::TASK_DISPLAY);
+        Trace::setCurrentServiceId(Trace::SVC_UI);
+
         // Handle joystick input
         if (s_joystick != nullptr) {
             Joystick::Direction dir = s_joystick->readDirection();
@@ -239,6 +263,15 @@ void vDisplayTask(void* pvParameters)
                         s_screenManager.handleInput(convertDirection(dir), true);
                     }
                     lastDir = dir;
+                    s_holdCount = 0;
+                } else if (dir == Joystick::Direction::Up
+                        || dir == Joystick::Direction::Down) {
+                    // Auto-repeat for held UP/DOWN only (LEFT/RIGHT switch modes)
+                    s_holdCount++;
+                    if (s_holdCount >= HOLD_DELAY_POLLS
+                        && (s_holdCount % HOLD_REPEAT_POLLS) == 0) {
+                        s_screenManager.handleInput(convertDirection(dir), true);
+                    }
                 }
             }
         }

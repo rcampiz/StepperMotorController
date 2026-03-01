@@ -45,8 +45,16 @@
 #define configUSE_MALLOC_FAILED_HOOK            1
 #define configUSE_APPLICATION_TASK_TAG          1
 #define configUSE_COUNTING_SEMAPHORES           1
-#define configGENERATE_RUN_TIME_STATS           0
+#define configGENERATE_RUN_TIME_STATS           1
 #define configRECORD_STACK_HIGH_ADDRESS         1
+
+/* Run-time stats: DWT CYCCNT (84 MHz, wraps ~51s — safe for delta accumulation) */
+#if defined(__ICCARM__) || defined(__CC_ARM) || defined(__GNUC__)
+  extern void vConfigureTimerForRunTimeStats(void);
+  extern uint32_t ulGetRunTimeCounterValue(void);
+#endif
+#define portCONFIGURE_TIMER_FOR_RUN_TIME_STATS()  vConfigureTimerForRunTimeStats()
+#define portGET_RUN_TIME_COUNTER_VALUE()           ulGetRunTimeCounterValue()
 
 /* Co-routine definitions. */
 #define configUSE_CO_ROUTINES                   0

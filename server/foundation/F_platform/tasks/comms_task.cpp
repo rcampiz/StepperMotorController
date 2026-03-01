@@ -10,14 +10,22 @@
 #include "L1_transport/rtt_transport.hpp"
 #include "L2_protocol/command_parser.hpp"
 #include "F_platform/adapters/service_dispatcher.hpp"
+#include "F_platform/adapters/encoder_adapter.hpp"
+#include "F_util/interface_trace.hpp"
+#ifdef ENABLE_INTERFACE_TRACE
+#include "F_platform/adapters/traced/traced_transport.hpp"
+#include "F_platform/adapters/traced/traced_encoder.hpp"
+#endif
 #include "L2_protocol/telemetry.hpp"
 #include "L2_protocol/event_codec.hpp"
+#include "L3_services/infra/trace.hpp"
 #include "L3_services/dispatch/command_queue.hpp"
 #include "L3_services/dispatch/event_service.hpp"
 #include "ui/ui_mode.hpp"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
 #include <stdint.h>
+#include <string.h>
 
 namespace Tasks {
 
@@ -100,9 +108,23 @@ bool CommsTask_Init(TransportType transport)
         return false;
     }
 
+#ifdef ENABLE_INTERFACE_TRACE
+    // Wrap transport in traced decorator
+    static TracedTransport tracedTransport(*s_transport);
+    Comms::ITransport& activeTransport = tracedTransport;
+#else
+    Comms::ITransport& activeTransport = *s_transport;
+#endif
+
     // Create command dispatcher and parser
-    static ServiceDispatcher dispatcher;
-    s_parser = new Comms::CommandParser(*s_transport, dispatcher);
+    static EncoderAdapter encoderAdapter;
+#ifdef ENABLE_INTERFACE_TRACE
+    static TracedEncoder tracedEncoder(encoderAdapter);
+    static ServiceDispatcher dispatcher(&tracedEncoder);
+#else
+    static ServiceDispatcher dispatcher(&encoderAdapter);
+#endif
+    s_parser = new Comms::CommandParser(activeTransport, dispatcher);
     if (s_parser == nullptr) {
         return false;
     }
@@ -130,6 +152,9 @@ void vCommsTask(void* pvParameters)
     TickType_t lastWakeTime = xTaskGetTickCount();
 
     while (true) {
+        Trace::setCurrentTaskId(Trace::TASK_COMMS);
+        Trace::setCurrentServiceId(Trace::SVC_COMMS);
+
         // Process incoming commands
         if (s_parser != nullptr) {
             s_parser->process();
@@ -164,6 +189,7 @@ void vCommsTask(void* pvParameters)
             TickType_t elapsed = xTaskGetTickCount() - s_lastHeartbeatTick;
             if (elapsed >= pdMS_TO_TICKS(s_heartbeatTimeoutMs)) {
                 s_commsTimedOut = true;
+                ITRACE(ITrace::L3_F_SAFETY, "[L3~L3]", "hbTimeout");
                 Services::g_commandQueue.emergencyStop();
             }
         }
@@ -311,6 +337,26 @@ void CommsTask_ClearCommsTimeout()
 uint32_t CommsTask_GetLastEventSeq()
 {
     return s_eventSeq;
+}
+
+void CommsTask_GetDispatchStats(CommsDispatchStats& out)
+{
+    if (s_parser == nullptr) {
+        memset(&out, 0, sizeof(out));
+        return;
+    }
+    const Comms::DispatchStats& src = s_parser->getDispatchStats();
+    out.totalCommands = src.totalCommands;
+    out.unknownCommands = src.unknownCommands;
+    out.parseErrors = src.parseErrors;
+    out.recentCount = src.recentCount;
+    // Copy recent commands ring buffer (most recent first)
+    for (uint8_t i = 0; i < src.recentCount && i < 8; i++) {
+        uint8_t idx = (src.recentHead + Comms::DispatchStats::RECENT_SIZE - 1 - i)
+                      % Comms::DispatchStats::RECENT_SIZE;
+        strncpy(out.recentCmds[i], src.recentCmds[idx], 23);
+        out.recentCmds[i][23] = '\0';
+    }
 }
 
 } // namespace Tasks

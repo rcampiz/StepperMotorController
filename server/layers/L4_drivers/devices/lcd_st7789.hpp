@@ -556,6 +556,157 @@ public:
     }
 
     /**
+     * @brief DMA-render a full-width text line (clear + text in one pass)
+     *
+     * Renders text at scale=1 into a lineW × lineH window. Background fills
+     * the entire area — no separate fillRect needed. Single SPI lock for
+     * the whole line. Uses the same 480-byte rowBuf as drawString.
+     *
+     * @param x      Left edge
+     * @param y      Top edge
+     * @param lineW  Full line width in pixels
+     * @param lineH  Full line height in pixels (>= CHAR_HEIGHT)
+     * @param text   Null-terminated string (nullptr or "" for blank line)
+     * @param fg     Foreground color (RGB565)
+     * @param bg     Background color (RGB565)
+     */
+    void blitTextLine(uint16_t x, uint16_t y, uint16_t lineW, uint16_t lineH,
+                      const char* text, uint16_t fg, uint16_t bg) {
+        if (x + lineW > WIDTH || y + lineH > HEIGHT) return;
+
+        uint16_t fgInv = ~fg;
+        uint16_t bgInv = ~bg;
+        uint8_t bgH = static_cast<uint8_t>(bgInv >> 8);
+        uint8_t bgL = static_cast<uint8_t>(bgInv & 0xFF);
+
+        // Count printable characters that fit
+        uint16_t len = 0;
+        if (text != nullptr) {
+            while (text[len] && (len + 1) * CHAR_WIDTH <= lineW) len++;
+        }
+        uint16_t textW = len * CHAR_WIDTH;  // pixels covered by text
+
+        uint8_t rowBuf[WIDTH * 2];
+
+        m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
+        csLow();
+        setWindowLocked(x, y, static_cast<uint16_t>(x + lineW - 1),
+                        static_cast<uint16_t>(y + lineH - 1));
+
+        for (uint16_t row = 0; row < lineH; row++) {
+            uint16_t idx = 0;
+
+            if (row < 7 && len > 0) {
+                // Font data row — render characters
+                for (uint16_t c = 0; c < len; c++) {
+                    char cc = text[c];
+                    if (cc < 32 || cc > 126) cc = '?';
+                    const uint8_t* glyph = FONT_5X7[cc - 32];
+                    for (uint8_t col = 0; col < 5; col++) {
+                        uint16_t color = (glyph[col] & (1 << row)) ? fgInv : bgInv;
+                        rowBuf[idx++] = static_cast<uint8_t>(color >> 8);
+                        rowBuf[idx++] = static_cast<uint8_t>(color & 0xFF);
+                    }
+                    // Spacing column
+                    rowBuf[idx++] = bgH;
+                    rowBuf[idx++] = bgL;
+                }
+                // Pad remaining width with background
+                for (uint16_t px = textW; px < lineW; px++) {
+                    rowBuf[idx++] = bgH;
+                    rowBuf[idx++] = bgL;
+                }
+            } else {
+                // Background-only row (spacing, or extra line height)
+                for (uint16_t px = 0; px < lineW; px++) {
+                    rowBuf[idx++] = bgH;
+                    rowBuf[idx++] = bgL;
+                }
+            }
+
+            m_spi.writeOnly(rowBuf, idx);
+        }
+
+        csHigh();
+        m_spi.unlock();
+    }
+
+    /**
+     * @brief DMA blit a full-width text line with per-character foreground colors
+     *
+     * Same single-SPI-transaction approach as blitTextLine, but each character
+     * gets its own foreground color from the charColors array.
+     *
+     * @param charColors Array of RGB565 colors, one per character in text.
+     *                   Must have at least strlen(text) entries.
+     */
+    void blitTextLineColored(uint16_t x, uint16_t y, uint16_t lineW, uint16_t lineH,
+                             const char* text, const uint16_t* charColors, uint16_t bg) {
+        if (x + lineW > WIDTH || y + lineH > HEIGHT) return;
+
+        uint16_t bgInv = ~bg;
+        uint8_t bgH = static_cast<uint8_t>(bgInv >> 8);
+        uint8_t bgL = static_cast<uint8_t>(bgInv & 0xFF);
+
+        uint16_t len = 0;
+        if (text != nullptr) {
+            while (text[len] && (len + 1) * CHAR_WIDTH <= lineW) len++;
+        }
+        uint16_t textW = len * CHAR_WIDTH;
+
+        // Pre-invert all character colors
+        uint16_t fgInv[42];
+        for (uint16_t i = 0; i < len; i++) {
+            fgInv[i] = ~charColors[i];
+        }
+
+        uint8_t rowBuf[WIDTH * 2];
+
+        m_spi.lock();
+        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
+        csLow();
+        setWindowLocked(x, y, static_cast<uint16_t>(x + lineW - 1),
+                        static_cast<uint16_t>(y + lineH - 1));
+
+        for (uint16_t row = 0; row < lineH; row++) {
+            uint16_t idx = 0;
+
+            if (row < 7 && len > 0) {
+                for (uint16_t c = 0; c < len; c++) {
+                    char cc = text[c];
+                    if (cc < 32 || cc > 126) cc = '?';
+                    const uint8_t* glyph = FONT_5X7[cc - 32];
+                    uint16_t cfgInv = fgInv[c];
+                    for (uint8_t col = 0; col < 5; col++) {
+                        uint16_t color = (glyph[col] & (1 << row)) ? cfgInv : bgInv;
+                        rowBuf[idx++] = static_cast<uint8_t>(color >> 8);
+                        rowBuf[idx++] = static_cast<uint8_t>(color & 0xFF);
+                    }
+                    rowBuf[idx++] = bgH;
+                    rowBuf[idx++] = bgL;
+                }
+                for (uint16_t px = textW; px < lineW; px++) {
+                    rowBuf[idx++] = bgH;
+                    rowBuf[idx++] = bgL;
+                }
+            } else {
+                for (uint16_t px = 0; px < lineW; px++) {
+                    rowBuf[idx++] = bgH;
+                    rowBuf[idx++] = bgL;
+                }
+            }
+
+            m_spi.writeOnly(rowBuf, idx);
+        }
+
+        csHigh();
+        m_spi.unlock();
+    }
+
+    /**
      * @brief Draw a string using medium font (8×12 from 5×7 base)
      *
      * Cols 1 and 3 doubled, rows 0/1/3/5 doubled → 7+1=8 wide, 11+1=12 tall.

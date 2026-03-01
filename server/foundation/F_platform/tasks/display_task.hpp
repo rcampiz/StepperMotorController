@@ -23,7 +23,7 @@ class LCD;
 namespace Tasks {
 
 // Task configuration
-constexpr uint32_t DISPLAY_TASK_STACK_SIZE = 512;  // Increased for menu screens (snprintf, trig)
+constexpr uint32_t DISPLAY_TASK_STACK_SIZE = 640;  // uxTaskGetSystemState + snprintf + trig
 constexpr uint32_t DISPLAY_TASK_PRIORITY = 1;
 constexpr uint32_t DISPLAY_REFRESH_PERIOD_MS = 50; // 20 Hz refresh
 

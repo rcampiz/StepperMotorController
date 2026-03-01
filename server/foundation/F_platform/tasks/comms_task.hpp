@@ -111,6 +111,24 @@ void CommsTask_ClearCommsTimeout();
  */
 uint32_t CommsTask_GetLastEventSeq();
 
+// -------------------------------------------------------------------------
+// Dispatch stats (for UI observability)
+// -------------------------------------------------------------------------
+
+struct CommsDispatchStats {
+    uint32_t totalCommands;
+    uint32_t unknownCommands;
+    uint32_t parseErrors;
+    uint8_t  recentCount;
+    char     recentCmds[8][24];
+};
+
+/**
+ * @brief Get command dispatch statistics snapshot
+ * @param out Output structure
+ */
+void CommsTask_GetDispatchStats(CommsDispatchStats& out);
+
 } // namespace Tasks
 
 #endif // COMMS_TASK_HPP

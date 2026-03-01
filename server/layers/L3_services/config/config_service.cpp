@@ -5,6 +5,7 @@
 
 #include "L3_services/config/config_service.hpp"
 #include "L3_services/dispatch/imotor_command_sink.hpp"
+#include "L3_services/infra/trace.hpp"
 
 namespace Services::Config {
 
@@ -61,6 +62,7 @@ static Result sendParam(MotorCmdType type, int32_t value) {
 // --- Physical-unit setters (SCPI commands) ---
 
 Result setAccelPhysical(uint32_t stepsPerSecSq) {
+    Trace::ServiceScope svc(Trace::SVC_CONFIG);
     if (stepsPerSecSq == 0 || stepsPerSecSq > ACCEL_PHYS_MAX) {
         return Result::INVALID_PARAM;
     }
@@ -71,6 +73,7 @@ Result setAccelPhysical(uint32_t stepsPerSecSq) {
 }
 
 Result setDecelPhysical(uint32_t stepsPerSecSq) {
+    Trace::ServiceScope svc(Trace::SVC_CONFIG);
     if (stepsPerSecSq == 0 || stepsPerSecSq > ACCEL_PHYS_MAX) {
         return Result::INVALID_PARAM;
     }
@@ -81,6 +84,7 @@ Result setDecelPhysical(uint32_t stepsPerSecSq) {
 }
 
 Result setMaxSpeedPhysical(uint32_t stepsPerSec) {
+    Trace::ServiceScope svc(Trace::SVC_CONFIG);
     if (stepsPerSec == 0 || stepsPerSec > MAXSPD_PHYS_MAX) {
         return Result::INVALID_PARAM;
     }
@@ -93,6 +97,7 @@ Result setMaxSpeedPhysical(uint32_t stepsPerSec) {
 // --- Raw register setters (legacy commands) ---
 
 Result setAccelRaw(uint16_t raw) {
+    Trace::ServiceScope svc(Trace::SVC_CONFIG);
     if (raw < ACCEL_RAW_MIN || raw > ACCEL_RAW_MAX) {
         return Result::INVALID_PARAM;
     }
@@ -100,6 +105,7 @@ Result setAccelRaw(uint16_t raw) {
 }
 
 Result setDecelRaw(uint16_t raw) {
+    Trace::ServiceScope svc(Trace::SVC_CONFIG);
     if (raw < ACCEL_RAW_MIN || raw > ACCEL_RAW_MAX) {
         return Result::INVALID_PARAM;
     }
@@ -107,6 +113,7 @@ Result setDecelRaw(uint16_t raw) {
 }
 
 Result setMaxSpeedRaw(uint16_t raw) {
+    Trace::ServiceScope svc(Trace::SVC_CONFIG);
     if (raw < MAXSPD_RAW_MIN || raw > MAXSPD_RAW_MAX) {
         return Result::INVALID_PARAM;
     }

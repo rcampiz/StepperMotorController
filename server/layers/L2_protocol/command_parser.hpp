@@ -80,6 +80,20 @@ struct ParsedCommand {
 };
 
 /**
+ * @brief Dispatch statistics (read by UI for observability)
+ */
+struct DispatchStats {
+  uint32_t totalCommands;     // Commands parsed and dispatched
+  uint32_t unknownCommands;   // Unrecognized command/namespace
+  uint32_t parseErrors;       // Lines that failed to parse
+  // Ring buffer of recent command names
+  static constexpr uint8_t RECENT_SIZE = 8;
+  char     recentCmds[RECENT_SIZE][24];
+  uint8_t  recentHead;
+  uint8_t  recentCount;
+};
+
+/**
  * @brief Command parser and dispatcher
  */
 class CommandParser {
@@ -137,6 +151,11 @@ public:
    * @brief Get current response format
    */
   ResponseFormat getFormat() const { return m_format; }
+
+  /**
+   * @brief Get dispatch statistics snapshot
+   */
+  const DispatchStats& getDispatchStats() const { return m_dispatchStats; }
 
   /**
    * @brief Check baud rate auto-revert timeout
@@ -249,6 +268,9 @@ private:
 
   // Baud rate negotiation
   void cmdSetBaud(const ParsedCommand &cmd);
+
+  // Dispatch statistics
+  DispatchStats m_dispatchStats = {};
 
   // Baud auto-revert state
   uint32_t m_baudRevertRate = 0;     // 0 = no pending revert

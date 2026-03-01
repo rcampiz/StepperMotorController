@@ -22,6 +22,7 @@
 #include "L4_drivers/devices/encoder.hpp"
 #include "L3_services/motion/control_mode.hpp"
 #include "L3_services/infra/tick_timer.hpp"
+#include "L3_services/infra/trace.hpp"
 #include "L3_services/motion/motor_config.hpp"
 #include "L2_protocol/telemetry.hpp"
 #include "X_vendor/CMSIS/stm32f401xe.h"
@@ -438,6 +439,9 @@ void vEncoderTask(void* pvParameters)
     TickType_t lastWakeTime = xTaskGetTickCount();
 
     while (true) {
+        Trace::setCurrentTaskId(Trace::TASK_ENCODER);
+        Trace::setCurrentServiceId(Trace::SVC_ENCODER);
+
         // Get hardware timestamp for quality tracking
         uint32_t tickUs = Services::TickTimer_GetTick();
 

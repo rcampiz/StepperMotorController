@@ -13,6 +13,7 @@
 #include "F_platform/interfaces/iclock.hpp"
 #include "F_platform/interfaces/ilock.hpp"
 #include "F_platform/interfaces/iqueue.hpp"
+#include "F_platform/interfaces/itask_stats.hpp"
 #include "F_platform/interfaces/async_event_types.hpp"
 
 namespace Platform {
@@ -26,6 +27,7 @@ struct Resources {
     ILock*  telemetryLock;
     IClock* clock;
     IQueue<AsyncEvent, 8>* eventQueue;
+    ITaskStats* taskStats;
 };
 
 /// Create FreeRTOS primitives. Halts on failure.

@@ -5,6 +5,7 @@
 
 #include "L3_services/dispatch/command_queue.hpp"
 #include "L3_services/infra/tick_timer.hpp"
+#include "F_util/interface_trace.hpp"
 
 namespace Services {
 
@@ -197,6 +198,8 @@ QueueResult CommandQueue::clearQueue()
 
 void CommandQueue::emergencyStop()
 {
+    ITRACE(ITrace::L3_CMD_SINK, "[L3~L3]", "emergencyStop");
+
     // Acquire lock — held briefly, safe for emergency path
     m_lock->acquire();
 

@@ -17,6 +17,11 @@
 // Foundation — adapters
 #include "F_platform/adapters/motor_command_sink.hpp"
 #include "F_platform/adapters/safety_actions.hpp"
+#include "F_util/interface_trace.hpp"
+#ifdef ENABLE_INTERFACE_TRACE
+#include "F_platform/adapters/traced/traced_safety_actions.hpp"
+#include "F_platform/adapters/traced/traced_command_sink.hpp"
+#endif
 
 // Foundation — tasks
 #include "F_platform/tasks/comms_task.hpp"
@@ -35,7 +40,7 @@
 #include "L3_services/motion/motor_config.hpp"
 #include "L3_services/ui/ui_mode.hpp"
 #include "L4_drivers/devices/flash_nor.hpp"
-#include "L4_drivers/spi/spi_manager.hpp"
+#include "L5_board/spi/spi_manager.hpp"
 
 // --- Globals (composition root owns these) ---
 Services::IMotorCommandSink* Services::g_motorCommandSink = nullptr;
@@ -107,6 +112,7 @@ void initHardware()
     logOk("Clock config");
     Services::TickTimer_Init();
     logOk("TickTimer");
+    ITrace::init();
 }
 
 void initPlatform()
@@ -148,7 +154,12 @@ void initTasks()
     initOrHalt("MotorTask", Tasks::MotorTask_Init());
 
     static MotorCommandSinkImpl motorSink(Tasks::g_motorCmdQueue);
+#ifdef ENABLE_INTERFACE_TRACE
+    static TracedMotorCommandSink tracedSink(motorSink);
+    Services::g_motorCommandSink = &tracedSink;
+#else
     Services::g_motorCommandSink = &motorSink;
+#endif
     initOrHalt("CommandQueue",
                Services::g_commandQueue.init(*r.commandQueueLock, *r.clock, motorSink));
 
@@ -161,7 +172,12 @@ void initTasks()
     initOrHalt("CommsTask",   Tasks::CommsTask_Init(Tasks::TransportType::VCP_UART));
 
     static SafetyActionsImpl safetyActions;
+#ifdef ENABLE_INTERFACE_TRACE
+    static TracedSafetyActions tracedSafety(safetyActions);
+    Services::g_safetyActions = &tracedSafety;
+#else
     Services::g_safetyActions = &safetyActions;
+#endif
     logOk("JoyCallback");
     Tasks::CommsTask_RegisterJoyCallback();
 }

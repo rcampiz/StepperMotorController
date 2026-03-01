@@ -24,6 +24,7 @@
 #include "F_platform/tasks/encoder_task.hpp"
 #include "F_platform/tasks/motor_task.hpp"
 #include "ui/ui_mode.hpp"
+#include "F_util/interface_trace.hpp"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -109,6 +110,14 @@ void CommandParser::process() {
         if (cmd.valid) {
           // Any valid command confirms the baud rate is working
           m_baudRevertRate = 0;
+          // Track dispatch stats
+          m_dispatchStats.totalCommands++;
+          uint8_t ri = m_dispatchStats.recentHead;
+          strncpy(m_dispatchStats.recentCmds[ri], cmd.cmd, 23);
+          m_dispatchStats.recentCmds[ri][23] = '\0';
+          m_dispatchStats.recentHead = (ri + 1) % DispatchStats::RECENT_SIZE;
+          if (m_dispatchStats.recentCount < DispatchStats::RECENT_SIZE)
+              m_dispatchStats.recentCount++;
           dispatch(cmd);
         }
 
@@ -174,6 +183,7 @@ ParsedCommand CommandParser::parse(const char *line) {
 
 void CommandParser::dispatch(const ParsedCommand &cmd) {
   TRACE_ENTRY("CMD:RX");
+  ITRACE(ITrace::L2_L3_DISPATCH, "[L2>L3]", "dispatch", cmd.cmd);
 
   // Store current command for JSON echo
   strncpy(m_currentCmd, cmd.cmd, sizeof(m_currentCmd) - 1);
@@ -207,6 +217,7 @@ void CommandParser::dispatch(const ParsedCommand &cmd) {
       dispatchDevice(suffix, cmd);
     } else if (strcmp(prefix, "FMT") == 0) {
       // FMT is a leaf — no suffix expected, but handle FMT:xxx just in case
+      m_dispatchStats.unknownCommands++;
       respondErr("Unknown FMT command");
     } else if (strcmp(prefix, "UI") == 0) {
       dispatchUI(suffix, cmd);
@@ -215,6 +226,7 @@ void CommandParser::dispatch(const ParsedCommand &cmd) {
     } else if (strcmp(prefix, "DRV") == 0) {
       dispatchDriver(suffix, cmd);
     } else {
+      m_dispatchStats.unknownCommands++;
       respondErr("Unknown namespace prefix");
     }
   } else {
@@ -1990,6 +2002,7 @@ void CommandParser::dispatchLegacy(const ParsedCommand &cmd) {
     SPI1->CR1 |= SPI_CR1_SPE;
     m_transport.println("Done.");
   } else {
+    m_dispatchStats.unknownCommands++;
     respondErr("Unknown command. Type HELP for list.");
   }
 }
