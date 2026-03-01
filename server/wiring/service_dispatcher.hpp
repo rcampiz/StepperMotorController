@@ -26,6 +26,11 @@
 #include "L3_services/infra/trace.hpp"
 #include "L3_services/infra/flash_image_service.hpp"
 #include "F_platform/interfaces/iencoder.hpp"
+#include "F_platform/tasks/encoder_task.hpp"
+#include "F_platform/tasks/display_task.hpp"
+#include "F_platform/tasks/motor_task.hpp"
+#include "F_platform/tasks/comms_task.hpp"
+#include "F_platform/ui/ui_mode.hpp"
 
 class ServiceDispatcher : public Comms::ICommandDispatcher {
 public:
@@ -366,12 +371,33 @@ public:
         indexSeen = st.indexSeen;
     }
 
+    void getEncoderStateFull(int64_t& count, int32_t& velocity, bool& indexSeen,
+                              uint32_t& indexTick, int32_t& revolutions,
+                              uint32_t& indexPeriodUs) override {
+        if (m_encoder == nullptr) {
+            count = 0; velocity = 0; indexSeen = false;
+            indexTick = 0; revolutions = 0; indexPeriodUs = 0;
+            return;
+        }
+        Services::EncoderSnapshot st = m_encoder->getState();
+        count = st.count;
+        velocity = st.velocity;
+        indexSeen = st.indexSeen;
+        indexTick = st.indexTick;
+        revolutions = st.revolutions;
+        indexPeriodUs = st.indexPeriodUs;
+    }
+
     // =================================================================
     // Timing
     // =================================================================
 
     uint32_t getTickUs() override {
         return Services::TickTimer_GetTick();
+    }
+
+    uint32_t getTickMs() override {
+        return xTaskGetTickCount();
     }
 
     void setTransportDelay(uint32_t ms) override {
@@ -505,6 +531,115 @@ public:
                                  uint8_t rateDiv) override {
         Services::g_motorConfig.setEncFilterFull(flags, emaAlpha, smaWindow,
                                                   measWindowMs, rateDiv);
+    }
+
+    // =================================================================
+    // Encoder filter — live runtime config
+    // =================================================================
+
+    void encFilterGetConfig(EncFilterParams& out) override {
+        Tasks::EncoderFilterConfig cfg;
+        Tasks::EncoderTask_GetFilterConfig(cfg);
+        out.filterFlags   = cfg.filterFlags;
+        out.emaAlpha      = cfg.emaAlpha;
+        out.smaWindow     = cfg.smaWindow;
+        out.measWindowMs  = cfg.measWindowMs;
+        out.sampleRateHz  = cfg.sampleRateHz;
+        out.padeGainPct   = cfg.padeGainPct;
+        out.padeMaxCorr   = cfg.padeMaxCorr;
+        out.biquadCutoffHz = cfg.biquadCutoffHz;
+        out.notchCenterHz = cfg.notchCenterHz;
+        out.notchQ10      = cfg.notchQ10;
+        out.holtAlpha     = cfg.holtAlpha;
+        out.holtBeta      = cfg.holtBeta;
+    }
+
+    void encFilterSetConfig(const EncFilterParams& params) override {
+        Tasks::EncoderFilterConfig cfg;
+        Tasks::EncoderTask_GetFilterConfig(cfg);  // preserve unset fields
+        cfg.filterFlags   = params.filterFlags;
+        cfg.emaAlpha      = params.emaAlpha;
+        cfg.smaWindow     = params.smaWindow;
+        cfg.measWindowMs  = params.measWindowMs;
+        cfg.sampleRateHz  = params.sampleRateHz;
+        cfg.padeGainPct   = params.padeGainPct;
+        cfg.padeMaxCorr   = params.padeMaxCorr;
+        cfg.biquadCutoffHz = params.biquadCutoffHz;
+        cfg.notchCenterHz = params.notchCenterHz;
+        cfg.notchQ10      = params.notchQ10;
+        cfg.holtAlpha     = params.holtAlpha;
+        cfg.holtBeta      = params.holtBeta;
+        Tasks::EncoderTask_SetFilterConfig(cfg);
+    }
+
+    void encFilterSetLegacy(uint8_t type, uint8_t param) override {
+        Tasks::EncoderTask_SetFilter(type, param);
+    }
+
+    // =================================================================
+    // Display — remote rendering
+    // =================================================================
+
+    bool displayIsRemoteMode() override {
+        return UI::g_uiMode.getMode() == UI::UIMode::REMOTE;
+    }
+
+    Comms::DispatchResult displaySetMode(const char* modeName) override {
+        UI::UIMode mode;
+        if (strcmp(modeName, "LOCAL") == 0) {
+            mode = UI::UIMode::LOCAL;
+        } else if (strcmp(modeName, "REMOTE") == 0) {
+            mode = UI::UIMode::REMOTE;
+        } else {
+            return {false, "Unknown mode (use LOCAL or REMOTE)"};
+        }
+        UI::g_uiMode.setMode(mode);
+        return {true, UI::UIModeManager::modeName(mode)};
+    }
+
+    const char* displayGetModeName() override {
+        return UI::UIModeManager::modeName(UI::g_uiMode.getMode());
+    }
+
+    void displayClear(uint16_t color) override {
+        Tasks::DisplayTask_RemoteClear(color);
+    }
+
+    void displayText(uint16_t x, uint16_t y, const char* text,
+                      uint16_t fg, uint16_t bg) override {
+        Tasks::DisplayTask_RemoteText(x, y, text, fg, bg);
+    }
+
+    void displayRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+                      uint16_t color, bool filled) override {
+        Tasks::DisplayTask_RemoteRect(x, y, w, h, color, filled);
+    }
+
+    void displayLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
+                      uint16_t color) override {
+        Tasks::DisplayTask_RemoteLine(x0, y0, x1, y1, color);
+    }
+
+    void displayBitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+                        const uint8_t* data, uint32_t len) override {
+        Tasks::DisplayTask_RemoteBitmap(x, y, w, h, data, len);
+    }
+
+    void displayIndicator(uint16_t angle, int8_t rotation, bool translation) override {
+        Tasks::DisplayTask_RemoteIndicator(angle, rotation, translation);
+    }
+
+    bool displayStreamStart(uint16_t x, uint16_t y,
+                             uint16_t w, uint16_t h) override {
+        return Tasks::DisplayTask_StreamBitmapStart(x, y, w, h);
+    }
+
+    void displayStreamData(const uint8_t* data, uint32_t len) override {
+        Tasks::DisplayTask_StreamBitmapData(data, len);
+    }
+
+    void displayStreamEnd() override {
+        Tasks::DisplayTask_StreamBitmapEnd();
     }
 
     // =================================================================
@@ -740,6 +875,56 @@ public:
 
     uint32_t flashSlotAddress(uint32_t slot) override {
         return Services::g_flashImageService.slotAddress(slot);
+    }
+
+    // =================================================================
+    // Motor driver management
+    // =================================================================
+
+    void motorReinit() override {
+        Tasks::MotorTask_Reinit();
+    }
+
+    bool motorApplyConfig() override {
+        return Tasks::MotorTask_ApplyConfig();
+    }
+
+    bool motorGetDebugInfo(MotorDebugParams& out) override {
+        Tasks::MotorDebugInfo info;
+        if (!Tasks::MotorTask_GetDebugInfo(info)) {
+            return false;
+        }
+        out.status    = info.status;
+        out.kvalHold  = info.kvalHold;
+        out.kvalRun   = info.kvalRun;
+        out.kvalAcc   = info.kvalAcc;
+        out.kvalDec   = info.kvalDec;
+        out.accel     = info.accel;
+        out.decel     = info.decel;
+        out.maxSpeed  = info.maxSpeed;
+        out.absPos    = info.absPos;
+        out.ocdTh     = info.ocdTh;
+        out.stallTh   = info.stallTh;
+        out.config    = info.config;
+        out.alarmEn   = info.alarmEn;
+        out.fsSpd     = info.fsSpd;
+        out.stepMode  = info.stepMode;
+        return true;
+    }
+
+    bool motorSetStepModeSafe(uint8_t mode, uint8_t& readback) override {
+        Tasks::MotorTask_Suspend();
+        bool ok = Tasks::MotorTask_SetStepModeSafe(mode, readback);
+        Tasks::MotorTask_Resume();
+        return ok;
+    }
+
+    // =================================================================
+    // Comms diagnostics
+    // =================================================================
+
+    uint32_t getLastEventSeq() override {
+        return Tasks::CommsTask_GetLastEventSeq();
     }
 
 private:

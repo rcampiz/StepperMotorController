@@ -1,0 +1,27 @@
+/**
+ * @file isafety_dispatcher.hpp
+ * @brief Interface for safety and heartbeat operations (SYST namespace)
+ */
+
+#pragma once
+
+#include "F_platform/interfaces/dispatch_result.hpp"
+#include <stdint.h>
+
+namespace Comms {
+
+class ISafetyDispatcher {
+public:
+    virtual ~ISafetyDispatcher() = default;
+
+    virtual void safetyEstop() = 0;
+    virtual DispatchResult safetyClearFault(char* activeFaults, uint32_t bufSize) = 0;
+    virtual DispatchResult safetyForceClearFault() = 0;
+    virtual uint32_t safetySetHeartbeatTimeout(uint32_t ms) = 0;
+    virtual void safetyHeartbeatReceived(uint32_t seq) = 0;
+    virtual void safetyGetHeartbeatStatus(bool& enabled, uint32_t& timeoutMs,
+                                           uint32_t& lastSeq, uint32_t& remainingMs,
+                                           bool& timedOut) = 0;
+};
+
+} // namespace Comms

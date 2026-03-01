@@ -9,13 +9,8 @@
 #include "L2_protocol/command_parser.hpp"
 #include "F_platform/interfaces/async_event_types.hpp"
 #include "F_platform/interfaces/telemetry.hpp"
-#include "F_platform/tasks/comms_task.hpp"
-#include "F_platform/tasks/display_task.hpp"
-#include "F_platform/tasks/encoder_task.hpp"
-#include "F_platform/tasks/motor_task.hpp"
 #include "F_util/crc32.hpp"
 #include "F_util/interface_trace.hpp"
-#include "F_platform/ui/ui_mode.hpp"
 #include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -636,7 +631,7 @@ void CommandParser::dispatchLegacy(const ParsedCommand &cmd) {
   }
   // Motor driver reinit (power-cycle recovery)
   else if (strcmp(cmd.cmd, "MOTOR_REINIT") == 0) {
-    Tasks::MotorTask_Reinit();
+    m_dispatcher.motorReinit();
     respondOk("Motor driver reinitialized and config applied");
   }
   // Timing/diagnostics commands
@@ -1708,17 +1703,20 @@ void CommandParser::cmdZeroAll() {
 
 void CommandParser::cmdEncoder() {
   // Check if encoder is available
-  if (!Tasks::EncoderTask_IsAvailable()) {
+  if (!m_dispatcher.isEncoderAvailable()) {
     respondErr("Encoder not available");
     return;
   }
 
-  // Get encoder state
-  Tasks::EncoderState state = Tasks::EncoderTask_GetState();
+  // Get full encoder state via dispatcher
+  int64_t count; int32_t velocity; bool indexSeen;
+  uint32_t indexTick; int32_t revolutions; uint32_t indexPeriodUs;
+  m_dispatcher.getEncoderStateFull(count, velocity, indexSeen,
+                                    indexTick, revolutions, indexPeriodUs);
 
   // newlib-nano: no %lld — pre-format int64_t as string
   char countStr[24];
-  i64toa(state.count, countStr, sizeof(countStr));
+  i64toa(count, countStr, sizeof(countStr));
 
   if (m_format == ResponseFormat::JSON) {
     char buf[192];
@@ -1726,20 +1724,20 @@ void CommandParser::cmdEncoder() {
         buf, sizeof(buf),
         "{\"count\":%s,\"velocity\":%ld,\"index_seen\":%s,\"index_tick\":%lu,"
         "\"revolutions\":%ld,\"index_period_us\":%lu}",
-        countStr, static_cast<long>(state.velocity),
-        state.indexSeen ? "true" : "false",
-        static_cast<unsigned long>(state.indexTick),
-        static_cast<long>(state.revolutions),
-        static_cast<unsigned long>(state.indexPeriodUs));
+        countStr, static_cast<long>(velocity),
+        indexSeen ? "true" : "false",
+        static_cast<unsigned long>(indexTick),
+        static_cast<long>(revolutions),
+        static_cast<unsigned long>(indexPeriodUs));
     respondJsonOk("ENC", buf);
   } else {
     // ASCII format: OK count=<n> vel=<n> idx=<0|1> idx_tick=<n> rev=<n>
     char buf[96];
     snprintf(buf, sizeof(buf), "count=%s vel=%ld idx=%d idx_tick=%lu rev=%ld",
-             countStr, static_cast<long>(state.velocity),
-             state.indexSeen ? 1 : 0,
-             static_cast<unsigned long>(state.indexTick),
-             static_cast<long>(state.revolutions));
+             countStr, static_cast<long>(velocity),
+             indexSeen ? 1 : 0,
+             static_cast<unsigned long>(indexTick),
+             static_cast<long>(revolutions));
     respondOk(buf);
   }
 }
@@ -1747,8 +1745,8 @@ void CommandParser::cmdEncoder() {
 void CommandParser::cmdEncFilter(const ParsedCommand &cmd) {
   // Query mode: no arguments → return full filter config
   if (cmd.argCount < 1) {
-    Tasks::EncoderFilterConfig cfg;
-    Tasks::EncoderTask_GetFilterConfig(cfg);
+    ICommandDispatcher::EncFilterParams cfg;
+    m_dispatcher.encFilterGetConfig(cfg);
     char buf[512];
     unsigned pGain = (cfg.padeGainPct > 0) ? cfg.padeGainPct : 50;
     unsigned pMax = (cfg.padeMaxCorr > 0) ? cfg.padeMaxCorr : 50;
@@ -1768,15 +1766,15 @@ void CommandParser::cmdEncFilter(const ParsedCommand &cmd) {
           "\"notch_enabled\":%s,\"notch_center_hz\":%u,\"notch_q10\":%u,"
           "\"holt_enabled\":%s,\"holt_alpha\":%u,\"holt_beta\":%u}",
           (unsigned)cfg.measWindowMs, (unsigned)cfg.sampleRateHz,
-          (cfg.filterFlags & Tasks::ENC_FILT_EMA) ? "true" : "false",
+          (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_EMA) ? "true" : "false",
           (unsigned)cfg.emaAlpha,
-          (cfg.filterFlags & Tasks::ENC_FILT_SMA) ? "true" : "false",
+          (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_SMA) ? "true" : "false",
           (unsigned)cfg.smaWindow,
-          (cfg.filterFlags & Tasks::ENC_FILT_PADE) ? "true" : "false", pGain,
-          pMax, (cfg.filterFlags & Tasks::ENC_FILT_BIQUAD) ? "true" : "false",
-          bqCut, (cfg.filterFlags & Tasks::ENC_FILT_NOTCH) ? "true" : "false",
+          (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_PADE) ? "true" : "false", pGain,
+          pMax, (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_BIQUAD) ? "true" : "false",
+          bqCut, (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_NOTCH) ? "true" : "false",
           ntCtr, ntQ,
-          (cfg.filterFlags & Tasks::ENC_FILT_HOLT) ? "true" : "false", hAlph,
+          (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_HOLT) ? "true" : "false", hAlph,
           hBeta);
       respondJsonOk(m_currentCmd, buf);
     } else {
@@ -1785,15 +1783,15 @@ void CommandParser::cmdEncFilter(const ParsedCommand &cmd) {
                " PADE=%s gain=%u%% max=%utps BIQUAD=%s cut=%uHz"
                " NOTCH=%s ctr=%uHz Q=%u.%u HOLT=%s a=%u b=%u",
                (unsigned)cfg.measWindowMs, (unsigned)cfg.sampleRateHz,
-               (cfg.filterFlags & Tasks::ENC_FILT_EMA) ? "ON" : "OFF",
+               (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_EMA) ? "ON" : "OFF",
                (unsigned)cfg.emaAlpha,
-               (cfg.filterFlags & Tasks::ENC_FILT_SMA) ? "ON" : "OFF",
+               (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_SMA) ? "ON" : "OFF",
                (unsigned)cfg.smaWindow,
-               (cfg.filterFlags & Tasks::ENC_FILT_PADE) ? "ON" : "OFF", pGain,
-               pMax, (cfg.filterFlags & Tasks::ENC_FILT_BIQUAD) ? "ON" : "OFF",
-               bqCut, (cfg.filterFlags & Tasks::ENC_FILT_NOTCH) ? "ON" : "OFF",
+               (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_PADE) ? "ON" : "OFF", pGain,
+               pMax, (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_BIQUAD) ? "ON" : "OFF",
+               bqCut, (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_NOTCH) ? "ON" : "OFF",
                ntCtr, ntQ / 10, ntQ % 10,
-               (cfg.filterFlags & Tasks::ENC_FILT_HOLT) ? "ON" : "OFF", hAlph,
+               (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_HOLT) ? "ON" : "OFF", hAlph,
                hBeta);
       respondOk(buf);
     }
@@ -1802,7 +1800,7 @@ void CommandParser::cmdEncFilter(const ParsedCommand &cmd) {
 
   // Legacy set commands: NONE / EMA <alpha> / SMA <window>
   if (strcmp(cmd.args[0], "NONE") == 0) {
-    Tasks::EncoderTask_SetFilter(0, 0);
+    m_dispatcher.encFilterSetLegacy(0, 0);
     m_dispatcher.configSetEncFilter(0, 0);
     respondOk("NONE");
     return;
@@ -1818,8 +1816,8 @@ void CommandParser::cmdEncFilter(const ParsedCommand &cmd) {
       respondErr("EMA alpha must be 0-255");
       return;
     }
-    Tasks::EncoderTask_SetFilter(1, static_cast<uint8_t>(val));
-    m_dispatcher.configSetEncFilter(Tasks::ENC_FILT_EMA,
+    m_dispatcher.encFilterSetLegacy(1, static_cast<uint8_t>(val));
+    m_dispatcher.configSetEncFilter(ICommandDispatcher::EncFilterParams::FILT_EMA,
                                     static_cast<uint8_t>(val));
     char buf[48];
     snprintf(buf, sizeof(buf), "EMA alpha=%u", (unsigned)val);
@@ -1837,8 +1835,8 @@ void CommandParser::cmdEncFilter(const ParsedCommand &cmd) {
       respondErr("SMA window must be 2-32");
       return;
     }
-    Tasks::EncoderTask_SetFilter(2, static_cast<uint8_t>(val));
-    m_dispatcher.configSetEncFilter(Tasks::ENC_FILT_SMA, 0);
+    m_dispatcher.encFilterSetLegacy(2, static_cast<uint8_t>(val));
+    m_dispatcher.configSetEncFilter(ICommandDispatcher::EncFilterParams::FILT_SMA, 0);
     m_dispatcher.configSetEncSmaWindow(static_cast<uint8_t>(val));
     char buf[48];
     snprintf(buf, sizeof(buf), "SMA window=%u", (unsigned)val);
@@ -1852,7 +1850,7 @@ void CommandParser::cmdEncFilter(const ParsedCommand &cmd) {
     respondErr("Unknown filter type or alpha out of range (0-255)");
     return;
   }
-  Tasks::EncoderTask_SetFilter(1, static_cast<uint8_t>(val));
+  m_dispatcher.encFilterSetLegacy(1, static_cast<uint8_t>(val));
   char buf[48];
   snprintf(buf, sizeof(buf), "EMA alpha=%u", (unsigned)val);
   respondOk(buf);
@@ -1871,10 +1869,10 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
       respondErr("Window must be 1-255 ms");
       return;
     }
-    Tasks::EncoderFilterConfig cfg;
-    Tasks::EncoderTask_GetFilterConfig(cfg);
+    ICommandDispatcher::EncFilterParams cfg;
+    m_dispatcher.encFilterGetConfig(cfg);
     cfg.measWindowMs = static_cast<uint8_t>(val);
-    Tasks::EncoderTask_SetFilterConfig(cfg);
+    m_dispatcher.encFilterSetConfig(cfg);
     char buf[32];
     snprintf(buf, sizeof(buf), "window=%ums", (unsigned)val);
     respondOk(buf);
@@ -1888,10 +1886,10 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
       return;
     }
     long enable = strtol(cmd.args[0], nullptr, 10);
-    Tasks::EncoderFilterConfig cfg;
-    Tasks::EncoderTask_GetFilterConfig(cfg);
+    ICommandDispatcher::EncFilterParams cfg;
+    m_dispatcher.encFilterGetConfig(cfg);
     if (enable) {
-      cfg.filterFlags |= Tasks::ENC_FILT_EMA;
+      cfg.filterFlags |= ICommandDispatcher::EncFilterParams::FILT_EMA;
       if (cmd.argCount >= 2) {
         long alpha = strtol(cmd.args[1], nullptr, 10);
         if (alpha < 0 || alpha > 255) {
@@ -1901,12 +1899,12 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
         cfg.emaAlpha = static_cast<uint8_t>(alpha);
       }
     } else {
-      cfg.filterFlags &= ~Tasks::ENC_FILT_EMA;
+      cfg.filterFlags &= ~ICommandDispatcher::EncFilterParams::FILT_EMA;
     }
-    Tasks::EncoderTask_SetFilterConfig(cfg);
+    m_dispatcher.encFilterSetConfig(cfg);
     char buf[48];
     snprintf(buf, sizeof(buf), "EMA %s alpha=%u",
-             (cfg.filterFlags & Tasks::ENC_FILT_EMA) ? "ON" : "OFF",
+             (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_EMA) ? "ON" : "OFF",
              (unsigned)cfg.emaAlpha);
     respondOk(buf);
     return;
@@ -1919,10 +1917,10 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
       return;
     }
     long enable = strtol(cmd.args[0], nullptr, 10);
-    Tasks::EncoderFilterConfig cfg;
-    Tasks::EncoderTask_GetFilterConfig(cfg);
+    ICommandDispatcher::EncFilterParams cfg;
+    m_dispatcher.encFilterGetConfig(cfg);
     if (enable) {
-      cfg.filterFlags |= Tasks::ENC_FILT_SMA;
+      cfg.filterFlags |= ICommandDispatcher::EncFilterParams::FILT_SMA;
       if (cmd.argCount >= 2) {
         long win = strtol(cmd.args[1], nullptr, 10);
         if (win < 0 || win > 32) {
@@ -1932,12 +1930,12 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
         cfg.smaWindow = static_cast<uint8_t>(win);
       }
     } else {
-      cfg.filterFlags &= ~Tasks::ENC_FILT_SMA;
+      cfg.filterFlags &= ~ICommandDispatcher::EncFilterParams::FILT_SMA;
     }
-    Tasks::EncoderTask_SetFilterConfig(cfg);
+    m_dispatcher.encFilterSetConfig(cfg);
     char buf[48];
     snprintf(buf, sizeof(buf), "SMA %s window=%u",
-             (cfg.filterFlags & Tasks::ENC_FILT_SMA) ? "ON" : "OFF",
+             (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_SMA) ? "ON" : "OFF",
              (unsigned)cfg.smaWindow);
     respondOk(buf);
     return;
@@ -1950,10 +1948,10 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
       return;
     }
     long enable = strtol(cmd.args[0], nullptr, 10);
-    Tasks::EncoderFilterConfig cfg;
-    Tasks::EncoderTask_GetFilterConfig(cfg);
+    ICommandDispatcher::EncFilterParams cfg;
+    m_dispatcher.encFilterGetConfig(cfg);
     if (enable) {
-      cfg.filterFlags |= Tasks::ENC_FILT_PADE;
+      cfg.filterFlags |= ICommandDispatcher::EncFilterParams::FILT_PADE;
       if (cmd.argCount >= 2) {
         long gain = strtol(cmd.args[1], nullptr, 10);
         if (gain < 1 || gain > 100) {
@@ -1971,12 +1969,12 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
         cfg.padeMaxCorr = static_cast<uint8_t>(maxC);
       }
     } else {
-      cfg.filterFlags &= ~Tasks::ENC_FILT_PADE;
+      cfg.filterFlags &= ~ICommandDispatcher::EncFilterParams::FILT_PADE;
     }
-    Tasks::EncoderTask_SetFilterConfig(cfg);
+    m_dispatcher.encFilterSetConfig(cfg);
     char buf[64];
     snprintf(buf, sizeof(buf), "PADE %s gain=%u%% max=%utps",
-             (cfg.filterFlags & Tasks::ENC_FILT_PADE) ? "ON" : "OFF",
+             (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_PADE) ? "ON" : "OFF",
              (unsigned)((cfg.padeGainPct > 0) ? cfg.padeGainPct : 50),
              (unsigned)((cfg.padeMaxCorr > 0) ? cfg.padeMaxCorr : 50));
     respondOk(buf);
@@ -1990,10 +1988,10 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
       return;
     }
     long enable = strtol(cmd.args[0], nullptr, 10);
-    Tasks::EncoderFilterConfig cfg;
-    Tasks::EncoderTask_GetFilterConfig(cfg);
+    ICommandDispatcher::EncFilterParams cfg;
+    m_dispatcher.encFilterGetConfig(cfg);
     if (enable) {
-      cfg.filterFlags |= Tasks::ENC_FILT_BIQUAD;
+      cfg.filterFlags |= ICommandDispatcher::EncFilterParams::FILT_BIQUAD;
       if (cmd.argCount >= 2) {
         long cutoff = strtol(cmd.args[1], nullptr, 10);
         if (cutoff < 1 || cutoff > 50) {
@@ -2003,12 +2001,12 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
         cfg.biquadCutoffHz = static_cast<uint8_t>(cutoff);
       }
     } else {
-      cfg.filterFlags &= ~Tasks::ENC_FILT_BIQUAD;
+      cfg.filterFlags &= ~ICommandDispatcher::EncFilterParams::FILT_BIQUAD;
     }
-    Tasks::EncoderTask_SetFilterConfig(cfg);
+    m_dispatcher.encFilterSetConfig(cfg);
     char buf[64];
     snprintf(buf, sizeof(buf), "BIQUAD %s cutoff=%uHz",
-             (cfg.filterFlags & Tasks::ENC_FILT_BIQUAD) ? "ON" : "OFF",
+             (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_BIQUAD) ? "ON" : "OFF",
              (unsigned)((cfg.biquadCutoffHz > 0) ? cfg.biquadCutoffHz : 10));
     respondOk(buf);
     return;
@@ -2021,10 +2019,10 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
       return;
     }
     long enable = strtol(cmd.args[0], nullptr, 10);
-    Tasks::EncoderFilterConfig cfg;
-    Tasks::EncoderTask_GetFilterConfig(cfg);
+    ICommandDispatcher::EncFilterParams cfg;
+    m_dispatcher.encFilterGetConfig(cfg);
     if (enable) {
-      cfg.filterFlags |= Tasks::ENC_FILT_NOTCH;
+      cfg.filterFlags |= ICommandDispatcher::EncFilterParams::FILT_NOTCH;
       if (cmd.argCount >= 2) {
         long center = strtol(cmd.args[1], nullptr, 10);
         if (center < 1 || center > 50) {
@@ -2042,14 +2040,14 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
         cfg.notchQ10 = static_cast<uint8_t>(q10);
       }
     } else {
-      cfg.filterFlags &= ~Tasks::ENC_FILT_NOTCH;
+      cfg.filterFlags &= ~ICommandDispatcher::EncFilterParams::FILT_NOTCH;
     }
-    Tasks::EncoderTask_SetFilterConfig(cfg);
+    m_dispatcher.encFilterSetConfig(cfg);
     char buf[64];
     unsigned ctr = (cfg.notchCenterHz > 0) ? cfg.notchCenterHz : 25;
     unsigned q = (cfg.notchQ10 > 0) ? cfg.notchQ10 : 50;
     snprintf(buf, sizeof(buf), "NOTCH %s center=%uHz Q=%u.%u",
-             (cfg.filterFlags & Tasks::ENC_FILT_NOTCH) ? "ON" : "OFF", ctr,
+             (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_NOTCH) ? "ON" : "OFF", ctr,
              q / 10, q % 10);
     respondOk(buf);
     return;
@@ -2062,10 +2060,10 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
       return;
     }
     long enable = strtol(cmd.args[0], nullptr, 10);
-    Tasks::EncoderFilterConfig cfg;
-    Tasks::EncoderTask_GetFilterConfig(cfg);
+    ICommandDispatcher::EncFilterParams cfg;
+    m_dispatcher.encFilterGetConfig(cfg);
     if (enable) {
-      cfg.filterFlags |= Tasks::ENC_FILT_HOLT;
+      cfg.filterFlags |= ICommandDispatcher::EncFilterParams::FILT_HOLT;
       if (cmd.argCount >= 2) {
         long alpha = strtol(cmd.args[1], nullptr, 10);
         if (alpha < 0 || alpha > 255) {
@@ -2083,12 +2081,12 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
         cfg.holtBeta = static_cast<uint8_t>(beta);
       }
     } else {
-      cfg.filterFlags &= ~Tasks::ENC_FILT_HOLT;
+      cfg.filterFlags &= ~ICommandDispatcher::EncFilterParams::FILT_HOLT;
     }
-    Tasks::EncoderTask_SetFilterConfig(cfg);
+    m_dispatcher.encFilterSetConfig(cfg);
     char buf[64];
     snprintf(buf, sizeof(buf), "HOLT %s alpha=%u beta=%u",
-             (cfg.filterFlags & Tasks::ENC_FILT_HOLT) ? "ON" : "OFF",
+             (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_HOLT) ? "ON" : "OFF",
              (unsigned)((cfg.holtAlpha > 0) ? cfg.holtAlpha : 51),
              (unsigned)((cfg.holtBeta > 0) ? cfg.holtBeta : 13));
     respondOk(buf);
@@ -2106,10 +2104,10 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
       respondErr("Rate must be 100-10000 Hz");
       return;
     }
-    Tasks::EncoderFilterConfig cfg;
-    Tasks::EncoderTask_GetFilterConfig(cfg);
+    ICommandDispatcher::EncFilterParams cfg;
+    m_dispatcher.encFilterGetConfig(cfg);
     cfg.sampleRateHz = static_cast<uint16_t>(val);
-    Tasks::EncoderTask_SetFilterConfig(cfg);
+    m_dispatcher.encFilterSetConfig(cfg);
     char buf[32];
     snprintf(buf, sizeof(buf), "rate=%uHz", (unsigned)val);
     respondOk(buf);
@@ -2118,8 +2116,8 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
 
   // CTRL:ENC:FILT:SAVE
   if (strcmp(sub, "SAVE") == 0) {
-    Tasks::EncoderFilterConfig cfg;
-    Tasks::EncoderTask_GetFilterConfig(cfg);
+    ICommandDispatcher::EncFilterParams cfg;
+    m_dispatcher.encFilterGetConfig(cfg);
     uint8_t rateDiv = (cfg.sampleRateHz != 1000)
                           ? static_cast<uint8_t>(cfg.sampleRateHz / 100)
                           : 0;
@@ -2136,9 +2134,9 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
 
   // CTRL:ENC:FILT:RESET
   if (strcmp(sub, "RESET") == 0) {
-    Tasks::EncoderFilterConfig cfg = {};
-    cfg.filterFlags = Tasks::ENC_FILT_EMA | Tasks::ENC_FILT_SMA |
-                      Tasks::ENC_FILT_PADE | Tasks::ENC_FILT_BIQUAD;
+    ICommandDispatcher::EncFilterParams cfg = {};
+    cfg.filterFlags = ICommandDispatcher::EncFilterParams::FILT_EMA | ICommandDispatcher::EncFilterParams::FILT_SMA |
+                      ICommandDispatcher::EncFilterParams::FILT_PADE | ICommandDispatcher::EncFilterParams::FILT_BIQUAD;
     cfg.emaAlpha = 200;
     cfg.smaWindow = 8;
     cfg.measWindowMs = 40;
@@ -2150,7 +2148,7 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
     cfg.notchQ10 = 0;
     cfg.holtAlpha = 0;
     cfg.holtBeta = 0;
-    Tasks::EncoderTask_SetFilterConfig(cfg);
+    m_dispatcher.encFilterSetConfig(cfg);
     respondOk("Filter reset to defaults");
     return;
   }
@@ -2324,14 +2322,14 @@ void CommandParser::cmdSetBaud(const ParsedCommand &cmd) {
   }
 
   // Set 2-second deadline for confirmation (any valid command cancels revert)
-  m_baudRevertDeadline = xTaskGetTickCount() + pdMS_TO_TICKS(2000);
+  m_baudRevertDeadline = m_dispatcher.getTickMs() + 2000;
 }
 
 void CommandParser::checkBaudRevert() {
   if (m_baudRevertRate == 0)
     return;
 
-  TickType_t now = xTaskGetTickCount();
+  uint32_t now = m_dispatcher.getTickMs();
   if ((int32_t)(now - m_baudRevertDeadline) >= 0) {
     // Timeout expired — revert to safe baud rate
     m_transport.flush();
@@ -2353,27 +2351,16 @@ void CommandParser::cmdUIMode(const ParsedCommand &cmd) {
 
   // Set mode
   const char *modeStr = cmd.args[0];
-  UI::UIMode mode;
-
-  if (strcmp(modeStr, "LOCAL") == 0 || strcmp(modeStr, "local") == 0) {
-    mode = UI::UIMode::LOCAL;
-  } else if (strcmp(modeStr, "REMOTE") == 0 || strcmp(modeStr, "remote") == 0) {
-    mode = UI::UIMode::REMOTE;
+  auto result = m_dispatcher.displaySetMode(modeStr);
+  if (result.ok) {
+    respondOk(m_dispatcher.displayGetModeName());
   } else {
-    respondErr("Usage: UI_MODE [LOCAL|REMOTE]");
-    return;
-  }
-
-  if (UI::g_uiMode.setMode(mode)) {
-    respondOk(UI::UIModeManager::modeName(mode));
-  } else {
-    respondErr("Mode change failed");
+    respondErr(result.message);
   }
 }
 
 void CommandParser::cmdUIGetMode() {
-  UI::UIMode mode = UI::g_uiMode.getMode();
-  respondOk(UI::UIModeManager::modeName(mode));
+  respondOk(m_dispatcher.displayGetModeName());
 }
 
 // ============================================================================
@@ -2382,7 +2369,7 @@ void CommandParser::cmdUIGetMode() {
 
 void CommandParser::cmdDispClear(const ParsedCommand &cmd) {
   // Check if in REMOTE mode
-  if (UI::g_uiMode.getMode() != UI::UIMode::REMOTE) {
+  if (!m_dispatcher.displayIsRemoteMode()) {
     respondErr("Not in REMOTE mode");
     return;
   }
@@ -2393,13 +2380,13 @@ void CommandParser::cmdDispClear(const ParsedCommand &cmd) {
     color = static_cast<uint16_t>(strtoul(cmd.args[0], nullptr, 16));
   }
 
-  Tasks::DisplayTask_RemoteClear(color);
+  m_dispatcher.displayClear(color);
   respondOk("");
 }
 
 void CommandParser::cmdDispText(const ParsedCommand &cmd) {
   // Check if in REMOTE mode
-  if (UI::g_uiMode.getMode() != UI::UIMode::REMOTE) {
+  if (!m_dispatcher.displayIsRemoteMode()) {
     respondErr("Not in REMOTE mode");
     return;
   }
@@ -2416,13 +2403,13 @@ void CommandParser::cmdDispText(const ParsedCommand &cmd) {
   uint16_t bg = static_cast<uint16_t>(strtoul(cmd.args[3], nullptr, 16));
   const char *text = cmd.args[4];
 
-  Tasks::DisplayTask_RemoteText(x, y, text, fg, bg);
+  m_dispatcher.displayText(x, y, text, fg, bg);
   respondOk("");
 }
 
 void CommandParser::cmdDispRect(const ParsedCommand &cmd) {
   // Check if in REMOTE mode
-  if (UI::g_uiMode.getMode() != UI::UIMode::REMOTE) {
+  if (!m_dispatcher.displayIsRemoteMode()) {
     respondErr("Not in REMOTE mode");
     return;
   }
@@ -2440,13 +2427,13 @@ void CommandParser::cmdDispRect(const ParsedCommand &cmd) {
   uint16_t color = static_cast<uint16_t>(strtoul(cmd.args[4], nullptr, 16));
   bool filled = (cmd.argCount > 5 && strcmp(cmd.args[5], "fill") == 0);
 
-  Tasks::DisplayTask_RemoteRect(x, y, w, h, color, filled);
+  m_dispatcher.displayRect(x, y, w, h, color, filled);
   respondOk("");
 }
 
 void CommandParser::cmdDispLine(const ParsedCommand &cmd) {
   // Check if in REMOTE mode
-  if (UI::g_uiMode.getMode() != UI::UIMode::REMOTE) {
+  if (!m_dispatcher.displayIsRemoteMode()) {
     respondErr("Not in REMOTE mode");
     return;
   }
@@ -2463,13 +2450,13 @@ void CommandParser::cmdDispLine(const ParsedCommand &cmd) {
   int16_t y1 = static_cast<int16_t>(strtol(cmd.args[3], nullptr, 10));
   uint16_t color = static_cast<uint16_t>(strtoul(cmd.args[4], nullptr, 16));
 
-  Tasks::DisplayTask_RemoteLine(x0, y0, x1, y1, color);
+  m_dispatcher.displayLine(x0, y0, x1, y1, color);
   respondOk("");
 }
 
 void CommandParser::cmdDispBitmap(const ParsedCommand &cmd) {
   // Check if in REMOTE mode
-  if (UI::g_uiMode.getMode() != UI::UIMode::REMOTE) {
+  if (!m_dispatcher.displayIsRemoteMode()) {
     respondErr("Not in REMOTE mode");
     return;
   }
@@ -2508,7 +2495,7 @@ void CommandParser::cmdDispBitmap(const ParsedCommand &cmd) {
   }
 
   // Start LCD streaming
-  if (!Tasks::DisplayTask_StreamBitmapStart(x, y, w, h)) {
+  if (!m_dispatcher.displayStreamStart(x, y, w, h)) {
     respondErr("LCD streaming failed");
     return;
   }
@@ -2546,7 +2533,7 @@ void CommandParser::cmdDispBitmap(const ParsedCommand &cmd) {
       if (m_transport.readByte(byte, BYTE_TIMEOUT_MS)) {
         chunk[chunkReceived++] = byte;
       } else {
-        Tasks::DisplayTask_StreamBitmapEnd();
+        m_dispatcher.displayStreamEnd();
         char errBuf[48];
         snprintf(errBuf, sizeof(errBuf), "Timeout at byte %lu/%lu",
                  static_cast<unsigned long>(bytesReceived + chunkReceived),
@@ -2560,11 +2547,11 @@ void CommandParser::cmdDispBitmap(const ParsedCommand &cmd) {
       crcState = Util::crc32_update(crcState, chunk, chunkReceived);
     }
 
-    Tasks::DisplayTask_StreamBitmapData(chunk, chunkReceived);
+    m_dispatcher.displayStreamData(chunk, chunkReceived);
     bytesReceived += chunkReceived;
   }
 
-  Tasks::DisplayTask_StreamBitmapEnd();
+  m_dispatcher.displayStreamEnd();
 
   if (useCrc) {
     if (!verifyCrc(crcState)) {
@@ -2577,7 +2564,7 @@ void CommandParser::cmdDispBitmap(const ParsedCommand &cmd) {
 
 void CommandParser::cmdDispBitmapB64(const ParsedCommand &cmd) {
   // Check if in REMOTE mode
-  if (UI::g_uiMode.getMode() != UI::UIMode::REMOTE) {
+  if (!m_dispatcher.displayIsRemoteMode()) {
     respondErr("Not in REMOTE mode");
     return;
   }
@@ -2670,12 +2657,12 @@ void CommandParser::cmdDispBitmapB64(const ParsedCommand &cmd) {
     return;
   }
 
-  Tasks::DisplayTask_RemoteBitmap(x, y, w, h, decoded, decodedLen);
+  m_dispatcher.displayBitmap(x, y, w, h, decoded, decodedLen);
   respondOk("");
 }
 
 void CommandParser::cmdDispIndicator(const ParsedCommand &cmd) {
-  if (UI::g_uiMode.getMode() != UI::UIMode::REMOTE) {
+  if (!m_dispatcher.displayIsRemoteMode()) {
     respondErr("Not in REMOTE mode");
     return;
   }
@@ -2702,13 +2689,13 @@ void CommandParser::cmdDispIndicator(const ParsedCommand &cmd) {
     return;
   }
 
-  Tasks::DisplayTask_RemoteIndicator(
+  m_dispatcher.displayIndicator(
       static_cast<uint16_t>(angle), static_cast<int8_t>(rotDir), hasTrans != 0);
   respondOk("");
 }
 
 void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
-  if (UI::g_uiMode.getMode() != UI::UIMode::REMOTE) {
+  if (!m_dispatcher.displayIsRemoteMode()) {
     respondErr("Not in REMOTE mode");
     return;
   }
@@ -2748,7 +2735,7 @@ void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
     return;
   }
 
-  if (!Tasks::DisplayTask_StreamBitmapStart(x, y, w, h)) {
+  if (!m_dispatcher.displayStreamStart(x, y, w, h)) {
     respondErr("LCD streaming failed");
     return;
   }
@@ -2784,7 +2771,7 @@ void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
   while (bytesReceived < compressedBytes) {
     uint8_t byte;
     if (!m_transport.readByte(byte, BYTE_TIMEOUT_MS)) {
-      Tasks::DisplayTask_StreamBitmapEnd();
+      m_dispatcher.displayStreamEnd();
       char errBuf[48];
       snprintf(errBuf, sizeof(errBuf), "Timeout at byte %lu/%lu",
                static_cast<unsigned long>(bytesReceived),
@@ -2813,7 +2800,7 @@ void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
     case LITERAL:
       pixelBuf[pixelIdx++] = byte;
       if (pixelIdx >= 2) {
-        Tasks::DisplayTask_StreamBitmapData(pixelBuf, 2);
+        m_dispatcher.displayStreamData(pixelBuf, 2);
         decodedPixels++;
         pixelIdx = 0;
         runCount--;
@@ -2826,7 +2813,7 @@ void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
       pixelBuf[pixelIdx++] = byte;
       if (pixelIdx >= 2) {
         for (uint16_t i = 0; i < runCount; i++) {
-          Tasks::DisplayTask_StreamBitmapData(pixelBuf, 2);
+          m_dispatcher.displayStreamData(pixelBuf, 2);
           decodedPixels++;
         }
         rleState = HEADER;
@@ -2836,7 +2823,7 @@ void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
     }
   }
 
-  Tasks::DisplayTask_StreamBitmapEnd();
+  m_dispatcher.displayStreamEnd();
 
   // Verify CRC if requested
   if (useCrc) {
@@ -3104,7 +3091,7 @@ void CommandParser::cmdMotorConfigStepMode(const ParsedCommand &cmd) {
 
 void CommandParser::cmdMotorConfigApply() {
   // Apply current config to motor driver
-  if (!Tasks::MotorTask_ApplyConfig()) {
+  if (!m_dispatcher.motorApplyConfig()) {
     respondErr("Failed to apply config to motor");
     return;
   }
@@ -3116,8 +3103,8 @@ void CommandParser::cmdMotorConfigApply() {
   }
 
   // Readback chip registers to verify writes actually reached the powerSTEP01
-  Tasks::MotorDebugInfo info;
-  if (Tasks::MotorTask_GetDebugInfo(info)) {
+  Comms::ICommandDispatcher::MotorDebugParams info;
+  if (m_dispatcher.motorGetDebugInfo(info)) {
     char buf[128];
     snprintf(buf, sizeof(buf),
              "Config applied. CHIP: OCD_TH=%02X STALL_TH=%02X ALARM_EN=%02X "
@@ -3175,7 +3162,7 @@ void CommandParser::cmdEventStatus() {
   uint32_t sent, lostCritical, lostInfo;
   uint8_t evtMask, queueDepth;
   m_dispatcher.getEventStats(sent, lostCritical, lostInfo, evtMask, queueDepth);
-  uint32_t lastSeq = Tasks::CommsTask_GetLastEventSeq();
+  uint32_t lastSeq = m_dispatcher.getLastEventSeq();
 
   if (m_format == ResponseFormat::JSON) {
     char buf[192];
@@ -3355,10 +3342,10 @@ void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
   }
 
   // Automatically switch to REMOTE mode for display control
-  UI::g_uiMode.setMode(UI::UIMode::REMOTE);
+  m_dispatcher.displaySetMode("REMOTE");
 
   // Start LCD streaming (full screen)
-  if (!Tasks::DisplayTask_StreamBitmapStart(0, 0, 240, 320)) {
+  if (!m_dispatcher.displayStreamStart(0, 0, 240, 320)) {
     respondErr("LCD streaming failed");
     return;
   }
@@ -3375,7 +3362,7 @@ void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
 
   // Read first chunk synchronously
   if (!m_dispatcher.flashReadSlotChunk(slot, 0, buf[cur], CHUNK_SIZE)) {
-    Tasks::DisplayTask_StreamBitmapEnd();
+    m_dispatcher.displayStreamEnd();
     respondErr("Flash read failed");
     return;
   }
@@ -3391,7 +3378,7 @@ void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
     // Start async flash read into other buffer (DMA1 on SPI2)
     if (!m_dispatcher.flashReadSlotChunkStart(slot, offset, buf[1 - cur],
                                               toRead)) {
-      Tasks::DisplayTask_StreamBitmapEnd();
+      m_dispatcher.displayStreamEnd();
       respondErr("Flash read failed");
       return;
     }
@@ -3403,7 +3390,7 @@ void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
       if (buf[cur][i] != 0xFF)
         nonFFCount++;
     }
-    Tasks::DisplayTask_StreamBitmapData(buf[cur], CHUNK_SIZE);
+    m_dispatcher.displayStreamData(buf[cur], CHUNK_SIZE);
 
     // Wait for flash read to complete
     m_dispatcher.flashReadSlotChunkFinish();
@@ -3423,9 +3410,9 @@ void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
     if (buf[cur][i] != 0xFF)
       nonFFCount++;
   }
-  Tasks::DisplayTask_StreamBitmapData(buf[cur], lastSize);
+  m_dispatcher.displayStreamData(buf[cur], lastSize);
 
-  Tasks::DisplayTask_StreamBitmapEnd();
+  m_dispatcher.displayStreamEnd();
   char okBuf[96];
   snprintf(okBuf, sizeof(okBuf),
            "slot=%lu first=%02X%02X%02X%02X nonZero=%lu nonFF=%lu",
@@ -3846,11 +3833,9 @@ void CommandParser::cmdDrvStepMode(const ParsedCommand &cmd) {
   }
 
   // Suspend motor task, perform Hi-Z safe write, resume
-  Tasks::MotorTask_Suspend();
   uint8_t readback = 0;
   bool ok =
-      Tasks::MotorTask_SetStepModeSafe(static_cast<uint8_t>(mode), readback);
-  Tasks::MotorTask_Resume();
+      m_dispatcher.motorSetStepModeSafe(static_cast<uint8_t>(mode), readback);
 
   if (!ok) {
     if (m_format == ResponseFormat::JSON) {
@@ -3886,8 +3871,8 @@ void CommandParser::cmdDrvStepMode(const ParsedCommand &cmd) {
 
 // DRV:STEP_MODE? — read step mode from hardware
 void CommandParser::cmdDrvStepModeQuery() {
-  Tasks::MotorDebugInfo info = {};
-  Tasks::MotorTask_GetDebugInfo(info);
+  Comms::ICommandDispatcher::MotorDebugParams info = {};
+  m_dispatcher.motorGetDebugInfo(info);
   uint8_t mode = info.stepMode;
   uint32_t ustepsPerRev =
       static_cast<uint32_t>(m_dispatcher.getFullStepsPerRev()) * (1U << mode);
