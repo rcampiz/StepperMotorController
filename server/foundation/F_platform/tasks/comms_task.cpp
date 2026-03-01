@@ -12,6 +12,7 @@
 #include "L2_protocol/command_parser.hpp"
 #include "wiring/service_dispatcher.hpp"
 #include "wiring/encoder_adapter.hpp"
+#include "wiring/debug_commands.hpp"
 #include "F_util/interface_trace.hpp"
 #ifdef ENABLE_INTERFACE_TRACE
 #include "wiring/traced/traced_transport.hpp"
@@ -22,7 +23,7 @@
 #include "L3_services/infra/trace.hpp"
 #include "L3_services/dispatch/command_queue.hpp"
 #include "L3_services/dispatch/event_service.hpp"
-#include "ui/ui_mode.hpp"
+#include "F_platform/ui/ui_mode.hpp"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
 #include <stdint.h>
@@ -139,6 +140,10 @@ bool CommsTask_Init(TransportType transport)
     if (s_parser == nullptr) {
         return false;
     }
+
+    // Wire debug command handler for hardware debug/bringup commands
+    static DebugCommandHandler debugCommands;
+    s_parser->setDebugCommands(&debugCommands);
 
     return true;
 }

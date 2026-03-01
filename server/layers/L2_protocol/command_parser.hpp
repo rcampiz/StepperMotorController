@@ -20,6 +20,7 @@
 
 #include "F_platform/interfaces/itransport.hpp"
 #include "F_platform/interfaces/icommand_dispatcher.hpp"
+#include "F_platform/interfaces/idebug_commands.hpp"
 #include <stdint.h>
 
 namespace Comms {
@@ -171,9 +172,15 @@ public:
    */
   void setFormat(ResponseFormat format) { m_format = format; }
 
+  /**
+   * @brief Set debug command handler for hardware debug commands
+   */
+  void setDebugCommands(IDebugCommands* dbg) { m_debugCommands = dbg; }
+
 private:
   ITransport &m_transport;
   ICommandDispatcher &m_dispatcher;
+  IDebugCommands *m_debugCommands = nullptr;
   char m_buffer[CMD_BUFFER_SIZE];
   size_t m_bufIndex;
   ResponseFormat m_format;       // Current response format (ASCII or JSON)
@@ -248,7 +255,6 @@ private:
   void cmdEncoderZero();
   void cmdZeroAll();
   void cmdEncoder();
-  void cmdEncDebug();
   void cmdEncFilter(const ParsedCommand &cmd);
   void cmdEncFilterSub(const char *sub, const ParsedCommand &cmd);
 
@@ -311,9 +317,6 @@ private:
    * @return true if CRC matches
    */
   bool verifyCrc(uint32_t computedCrc);
-
-  // Debug command handlers
-  void cmdMotorDebug();
 
   // Trace command handlers
   void cmdTraceDump();

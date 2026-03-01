@@ -39,7 +39,7 @@
 #include "L3_services/infra/tick_timer.hpp"
 #include "L3_services/motion/control_mode.hpp"
 #include "L3_services/motion/motor_config.hpp"
-#include "L3_services/ui/ui_mode.hpp"
+#include "F_platform/ui/ui_mode.hpp"
 #include "L4_drivers/devices/flash_nor.hpp"
 #include "L4_drivers/spi/spi_manager.hpp"
 

@@ -10,7 +10,7 @@
 #include "L4_drivers/spi/spi_manager.hpp"
 #include "F_platform/interfaces/telemetry.hpp"
 #include "L3_services/infra/indicator_service.hpp"
-#include "ui/ui_mode.hpp"
+#include "F_platform/ui/ui_mode.hpp"
 #include "ui/screen_manager.hpp"
 #include "ui/menu_screen.hpp"
 #include "ui/screens/boot_color_screen.hpp"

@@ -164,7 +164,7 @@ arm-none-eabi-g++ -c %CXXFLAGS% server/layers/L3_services/infra/flash_image_serv
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile flash_image_service.cpp & exit /b 1)
 
 echo [18/25] Compiling UI sources...
-arm-none-eabi-g++ -c %CXXFLAGS% server/layers/L3_services/ui/ui_mode.cpp -o build/ui_mode.o
+arm-none-eabi-g++ -c %CXXFLAGS% server/foundation/F_platform/ui/ui_mode.cpp -o build/ui_mode.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile ui_mode.cpp & exit /b 1)
 arm-none-eabi-g++ -c %CXXFLAGS% server/layers/L3_services/ui/menu_screen.cpp -o build/menu_screen.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile menu_screen.cpp & exit /b 1)
@@ -203,7 +203,11 @@ if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile interface_trace.cpp & exit 
 arm-none-eabi-g++ -c %CXXFLAGS% server/foundation/F_platform/interfaces/async_event_types.cpp -o build/async_event_types.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile async_event_types.cpp & exit /b 1)
 
-echo [20/27] Assembling startup_stm32f401xe.s...
+echo [20/27] Compiling wiring sources...
+arm-none-eabi-g++ -c %CXXFLAGS% server/wiring/debug_commands.cpp -o build/debug_commands.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile debug_commands.cpp & exit /b 1)
+
+echo [21/27] Assembling startup_stm32f401xe.s...
 arm-none-eabi-gcc -c %ASFLAGS% server/foundation/F_platform/startup/startup_stm32f401xe.s -o build/startup_stm32f401xe.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to assemble startup_stm32f401xe.s & exit /b 1)
 
@@ -216,7 +220,7 @@ set "OBJS=%OBJS% build/motor_task.o build/encoder_task.o build/display_task.o bu
 set "OBJS=%OBJS% build/tick_timer.o build/command_queue.o build/device_config.o build/control_mode.o build/motor_config.o build/motion_service.o build/safety_service.o build/config_service.o build/trace.o build/event_service.o build/flash_image_service.o build/indicator_service.o build/unit_conversion.o build/timing_service.o build/pid_controller.o build/following_supervisor.o build/sysid.o build/speed_trim_controller.o"
 set "OBJS=%OBJS% build/ui_mode.o build/menu_screen.o build/terminal_screen.o build/screen_manager.o"
 set "OBJS=%OBJS% build/boot_color_screen.o build/device_info_screen.o build/encoder_screen.o build/motion_screen.o build/config_screen.o build/graph_screen.o build/image_view_screen.o build/trace_screen.o build/task_monitor_screen.o build/dispatcher_screen.o build/arch_screen.o"
-set "OBJS=%OBJS% build/spi_manager.o build/interface_trace.o build/async_event_types.o"
+set "OBJS=%OBJS% build/spi_manager.o build/interface_trace.o build/async_event_types.o build/debug_commands.o"
 set "OBJS=%OBJS% build/startup_stm32f401xe.o"
 
 echo [22/26] Linking...
