@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "L3_services/safety/isafety_actions.hpp"
+#include "F_platform/interfaces/isafety_actions.hpp"
 #include "F_util/interface_trace.hpp"
 
 #ifdef ENABLE_INTERFACE_TRACE

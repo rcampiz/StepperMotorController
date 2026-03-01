@@ -14,9 +14,7 @@
 //   motion_service, safety_service, tick_timer, timing_service,
 //   event_service, motor_config, following_supervisor, sysid,
 //   speed_trim_controller, unit_conversion
-// Remaining L3 (debug commands only):
-#include "L3_services/infra/trace.hpp"
-#include "L3_services/infra/flash_image_service.hpp"
+// All L3 includes now eliminated via ICommandDispatcher
 #include "F_util/crc32.hpp"
 // board_pins.hpp removed — L2 must not depend on L5. Diag commands use GPIO literals.
 #include "X_vendor/CMSIS/stm32f401xe.h"
@@ -183,7 +181,7 @@ ParsedCommand CommandParser::parse(const char *line) {
 }
 
 void CommandParser::dispatch(const ParsedCommand &cmd) {
-  TRACE_ENTRY("CMD:RX");
+  m_dispatcher.traceRecordEntry("CMD:RX");
   ITRACE(ITrace::L2_L3_DISPATCH, "[L2>L3]", "dispatch", cmd.cmd);
 
   // Store current command for JSON echo
@@ -243,7 +241,7 @@ void CommandParser::dispatch(const ParsedCommand &cmd) {
     }
   }
 
-  TRACE_EXIT("CMD:RX");
+  m_dispatcher.traceRecordExit("CMD:RX");
 }
 
 // ============================================================================
@@ -4150,18 +4148,18 @@ void CommandParser::cmdMotorDebug() {
 // ============================================================================
 
 void CommandParser::cmdTraceDump() {
-  size_t count = Trace::getCount();
+  uint32_t count = m_dispatcher.traceGetCount();
   char buf[80];
   snprintf(buf, sizeof(buf), "TRACE: %u entries", static_cast<unsigned>(count));
   m_transport.println(buf);
 
-  Trace::Entry e;
-  for (size_t i = 0; i < count; i++) {
-    if (!Trace::getEntry(i, e)) break;
+  Comms::ICommandDispatcher::TraceEntryData e;
+  for (uint32_t i = 0; i < count; i++) {
+    if (!m_dispatcher.traceGetEntry(i, e)) break;
     snprintf(buf, sizeof(buf), "[%3u] T=%lu %c %s %lu",
              static_cast<unsigned>(i),
              static_cast<unsigned long>(e.tick),
-             (e.dir == Trace::ENTRY) ? '>' : '<',
+             (e.dir == 0) ? '>' : '<',
              e.tag,
              static_cast<unsigned long>(e.arg0));
     m_transport.println(buf);
@@ -4169,7 +4167,7 @@ void CommandParser::cmdTraceDump() {
 }
 
 void CommandParser::cmdTraceReset() {
-  Trace::reset();
+  m_dispatcher.traceReset();
   respondOk("Trace cleared");
 }
 
@@ -4487,13 +4485,12 @@ void CommandParser::cmdEventStatus() {
 // =============================================================================
 
 void CommandParser::cmdFlashInfo() {
-  auto &svc = Services::g_flashImageService;
-  if (!svc.isAvailable()) {
+  if (!m_dispatcher.flashIsAvailable()) {
     respondErr("Flash not available");
     return;
   }
 
-  auto info = svc.getInfo();
+  auto info = m_dispatcher.flashGetInfo();
 
   if (m_format == ResponseFormat::JSON) {
     char data[128];
@@ -4515,8 +4512,7 @@ void CommandParser::cmdFlashInfo() {
 }
 
 void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
-  auto &svc = Services::g_flashImageService;
-  if (!svc.isAvailable()) {
+  if (!m_dispatcher.flashIsAvailable()) {
     respondErr("Flash not available");
     return;
   }
@@ -4531,15 +4527,15 @@ void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
   }
 
   uint32_t slot = strtoul(cmd.args[0], nullptr, 10);
-  if (slot >= svc.maxSlots()) {
+  if (slot >= m_dispatcher.flashMaxSlots()) {
     respondErr("Slot out of range");
     return;
   }
 
-  constexpr uint32_t expectedBytes = Services::FLASH_IMAGE_SIZE;
+  constexpr uint32_t expectedBytes = Comms::ICommandDispatcher::FLASH_IMAGE_SIZE;
 
   // Erase the slot first
-  if (!svc.eraseSlot(slot)) {
+  if (!m_dispatcher.flashEraseSlot(slot)) {
     respondErr("Flash erase failed");
     return;
   }
@@ -4559,7 +4555,7 @@ void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
   }
 
   // Receive binary data and program page-by-page
-  constexpr uint32_t PAGE_SIZE = Services::FLASH_PAGE_SIZE;
+  constexpr uint32_t PAGE_SIZE = Comms::ICommandDispatcher::FLASH_PAGE_SIZE;
   constexpr uint32_t BYTE_TIMEOUT_MS = 100;
   uint8_t page[PAGE_SIZE];
   uint32_t bytesReceived = 0;
@@ -4590,7 +4586,7 @@ void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
     }
 
     // Program the page to flash
-    if (!svc.writeSlotData(slot, bytesReceived, page, toRead)) {
+    if (!m_dispatcher.flashWriteSlotData(slot, bytesReceived, page, toRead)) {
       respondErr("Flash program failed");
       return;
     }
@@ -4607,7 +4603,7 @@ void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
 
   // Read-back verification: read first 4 bytes from flash to confirm write
   uint8_t verify[4] = {0xFF, 0xFF, 0xFF, 0xFF};
-  svc.readSlotChunk(slot, 0, verify, 4);
+  m_dispatcher.flashReadSlotChunk(slot, 0, verify, 4);
   char okBuf[96];
   snprintf(okBuf, sizeof(okBuf),
            "Upload complete (%lu bytes, verify %02X%02X%02X%02X)",
@@ -4617,8 +4613,7 @@ void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
-  auto &svc = Services::g_flashImageService;
-  if (!svc.isAvailable()) {
+  if (!m_dispatcher.flashIsAvailable()) {
     respondErr("Flash not available");
     return;
   }
@@ -4629,7 +4624,7 @@ void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
   }
 
   uint32_t slot = strtoul(cmd.args[0], nullptr, 10);
-  if (slot >= svc.maxSlots()) {
+  if (slot >= m_dispatcher.flashMaxSlots()) {
     respondErr("Slot out of range");
     return;
   }
@@ -4654,7 +4649,7 @@ void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
   uint8_t first4[4] = {0};
 
   // Read first chunk synchronously
-  if (!svc.readSlotChunk(slot, 0, buf[cur], CHUNK_SIZE)) {
+  if (!m_dispatcher.flashReadSlotChunk(slot, 0, buf[cur], CHUNK_SIZE)) {
     Tasks::DisplayTask_StreamBitmapEnd();
     respondErr("Flash read failed");
     return;
@@ -4663,12 +4658,12 @@ void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
   offset = CHUNK_SIZE;
 
   // Pipeline: start next flash read, then write current chunk to LCD
-  while (offset < Services::FLASH_IMAGE_SIZE) {
-    uint32_t remaining = Services::FLASH_IMAGE_SIZE - offset;
+  while (offset < Comms::ICommandDispatcher::FLASH_IMAGE_SIZE) {
+    uint32_t remaining = Comms::ICommandDispatcher::FLASH_IMAGE_SIZE - offset;
     uint32_t toRead = (remaining < CHUNK_SIZE) ? remaining : CHUNK_SIZE;
 
     // Start async flash read into other buffer (DMA1 on SPI2)
-    if (!svc.readSlotChunkStart(slot, offset, buf[1 - cur], toRead)) {
+    if (!m_dispatcher.flashReadSlotChunkStart(slot, offset, buf[1 - cur], toRead)) {
       Tasks::DisplayTask_StreamBitmapEnd();
       respondErr("Flash read failed");
       return;
@@ -4682,14 +4677,14 @@ void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
     Tasks::DisplayTask_StreamBitmapData(buf[cur], CHUNK_SIZE);
 
     // Wait for flash read to complete
-    svc.readSlotChunkFinish();
+    m_dispatcher.flashReadSlotChunkFinish();
 
     cur = 1 - cur;
     offset += toRead;
   }
 
   // Write final chunk to LCD
-  uint32_t lastSize = Services::FLASH_IMAGE_SIZE - (offset - CHUNK_SIZE);
+  uint32_t lastSize = Comms::ICommandDispatcher::FLASH_IMAGE_SIZE - (offset - CHUNK_SIZE);
   if (lastSize > CHUNK_SIZE) lastSize = CHUNK_SIZE;
   for (uint32_t i = 0; i < lastSize; i++) {
     if (buf[cur][i] != 0x00) nonZeroCount++;
@@ -4707,13 +4702,12 @@ void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdFlashEraseAll() {
-  auto &svc = Services::g_flashImageService;
-  if (!svc.isAvailable()) {
+  if (!m_dispatcher.flashIsAvailable()) {
     respondErr("Flash not available");
     return;
   }
 
-  if (!svc.eraseAll()) {
+  if (!m_dispatcher.flashEraseAll()) {
     respondErr("Flash erase failed");
     return;
   }
@@ -4722,8 +4716,7 @@ void CommandParser::cmdFlashEraseAll() {
 }
 
 void CommandParser::cmdFlashDump(const ParsedCommand &cmd) {
-  auto &svc = Services::g_flashImageService;
-  if (!svc.isAvailable()) {
+  if (!m_dispatcher.flashIsAvailable()) {
     respondErr("Flash not available");
     return;
   }
@@ -4735,7 +4728,7 @@ void CommandParser::cmdFlashDump(const ParsedCommand &cmd) {
   }
 
   uint32_t slot = strtoul(cmd.args[0], nullptr, 10);
-  if (slot >= svc.maxSlots()) {
+  if (slot >= m_dispatcher.flashMaxSlots()) {
     respondErr("Slot out of range");
     return;
   }
@@ -4745,13 +4738,13 @@ void CommandParser::cmdFlashDump(const ParsedCommand &cmd) {
   if (cmd.argCount >= 2) offset = strtoul(cmd.args[1], nullptr, 10);
   if (cmd.argCount >= 3) len = strtoul(cmd.args[2], nullptr, 10);
   if (len > 256) len = 256;  // Cap at 256 bytes
-  if (offset + len > Services::FLASH_IMAGE_SIZE) {
+  if (offset + len > Comms::ICommandDispatcher::FLASH_IMAGE_SIZE) {
     respondErr("Offset+len exceeds image size");
     return;
   }
 
   uint8_t buf[256];
-  if (!svc.readSlotChunk(slot, offset, buf, len)) {
+  if (!m_dispatcher.flashReadSlotChunk(slot, offset, buf, len)) {
     respondErr("Flash read failed");
     return;
   }
@@ -4760,7 +4753,7 @@ void CommandParser::cmdFlashDump(const ParsedCommand &cmd) {
   char line[80];
   for (uint32_t i = 0; i < len; i += 16) {
     int pos = snprintf(line, sizeof(line), "%06lX:",
-                       static_cast<unsigned long>(svc.slotAddress(slot) + offset + i));
+                       static_cast<unsigned long>(m_dispatcher.flashSlotAddress(slot) + offset + i));
     for (uint32_t j = 0; j < 16 && (i + j) < len; j++) {
       pos += snprintf(line + pos, sizeof(line) - pos, " %02X", buf[i + j]);
     }
@@ -4770,8 +4763,7 @@ void CommandParser::cmdFlashDump(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdFlashTest() {
-  auto &svc = Services::g_flashImageService;
-  if (!svc.isAvailable()) {
+  if (!m_dispatcher.flashIsAvailable()) {
     respondErr("Flash not available");
     return;
   }
@@ -4781,7 +4773,7 @@ void CommandParser::cmdFlashTest() {
   int rpos = 0;
 
   // Step 0: Read JEDEC ID NOW (verifies SPI2 bus is still alive)
-  auto info = svc.getInfo();
+  auto info = m_dispatcher.flashGetInfo();
   rpos += snprintf(result + rpos, sizeof(result) - rpos,
                    "jedec=%02X/%02X/%02X",
                    info.manufacturer, info.memoryType, info.capacityCode);
@@ -4813,13 +4805,13 @@ void CommandParser::cmdFlashTest() {
 
   // Step 1: Read before erase (first 4 bytes)
   uint8_t before[4];
-  svc.readSlotChunk(0, 0, before, 4);
+  m_dispatcher.flashReadSlotChunk(0, 0, before, 4);
   rpos += snprintf(result + rpos, sizeof(result) - rpos,
                    " pre=%02X%02X%02X%02X",
                    before[0], before[1], before[2], before[3]);
 
   // Step 2: Erase slot 0
-  if (!svc.eraseSlot(0)) {
+  if (!m_dispatcher.flashEraseSlot(0)) {
     rpos += snprintf(result + rpos, sizeof(result) - rpos, " erase=ERR");
     respondErr(result);
     return;
@@ -4827,7 +4819,7 @@ void CommandParser::cmdFlashTest() {
 
   // Step 3: Read after erase (should be all FF)
   uint8_t afterErase[16];
-  svc.readSlotChunk(0, 0, afterErase, 16);
+  m_dispatcher.flashReadSlotChunk(0, 0, afterErase, 16);
   bool eraseOk = true;
   for (int i = 0; i < 16; i++) {
     if (afterErase[i] != 0xFF) { eraseOk = false; break; }
@@ -4840,7 +4832,7 @@ void CommandParser::cmdFlashTest() {
   // Step 4: Write test pattern to first page
   uint8_t pattern[256];
   for (int i = 0; i < 256; i++) pattern[i] = (i & 1) ? 0x55 : 0xAA;
-  if (!svc.writeSlotData(0, 0, pattern, 256)) {
+  if (!m_dispatcher.flashWriteSlotData(0, 0, pattern, 256)) {
     rpos += snprintf(result + rpos, sizeof(result) - rpos, " wr=ERR");
     respondErr(result);
     return;
@@ -4848,7 +4840,7 @@ void CommandParser::cmdFlashTest() {
 
   // Step 5: Read back and compare
   uint8_t readback[256];
-  svc.readSlotChunk(0, 0, readback, 256);
+  m_dispatcher.flashReadSlotChunk(0, 0, readback, 256);
   int mismatches = 0;
   for (int i = 0; i < 256; i++) {
     if (readback[i] != pattern[i]) mismatches++;
@@ -4911,8 +4903,7 @@ bool CommandParser::verifyCrc(uint32_t computedCrc) {
 // ========================================================================
 
 void CommandParser::cmdFlashUploadRle(const ParsedCommand &cmd) {
-  auto &svc = Services::g_flashImageService;
-  if (!svc.isAvailable()) {
+  if (!m_dispatcher.flashIsAvailable()) {
     respondErr("Flash not available");
     return;
   }
@@ -4927,7 +4918,7 @@ void CommandParser::cmdFlashUploadRle(const ParsedCommand &cmd) {
   }
 
   uint32_t slot = strtoul(cmd.args[0], nullptr, 10);
-  if (slot >= svc.maxSlots()) {
+  if (slot >= m_dispatcher.flashMaxSlots()) {
     respondErr("Slot out of range");
     return;
   }
@@ -4945,7 +4936,7 @@ void CommandParser::cmdFlashUploadRle(const ParsedCommand &cmd) {
   }
 
   // Erase the slot first
-  if (!svc.eraseSlot(slot)) {
+  if (!m_dispatcher.flashEraseSlot(slot)) {
     respondErr("Flash erase failed");
     return;
   }
@@ -4973,7 +4964,7 @@ void CommandParser::cmdFlashUploadRle(const ParsedCommand &cmd) {
   uint32_t totalPixels = 240UL * 320;
   uint32_t decodedPixels = 0;
 
-  constexpr uint32_t PAGE_SIZE = Services::FLASH_PAGE_SIZE;
+  constexpr uint32_t PAGE_SIZE = Comms::ICommandDispatcher::FLASH_PAGE_SIZE;
   constexpr uint32_t BYTE_TIMEOUT_MS = 100;
   uint8_t page[PAGE_SIZE];
   uint32_t pageOffset = 0;   // Bytes in current page buffer
@@ -4985,7 +4976,7 @@ void CommandParser::cmdFlashUploadRle(const ParsedCommand &cmd) {
   // Helper lambda: flush current page to flash
   auto flushPage = [&]() -> bool {
     if (pageOffset == 0) return true;
-    if (!svc.writeSlotData(slot, flashOffset, page, pageOffset)) {
+    if (!m_dispatcher.flashWriteSlotData(slot, flashOffset, page, pageOffset)) {
       return false;
     }
     flashOffset += pageOffset;
@@ -5089,7 +5080,7 @@ void CommandParser::cmdFlashUploadRle(const ParsedCommand &cmd) {
 
   // Read-back verification: read first 4 bytes from flash to confirm write
   uint8_t verify[4] = {0xFF, 0xFF, 0xFF, 0xFF};
-  svc.readSlotChunk(slot, 0, verify, 4);
+  m_dispatcher.flashReadSlotChunk(slot, 0, verify, 4);
 
   char okBuf[80];
   snprintf(okBuf, sizeof(okBuf),

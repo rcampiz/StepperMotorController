@@ -6,7 +6,7 @@
 #include "L3_services/safety/safety_service.hpp"
 #include "L3_services/dispatch/command_queue.hpp"
 #include "L3_services/infra/trace.hpp"
-#include "L3_services/safety/isafety_actions.hpp"
+#include "F_platform/interfaces/isafety_actions.hpp"
 #include <stdio.h>
 
 namespace Services::Safety {

@@ -23,6 +23,8 @@
 #include "L3_services/dispatch/event_service.hpp"
 #include "L3_services/infra/tick_timer.hpp"
 #include "L3_services/infra/timing_service.hpp"
+#include "L3_services/infra/trace.hpp"
+#include "L3_services/infra/flash_image_service.hpp"
 #include "F_platform/interfaces/iencoder.hpp"
 
 class ServiceDispatcher : public Comms::ICommandDispatcher {
@@ -658,6 +660,86 @@ public:
         lostInfo = st.lostInfo;
         mask = st.enableMask;
         queueDepth = st.queueDepth;
+    }
+
+    // =================================================================
+    // Trace
+    // =================================================================
+
+    uint32_t traceGetCount() override {
+        return static_cast<uint32_t>(Trace::getCount());
+    }
+
+    bool traceGetEntry(uint32_t index, Comms::ICommandDispatcher::TraceEntryData& out) override {
+        Trace::Entry e;
+        if (!Trace::getEntry(static_cast<size_t>(index), e)) return false;
+        out.tick = e.tick;
+        out.tag = e.tag;
+        out.arg0 = e.arg0;
+        out.dir = static_cast<uint8_t>(e.dir);
+        out.method = e.method;
+        return true;
+    }
+
+    void traceReset() override {
+        Trace::reset();
+    }
+
+    void traceRecordEntry(const char* tag, uint32_t arg0) override {
+        Trace::record(Trace::ENTRY, tag, arg0);
+    }
+
+    void traceRecordExit(const char* tag, uint32_t arg0) override {
+        Trace::record(Trace::EXIT, tag, arg0);
+    }
+
+    // =================================================================
+    // Flash image
+    // =================================================================
+
+    bool flashIsAvailable() override {
+        return Services::g_flashImageService.isAvailable();
+    }
+
+    Comms::ICommandDispatcher::FlashInfo flashGetInfo() override {
+        auto info = Services::g_flashImageService.getInfo();
+        return {info.manufacturer, info.memoryType, info.capacityCode,
+                info.capacityBytes, info.maxSlots};
+    }
+
+    uint32_t flashMaxSlots() override {
+        return Services::g_flashImageService.maxSlots();
+    }
+
+    bool flashEraseSlot(uint32_t slot) override {
+        return Services::g_flashImageService.eraseSlot(slot);
+    }
+
+    bool flashWriteSlotData(uint32_t slot, uint32_t offset,
+                            const uint8_t* data, size_t len) override {
+        return Services::g_flashImageService.writeSlotData(slot, offset, data, len);
+    }
+
+    bool flashReadSlotChunk(uint32_t slot, uint32_t offset,
+                            uint8_t* buf, size_t len) override {
+        return Services::g_flashImageService.readSlotChunk(slot, offset, buf, len);
+    }
+
+    bool flashReadSlotChunkStart(uint32_t slot, uint32_t offset,
+                                  uint8_t* buf, size_t len) override {
+        return Services::g_flashImageService.readSlotChunkStart(slot, offset, buf, len);
+    }
+
+    void flashReadSlotChunkFinish() override {
+        Services::g_flashImageService.readSlotChunkFinish();
+    }
+
+    bool flashEraseAll() override {
+        return Services::g_flashImageService.eraseAll();
+    }
+
+    uint32_t flashSlotAddress(uint32_t slot) override {
+        return Services::g_flashImageService.slotAddress(slot);
     }
 
 private:
