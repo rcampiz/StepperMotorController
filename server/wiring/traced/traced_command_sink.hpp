@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "F_platform/interfaces/imotor_command_sink.hpp"
+#include "F_platform/hal/imotor_command_sink.hpp"
 #include "F_util/interface_trace.hpp"
 
 #ifdef ENABLE_INTERFACE_TRACE
@@ -23,7 +23,7 @@ public:
             "SoftHiZ", "HardHiZ", "GoHome", "GoMark", "ResetPos",
             "SetAccel", "SetDecel", "SetMaxSpd", "SetMark", "GetStatus"
         };
-        uint8_t idx = static_cast<uint8_t>(cmd.type);
+        auto idx = static_cast<uint8_t>(cmd.type);
         const char* name = (idx < sizeof(names)/sizeof(names[0])) ? names[idx] : "?";
         ITrace::log(ITrace::L3_CMD_SINK, "[L3~L3]", "cmdSink", name);
         return m_real.sendCommand(cmd, timeoutMs);

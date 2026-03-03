@@ -24,7 +24,7 @@
 #include "L5_board/spi/spi_board_config.hpp"
 #include "L5_board/spi/spi_hardware.hpp"
 #include "L5_board/board_pins.hpp"
-#include "F_platform/interfaces/ilock.hpp"
+#include "F_platform/hal/ilock.hpp"
 
 /**
  * @brief Maximum transaction data size

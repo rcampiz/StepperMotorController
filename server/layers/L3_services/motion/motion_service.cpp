@@ -5,7 +5,7 @@
 
 #include "L3_services/motion/motion_service.hpp"
 #include "L3_services/config/config_service.hpp"
-#include "F_platform/interfaces/imotor_command_sink.hpp"
+#include "F_platform/hal/imotor_command_sink.hpp"
 #include "L3_services/infra/trace.hpp"
 
 namespace Services::Motion {
@@ -40,7 +40,7 @@ static int32_t speedOverrideRaw(uint32_t stepsPerSec) {
 Result run(uint32_t stepsPerSec, bool forward) {
     Trace::ServiceScope svc(Trace::SVC_MOTION);
     TRACE_ENTRY("MOT:RUN", stepsPerSec);
-    uint32_t speedRaw = static_cast<uint32_t>(
+    auto speedRaw = static_cast<uint32_t>(
         (static_cast<uint64_t>(stepsPerSec) * 1048576ULL) / 15625ULL);
     Result r = sendCmd(MotorCmdType::Run,
                        static_cast<int32_t>(speedRaw),

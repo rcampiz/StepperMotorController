@@ -5,7 +5,9 @@
 
 #include "F_platform/tasks/comms_task.hpp"
 #include "F_platform/rtos/freertos_clock.hpp"
-#include "F_platform/interfaces/itransport.hpp"
+#include "F_platform/hal/itransport.hpp"
+#include "L5_board/uart/uart_hardware.hpp"
+#include "L4_drivers/rtt/rtt_driver.hpp"
 #include "L1_transport/uart_transport.hpp"
 #include "L1_transport/rtt_transport.hpp"
 #include "L5_board/board_pins.hpp"
@@ -18,7 +20,7 @@
 #include "wiring/traced/traced_transport.hpp"
 #include "wiring/traced/traced_encoder.hpp"
 #endif
-#include "F_platform/interfaces/telemetry.hpp"
+#include "F_platform/types/telemetry.hpp"
 #include "L2_protocol/event_codec.hpp"
 #include "L3_services/infra/trace.hpp"
 #include "L3_services/dispatch/command_queue.hpp"
@@ -93,22 +95,27 @@ bool CommsTask_Init(TransportType transport)
     switch (transport) {
         case TransportType::VCP_UART:
             {
-                static const Comms::UartConfig vcpConfig = {
-                    Pins::VCP_UART::INSTANCE,
-                    Pins::VCP_UART::PORT,
-                    Pins::VCP_UART::TX_PIN,
-                    Pins::VCP_UART::RX_PIN,
-                    Pins::VCP_UART::AF,
-                    Pins::VCP_UART::APB1_CLOCK_HZ,
-                };
-                s_transport = new Comms::UartTransport(
-                    vcpConfig, commsClock, 115200,
+                // Hardware driver (L5) — owns all CMSIS register access
+                static UartHardware uartHw(
+                    Pins::VCP_UART::INSTANCE, Pins::VCP_UART::PORT,
+                    Pins::VCP_UART::TX_PIN, Pins::VCP_UART::RX_PIN,
+                    Pins::VCP_UART::AF, Pins::VCP_UART::APB1_CLOCK_HZ);
+                // Transport (L1) — ring buffer + ITransport, no CMSIS
+                static Comms::UartTransport vcpTransport(
+                    uartHw, commsClock, 115200,
                     configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 1);
+                s_transport = &vcpTransport;
             }
             break;
 
         case TransportType::RTT:
-            s_transport = new Comms::RttTransport(0);  // Channel 0
+            {
+                // Driver (L4) — wraps SEGGER RTT vendor library
+                static RttDriver rttHw(0);  // Channel 0
+                // Transport (L1) — ITransport, no vendor includes
+                static Comms::RttTransport rttTransport(rttHw);
+                s_transport = &rttTransport;
+            }
             break;
     }
 
@@ -136,10 +143,8 @@ bool CommsTask_Init(TransportType transport)
 #else
     static ServiceDispatcher dispatcher(&encoderAdapter);
 #endif
-    s_parser = new Comms::CommandParser(activeTransport, dispatcher);
-    if (s_parser == nullptr) {
-        return false;
-    }
+    static Comms::CommandParser parser(activeTransport, dispatcher);
+    s_parser = &parser;
 
     // Wire debug command handler for hardware debug/bringup commands
     static DebugCommandHandler debugCommands;
@@ -191,7 +196,7 @@ void vCommsTask(void* pvParameters)
             AsyncEvent evt;
             while (Services::Event::receive(evt)) {
                 s_eventSeq++;
-                uint32_t ts_ms = static_cast<uint32_t>(xTaskGetTickCount());
+                auto ts_ms = static_cast<uint32_t>(xTaskGetTickCount());
                 if (s_parser->getFormat() == Comms::ResponseFormat::JSON) {
                     Comms::EventCodec::formatJson(*s_transport, evt, s_eventSeq, ts_ms);
                 } else {
@@ -325,7 +330,7 @@ void CommsTask_GetHeartbeatStatus(
 
     if (s_heartbeatTimeoutMs > 0 && !s_commsTimedOut) {
         TickType_t elapsed = xTaskGetTickCount() - s_lastHeartbeatTick;
-        uint32_t elapsed_ms = static_cast<uint32_t>(elapsed);
+        auto elapsed_ms = static_cast<uint32_t>(elapsed);
         if (elapsed_ms < s_heartbeatTimeoutMs) {
             out_remaining_ms = s_heartbeatTimeoutMs - elapsed_ms;
         } else {

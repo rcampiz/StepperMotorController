@@ -9,7 +9,7 @@
 
 #include "ui/screens/graph_screen.hpp"
 #include "L4_drivers/devices/lcd_st7789.hpp"
-#include "F_platform/interfaces/telemetry.hpp"
+#include "F_platform/types/telemetry.hpp"
 #include <stdio.h>
 #include <string.h>
 
@@ -162,7 +162,7 @@ void GraphScreen::renderGraph(LCD& lcd)
 
     // Zero-line row (always in range since 0 is always included)
     int32_t zp = ((-minVal) * static_cast<int32_t>(GRAPH_H - 1)) / range;
-    uint16_t zeroRow = static_cast<uint16_t>(GRAPH_H - 1 - zp);
+    auto zeroRow = static_cast<uint16_t>(GRAPH_H - 1 - zp);
 
     // Column-buffer rendering: build each column in RAM, blit via DMA
     uint16_t prevPixelRow = 0;
@@ -180,7 +180,7 @@ void GraphScreen::renderGraph(LCD& lcd)
         }
 
         // Check if this column has data
-        uint16_t age = static_cast<uint16_t>(GRAPH_W - 1 - col);
+        auto age = static_cast<uint16_t>(GRAPH_W - 1 - col);
         if (age < displaySamples) {
             int32_t val = getSample(age);
 
@@ -188,7 +188,7 @@ void GraphScreen::renderGraph(LCD& lcd)
             int32_t pixelH = ((val - minVal) * static_cast<int32_t>(GRAPH_H - 1)) / range;
             if (pixelH < 0) pixelH = 0;
             if (pixelH >= static_cast<int32_t>(GRAPH_H)) pixelH = GRAPH_H - 1;
-            uint16_t curRow = static_cast<uint16_t>(GRAPH_H - 1 - pixelH);
+            auto curRow = static_cast<uint16_t>(GRAPH_H - 1 - pixelH);
 
             if (havePrev) {
                 // Fill connected line segment from prevRow to curRow (2px thick)
@@ -229,7 +229,7 @@ void GraphScreen::renderGraph(LCD& lcd)
                    modeStr, AXIS_COLOR, BG_COLOR, TEXT_SCALE);
 
     // X-axis time labels (scale=3, below graph — padded)
-    uint16_t xAxisY = static_cast<uint16_t>(GRAPH_Y + GRAPH_H + 4);
+    auto xAxisY = static_cast<uint16_t>(GRAPH_Y + GRAPH_H + 4);
 
     // Dynamic time window: displaySamples * 50ms per sample
     uint16_t totalMs = displaySamples * 50;
@@ -247,13 +247,13 @@ void GraphScreen::renderGraph(LCD& lcd)
 
     // Middle time label
     uint16_t halfMs = totalMs / 2;
-    uint16_t midCol = static_cast<uint16_t>(dataStartCol + (GRAPH_W - dataStartCol) / 2);
+    auto midCol = static_cast<uint16_t>(dataStartCol + (GRAPH_W - dataStartCol) / 2);
     if (halfMs >= 1000) {
         snprintf(buf, sizeof(buf), "%us", halfMs / 1000);
     } else {
         snprintf(buf, sizeof(buf), "0.%us", halfMs / 100);
     }
-    uint16_t midW = static_cast<uint16_t>(strlen(buf)) * 8;
+    auto midW = static_cast<uint16_t>(strlen(buf)) * 8;
     lcd.drawString(static_cast<uint16_t>(GRAPH_X + midCol - midW / 2), xAxisY,
                    buf, AXIS_COLOR, BG_COLOR, TEXT_SCALE);
 
@@ -301,7 +301,7 @@ InputResult GraphScreen::handleInput(JoyDirection dir, bool pressed)
 
     switch (dir) {
         case JoyDirection::LEFT: {
-            uint8_t ch = static_cast<uint8_t>(m_channel);
+            auto ch = static_cast<uint8_t>(m_channel);
             if (ch == 0) ch = NUM_CHANNELS - 1;
             else ch--;
             m_channel = static_cast<Channel>(ch);
@@ -313,7 +313,7 @@ InputResult GraphScreen::handleInput(JoyDirection dir, bool pressed)
         }
 
         case JoyDirection::RIGHT: {
-            uint8_t ch = static_cast<uint8_t>(m_channel);
+            auto ch = static_cast<uint8_t>(m_channel);
             ch = (ch + 1) % NUM_CHANNELS;
             m_channel = static_cast<Channel>(ch);
             m_count = 0;

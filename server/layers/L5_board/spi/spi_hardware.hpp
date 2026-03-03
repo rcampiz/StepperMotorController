@@ -18,8 +18,8 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "X_vendor/CMSIS/stm32f401xe.h"
-#include "F_platform/interfaces/ispi_bus.hpp"
-#include "F_platform/interfaces/ilock.hpp"
+#include "F_platform/hal/ispi_bus.hpp"
+#include "F_platform/hal/ilock.hpp"
 
 /**
  * @brief Hardware SPI implementation using STM32 SPI peripheral
@@ -112,7 +112,7 @@ public:
         m_spi->CR1 &= ~(SPI_CR1_CPOL | SPI_CR1_CPHA);
 
         // Set new mode
-        uint8_t mval = static_cast<uint8_t>(mode);
+        auto mval = static_cast<uint8_t>(mode);
         if (mval & 2) m_spi->CR1 |= SPI_CR1_CPOL;  // CPOL = bit 1
         if (mval & 1) m_spi->CR1 |= SPI_CR1_CPHA;  // CPHA = bit 0
 
@@ -225,7 +225,7 @@ public:
      * @brief Write repeated pattern — DMA for SPI1 large fills, TX-only polled otherwise
      */
     void writeFill(const uint8_t* pattern, size_t patternLen, uint32_t repeatCount) override {
-        uint32_t totalBytes = static_cast<uint32_t>(patternLen) * repeatCount;
+        auto totalBytes = static_cast<uint32_t>(patternLen) * repeatCount;
 
         // DMA path for SPI1 with large transfers
         if (m_spi == SPI1 && totalBytes >= DMA_THRESHOLD) {
@@ -312,7 +312,7 @@ private:
                      | ((prescaler & 0x7) << 3);  // BR[2:0] prescaler
 
         // Set initial CPOL/CPHA from mode
-        uint8_t mval = static_cast<uint8_t>(m_mode);
+        auto mval = static_cast<uint8_t>(m_mode);
         if (mval & 2) cr1 |= SPI_CR1_CPOL;
         if (mval & 1) cr1 |= SPI_CR1_CPHA;
 

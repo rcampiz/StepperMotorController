@@ -50,9 +50,9 @@ struct Entry {
     const char* tag;     // String literal tag (e.g. "MOT:RUN") or label ("[L3>L4]")
     uint32_t arg0;       // Context-dependent argument
     Dir dir;             // ENTRY or EXIT
-    uint8_t boundary;    // 0 = legacy, ITrace::Boundary for interface traces
-    uint8_t serviceId;   // ServiceId of the initiating service (fills padding byte)
-    uint8_t taskId;      // TaskId of the executing RTOS task (fills padding byte)
+    uint16_t boundary;   // 0 = legacy, ITrace::Boundary for interface traces
+    uint8_t serviceId;   // ServiceId of the initiating service
+    uint8_t taskId;      // TaskId of the executing RTOS task
     const char* method;  // nullptr for legacy, method name for interface traces
     char detail[DETAIL_SIZE];  // Short copy of detail string (e.g. SCPI cmd name)
 };
@@ -67,7 +67,7 @@ void record(Dir d, const char* tag, uint32_t arg0 = 0);
 /**
  * @brief Record an interface trace entry with boundary + method info
  */
-void recordIface(uint8_t boundary, const char* label, const char* method,
+void recordIface(uint16_t boundary, const char* label, const char* method,
                  uint32_t arg0 = 0, const char* detail = nullptr);
 
 /**
@@ -118,7 +118,7 @@ struct ServiceScope {
 
 } // namespace Trace
 
-#include "F_platform/interfaces/itrace_sink.hpp"
+#include "F_platform/hal/itrace_sink.hpp"
 
 /**
  * @brief Adapter: forwards ITraceSink calls to Trace::recordIface()
@@ -127,7 +127,7 @@ struct ServiceScope {
  */
 class TraceSinkAdapter : public ITraceSink {
 public:
-    void recordIface(uint8_t boundary, const char* label,
+    void recordIface(uint16_t boundary, const char* label,
                      const char* method, uint32_t result,
                      const char* detail = nullptr) override {
         Trace::recordIface(boundary, label, method, result, detail);

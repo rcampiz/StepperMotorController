@@ -123,7 +123,7 @@ inline void drawCircleOutline(LCD& lcd,
 
     int16_t x = 0;
     int16_t y = r;
-    int16_t d = static_cast<int16_t>(1 - r);
+    auto d = static_cast<int16_t>(1 - r);
 
     while (x <= y) {
         // 8-way symmetry
@@ -162,7 +162,7 @@ inline void fillCircle(LCD& lcd,
 
     int16_t x = 0;
     int16_t y = r;
-    int16_t d = static_cast<int16_t>(1 - r);
+    auto d = static_cast<int16_t>(1 - r);
 
     // Draw initial horizontal line and top/bottom points
     lcd.fillRect(static_cast<uint16_t>(cx - r), static_cast<uint16_t>(cy),
@@ -173,8 +173,8 @@ inline void fillCircle(LCD& lcd,
             d = static_cast<int16_t>(d + 2 * x + 3);
         } else {
             // y decreased — draw the horizontal spans at old y
-            int16_t spanX = static_cast<int16_t>(cx - x);
-            uint16_t spanW = static_cast<uint16_t>(2 * x + 1);
+            auto spanX = static_cast<int16_t>(cx - x);
+            auto spanW = static_cast<uint16_t>(2 * x + 1);
 
             if (cy + y >= 0 && cy + y < LCD::HEIGHT && spanX < LCD::WIDTH) {
                 uint16_t sx = (spanX < 0) ? 0 : static_cast<uint16_t>(spanX);
@@ -192,8 +192,8 @@ inline void fillCircle(LCD& lcd,
 
         // Draw horizontal spans at x, y positions
         {
-            int16_t spanX = static_cast<int16_t>(cx - y);
-            uint16_t spanW = static_cast<uint16_t>(2 * y + 1);
+            auto spanX = static_cast<int16_t>(cx - y);
+            auto spanW = static_cast<uint16_t>(2 * y + 1);
 
             if (cy + x >= 0 && cy + x < LCD::HEIGHT && spanX < LCD::WIDTH) {
                 uint16_t sx = (spanX < 0) ? 0 : static_cast<uint16_t>(spanX);
@@ -218,7 +218,7 @@ inline int16_t isqrt16(int32_t n) {
     int16_t x = 0;
     int16_t bit = 1 << 7;
     while (bit > 0) {
-        int16_t t = static_cast<int16_t>(x | bit);
+        auto t = static_cast<int16_t>(x | bit);
         if (static_cast<int32_t>(t) * t <= n) x = t;
         bit >>= 1;
     }
@@ -243,15 +243,15 @@ inline void fillRing(LCD& lcd,
     if (outerR <= 0) return;
     if (innerR < 0) innerR = 0;
 
-    int32_t outerR2 = static_cast<int32_t>(outerR) * outerR;
-    int32_t innerR2 = static_cast<int32_t>(innerR) * innerR;
+    auto outerR2 = static_cast<int32_t>(outerR) * outerR;
+    auto innerR2 = static_cast<int32_t>(innerR) * innerR;
 
     for (int16_t dy = -outerR; dy <= outerR; dy++) {
-        int16_t screenY = static_cast<int16_t>(cy + dy);
+        auto screenY = static_cast<int16_t>(cy + dy);
         if (screenY < 0) continue;
         if (screenY >= LCD::HEIGHT) break;
 
-        int32_t dy2 = static_cast<int32_t>(dy) * dy;
+        auto dy2 = static_cast<int32_t>(dy) * dy;
         int16_t outerX = isqrt16(outerR2 - dy2);
 
         if (dy > -innerR && dy < innerR) {
@@ -259,7 +259,7 @@ inline void fillRing(LCD& lcd,
             int16_t innerX = isqrt16(innerR2 - dy2);
 
             // Left band: cx - outerX to cx - innerX - 1
-            int16_t lStart = static_cast<int16_t>(cx - outerX);
+            auto lStart = static_cast<int16_t>(cx - outerX);
             int16_t lEnd   = static_cast<int16_t>(cx - innerX - 1);
             if (lStart < 0) lStart = 0;
             if (lEnd >= LCD::WIDTH) lEnd = static_cast<int16_t>(LCD::WIDTH - 1);
@@ -269,7 +269,7 @@ inline void fillRing(LCD& lcd,
             }
 
             // Right band: cx + innerX + 1 to cx + outerX
-            int16_t rStart = static_cast<int16_t>(cx + innerX + 1);
+            auto rStart = static_cast<int16_t>(cx + innerX + 1);
             int16_t rEnd   = static_cast<int16_t>(cx + outerX);
             if (rStart < 0) rStart = 0;
             if (rEnd >= LCD::WIDTH) rEnd = static_cast<int16_t>(LCD::WIDTH - 1);
@@ -279,7 +279,7 @@ inline void fillRing(LCD& lcd,
             }
         } else {
             // Row outside inner circle — draw full span
-            int16_t spanStart = static_cast<int16_t>(cx - outerX);
+            auto spanStart = static_cast<int16_t>(cx - outerX);
             int16_t spanEnd   = static_cast<int16_t>(cx + outerX);
             if (spanStart < 0) spanStart = 0;
             if (spanEnd >= LCD::WIDTH) spanEnd = static_cast<int16_t>(LCD::WIDTH - 1);

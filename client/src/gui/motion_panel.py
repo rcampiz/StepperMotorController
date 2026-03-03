@@ -149,7 +149,7 @@ class FlowDiagram(QWidget):
         Supports: OPEN_LOOP, CLOSED_LOOP_MONITOR, SPEED_TRIM
         """
         self._mode = mode
-        if "TRIM" in mode or "PID" in mode:
+        if "TRIM" in mode:
             # Speed trim mode: active correction feedback (green tint)
             self._fb_label.setText("speed trim correction (active feedback)")
             self._fb_label.setStyleSheet(
@@ -847,11 +847,11 @@ class MotionPanel(QWidget):
                  speed_sps, self._full_steps_per_rev, direction)
         if speed_sps <= 0:
             return
-        self.command_requested.emit(f"RUN {speed_sps} {direction}")
+        self.command_requested.emit(f"MOT:RUN {speed_sps} {direction}")
 
     @Slot()
     def _on_stop(self):
-        self.command_requested.emit("STOP")
+        self.command_requested.emit("MOT:STOP")
 
     def _on_move(self, direction: int):
         usteps = self._position_to_microsteps(
@@ -862,9 +862,9 @@ class MotionPanel(QWidget):
             self._run_speed.value(), self._run_unit.currentIndex())
         if speed_sps > 0:
             self.command_requested.emit(
-                f"MOVE {usteps} {direction} {speed_sps}")
+                f"MOT:MOVE {usteps} {direction} {speed_sps}")
         else:
-            self.command_requested.emit(f"MOVE {usteps} {direction}")
+            self.command_requested.emit(f"MOT:MOVE {usteps} {direction}")
 
     @Slot()
     def _on_goto(self):
@@ -873,9 +873,9 @@ class MotionPanel(QWidget):
         speed_sps = self._speed_to_steps_per_sec(
             self._run_speed.value(), self._run_unit.currentIndex())
         if speed_sps > 0:
-            self.command_requested.emit(f"GOTO {usteps} {speed_sps}")
+            self.command_requested.emit(f"MOT:GOTO {usteps} {speed_sps}")
         else:
-            self.command_requested.emit(f"GOTO {usteps}")
+            self.command_requested.emit(f"MOT:GOTO {usteps}")
 
     @Slot()
     def _on_config_apply(self):
@@ -1113,7 +1113,7 @@ class MotionPanel(QWidget):
         # Re-draw the motion profile with updated conversion factors
         self._update_profile()
 
-    def update_pid_config(self, data: dict):
+    def update_trim_config(self, data: dict):
         """Update trim tuning controls from CTRL:TRIM? response.
 
         Firmware returns gains as string values ("kp":"1.50") — parse with float().

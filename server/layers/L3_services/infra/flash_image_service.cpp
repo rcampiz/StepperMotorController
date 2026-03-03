@@ -5,6 +5,7 @@
 
 #include "L3_services/infra/flash_image_service.hpp"
 #include "L4_drivers/devices/flash_nor.hpp"
+#include "F_util/interface_trace.hpp"
 
 namespace Services {
 
@@ -52,6 +53,7 @@ bool FlashImageService::eraseSlot(uint32_t slot) {
         return false;
     }
 
+    ITRACE(ITrace::L4_FLASH, "[L3>L4]", "flash.erase", "slot");
     uint32_t addr = slotAddress(slot);
     uint32_t sectorsNeeded = (FLASH_IMAGE_SIZE + FLASH_SECTOR_SIZE - 1) / FLASH_SECTOR_SIZE;
 
@@ -74,6 +76,7 @@ bool FlashImageService::writeSlotData(uint32_t slot, uint32_t offset,
         return false;
     }
 
+    ITRACE(ITrace::L4_FLASH, "[L3>L4]", "flash.write", "slot");
     uint32_t addr = slotAddress(slot) + offset;
     m_flash->pageProgram(addr, data, len);
     return true;
@@ -91,6 +94,7 @@ bool FlashImageService::readSlotChunk(uint32_t slot, uint32_t offset,
         return false;
     }
 
+    ITRACE(ITrace::L4_FLASH, "[L3>L4]", "flash.read", "slot");
     uint32_t addr = slotAddress(slot) + offset;
     m_flash->read(addr, buf, len);
     return true;
@@ -124,6 +128,7 @@ bool FlashImageService::eraseAll() {
         return false;
     }
 
+    ITRACE(ITrace::L4_FLASH, "[L3>L4]", "flash.erase", "all");
     // Calculate total region to erase
     uint32_t totalBytes = m_maxSlots * FLASH_IMAGE_PADDED;
     uint32_t addr = FLASH_IMAGE_BASE;

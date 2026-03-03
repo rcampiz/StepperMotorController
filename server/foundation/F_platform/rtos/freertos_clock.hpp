@@ -12,7 +12,7 @@
 
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
-#include "F_platform/interfaces/iclock.hpp"
+#include "F_platform/hal/iclock.hpp"
 
 class FreeRTOSClock : public IClock {
 public:

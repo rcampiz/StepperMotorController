@@ -42,12 +42,20 @@ static constexpr uint16_t DIM_GRAY = 0x4208;     // Dim lifeline color
 // Zoom level → block width in pixels (0=auto, 1-7=fixed)
 static constexpr uint8_t ZOOM_BLOCK_W[] = {0, 3, 5, 8, 12, 16, 20, 24};
 
-// Per-layer RGB565 colors
-static constexpr uint16_t COLOR_L1 = 0x07FF;  // cyan   — L1 transport
-static constexpr uint16_t COLOR_L2 = 0x07E0;  // green  — L2 protocol
-static constexpr uint16_t COLOR_L3 = 0xFFE0;  // yellow — L3 services
+// Per-layer RGB565 base colors (matches arch_screen)
+static constexpr uint16_t COLOR_L1 = 0x07FF;  // cyan    — L1 transport
+static constexpr uint16_t COLOR_L2 = 0x07E0;  // green   — L2 protocol
+static constexpr uint16_t COLOR_L3 = 0xFD20;  // orange  — L3 services
 static constexpr uint16_t COLOR_L4 = 0xF81F;  // magenta — L4 drivers
-static constexpr uint16_t COLOR_F  = 0xF800;  // red    — Foundation
+static constexpr uint16_t COLOR_L5 = 0xF800;  // red     — L5 board/HAL
+static constexpr uint16_t COLOR_F  = 0xFFE0;  // yellow  — Foundation
+
+// Shade variants for legend entries sharing a layer
+static constexpr uint16_t COLOR_L2_TLM  = 0x0560;  // medium green  — L2 telemetry
+static constexpr uint16_t COLOR_L4_ENC  = 0xB01F;  // medium purple — L4 encoder
+static constexpr uint16_t COLOR_L4_LCD  = 0xD01F;  // light purple  — L4 LCD
+static constexpr uint16_t COLOR_L4_FLS  = 0x901F;  // deep purple   — L4 flash
+static constexpr uint16_t COLOR_F_LOCK  = 0xCE00;  // dim gold      — F mutex
 
 struct BoundaryInfo {
     const char* leftName;
@@ -58,82 +66,87 @@ struct BoundaryInfo {
 };
 
 // Map boundary bitmask -> human-readable names and layer colors
-static BoundaryInfo getBoundaryInfo(uint8_t boundary) {
+static BoundaryInfo getBoundaryInfo(uint16_t boundary) {
     switch (boundary) {
-        case 1:  return {"Xpt", COLOR_L1, "Pro", COLOR_L2, 0};
-        case 2:  return {"Pro", COLOR_L2, "Svc", COLOR_L3, 1};
-        case 4:  return {"Svc", COLOR_L3, "Mot", COLOR_L4, 2};
-        case 8:  return {"Svc", COLOR_L3, "Enc", COLOR_L4, 2};
-        case 16: return {"Svc", COLOR_L3, "Saf", COLOR_F,  2};
-        case 32: return {"Svc", COLOR_L3, "Cmd", WHITE,    2};
-        default: return {"?",   WHITE,    "?",   WHITE,    0};
+        case 1:     return {"Xpt", COLOR_L1, "Pro", COLOR_L2, 0};
+        case 2:     return {"Pro", COLOR_L2, "Svc", COLOR_L3, 1};
+        case 4:     return {"Svc", COLOR_L3, "Mot", COLOR_L4, 2};
+        case 8:     return {"Svc", COLOR_L3, "Enc", COLOR_L4_ENC, 2};
+        case 16:    return {"Svc", COLOR_L3, "Saf", COLOR_F,  2};
+        case 32:    return {"Svc", COLOR_L3, "Cmd", COLOR_L3, 2};
+        case 64:    return {"Drv", COLOR_L4, "SPI", COLOR_L5, 3};
+        case 128:   return {"SPI", COLOR_L5, "Mtx", COLOR_F_LOCK,  4};
+        case 0x100: return {"UI",  COLOR_F,  "LCD", COLOR_L4_LCD, 2};
+        case 0x200: return {"Svc", COLOR_L3, "Fls", COLOR_L4_FLS, 2};
+        case 0x400: return {"Pro", COLOR_L2, "Tlm", COLOR_L2_TLM, 1};
+        default:    return {"?",   WHITE,    "?",   WHITE,    0};
     }
 }
 
-// Legend table: boundary bit, abbreviation, full name, color
+// Legend table: boundary bit, abbreviation, full name, color, layer tag
 struct LegendRow {
-    uint8_t boundaryBit;
+    uint16_t boundaryBit;
     const char* abbrev;
     const char* fullName;
     uint16_t color;
+    const char* layerTag;    // "L1", "L4", " F", etc.
+    uint16_t layerColor;     // Color for the tag
 };
 
+// Ordered L1→L2→L3→L4→L5→F, Svc info-only last
 static constexpr LegendRow LEGEND_ROWS[] = {
-    { 1,  "Xpt", "Transport",    COLOR_L1 },
-    { 2,  "Pro", "Protocol",     COLOR_L2 },
-    { 4,  "Mot", "Motor Driver", COLOR_L4 },
-    { 8,  "Enc", "Encoder",      COLOR_L4 },
-    { 16, "Saf", "Safety",       COLOR_F  },
-    { 32, "Cmd", "Commands",     WHITE    },
-    { 0,  "Svc", "Services",     COLOR_L3 },  // Info-only (not filterable)
+    { 1,      "Xpt", "Transport",  COLOR_L1,     "L1", COLOR_L1 },  // cyan
+    { 2,      "Pro", "Protocol",   COLOR_L2,     "L2", COLOR_L2 },  // green
+    { 0x400,  "Tlm", "Telemetry",  COLOR_L2_TLM, "L2", COLOR_L2 },  // med green
+    { 32,     "Cmd", "Cmd Sink",   COLOR_L3,     "L3", COLOR_L3 },  // orange
+    { 4,      "Mot", "Motor Drv",  COLOR_L4,     "L4", COLOR_L4 },  // magenta
+    { 8,      "Enc", "Encoder",    COLOR_L4_ENC, "L4", COLOR_L4 },  // purple
+    { 0x100,  "LCD", "LCD Drv",    COLOR_L4_LCD, "L4", COLOR_L4 },  // lt purple
+    { 0x200,  "Fls", "Flash",      COLOR_L4_FLS, "L4", COLOR_L4 },  // dk purple
+    { 64,     "SPI", "SPI Bus",    COLOR_L5,     "L5", COLOR_L5 },  // red
+    { 16,     "Saf", "Safety",     COLOR_F,      " F", COLOR_F  },  // yellow
+    { 128,    "Mtx", "Mutex",      COLOR_F_LOCK, " F", COLOR_F  },  // gold
+    { 0,      "Svc", "Services",   COLOR_L3,     "  ", COLOR_L3 },  // info-only
 };
 
-// Graph lane table: boundary bit, label, color (same order as LEGEND_ROWS[0..5])
-struct GraphLane {
-    uint8_t boundaryBit;
+// Graph lanes: one per layer, blocks colored by boundary shade
+struct LayerLane {
     const char* label;
     uint16_t color;
+    uint16_t boundaryMask;  // which boundaries touch this layer
 };
 
-static constexpr GraphLane GRAPH_LANES_TABLE[] = {
-    { 1,  "Xpt", COLOR_L1 },
-    { 2,  "Pro", COLOR_L2 },
-    { 4,  "Mot", COLOR_L4 },
-    { 8,  "Enc", COLOR_L4 },
-    { 16, "Saf", COLOR_F  },
-    { 32, "Cmd", WHITE    },
+static constexpr LayerLane LAYER_LANES[] = {
+    {"L1",  COLOR_L1, 0x0001},  // L1_L2_TRANSPORT
+    {"L2",  COLOR_L2, 0x0403},  // L1_L2_TRANSPORT + L2_L3_DISPATCH + L2_TELEMETRY
+    {"L3",  COLOR_L3, 0x023E},  // L2_L3 + L3_L4_MOT + L3_L4_ENC + L3_F_SAF + L3_CMD_SINK + L4_FLASH(cfg svc)
+    {"L4",  COLOR_L4, 0x034C},  // L3_L4_MOT + L3_L4_ENC + L4_L5_SPI + L4_LCD + L4_FLASH
+    {"L5",  COLOR_L5, 0x00C0},  // L4_L5_SPI + L5_F_LOCK
+    {"F",   COLOR_F,  0x0190},  // L3_F_SAFETY + L5_F_LOCK + L4_LCD(display task is F)
 };
-
-// Map boundary bit to graph lane index (0-5), returns -1 if unknown
-static int8_t boundaryToLane(uint8_t boundary) {
-    switch (boundary) {
-        case 1:  return 0;
-        case 2:  return 1;
-        case 4:  return 2;
-        case 8:  return 3;
-        case 16: return 4;
-        case 32: return 5;
-        default: return -1;
-    }
-}
 
 // Short filter name for title bar
-static const char* getFilterName(uint8_t mask) {
-    if (mask == 0xFF) return nullptr;
+static const char* getFilterName(uint16_t mask) {
+    if (mask == 0x07FF) return nullptr;
     switch (mask) {
-        case 1:  return "Xpt";
-        case 2:  return "Pro";
-        case 4:  return "Mot";
-        case 8:  return "Enc";
-        case 16: return "Saf";
-        case 32: return "Cmd";
-        default: return "Flt";
+        case 1:     return "Xpt";
+        case 2:     return "Pro";
+        case 4:     return "Mot";
+        case 8:     return "Enc";
+        case 16:    return "Saf";
+        case 32:    return "Cmd";
+        case 64:    return "SPI";
+        case 128:   return "Mtx";
+        case 0x100: return "LCD";
+        case 0x200: return "Fls";
+        case 0x400: return "Tlm";
+        default:    return "Flt";
     }
 }
 
 // Check if entry passes the current filter
-static bool entryMatchesFilter(const Trace::Entry& entry, uint8_t filterMask) {
-    if (filterMask == 0xFF) return true;
+static bool entryMatchesFilter(const Trace::Entry& entry, uint16_t filterMask) {
+    if (filterMask == 0x07FF) return true;
     if (entry.boundary == 0) return false;
     return (entry.boundary & filterMask) != 0;
 }
@@ -255,9 +268,12 @@ void TraceScreen::renderTrace(LCD& lcd)
         }
     }
 
+    // Hex index prefix: "XXXXX " = 6 chars
+    static constexpr uint8_t HEX_PREFIX = 6;
+
     Trace::Entry entry;
-    char lineBuf[42];
-    uint16_t colors[42];
+    char lineBuf[48];
+    uint16_t colors[48];
     size_t matchIdx = 0;
     uint8_t lineIdx = 0;
 
@@ -270,6 +286,9 @@ void TraceScreen::renderTrace(LCD& lcd)
             continue;
         }
         matchIdx++;
+
+        // Absolute entry index (rolls over at FFFFF)
+        unsigned long absIdx = static_cast<unsigned long>((total - count + i) & 0xFFFFF);
 
         if (entry.boundary != 0 && entry.method != nullptr) {
             // --- Interface trace ---
@@ -291,8 +310,10 @@ void TraceScreen::renderTrace(LCD& lcd)
             if (strncmp(method, "motor.", 6) == 0) method += 6;
             else if (strncmp(method, "enc.", 4) == 0) method += 4;
             else if (strncmp(method, "safety.", 7) == 0) method += 7;
+            else if (strncmp(method, "spi.", 4) == 0) method += 4;
+            else if (strncmp(method, "lock.", 5) == 0) method += 5;
 
-            uint8_t srcStart = bi.indent;
+            uint8_t srcStart = HEX_PREFIX + bi.indent;
             uint8_t srcEnd   = srcStart + (uint8_t)strlen(srcName);
             uint8_t dstStart = srcEnd + 1;
             uint8_t dstEnd   = dstStart + (uint8_t)strlen(dstName);
@@ -304,25 +325,29 @@ void TraceScreen::renderTrace(LCD& lcd)
                             || strstr(method, "Param") != nullptr);
                 if (detail != nullptr) {
                     snprintf(lineBuf, sizeof(lineBuf),
-                             useHex ? "%*s%s%c%s %s %s 0x%lX" : "%*s%s%c%s %s %s %lu",
-                             bi.indent, "", srcName, dirChar, dstName, method, detail,
-                             static_cast<unsigned long>(entry.arg0));
+                             useHex ? "%05lX %*s%s%c%s %s %s 0x%lX"
+                                    : "%05lX %*s%s%c%s %s %s %lu",
+                             absIdx, bi.indent, "", srcName, dirChar, dstName,
+                             method, detail, static_cast<unsigned long>(entry.arg0));
                 } else {
                     snprintf(lineBuf, sizeof(lineBuf),
-                             useHex ? "%*s%s%c%s %s 0x%lX" : "%*s%s%c%s %s %lu",
-                             bi.indent, "", srcName, dirChar, dstName, method,
-                             static_cast<unsigned long>(entry.arg0));
+                             useHex ? "%05lX %*s%s%c%s %s 0x%lX"
+                                    : "%05lX %*s%s%c%s %s %lu",
+                             absIdx, bi.indent, "", srcName, dirChar, dstName,
+                             method, static_cast<unsigned long>(entry.arg0));
                 }
             } else if (detail != nullptr) {
-                snprintf(lineBuf, sizeof(lineBuf), "%*s%s%c%s %s %s",
-                         bi.indent, "", srcName, dirChar, dstName, method, detail);
+                snprintf(lineBuf, sizeof(lineBuf), "%05lX %*s%s%c%s %s %s",
+                         absIdx, bi.indent, "", srcName, dirChar, dstName,
+                         method, detail);
             } else {
-                snprintf(lineBuf, sizeof(lineBuf), "%*s%s%c%s %s",
-                         bi.indent, "", srcName, dirChar, dstName, method);
+                snprintf(lineBuf, sizeof(lineBuf), "%05lX %*s%s%c%s %s",
+                         absIdx, bi.indent, "", srcName, dirChar, dstName, method);
             }
 
             size_t lineLen = strlen(lineBuf);
             for (size_t p = 0; p < lineLen; p++) colors[p] = WHITE;
+            for (uint8_t p = 0; p < 5; p++) colors[p] = DIM_GRAY;
             for (uint8_t p = srcStart; p < srcEnd; p++) colors[p] = srcColor;
             for (uint8_t p = dstStart; p < dstEnd; p++) colors[p] = dstColor;
 
@@ -332,15 +357,18 @@ void TraceScreen::renderTrace(LCD& lcd)
             // --- Legacy trace ---
             char dirCh = (entry.dir == Trace::ENTRY) ? '>' : '<';
             if (entry.arg0 != 0) {
-                snprintf(lineBuf, sizeof(lineBuf), "%c %s %lu",
-                         dirCh, entry.tag,
+                snprintf(lineBuf, sizeof(lineBuf), "%05lX %c %s %lu",
+                         absIdx, dirCh, entry.tag,
                          static_cast<unsigned long>(entry.arg0));
             } else {
-                snprintf(lineBuf, sizeof(lineBuf), "%c %s",
-                         dirCh, entry.tag);
+                snprintf(lineBuf, sizeof(lineBuf), "%05lX %c %s",
+                         absIdx, dirCh, entry.tag);
             }
-            lcd.blitTextLine(MARGIN, y, LINE_W, LINE_HEIGHT,
-                             lineBuf, WHITE, BG_COLOR);
+            size_t lineLen = strlen(lineBuf);
+            for (size_t p = 0; p < lineLen; p++) colors[p] = WHITE;
+            for (uint8_t p = 0; p < 5; p++) colors[p] = DIM_GRAY;
+            lcd.blitTextLineColored(MARGIN, y, LINE_W, LINE_HEIGHT,
+                                    lineBuf, colors, BG_COLOR);
         }
 
         lineIdx++;
@@ -375,34 +403,33 @@ void TraceScreen::renderLegend(LCD& lcd)
     char lineBuf[42];
     uint16_t colors[42];
 
-    for (uint8_t i = 0; i < LEGEND_ITEMS - 1; i++) {
+    for (uint8_t i = 0; i < LEGEND_ITEMS; i++) {
         const LegendRow& row = LEGEND_ROWS[i];
-        bool enabled = (m_filterMask & row.boundaryBit) != 0;
         uint16_t bg = (i == m_legendCursor) ? SEL_BG : BG_COLOR;
 
-        snprintf(lineBuf, sizeof(lineBuf), " [%c] %s  %s",
-                 enabled ? '*' : ' ', row.abbrev, row.fullName);
+        if (row.boundaryBit != 0) {
+            // Filterable boundary row: "L4 [*] Mot  Motor Drv"
+            bool enabled = (m_filterMask & row.boundaryBit) != 0;
+            snprintf(lineBuf, sizeof(lineBuf), "%s [%c] %s  %s",
+                     row.layerTag, enabled ? '*' : ' ', row.abbrev, row.fullName);
+        } else {
+            // Info-only row (Svc): "   --- Svc  Services"
+            snprintf(lineBuf, sizeof(lineBuf), "   --- %s  %s",
+                     row.abbrev, row.fullName);
+        }
 
         size_t len = strlen(lineBuf);
         for (size_t p = 0; p < len; p++) colors[p] = WHITE;
-        for (uint8_t p = 5; p < 8 && p < len; p++) colors[p] = row.color;
 
-        lcd.blitTextLineColored(MARGIN, y, LINE_W, LINE_HEIGHT,
-                                lineBuf, colors, bg);
-        y += LINE_HEIGHT;
-    }
-
-    // Svc row (info only)
-    {
-        const LegendRow& row = LEGEND_ROWS[LEGEND_ITEMS - 1];
-        uint16_t bg = (m_legendCursor == LEGEND_ITEMS - 1) ? SEL_BG : BG_COLOR;
-
-        snprintf(lineBuf, sizeof(lineBuf), "      %s  %s (origin)",
-                 row.abbrev, row.fullName);
-
-        size_t len = strlen(lineBuf);
-        for (size_t p = 0; p < len; p++) colors[p] = WHITE;
-        for (uint8_t p = 6; p < 9 && p < len; p++) colors[p] = row.color;
+        if (row.boundaryBit != 0) {
+            // Layer tag chars 0-1 in layer color
+            for (uint8_t p = 0; p < 2 && p < len; p++) colors[p] = row.layerColor;
+            // Abbreviation at chars 7-9 in boundary color
+            for (uint8_t p = 7; p < 10 && p < len; p++) colors[p] = row.color;
+        } else {
+            // Abbreviation at chars 7-9 in boundary color
+            for (uint8_t p = 7; p < 10 && p < len; p++) colors[p] = row.color;
+        }
 
         lcd.blitTextLineColored(MARGIN, y, LINE_W, LINE_HEIGHT,
                                 lineBuf, colors, bg);
@@ -439,12 +466,91 @@ void TraceScreen::renderLegend(LCD& lcd)
 // GRAPH mode — timeline view
 // =============================================================================
 
+// Draw a compact layer color key: " L1 L2 L3 L4 L5 F" (each in its color)
+static void drawLayerKey(LCD& lcd, uint16_t y) {
+    static constexpr uint16_t LINE_W = LCD::WIDTH - (2 * MARGIN);
+    // Clear the line first
+    lcd.blitTextLine(MARGIN, y, LINE_W, 8, "", WHITE, BG_COLOR);
+    // Draw each label at calculated x positions (scale 1 = 6px/char)
+    static constexpr struct { const char* label; uint16_t color; } KEY[] = {
+        {"L1", COLOR_L1}, {"L2", COLOR_L2}, {"L3", COLOR_L3},
+        {"L4", COLOR_L4}, {"L5", COLOR_L5}, {"F",  COLOR_F},
+    };
+    uint16_t x = MARGIN + 6;  // small indent
+    for (uint8_t i = 0; i < 6; i++) {
+        lcd.drawString(x, y, KEY[i].label, KEY[i].color, BG_COLOR, 1);
+        x += static_cast<uint16_t>(strlen(KEY[i].label)) * 6 + 8;
+    }
+}
+
 // Dim a color to ~25% brightness for lane background strips
 static uint16_t dimColor(uint16_t c) {
     uint16_t r = (c >> 11) & 0x1F;
     uint16_t g = (c >> 5)  & 0x3F;
     uint16_t b =  c        & 0x1F;
     return ((r / 4) << 11) | ((g / 4) << 5) | (b / 4);
+}
+
+// Return a shade of the lane's hue based on which boundary is being drawn.
+// Each lane has one color family; different boundaries get distinct shades.
+static uint16_t laneBlockColor(uint8_t laneIdx, uint16_t boundary) {
+    switch (laneIdx) {
+        case 0: // L1 — cyan shades
+            return 0x07FF;
+        case 1: // L2 — green shades (3 boundaries: 1,2,0x400)
+            switch (boundary) {
+                case 1:     return 0x0540;  // dim green (transport echo)
+                case 0x400: return 0x0660;  // medium green (telemetry)
+                default:    return 0x07E0;  // bright green (dispatch)
+            }
+        case 2: // L3 — orange shades (6 boundaries: 2,4,8,16,32,0x200)
+            switch (boundary) {
+                case 2:     return 0xFE80;  // amber
+                case 32:    return 0xFD80;  // light orange
+                case 4:     return 0xFC80;  // orange
+                case 8:     return 0xFB80;  // dark orange
+                case 16:    return 0xFA80;  // red-orange
+                case 0x200: return 0xF980;  // deep orange (flash cfg)
+                default:    return 0xFC80;
+            }
+        case 3: // L4 — purple/magenta shades (5 boundaries: 4,8,64,0x100,0x200)
+            switch (boundary) {
+                case 4:     return 0xF81F;  // bright magenta (motor)
+                case 8:     return 0xB01F;  // medium purple (encoder)
+                case 0x100: return 0xD01F;  // light purple (LCD)
+                case 0x200: return 0x901F;  // deep purple (flash)
+                case 64:    return 0x801F;  // dark purple (SPI)
+                default:    return 0xF81F;
+            }
+        case 4: // L5 — red shades (2 boundaries: 64,128)
+            return (boundary == 64) ? 0xF800 : 0xC000;  // bright / dark
+        case 5: // F — yellow shades (3 boundaries: 16,128,0x100)
+            switch (boundary) {
+                case 16:    return 0xFFE0;  // bright yellow (safety)
+                case 0x100: return 0xDEE0;  // light gold (LCD from display task)
+                case 128:   return 0xCE00;  // dim gold (mutex)
+                default:    return 0xFFE0;
+            }
+        default: return 0x8410;
+    }
+}
+
+// Map boundary to its representative layer color (for service mode / legend)
+static uint16_t boundaryColor(uint16_t boundary) {
+    switch (boundary) {
+        case 1:     return COLOR_L1;      // transport → cyan
+        case 2:     return COLOR_L2;      // protocol  → green
+        case 4:     return COLOR_L4;      // motor drv → magenta
+        case 8:     return COLOR_L4_ENC;  // encoder   → purple shade
+        case 16:    return COLOR_F;       // safety    → yellow
+        case 32:    return COLOR_L3;      // cmd sink  → orange
+        case 64:    return COLOR_L5;      // SPI bus   → red
+        case 128:   return COLOR_F_LOCK;  // mutex     → gold
+        case 0x100: return COLOR_L4_LCD;  // LCD drv   → light purple
+        case 0x200: return COLOR_L4_FLS;  // flash     → deep purple
+        case 0x400: return COLOR_L2_TLM;  // telemetry → medium green
+        default:    return 0x8410;
+    }
 }
 
 void TraceScreen::renderGraph(LCD& lcd)
@@ -456,14 +562,16 @@ void TraceScreen::renderGraph(LCD& lcd)
         m_lastTotal = total;
     }
 
-    // --- Layout (must fit in 320px height) ---
-    // Title: 4+16+4 = 24px. Lanes: 6×40=240px. Axis: 10px. Footer: 10px.
-    // Total: 24 + 240 + 10 + 10 + margins = 288px (fits in 320)
+    // --- Layout (adaptive height for 8 boundary lanes) ---
     static constexpr uint16_t LINE_W = LCD::WIDTH - (2 * MARGIN);
     static constexpr uint16_t LANES_Y = MARGIN + TITLE_H + 4;
-    static constexpr uint16_t LANE_H = 40;
+    static constexpr uint16_t FOOTER_SPACE_G = 34;
+    uint16_t availH = LCD::HEIGHT - LANES_Y - FOOTER_SPACE_G;
+    uint16_t laneH = availH / GRAPH_LANES;
+    if (laneH > 40) laneH = 40;
+    if (laneH < 16) laneH = 16;
     static constexpr uint16_t LANE_BAR_INSET = 1;
-    static constexpr uint16_t LANE_BAR_H = LANE_H - (2 * LANE_BAR_INSET);
+    uint16_t laneBarH = laneH - (2 * LANE_BAR_INSET);
 
     uint16_t timelineRight = LCD::WIDTH - MARGIN;
     uint16_t timelineW = timelineRight - TIMELINE_X;
@@ -529,27 +637,23 @@ void TraceScreen::renderGraph(LCD& lcd)
 
     // --- Draw lane backgrounds + labels ---
     for (uint8_t lane = 0; lane < GRAPH_LANES; lane++) {
-        const GraphLane& gl = GRAPH_LANES_TABLE[lane];
-        uint16_t ly = LANES_Y + (lane * LANE_H) + LANE_BAR_INSET;
+        const LayerLane& ll = LAYER_LANES[lane];
+        uint16_t ly = LANES_Y + (lane * laneH) + LANE_BAR_INSET;
 
-        // Dark background strip for the lane (so empty lanes are visible)
-        lcd.fillRect(TIMELINE_X, ly, timelineW, LANE_BAR_H, dimColor(gl.color));
-
-        // Lane label (scale 3 = 8x12 medium font — readable on LCD)
-        lcd.drawString(MARGIN, ly + ((LANE_BAR_H - 12) / 2),
-                        gl.label, gl.color, BG_COLOR, 3);
+        lcd.fillRect(TIMELINE_X, ly, timelineW, laneBarH, dimColor(ll.color));
+        lcd.drawString(MARGIN, ly + ((laneBarH - 12) / 2),
+                        ll.label, ll.color, BG_COLOR, 3);
     }
 
     // --- Separator lines between lanes ---
     for (uint8_t lane = 0; lane <= GRAPH_LANES; lane++) {
-        uint16_t ly = LANES_Y + (lane * LANE_H);
+        uint16_t ly = LANES_Y + (lane * laneH);
         lcd.drawHLine(TIMELINE_X, ly, timelineW, DIM_GRAY);
     }
 
     // --- Compute block width from zoom level ---
     uint16_t blockW = 3;
     if (m_zoomLevel == 0 && count > 0) {
-        // Auto-fit: try to show all entries
         blockW = timelineW / count;
         if (blockW < 3) blockW = 3;
         if (blockW > 8) blockW = 8;
@@ -572,28 +676,29 @@ void TraceScreen::renderGraph(LCD& lcd)
         for (size_t i = startIdx; i < count; i++) {
             if (!Trace::getEntry(i, entry)) continue;
             if (entry.boundary == 0) continue;
-
-            int8_t lane = boundaryToLane(entry.boundary);
-            if (lane < 0) continue;
-
             if ((entry.boundary & m_filterMask) == 0) continue;
 
-            uint16_t x = TIMELINE_X + (uint16_t)(i - startIdx) * blockW;
+            uint16_t x = TIMELINE_X + static_cast<uint16_t>(i - startIdx) * blockW;
             if (x + blockDraw > timelineRight) break;
 
-            uint16_t ly = LANES_Y + ((uint16_t)lane * LANE_H) + LANE_BAR_INSET;
-            lcd.fillRect(x, ly, blockDraw, LANE_BAR_H,
-                         GRAPH_LANES_TABLE[lane].color);
+            // Color block by lane shade (each lane's hue, boundary picks shade)
+            for (uint8_t lane = 0; lane < GRAPH_LANES; lane++) {
+                if ((entry.boundary & LAYER_LANES[lane].boundaryMask) != 0) {
+                    uint16_t ly = LANES_Y + (static_cast<uint16_t>(lane) * laneH) + LANE_BAR_INSET;
+                    lcd.fillRect(x, ly, blockDraw, laneBarH,
+                                 laneBlockColor(lane, entry.boundary));
+                }
+            }
         }
     }
 
-    // --- Axis + footer below lanes ---
-    static constexpr uint16_t FOOTER_Y = LANES_Y + (GRAPH_LANES * LANE_H) + 2;
-    static constexpr uint16_t FOOTER2_Y = FOOTER_Y + 10;
+    // --- Footer below lanes: key + axis + controls ---
+    uint16_t FOOTER_Y = LANES_Y + (GRAPH_LANES * laneH) + 2;
+    drawLayerKey(lcd, FOOTER_Y);
     {
         char axisBuf[40];
         size_t endIdx = startIdx + visibleEntries;
-        if (endIdx > count) endIdx = count;
+        if (endIdx > count) { endIdx = count; }
         if (m_zoomLevel == 0) {
             snprintf(axisBuf, sizeof(axisBuf), " %u..%u/%u  zoom:auto",
                      (unsigned)startIdx, (unsigned)endIdx, (unsigned)count);
@@ -602,7 +707,7 @@ void TraceScreen::renderGraph(LCD& lcd)
                      (unsigned)startIdx, (unsigned)endIdx, (unsigned)count,
                      (unsigned)m_zoomLevel, (unsigned)ZOOM_LEVELS);
         }
-        lcd.blitTextLine(MARGIN, FOOTER_Y, LINE_W, 8,
+        lcd.blitTextLine(MARGIN, FOOTER_Y + 10, LINE_W, 8,
                          axisBuf, LABEL_COLOR, BG_COLOR);
     }
     {
@@ -612,7 +717,7 @@ void TraceScreen::renderGraph(LCD& lcd)
         } else {
             snprintf(ctrlBuf, sizeof(ctrlBuf), " CTR:resume LR:pan UD:zoom");
         }
-        lcd.blitTextLine(MARGIN, FOOTER2_Y, LINE_W, 8, ctrlBuf,
+        lcd.blitTextLine(MARGIN, FOOTER_Y + 20, LINE_W, 8, ctrlBuf,
                          m_autoScroll ? LABEL_COLOR : PAUSE_COLOR, BG_COLOR);
     }
 }
@@ -641,18 +746,6 @@ static constexpr ServiceLaneInfo SERVICE_LANES_TABLE[] = {
 static constexpr uint8_t SERVICE_TABLE_SIZE =
     sizeof(SERVICE_LANES_TABLE) / sizeof(SERVICE_LANES_TABLE[0]);
 
-// Map boundary to block color (within service lanes)
-static uint16_t boundaryBlockColor(uint8_t boundary) {
-    switch (boundary) {
-        case 1:  return COLOR_L1;  // transport — cyan
-        case 2:  return COLOR_L2;  // protocol  — green
-        case 4:  return COLOR_L4;  // motor drv — magenta
-        case 8:  return COLOR_L4;  // encoder   — magenta
-        case 16: return COLOR_F;   // safety    — red
-        case 32: return WHITE;     // commands  — white
-        default: return 0x8410;    // legacy (no boundary) — mid gray
-    }
-}
 
 void TraceScreen::renderService(LCD& lcd)
 {
@@ -670,6 +763,7 @@ void TraceScreen::renderService(LCD& lcd)
 
     if (!m_titleDrawn) {
         m_titleDrawn = true;
+        m_lastLaneCount = 0;  // Force label redraw after screen clear
         redrawTitle = true;
         redrawGraph = true;
     }
@@ -709,33 +803,13 @@ void TraceScreen::renderService(LCD& lcd)
 
     if (!redrawGraph) return;
 
-    // --- Scan entries to find active services ---
-    uint16_t activeMask = 0;
+    // All services always shown (lanes resize to fit)
     Trace::Entry entry;
-    for (size_t i = 0; i < count; i++) {
-        if (Trace::getEntry(i, entry) && entry.serviceId > 0 && entry.serviceId <= 8) {
-            activeMask |= (1 << entry.serviceId);
-        }
-    }
-
-    // Build active lane list (only services with data)
-    uint8_t activeLanes[MAX_SERVICE_LANES];
-    uint8_t laneCount = 0;
-    for (uint8_t s = 0; s < SERVICE_TABLE_SIZE && laneCount < MAX_SERVICE_LANES; s++) {
-        if (activeMask & (1 << SERVICE_LANES_TABLE[s].serviceId)) {
-            activeLanes[laneCount++] = s;
-        }
-    }
-
-    if (laneCount == 0) {
-        lcd.blitTextLine(MARGIN, MARGIN + TITLE_H + 8, LINE_W, LINE_HEIGHT,
-                         " No service activity", DIM_GRAY, BG_COLOR);
-        return;
-    }
+    uint8_t laneCount = SERVICE_TABLE_SIZE;
 
     // --- Adaptive lane height based on active service count ---
     static constexpr uint16_t LANES_Y = MARGIN + TITLE_H + 4;
-    static constexpr uint16_t FOOTER_SPACE = 22;
+    static constexpr uint16_t FOOTER_SPACE = 32;
     uint16_t availH = LCD::HEIGHT - LANES_Y - FOOTER_SPACE;
     uint16_t laneH = availH / laneCount;
     if (laneH > 40) { laneH = 40; }
@@ -747,26 +821,20 @@ void TraceScreen::renderService(LCD& lcd)
     uint16_t laneBarH = laneH - (2 * LANE_BAR_INSET);
 
     // --- Draw lane backgrounds + labels ---
-    // Only clear label column + below-lanes area when layout changes
-    // (lane set or count changed). This eliminates the main flicker source.
-    bool layoutChanged = (activeMask != m_lastSvcMask) || (laneCount != m_lastLaneCount);
-    if (layoutChanged) {
-        m_lastSvcMask = activeMask;
+    // Labels only drawn once (static layout since all services always shown)
+    bool labelsNeeded = (m_lastLaneCount == 0);
+    if (labelsNeeded) {
         m_lastLaneCount = laneCount;
-
-        uint16_t lanesBottom = LANES_Y + (laneCount * laneH);
+        // Clear label column area
         lcd.fillRect(MARGIN, LANES_Y, TIMELINE_X - MARGIN, LCD::HEIGHT - LANES_Y, BG_COLOR);
-        if (lanesBottom < LCD::HEIGHT) {
-            lcd.fillRect(TIMELINE_X, lanesBottom, timelineW, LCD::HEIGHT - lanesBottom, BG_COLOR);
-        }
     }
 
     for (uint8_t i = 0; i < laneCount; i++) {
-        const ServiceLaneInfo& sli = SERVICE_LANES_TABLE[activeLanes[i]];
+        const ServiceLaneInfo& sli = SERVICE_LANES_TABLE[i];
         uint16_t ly = LANES_Y + (i * laneH) + LANE_BAR_INSET;
 
         lcd.fillRect(TIMELINE_X, ly, timelineW, laneBarH, dimColor(sli.color));
-        if (layoutChanged) {
+        if (labelsNeeded) {
             lcd.drawString(MARGIN, ly + ((laneBarH - 12) / 2),
                            sli.label, sli.color, BG_COLOR, 3);
         }
@@ -802,7 +870,7 @@ void TraceScreen::renderService(LCD& lcd)
     int8_t svcToLane[9];
     for (uint8_t i = 0; i < 9; i++) { svcToLane[i] = -1; }
     for (uint8_t i = 0; i < laneCount; i++) {
-        svcToLane[SERVICE_LANES_TABLE[activeLanes[i]].serviceId] = static_cast<int8_t>(i);
+        svcToLane[SERVICE_LANES_TABLE[i].serviceId] = static_cast<int8_t>(i);
     }
 
     // --- Plot entries (colored by boundary within service lane) ---
@@ -818,7 +886,7 @@ void TraceScreen::renderService(LCD& lcd)
             if (x + blockDraw > timelineRight) break;
 
             uint16_t ly = LANES_Y + (static_cast<uint16_t>(lane) * laneH) + LANE_BAR_INSET;
-            lcd.fillRect(x, ly, blockDraw, laneBarH, boundaryBlockColor(entry.boundary));
+            lcd.fillRect(x, ly, blockDraw, laneBarH, boundaryColor(entry.boundary));
         }
     }
 
@@ -836,7 +904,8 @@ void TraceScreen::renderService(LCD& lcd)
                      (unsigned)startIdx, (unsigned)endIdx, (unsigned)count,
                      (unsigned)m_zoomLevel, (unsigned)ZOOM_LEVELS);
         }
-        lcd.blitTextLine(MARGIN, footerY, LINE_W, 8, axisBuf, LABEL_COLOR, BG_COLOR);
+        drawLayerKey(lcd, footerY);
+        lcd.blitTextLine(MARGIN, footerY + 10, LINE_W, 8, axisBuf, LABEL_COLOR, BG_COLOR);
 
         char ctrlBuf[40];
         if (m_autoScroll) {
@@ -844,7 +913,7 @@ void TraceScreen::renderService(LCD& lcd)
         } else {
             snprintf(ctrlBuf, sizeof(ctrlBuf), " CTR:resume LR:pan UD:zoom");
         }
-        lcd.blitTextLine(MARGIN, footerY + 10, LINE_W, 8, ctrlBuf,
+        lcd.blitTextLine(MARGIN, footerY + 20, LINE_W, 8, ctrlBuf,
                          m_autoScroll ? LABEL_COLOR : PAUSE_COLOR, BG_COLOR);
     }
 }
@@ -867,34 +936,39 @@ InputResult TraceScreen::handleInput(JoyDirection dir, bool pressed)
 
 InputResult TraceScreen::handleTraceInput(JoyDirection dir)
 {
+    static constexpr size_t SCROLL_STEP = 5;
     size_t maxScroll = (m_matchCount > VISIBLE_LINES)
                      ? (m_matchCount - VISIBLE_LINES) : 0;
 
     switch (dir) {
         case JoyDirection::UP:
-            if (m_scrollOffset < maxScroll) {
-                m_scrollOffset++;
-                if (m_autoScroll) {
-                    m_autoScroll = false;
-                    m_pauseTotal = Trace::getTotal();
-                }
+            if (!m_autoScroll && m_scrollOffset < maxScroll) {
+                size_t step = SCROLL_STEP;
+                if (m_scrollOffset + step > maxScroll) step = maxScroll - m_scrollOffset;
+                m_scrollOffset += step;
                 m_needsRedraw = true;
             }
             return InputResult::HANDLED;
 
         case JoyDirection::DOWN:
-            if (m_scrollOffset > 0) {
-                m_scrollOffset--;
-                m_needsRedraw = true;
-                if (m_scrollOffset == 0) {
-                    m_autoScroll = true;
+            if (!m_autoScroll && m_scrollOffset > 0) {
+                if (m_scrollOffset > SCROLL_STEP) {
+                    m_scrollOffset -= SCROLL_STEP;
+                } else {
+                    m_scrollOffset = 0;
                 }
+                m_needsRedraw = true;
             }
             return InputResult::HANDLED;
 
         case JoyDirection::CENTER:
-            m_scrollOffset = 0;
-            m_autoScroll = true;
+            if (m_autoScroll) {
+                m_autoScroll = false;
+                m_pauseTotal = Trace::getTotal();
+            } else {
+                m_scrollOffset = 0;
+                m_autoScroll = true;
+            }
             m_needsRedraw = true;
             return InputResult::HANDLED;
 

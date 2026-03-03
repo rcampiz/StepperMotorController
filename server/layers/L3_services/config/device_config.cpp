@@ -4,6 +4,7 @@
  */
 
 #include "L3_services/config/device_config.hpp"
+#include "F_util/interface_trace.hpp"
 #include <string.h>
 
 namespace Services {
@@ -108,6 +109,7 @@ bool DeviceConfigManager::loadFromFlash() {
   if (m_flash == nullptr)
     return false;
 
+  ITRACE(ITrace::L4_FLASH, "[L3>L4]", "flash.load", "config");
   DeviceConfig cfg;
   m_flash->read(CONFIG_FLASH_ADDR, reinterpret_cast<uint8_t *>(&cfg),
                 sizeof(cfg));
@@ -124,6 +126,7 @@ bool DeviceConfigManager::saveToFlash() {
   if (m_flash == nullptr)
     return false;
 
+  ITRACE(ITrace::L4_FLASH, "[L3>L4]", "flash.save", "config");
   // Update CRC before saving
   m_config.magic = CONFIG_MAGIC;
   m_config.version = CONFIG_VERSION;

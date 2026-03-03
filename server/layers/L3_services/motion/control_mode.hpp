@@ -12,7 +12,7 @@
 
 #pragma once
 
-#include "F_platform/interfaces/ilock.hpp"
+#include "F_platform/hal/ilock.hpp"
 #include <stdint.h>
 
 namespace Services {

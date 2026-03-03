@@ -101,7 +101,7 @@ public:
         ADC_COMMON->CCR = ccr;
 
         // Set default sample time for all channels (using SMPR2 for channels 0-9)
-        uint32_t sample = static_cast<uint32_t>(sampleTime);
+        auto sample = static_cast<uint32_t>(sampleTime);
         adc->SMPR2 = (sample << 0)  | (sample << 3)  | (sample << 6)  |
                      (sample << 9)  | (sample << 12) | (sample << 15) |
                      (sample << 18) | (sample << 21) | (sample << 24) |

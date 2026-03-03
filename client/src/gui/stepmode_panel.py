@@ -126,7 +126,7 @@ class StepModePanel(QWidget):
     @Slot()
     def _on_apply(self):
         reg_val = self._mode_combo.currentIndex()
-        self.stepmode_apply_requested.emit(f"MCONFIG_STEPMODE {reg_val}")
+        self.stepmode_apply_requested.emit(f"DRV:CFG:STEPMODE {reg_val}")
 
     @Slot()
     def _on_refresh(self):

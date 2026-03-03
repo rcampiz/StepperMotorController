@@ -2,7 +2,7 @@
  * @file arch_screen.hpp
  * @brief Architecture visualization screen
  *
- * Three view modes accessible via RIGHT button:
+ * Four view modes accessible via RIGHT button:
  *
  * DIAGRAM — Static architecture overview
  *   Colored boxes showing L1-L5 layer stack with F_platform (tasks)
@@ -21,6 +21,14 @@
  *   Shows the most recent command's path through layers
  *   with task handoff visualization.
  *   LEFT: Back to Matrix
+ *   RIGHT: Switch to Tasks mode
+ *
+ * TASKS — Per-task layer activity
+ *   Shows which layers a selected RTOS task touches,
+ *   including background loops with no SCPI stimulus.
+ *   UP/DOWN: Cycle through tasks
+ *   CENTER: Pause/resume
+ *   LEFT: Back to Flow
  *   RIGHT: Switch to Diagram
  */
 
@@ -46,20 +54,23 @@ public:
     void clearRedrawFlag() override { }
 
 private:
-    enum class Mode : uint8_t { DIAGRAM, MATRIX, FLOW };
+    enum class Mode : uint8_t { DIAGRAM, MATRIX, FLOW, TASKS };
 
     void renderDiagram(LCD& lcd);
     void renderMatrix(LCD& lcd);
     void renderFlow(LCD& lcd);
+    void renderTasks(LCD& lcd);
     InputResult handleDiagramInput(JoyDirection dir);
     InputResult handleMatrixInput(JoyDirection dir);
     InputResult handleFlowInput(JoyDirection dir);
+    InputResult handleTasksInput(JoyDirection dir);
 
     Mode m_mode = Mode::DIAGRAM;
     bool m_needsRedraw = true;
     bool m_titleDrawn = false;
     bool m_paused = false;
     size_t m_lastTotal = 0;
+    uint8_t m_selectedTask = 0;  // Index into task table (0=Motor, wraps 0-4)
 
     // Matrix mode: 6 layers x 5 tasks count grid
     uint8_t m_cellCounts[6][5] = {};

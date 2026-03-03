@@ -205,13 +205,13 @@ void IndicatorService::drawComposited(const Params& p) {
         uint16_t angle = Graphics::deg_to_angle1024(p.angle_deg);
 
         int16_t tipX = 0, tipY = -ARROW_HALF_LEN;
-        int16_t headBaseY = static_cast<int16_t>(-ARROW_HALF_LEN + ARROW_HEAD_LEN);
+        auto headBaseY = static_cast<int16_t>(-ARROW_HALF_LEN + ARROW_HEAD_LEN);
         int16_t headRX = ARROW_HEAD_HALF_W, headRY = headBaseY;
-        int16_t headLX = static_cast<int16_t>(-ARROW_HEAD_HALF_W), headLY = headBaseY;
+        auto headLX = static_cast<int16_t>(-ARROW_HEAD_HALF_W), headLY = headBaseY;
         int16_t sTRX = ARROW_SHAFT_HALF_W, sTRY = headBaseY;
-        int16_t sTLX = static_cast<int16_t>(-ARROW_SHAFT_HALF_W), sTLY = headBaseY;
+        auto sTLX = static_cast<int16_t>(-ARROW_SHAFT_HALF_W), sTLY = headBaseY;
         int16_t sBRX = ARROW_SHAFT_HALF_W, sBRY = ARROW_HALF_LEN;
-        int16_t sBLX = static_cast<int16_t>(-ARROW_SHAFT_HALF_W), sBLY = ARROW_HALF_LEN;
+        auto sBLX = static_cast<int16_t>(-ARROW_SHAFT_HALF_W), sBLY = ARROW_HALF_LEN;
 
         int16_t rt[2], rhr[2], rhl[2], rstr[2], rstl[2], rsbr[2], rsbl[2];
         Graphics::rotate_point(tipX, tipY, angle, rt[0], rt[1]);
@@ -256,7 +256,7 @@ void IndicatorService::drawComposited(const Params& p) {
 
     if (hasRing) {
         static constexpr uint16_t chevAngles[4] = {0, 90, 180, 270};
-        int16_t midR = static_cast<int16_t>((RING_OUTER_R + RING_INNER_R) / 2);
+        auto midR = static_cast<int16_t>((RING_OUTER_R + RING_INNER_R) / 2);
 
         for (int i = 0; i < 4; i++) {
             uint16_t posAngle = Graphics::deg_to_angle1024(chevAngles[i]);
@@ -282,12 +282,12 @@ void IndicatorService::drawComposited(const Params& p) {
             Graphics::rotate_point(0, static_cast<int16_t>(-CHEVRON_SIZE / 2),
                                    posAngle, baseDx, baseDy);
 
-            int16_t tx = static_cast<int16_t>(cx + tipDx);
-            int16_t ty = static_cast<int16_t>(cy + tipDy);
-            int16_t b1x = static_cast<int16_t>(cx + baseDx);
-            int16_t b1y = static_cast<int16_t>(cy + baseDy);
-            int16_t b2x = static_cast<int16_t>(cx - baseDx);
-            int16_t b2y = static_cast<int16_t>(cy - baseDy);
+            auto tx = static_cast<int16_t>(cx + tipDx);
+            auto ty = static_cast<int16_t>(cy + tipDy);
+            auto b1x = static_cast<int16_t>(cx + baseDx);
+            auto b1y = static_cast<int16_t>(cy + baseDy);
+            auto b2x = static_cast<int16_t>(cx - baseDx);
+            auto b2y = static_cast<int16_t>(cy - baseDy);
 
             initTriEdges(chevE[i], tx, ty, b1x, b1y, b2x, b2y);
         }
@@ -327,13 +327,13 @@ void IndicatorService::drawComposited(const Params& p) {
     }
 
     // --- Stream scanlines for the render region ---
-    int32_t outerR2 = static_cast<int32_t>(RING_OUTER_R) * RING_OUTER_R;
-    int32_t innerR2 = static_cast<int32_t>(RING_INNER_R) * RING_INNER_R;
+    auto outerR2 = static_cast<int32_t>(RING_OUTER_R) * RING_OUTER_R;
+    auto innerR2 = static_cast<int32_t>(RING_INNER_R) * RING_INNER_R;
 
-    uint16_t ww = static_cast<uint16_t>(rMaxX - rMinX + 1);
-    uint16_t wh = static_cast<uint16_t>(rMaxY - rMinY + 1);
-    uint16_t wx = static_cast<uint16_t>(SCREEN_CX + rMinX);
-    uint16_t wy = static_cast<uint16_t>(SCREEN_CY + rMinY);
+    auto ww = static_cast<uint16_t>(rMaxX - rMinX + 1);
+    auto wh = static_cast<uint16_t>(rMaxY - rMinY + 1);
+    auto wx = static_cast<uint16_t>(SCREEN_CX + rMinX);
+    auto wy = static_cast<uint16_t>(SCREEN_CY + rMinY);
 
     static uint8_t scanline[2 * (2 * COMPOSITED_HALF_W + 1)];
 
@@ -343,8 +343,8 @@ void IndicatorService::drawComposited(const Params& p) {
     m_lcd->streamBitmapStart(wx, wy, ww, wh);
 
     for (int16_t dy = rMinY; dy <= rMaxY; dy++) {
-        int16_t screenY = static_cast<int16_t>(SCREEN_CY + dy);
-        int32_t dy2 = static_cast<int32_t>(dy) * dy;
+        auto screenY = static_cast<int16_t>(SCREEN_CY + dy);
+        auto dy2 = static_cast<int32_t>(dy) * dy;
 
         // Y-range early-out: skip arrow triangle tests for scanlines
         // entirely above or below all arrow geometry
@@ -352,8 +352,8 @@ void IndicatorService::drawComposited(const Params& p) {
                                 screenY >= arrowYmin && screenY <= arrowYmax);
 
         for (int16_t dx = rMinX; dx <= rMaxX; dx++) {
-            int16_t screenX = static_cast<int16_t>(SCREEN_CX + dx);
-            int32_t dist2 = static_cast<int32_t>(dx) * dx + dy2;
+            auto screenX = static_cast<int16_t>(SCREEN_CX + dx);
+            auto dist2 = static_cast<int32_t>(dx) * dx + dy2;
 
             uint16_t color = BG_COLOR;
 
@@ -466,13 +466,13 @@ void IndicatorService::drawArrow(uint16_t angle_deg) {
     uint16_t angle = Graphics::deg_to_angle1024(angle_deg);
 
     int16_t tipX = 0, tipY = -ARROW_HALF_LEN;
-    int16_t headBaseY = static_cast<int16_t>(-ARROW_HALF_LEN + ARROW_HEAD_LEN);
+    auto headBaseY = static_cast<int16_t>(-ARROW_HALF_LEN + ARROW_HEAD_LEN);
     int16_t headRX = ARROW_HEAD_HALF_W, headRY = headBaseY;
-    int16_t headLX = static_cast<int16_t>(-ARROW_HEAD_HALF_W), headLY = headBaseY;
+    auto headLX = static_cast<int16_t>(-ARROW_HEAD_HALF_W), headLY = headBaseY;
     int16_t shaftTRX = ARROW_SHAFT_HALF_W, shaftTRY = headBaseY;
-    int16_t shaftTLX = static_cast<int16_t>(-ARROW_SHAFT_HALF_W), shaftTLY = headBaseY;
+    auto shaftTLX = static_cast<int16_t>(-ARROW_SHAFT_HALF_W), shaftTLY = headBaseY;
     int16_t shaftBRX = ARROW_SHAFT_HALF_W, shaftBRY = ARROW_HALF_LEN;
-    int16_t shaftBLX = static_cast<int16_t>(-ARROW_SHAFT_HALF_W), shaftBLY = ARROW_HALF_LEN;
+    auto shaftBLX = static_cast<int16_t>(-ARROW_SHAFT_HALF_W), shaftBLY = ARROW_HALF_LEN;
 
     int16_t rtipX, rtipY;
     int16_t rheadRX, rheadRY, rheadLX, rheadLY;
@@ -524,7 +524,7 @@ void IndicatorService::drawRing() {
 
 void IndicatorService::drawChevrons(int8_t direction) {
     static constexpr uint16_t chevronAngles[4] = {0, 90, 180, 270};
-    int16_t midR = static_cast<int16_t>((RING_OUTER_R + RING_INNER_R) / 2);
+    auto midR = static_cast<int16_t>((RING_OUTER_R + RING_INNER_R) / 2);
 
     for (int i = 0; i < 4; i++) {
         uint16_t posAngle = Graphics::deg_to_angle1024(chevronAngles[i]);
@@ -548,12 +548,12 @@ void IndicatorService::drawChevrons(int8_t direction) {
         Graphics::rotate_point(0, static_cast<int16_t>(-CHEVRON_SIZE / 2), posAngle,
                                baseDx, baseDy);
 
-        int16_t tx = static_cast<int16_t>(cx + tipDx);
-        int16_t ty = static_cast<int16_t>(cy + tipDy);
-        int16_t b1x = static_cast<int16_t>(cx + baseDx);
-        int16_t b1y = static_cast<int16_t>(cy + baseDy);
-        int16_t b2x = static_cast<int16_t>(cx - baseDx);
-        int16_t b2y = static_cast<int16_t>(cy - baseDy);
+        auto tx = static_cast<int16_t>(cx + tipDx);
+        auto ty = static_cast<int16_t>(cy + tipDy);
+        auto b1x = static_cast<int16_t>(cx + baseDx);
+        auto b1y = static_cast<int16_t>(cy + baseDy);
+        auto b2x = static_cast<int16_t>(cx - baseDx);
+        auto b2y = static_cast<int16_t>(cy - baseDy);
 
         expandBbox(tx, ty);
         expandBbox(b1x, b1y);

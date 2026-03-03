@@ -85,7 +85,7 @@ void DispatcherScreen::render(LCD& lcd)
     Tasks::CommsDispatchStats dstats;
     Tasks::CommsTask_GetDispatchStats(dstats);
 
-    uint8_t cmdQDepth = static_cast<uint8_t>(Services::g_commandQueue.getQueueDepth());
+    auto cmdQDepth = static_cast<uint8_t>(Services::g_commandQueue.getQueueDepth());
     Services::Event::Stats evtStats = Services::Event::getStats();
 
     // Record queue depths for history graph
@@ -156,8 +156,8 @@ void DispatcherScreen::render(LCD& lcd)
             if (svcCounts[svc.id] == 0) { continue; }
             activeSvcs++;
 
-            uint16_t pct = static_cast<uint16_t>(svcCounts[svc.id] * 100 / totalSvc);
-            uint16_t barFill = static_cast<uint16_t>(svcCounts[svc.id] * svcBarW / totalSvc);
+            auto pct = static_cast<uint16_t>(svcCounts[svc.id] * 100 / totalSvc);
+            auto barFill = static_cast<uint16_t>(svcCounts[svc.id] * svcBarW / totalSvc);
             if (barFill < 1) { barFill = 1; }
 
             // Label

@@ -22,8 +22,8 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "X_vendor/CMSIS/stm32f401xe.h"
-#include "F_platform/interfaces/ispi_bus.hpp"
-#include "F_platform/interfaces/ilock.hpp"
+#include "F_platform/hal/ispi_bus.hpp"
+#include "F_platform/hal/ilock.hpp"
 #include "F_platform/hw/interrupt_guard.hpp"
 
 // CMSIS standard variable (defined in system_stm32f4xx.c)

@@ -1,17 +1,18 @@
 /**
  * @file rtt_transport.hpp
- * @brief SEGGER RTT transport implementation
+ * @brief RTT transport implementation (ITransport over IRttChannel)
  *
- * Uses RTT channel 0 for bidirectional console/command traffic.
- * Channel 1 is reserved for SystemView.
+ * Delegates all RTT operations to an IRttChannel implementation
+ * injected at construction time.
  *
- * Requires: Middlewares/SEGGER/RTT/SEGGER_RTT.h
+ * No vendor includes appear in this file.
  */
 
 #ifndef RTT_TRANSPORT_HPP
 #define RTT_TRANSPORT_HPP
 
-#include "F_platform/interfaces/itransport.hpp"
+#include "F_platform/hal/itransport.hpp"
+#include "F_platform/hal/irtt_channel.hpp"
 
 namespace Comms {
 
@@ -19,9 +20,9 @@ class RttTransport : public ITransport {
 public:
     /**
      * @brief Construct RTT transport
-     * @param channel RTT channel to use (default 0)
+     * @param channel  RTT channel driver (IRttChannel implementation)
      */
-    explicit RttTransport(unsigned channel = 0);
+    explicit RttTransport(IRttChannel& channel);
 
     bool init() override;
     bool available() override;
@@ -33,7 +34,7 @@ public:
     void flush() override;
 
 private:
-    unsigned m_channel;
+    IRttChannel& m_channel;
 };
 
 } // namespace Comms

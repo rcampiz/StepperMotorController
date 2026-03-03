@@ -11,7 +11,7 @@
 
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/semphr.h"
-#include "F_platform/interfaces/ilock.hpp"
+#include "F_platform/hal/ilock.hpp"
 
 class FreeRTOSMutex : public ILock {
 public:

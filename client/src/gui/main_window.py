@@ -263,7 +263,7 @@ class MainWindow(QMainWindow):
 
         # Dashboard clear fault button
         self._telemetry_panel.clear_fault_requested.connect(
-            lambda: self._send_command("CLEAR_FAULT"))
+            lambda: self._send_command("SYST:FAULT:CLEAR"))
 
         # Window signals
         self.connected.connect(self._on_connected)
@@ -306,13 +306,13 @@ class MainWindow(QMainWindow):
                 # because the firmware skips CR/LF when buffer is empty).
                 log.warning("No banner received — probing with PING...")
                 self._transport.flush_input()
-                self._transport.send_line("PING 0")
+                self._transport.send_line("DIAG:PING 0")
                 # Read echo + PONG response (up to 2 lines)
                 probe = self._transport.recv_line(timeout_ms=2000)
                 if probe is not None:
                     log.info("Probe response: %r", probe)
                     # Read PONG if echo came first
-                    if probe.startswith("PING"):
+                    if probe.startswith("DIAG:PING"):
                         pong = self._transport.recv_line(timeout_ms=1000)
                         if pong:
                             log.info("Probe PONG: %r", pong)
@@ -417,7 +417,7 @@ class MainWindow(QMainWindow):
             # Clear any latched faults (e.g. comms timeout from previous
             # session where heartbeat watchdog fired after USB disconnect)
             self._serial_thread.worker.queue_command(
-                QueuedCommand("CLEAR_FAULT", CommandTag.CLEAR_FAULT))
+                QueuedCommand("SYST:FAULT:CLEAR", CommandTag.CLEAR_FAULT))
 
             # Request initial parameter refresh via worker
             self._serial_thread.queue_refresh()
@@ -433,12 +433,12 @@ class MainWindow(QMainWindow):
                          "MCU timeout=%dms", period_ms, timeout_ms)
                 self._serial_thread.worker.queue_command(
                     QueuedCommand(
-                        f"SET_HEARTBEAT {timeout_ms}",
+                        f"SYST:HB:TIMEOUT {timeout_ms}",
                         CommandTag.GENERIC))
 
             # Enable async events (all types) after setup is complete
             self._serial_thread.worker.queue_command(
-                QueuedCommand("EVENT_ENABLE", CommandTag.GENERIC))
+                QueuedCommand("SYST:EVT:EN", CommandTag.GENERIC))
 
             # Query motor/encoder config for Motion panel unit conversion
             for cmd in ("DRV:STEP_MODE?", "DRV:FULL_STEPS?",
@@ -448,7 +448,7 @@ class MainWindow(QMainWindow):
 
             # Query trim gains for Motion panel tuning controls
             self._serial_thread.worker.queue_command(
-                QueuedCommand("CTRL:TRIM?", CommandTag.REFRESH_PID_CONFIG))
+                QueuedCommand("CTRL:TRIM?", CommandTag.REFRESH_TRIM_CONFIG))
 
             # Query encoder filter config to populate Dashboard controls
             self._serial_thread.worker.queue_command(
@@ -480,7 +480,7 @@ class MainWindow(QMainWindow):
         if not self._serial_thread:
             return
         self._serial_thread.worker.queue_command(
-            QueuedCommand("CTRL:TRIM?", CommandTag.REFRESH_PID_CONFIG))
+            QueuedCommand("CTRL:TRIM?", CommandTag.REFRESH_TRIM_CONFIG))
 
     @Slot(str)
     def _send_command(self, command: str):
@@ -489,19 +489,18 @@ class MainWindow(QMainWindow):
             return
 
         # Route known commands through tagged path for response handling
-        if command == "CLEAR_FAULT":
+        if command == "SYST:FAULT:CLEAR":
             self._serial_thread.worker.queue_command(
-                QueuedCommand("CLEAR_FAULT", CommandTag.CLEAR_FAULT))
-        elif command == "FORCE_CLEAR_FAULT":
+                QueuedCommand("SYST:FAULT:CLEAR", CommandTag.CLEAR_FAULT))
+        elif command == "SYST:FAULT:FORCE":
             self._serial_thread.worker.queue_command(
-                QueuedCommand("FORCE_CLEAR_FAULT", CommandTag.CLEAR_FAULT))
+                QueuedCommand("SYST:FAULT:FORCE", CommandTag.CLEAR_FAULT))
         elif command.startswith("CTRL:MODE"):
             self._serial_thread.worker.queue_command(
                 QueuedCommand(command, CommandTag.SET_CTRL_MODE))
-        elif (command.startswith("CTRL:TRIM:") or
-              command.startswith("CTRL:PID:")):
+        elif command.startswith("CTRL:TRIM:"):
             self._serial_thread.worker.queue_command(
-                QueuedCommand(command, CommandTag.APPLY_PID))
+                QueuedCommand(command, CommandTag.APPLY_TRIM))
         else:
             self._serial_thread.send_command(command)
 
@@ -535,7 +534,7 @@ class MainWindow(QMainWindow):
             self._serial_thread.worker.queue_command(
                 QueuedCommand(cmd_str, CommandTag.APPLY_KVAL))
             self._serial_thread.worker.queue_command(
-                QueuedCommand("MCONFIG_APPLY", CommandTag.APPLY_KVAL))
+                QueuedCommand("DRV:CFG:APPLY", CommandTag.APPLY_KVAL))
 
     @Slot(list)
     def _on_param_apply(self, commands: list):
@@ -570,7 +569,7 @@ class MainWindow(QMainWindow):
             self._serial_thread.worker.queue_command(
                 QueuedCommand(cmd_str, CommandTag.APPLY_PARAMS))
             self._serial_thread.worker.queue_command(
-                QueuedCommand("MCONFIG_APPLY", CommandTag.APPLY_PARAMS))
+                QueuedCommand("DRV:CFG:APPLY", CommandTag.APPLY_PARAMS))
 
     @Slot(str)
     def _on_enc_filter_scpi(self, command: str):
@@ -604,7 +603,7 @@ class MainWindow(QMainWindow):
 
         # Switch to REMOTE mode first
         worker.queue_command(
-            QueuedCommand("UI_MODE REMOTE", CommandTag.GENERIC))
+            QueuedCommand("UI:MODE REMOTE", CommandTag.GENERIC))
 
         # Queue one DISP_BITMAP_RLE per band
         row = 0
@@ -632,7 +631,7 @@ class MainWindow(QMainWindow):
 
             worker.queue_command(
                 QueuedCommand(
-                    command=f"DISP_BITMAP_RLE 0 {row} {w} {rows_this_band} "
+                    command=f"UI:DISP:BITMAP:RLE 0 {row} {w} {rows_this_band} "
                             f"{len(band_rle)}",
                     tag=tag,
                     callable=make_transfer(0, row, w, rows_this_band,
@@ -669,7 +668,7 @@ class MainWindow(QMainWindow):
                 # Disable heartbeat watchdog for the duration of the upload
                 # (the callable blocks the worker thread, so no heartbeats
                 # can be sent during the upload)
-                client.send_command("SET_HEARTBEAT 0")
+                client.send_command("SYST:HB:TIMEOUT 0")
                 try:
                     resp = client.flash_upload(
                         s, data, use_crc=True,
@@ -677,13 +676,13 @@ class MainWindow(QMainWindow):
                             w.bitmap_progress.emit(sent, total))
                 finally:
                     # Re-enable heartbeat watchdog
-                    client.send_command(f"SET_HEARTBEAT {hb_ms}")
+                    client.send_command(f"SYST:HB:TIMEOUT {hb_ms}")
                 return resp
             return do_upload
 
         worker.queue_command(
             QueuedCommand(
-                command=f"FLASH_UPLOAD {slot}",
+                command=f"UI:FLASH:UPLOAD {slot}",
                 tag=CommandTag.FLASH_UPLOAD_SLOT,
                 callable=make_upload(slot, rgb565_data, worker, hb_timeout_ms),
             )
@@ -704,13 +703,13 @@ class MainWindow(QMainWindow):
         # Ensure REMOTE mode (send only once per session)
         if not self._remote_mode_sent:
             worker.queue_command(
-                QueuedCommand("UI_MODE REMOTE", CommandTag.GENERIC))
+                QueuedCommand("UI:MODE REMOTE", CommandTag.GENERIC))
             self._remote_mode_sent = True
 
         # Use coalesced indicator path (latest-wins, no queue backlog)
         trans_int = 1 if has_translation else 0
         worker.set_indicator_command(
-            f"DISP_INDICATOR {angle} {rotation_dir} {trans_int}")
+            f"UI:DISP:INDICATOR {angle} {rotation_dir} {trans_int}")
 
         self._display_panel.transfer_complete(True, "Indicator sent")
 
@@ -723,7 +722,7 @@ class MainWindow(QMainWindow):
             self._display_panel.transfer_complete(False, "Not connected")
             return
         self._serial_thread.worker.queue_command(
-            QueuedCommand("FLASH_INFO", CommandTag.FLASH_INFO))
+            QueuedCommand("UI:FLASH:INFO", CommandTag.FLASH_INFO))
 
     @Slot(int)
     def _on_flash_show_requested(self, slot: int):
@@ -732,7 +731,7 @@ class MainWindow(QMainWindow):
             self._display_panel.transfer_complete(False, "Not connected")
             return
         self._serial_thread.worker.queue_command(
-            QueuedCommand(f"FLASH_SHOW {slot}", CommandTag.FLASH_SHOW))
+            QueuedCommand(f"UI:FLASH:SHOW {slot}", CommandTag.FLASH_SHOW))
 
     @Slot()
     def _on_flash_diag_requested(self):
@@ -741,7 +740,7 @@ class MainWindow(QMainWindow):
             self._display_panel.transfer_complete(False, "Not connected")
             return
         self._serial_thread.worker.queue_command(
-            QueuedCommand("FLASH_TEST", CommandTag.FLASH_DIAG))
+            QueuedCommand("UI:FLASH:TEST", CommandTag.FLASH_DIAG))
 
     @Slot()
     def _on_flash_erase_requested(self):
@@ -756,7 +755,7 @@ class MainWindow(QMainWindow):
 
         self._serial_thread.worker.queue_command(
             QueuedCommand(
-                command="FLASH_ERASE_ALL",
+                command="UI:FLASH:ERASE_ALL",
                 tag=CommandTag.FLASH_ERASE,
                 callable=do_erase,
             )
@@ -877,7 +876,7 @@ class MainWindow(QMainWindow):
             if self._serial_thread:
                 self._serial_thread.worker.queue_command(
                     QueuedCommand(
-                        f"FLASH_SHOW {slot_str}", CommandTag.FLASH_SHOW))
+                        f"UI:FLASH:SHOW {slot_str}", CommandTag.FLASH_SHOW))
 
         elif tag == CommandTag.FLASH_SHOW.name:
             self._display_panel.transfer_complete(True, "Displayed from flash")
@@ -901,9 +900,9 @@ class MainWindow(QMainWindow):
                 self._driver_panel.update_drv_config(response.data)
                 self._telemetry_panel.update_drv_config(response.data)
 
-        elif tag == CommandTag.REFRESH_PID_CONFIG.name:
+        elif tag == CommandTag.REFRESH_TRIM_CONFIG.name:
             if response.data:
-                self._motion_panel.update_pid_config(response.data)
+                self._motion_panel.update_trim_config(response.data)
 
         elif tag == CommandTag.SET_CTRL_MODE.name:
             if response.success:
@@ -912,7 +911,7 @@ class MainWindow(QMainWindow):
             else:
                 self._motion_panel.update_mode_response(False, {})
 
-        elif tag == CommandTag.APPLY_PID.name:
+        elif tag == CommandTag.APPLY_TRIM.name:
             self._status_bar.showMessage("Trim config updated", 2000)
 
         elif tag == CommandTag.SYSID_START.name:
@@ -977,7 +976,7 @@ class MainWindow(QMainWindow):
 
         # Route through worker
         self._serial_thread.worker.queue_command(
-            QueuedCommand(f"SET_FORMAT {fmt.value}", CommandTag.SET_FORMAT)
+            QueuedCommand(f"FMT {fmt.value}", CommandTag.SET_FORMAT)
         )
         # Update UI checkboxes optimistically
         self._ascii_action.setChecked(fmt == ResponseFormat.ASCII)
@@ -1033,7 +1032,7 @@ class MainWindow(QMainWindow):
             return
         self._status_bar.showMessage("Re-initializing motor driver...", 3000)
         self._serial_thread.worker.queue_command(
-            QueuedCommand("MOTOR_REINIT", CommandTag.GENERIC))
+            QueuedCommand("DRV:REINIT", CommandTag.GENERIC))
         # Refresh all panels to pick up the restored config
         self._serial_thread.queue_refresh()
 
@@ -1109,9 +1108,9 @@ class MainWindow(QMainWindow):
         """Handle window close - queue cleanup through worker, then disconnect."""
         if self._serial_thread:
             # Queue cleanup commands through the worker (don't bypass it)
-            self._serial_thread.send_command("EVENT_DISABLE")
-            self._serial_thread.send_command("SET_HEARTBEAT 0")
-            self._serial_thread.send_command("ESTOP")
+            self._serial_thread.send_command("SYST:EVT:DIS")
+            self._serial_thread.send_command("SYST:HB:TIMEOUT 0")
+            self._serial_thread.send_command("SYST:ESTOP")
             time.sleep(0.2)  # Brief pause to let commands drain
         self._on_disconnect_clicked()
         event.accept()

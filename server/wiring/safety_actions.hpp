@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "F_platform/interfaces/isafety_actions.hpp"
+#include "F_platform/hal/isafety_actions.hpp"
 #include "F_platform/tasks/motor_task.hpp"
 #include "F_platform/tasks/comms_task.hpp"
 

@@ -1,47 +1,29 @@
 /**
  * @file uart_transport.hpp
- * @brief USART2 VCP transport implementation
+ * @brief UART transport implementation (ITransport over IUartBus)
  *
- * Uses USART2 connected to ST-LINK/J-Link Virtual COM Port
- * via solder bridges SB13/SB14 (per UM1724).
+ * Provides interrupt-driven RX with a 256-byte ring buffer and
+ * blocking TX.  All hardware register access is delegated to an
+ * IUartBus implementation injected at construction time.
  *
- * Features:
- * - Interrupt-driven RX with 256-byte ring buffer
- * - Polling TX (blocking)
- * - FreeRTOS-compatible (ISR-safe ring buffer)
- * - Overflow detection for truncated command diagnosis
+ * No CMSIS types appear in this file.
  */
 
 #ifndef UART_TRANSPORT_HPP
 #define UART_TRANSPORT_HPP
 
-#include "F_platform/interfaces/itransport.hpp"
-#include "F_platform/interfaces/iclock.hpp"
-#include "X_vendor/CMSIS/stm32f401xe.h"
+#include "F_platform/hal/itransport.hpp"
+#include "F_platform/hal/iclock.hpp"
+#include "F_platform/hal/iuart_bus.hpp"
 #include <stdint.h>
 #include <stddef.h>
 
 namespace Comms {
 
 /**
- * @brief UART pin/peripheral configuration — injected at construction
- *
- * Decouples L1 transport from L5 board pin definitions.
- * Populated from Pins::VCP_UART by the system wiring code.
- */
-struct UartConfig {
-    USART_TypeDef* usart;
-    GPIO_TypeDef*  gpioPort;
-    uint8_t        txPin;
-    uint8_t        rxPin;
-    uint8_t        af;
-    uint32_t       apb1ClockHz;
-};
-
-/**
  * @brief Lock-free single-producer single-consumer ring buffer
  *
- * Producer: USART2 IRQ handler (writes)
+ * Producer: USART IRQ handler (writes)
  * Consumer: UartTransport methods (reads)
  */
 template<size_t SIZE>
@@ -146,7 +128,10 @@ private:
 };
 
 /**
- * @brief USART2 VCP transport with interrupt-driven RX
+ * @brief UART transport with interrupt-driven RX
+ *
+ * Delegates all hardware access to an IUartBus.
+ * Ring buffer and ISR routing live here (transport concerns).
  *
  * @note Single instance only - ISR routes to s_instance.
  *       Creating multiple instances will assert in init().
@@ -155,12 +140,12 @@ class UartTransport : public ITransport {
 public:
     /**
      * @brief Construct UART transport
-     * @param config Pin/peripheral configuration (from board_pins)
-     * @param clock Platform clock for delays and timeouts
-     * @param baudRate Baud rate (default 115200)
-     * @param irqPriority NVIC priority for USART2 RX interrupt (default 6)
+     * @param bus       Hardware UART driver (IUartBus implementation)
+     * @param clock     Platform clock for delays and timeouts
+     * @param baudRate  Baud rate (default 115200)
+     * @param irqPriority  NVIC priority for USART RX interrupt (default 6)
      */
-    UartTransport(const UartConfig& config, IClock& clock,
+    UartTransport(IUartBus& bus, IClock& clock,
                   uint32_t baudRate = 115200, uint8_t irqPriority = 6);
 
     bool init() override;
@@ -175,12 +160,12 @@ public:
     /**
      * @brief Change baud rate at runtime
      *
-     * Waits for current TX to complete, reconfigures BRR, clears RX buffer.
+     * Waits for current TX to complete, reconfigures hardware, clears RX buffer.
      */
     bool setBaudRate(uint32_t baudRate) override;
 
     /**
-     * @brief Handle USART2 RX interrupt (called from ISR)
+     * @brief Handle USART RX interrupt (called from ISR)
      */
     void handleIRQ();
 
@@ -191,7 +176,6 @@ public:
 
     /**
      * @brief Check if RX buffer has overflowed (bytes were dropped)
-     * @return true if overflow occurred since last clearOverflow()
      */
     bool hasOverflowed() const { return m_rxBuffer.hasOverflowed(); }
 
@@ -206,16 +190,13 @@ public:
     void clearOverflow() { m_rxBuffer.clearOverflow(); }
 
 private:
-    UartConfig m_config;
+    IUartBus& m_bus;
     IClock* m_clock;
     uint32_t m_baudRate;
     uint8_t m_irqPriority;
     RingBuffer<256> m_rxBuffer;
 
     static UartTransport* s_instance;
-
-    void initGpio();
-    void initUsart();
 };
 
 } // namespace Comms

@@ -15,9 +15,9 @@
 
 #include "ui/screens/task_monitor_screen.hpp"
 #include "L4_drivers/devices/lcd_st7789.hpp"
-#include "F_platform/interfaces/itask_stats.hpp"
+#include "F_platform/hal/itask_stats.hpp"
 #include "F_platform/rtos/platform_init.hpp"
-#include "F_platform/interfaces/telemetry.hpp"
+#include "F_platform/types/telemetry.hpp"
 #include "L3_services/infra/trace.hpp"
 #include <stdio.h>
 #include <string.h>
@@ -612,7 +612,7 @@ void TaskMonitorScreen::renderTimeline(LCD& lcd)
     } else {
         // --- TIME MODE: fixed time window, entries plotted by timestamp ---
         uint16_t windowMs = TIME_WINDOWS[m_zoomLevel];
-        uint32_t windowUs = static_cast<uint32_t>(windowMs) * 1000;
+        auto windowUs = static_cast<uint32_t>(windowMs) * 1000;
 
         // Find newest entry tick
         uint32_t newestTick = 0;
@@ -626,7 +626,7 @@ void TaskMonitorScreen::renderTimeline(LCD& lcd)
         // Apply pan offset (m_scrollOffset = ms from newest)
         uint32_t windowEnd = newestTick;
         if (m_scrollOffset > 0) {
-            uint32_t offsetUs = static_cast<uint32_t>(m_scrollOffset) * 1000;
+            auto offsetUs = static_cast<uint32_t>(m_scrollOffset) * 1000;
             if (windowEnd > offsetUs) {
                 windowEnd -= offsetUs;
             } else {

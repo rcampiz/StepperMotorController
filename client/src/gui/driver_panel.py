@@ -649,7 +649,7 @@ class DriverPanel(QWidget):
         a = round(self._kval_acc_slider.value() / 100 * 255)
         d = round(self._kval_dec_slider.value() / 100 * 255)
         self.kval_apply_requested.emit(
-            f"MCONFIG_KVAL {h:02X} {r:02X} {a:02X} {d:02X}")
+            f"DRV:CFG:KVAL {h:02X} {r:02X} {a:02X} {d:02X}")
 
     @Slot()
     def _on_apply_params(self):
@@ -657,8 +657,8 @@ class DriverPanel(QWidget):
         dec_raw = max(1, round(self._dec_spin.value() / ACC_DEC_FACTOR))
         maxspd_raw = max(1, round(self._maxspd_spin.value() / MAXSPD_FACTOR))
         self.param_apply_requested.emit([
-            f"MCONFIG_MOTION {acc_raw} {dec_raw} {maxspd_raw}",
-            "MCONFIG_APPLY",
+            f"DRV:CFG:MOTION {acc_raw} {dec_raw} {maxspd_raw}",
+            "DRV:CFG:APPLY",
         ])
 
     @Slot()

@@ -8,7 +8,7 @@
 #include "L4_drivers/devices/joystick.hpp"
 #include "L4_drivers/spi/spi_bus.hpp"
 #include "L4_drivers/spi/spi_manager.hpp"
-#include "F_platform/interfaces/telemetry.hpp"
+#include "F_platform/types/telemetry.hpp"
 #include "L3_services/infra/indicator_service.hpp"
 #include "F_platform/ui/ui_mode.hpp"
 #include "ui/screen_manager.hpp"
@@ -26,6 +26,10 @@
 #include "ui/screens/arch_screen.hpp"
 #include "L3_services/infra/flash_image_service.hpp"
 #include "L3_services/infra/trace.hpp"
+#include "F_util/interface_trace.hpp"
+#ifdef ENABLE_INTERFACE_TRACE
+#include "wiring/traced/traced_spi_bus.hpp"
+#endif
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
 #include <stddef.h>
@@ -174,23 +178,25 @@ bool DisplayTask_Init()
     if (spi1 == nullptr) {
         return false;
     }
-    s_spi = new SPIBus(*spi1);
-    if (s_spi == nullptr) {
-        return false;
-    }
+#ifdef ENABLE_INTERFACE_TRACE
+    static TracedSPIBus s_tracedSPI(*spi1);
+    static SPIBus spiBus(s_tracedSPI);
+#else
+    static SPIBus spiBus(*spi1);
+#endif
+    s_spi = &spiBus;
 
     // Initialize LCD driver with shared SPI bus
-    s_lcd = new LCD(*s_spi);
-    if (s_lcd == nullptr) {
-        return false;
-    }
+    static LCD lcd(*s_spi);
+    s_lcd = &lcd;
     s_lcd->init();
 
     // Initialize indicator service (service layer, no RTOS dependency)
     Services::g_indicatorService.init(s_lcd);
 
     // Initialize joystick
-    s_joystick = new Joystick();
+    static Joystick joystick;
+    s_joystick = &joystick;
 
     // Set up main menu
     s_mainMenu.addItem("Boot Color Screen");
@@ -279,6 +285,7 @@ void vDisplayTask(void* pvParameters)
 render:
         // Render current screen in LOCAL mode
         if (s_lcd != nullptr && UI::g_uiMode.getMode() == UI::UIMode::LOCAL) {
+            ITRACE(ITrace::L4_LCD, "[UI>L4]", "lcd.render");
             s_screenManager.render();
         }
 

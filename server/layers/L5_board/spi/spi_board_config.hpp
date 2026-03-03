@@ -11,7 +11,7 @@
 
 #include <stdint.h>
 #include "X_vendor/CMSIS/stm32f401xe.h"
-#include "F_platform/interfaces/ispi_bus.hpp"
+#include "F_platform/hal/ispi_bus.hpp"
 #include "L5_board/board_pins.hpp"
 
 /**

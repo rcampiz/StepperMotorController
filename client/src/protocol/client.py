@@ -188,14 +188,14 @@ class MotorClient:
         Returns:
             Response from the device.
         """
-        resp = self.send_command(f"SET_FORMAT {fmt.value}")
+        resp = self.send_command(f"FMT {fmt.value}")
         if resp.success:
             self._format = fmt
         return resp
 
     def get_format(self) -> Response:
         """Query current response format from device."""
-        return self.send_command("GET_FORMAT")
+        return self.send_command("FMT?")
 
     def send_command(
         self,
@@ -450,15 +450,15 @@ class MotorClient:
 
     def ping(self, seq: int = 0) -> Response:
         """Send PING command for latency measurement."""
-        return self.send_command(f"PING {seq}")
+        return self.send_command(f"DIAG:PING {seq}")
 
     def get_tick(self) -> Response:
         """Get current MCU tick counter."""
-        return self.send_command("GET_TICK")
+        return self.send_command("SYST:TICK?")
 
     def get_status(self) -> Response:
         """Get full device status."""
-        return self.send_command("GET_STATUS")
+        return self.send_command("DIAG:STAT?")
 
     def move(self, steps: int, direction: int) -> Response:
         """
@@ -468,7 +468,7 @@ class MotorClient:
             steps: Number of steps (0-2097151).
             direction: 0 for reverse, 1 for forward.
         """
-        return self.send_command(f"MOVE {steps} {direction}")
+        return self.send_command(f"MOT:MOVE {steps} {direction}")
 
     def goto(self, position: int) -> Response:
         """
@@ -477,7 +477,7 @@ class MotorClient:
         Args:
             position: Target position (-2097152 to 2097151).
         """
-        return self.send_command(f"GOTO {position}")
+        return self.send_command(f"MOT:GOTO {position}")
 
     def run(self, speed: int, direction: int) -> Response:
         """
@@ -487,56 +487,44 @@ class MotorClient:
             speed: Speed in steps/sec (0-15625).
             direction: 0 for reverse, 1 for forward.
         """
-        return self.send_command(f"RUN {speed} {direction}")
+        return self.send_command(f"MOT:RUN {speed} {direction}")
 
     def stop(self, hard: bool = False) -> Response:
         """Stop motion."""
-        cmd = "STOP hard" if hard else "STOP"
+        cmd = "MOT:STOP hard" if hard else "MOT:STOP"
         return self.send_command(cmd)
 
     def estop(self) -> Response:
         """Emergency stop."""
-        return self.send_command("ESTOP")
+        return self.send_command("SYST:ESTOP")
 
     def home(self) -> Response:
         """Go to home position."""
-        return self.send_command("HOME")
+        return self.send_command("MOT:HOME")
 
     def zero(self) -> Response:
         """Set current position as zero."""
-        return self.send_command("ZERO")
+        return self.send_command("MOT:ZERO")
 
     def enable(self) -> Response:
         """Enable motor outputs."""
-        return self.send_command("ENABLE")
+        return self.send_command("MOT:EN")
 
     def disable(self) -> Response:
         """Disable motor outputs (Hi-Z)."""
-        return self.send_command("DISABLE")
-
-    def set_accel(self, value: int) -> Response:
-        """Set acceleration (1-4095)."""
-        return self.send_command(f"ACCEL {value}")
-
-    def set_decel(self, value: int) -> Response:
-        """Set deceleration (1-4095)."""
-        return self.send_command(f"DECEL {value}")
-
-    def set_max_speed(self, value: int) -> Response:
-        """Set maximum speed (1-1023)."""
-        return self.send_command(f"MAXSPD {value}")
+        return self.send_command("MOT:DIS")
 
     def get_encoder(self) -> Response:
         """Get encoder state."""
-        return self.send_command("ENCODER")
+        return self.send_command("CTRL:ENC?")
 
     def get_version(self) -> Response:
         """Get firmware version."""
-        return self.send_command("VER")
+        return self.send_command("SYST:VER?")
 
     def get_help(self) -> Response:
         """Get help text."""
-        return self.send_command("HELP", timeout_ms=5000)
+        return self.send_command("SYST:HELP?", timeout_ms=5000)
 
     # -------------------------------------------------------------------------
     # Heartbeat commands
@@ -544,15 +532,15 @@ class MotorClient:
 
     def heartbeat(self, seq: int = 0) -> Response:
         """Send HEARTBEAT command to reset watchdog timer."""
-        return self.send_command(f"HEARTBEAT {seq}")
+        return self.send_command(f"SYST:HB {seq}")
 
     def set_heartbeat(self, timeout_ms: int) -> Response:
         """Configure heartbeat watchdog timeout (0=disable, clamped to [100,5000])."""
-        return self.send_command(f"SET_HEARTBEAT {timeout_ms}")
+        return self.send_command(f"SYST:HB:TIMEOUT {timeout_ms}")
 
     def get_heartbeat_status(self) -> Response:
         """Query heartbeat watchdog status."""
-        return self.send_command("GET_HEARTBEAT_STATUS")
+        return self.send_command("SYST:HB:STAT?")
 
     # -------------------------------------------------------------------------
     # Display / Bitmap Streaming
@@ -566,7 +554,7 @@ class MotorClient:
         Stream raw RGB565 bitmap data to the device.
 
         Protocol:
-          1) Send DISP_BITMAP <x> <y> <w> <h> [CRC]
+          1) Send UI:DISP:BITMAP <x> <y> <w> <h> [CRC]
           2) Expect "OK READY <bytes>" (ASCII)
           3) Send exactly <bytes> raw RGB565 bytes [+ 4-byte CRC32 LE]
           4) Receive final OK/ERROR response
@@ -578,7 +566,7 @@ class MotorClient:
         self._drain_pending()
 
         # Step 1: request streaming
-        cmd_str = f"DISP_BITMAP {x} {y} {w} {h}"
+        cmd_str = f"UI:DISP:BITMAP {x} {y} {w} {h}"
         if use_crc:
             cmd_str += " CRC"
         self._transport.send_line(cmd_str)
@@ -586,17 +574,17 @@ class MotorClient:
         # Step 2: read READY response, skipping echo/events
         line = self._recv_response(cmd_str, timeout)
         if line is None:
-            raise ProtocolError("No READY response for DISP_BITMAP")
+            raise ProtocolError("No READY response for UI:DISP:BITMAP")
 
         if line.startswith("{"):
             # JSON error or OK; treat as standard response
-            resp = self._parse_json_response(line, "DISP_BITMAP")
+            resp = self._parse_json_response(line, "UI:DISP:BITMAP")
             if resp.success:
                 # JSON OK without READY is unexpected for streaming
-                raise ProtocolError("Expected READY for DISP_BITMAP, got JSON OK")
+                raise ProtocolError("Expected READY for UI:DISP:BITMAP, got JSON OK")
             return resp
 
-        resp = self._parse_ascii_response(line, "DISP_BITMAP")
+        resp = self._parse_ascii_response(line, "UI:DISP:BITMAP")
         ready_bytes = resp.data.get("ready_bytes")
         if ready_bytes is None:
             raise ProtocolError(f"Expected READY response, got: {line}")
@@ -622,8 +610,8 @@ class MotorClient:
         # Step 4: final OK/ERROR (skip any echo/event lines)
         final_line = self._recv_response(cmd_str, timeout)
         if final_line is None:
-            raise ProtocolError("No final response for DISP_BITMAP")
-        return self._parse_response(final_line, "DISP_BITMAP")
+            raise ProtocolError("No final response for UI:DISP:BITMAP")
+        return self._parse_response(final_line, "UI:DISP:BITMAP")
 
     # -------------------------------------------------------------------------
     # Baud rate negotiation
@@ -646,7 +634,7 @@ class MotorClient:
 
         # Send SET_BAUD at current baud rate
         try:
-            resp = self.send_command(f"SET_BAUD {baud}")
+            resp = self.send_command(f"SYST:BAUD {baud}")
         except Exception:
             return False
 
@@ -667,7 +655,7 @@ class MotorClient:
 
         # Verify with PING at new baud rate
         try:
-            verify = self.send_command("PING 99", timeout_ms=1000)
+            verify = self.send_command("DIAG:PING 99", timeout_ms=1000)
             if verify.success:
                 return True
         except Exception:
@@ -686,15 +674,15 @@ class MotorClient:
 
     def flash_info(self) -> Response:
         """Query NOR flash info (capacity, slot count)."""
-        return self.send_command("FLASH_INFO")
+        return self.send_command("UI:FLASH:INFO")
 
     def flash_show(self, slot: int) -> Response:
         """Display an image stored in flash slot on the LCD."""
-        return self.send_command(f"FLASH_SHOW {slot}")
+        return self.send_command(f"UI:FLASH:SHOW {slot}")
 
     def flash_erase_all(self, timeout_ms: int = 60000) -> Response:
         """Erase all flash image slots. Can take several seconds."""
-        return self.send_command("FLASH_ERASE_ALL", timeout_ms=timeout_ms)
+        return self.send_command("UI:FLASH:ERASE_ALL", timeout_ms=timeout_ms)
 
     def flash_upload(self, slot: int, data: bytes,
                      timeout_ms: Optional[int] = None,
@@ -704,7 +692,7 @@ class MotorClient:
         Upload raw RGB565 image data to a flash slot.
 
         Protocol (same pattern as disp_bitmap):
-          1) Send FLASH_UPLOAD <slot> [CRC]
+          1) Send UI:FLASH:UPLOAD <slot> [CRC]
           2) Expect "OK READY <bytes>"
           3) Send raw RGB565 bytes [+ 4-byte CRC32 LE]
           4) Receive final OK/ERROR
@@ -715,7 +703,7 @@ class MotorClient:
         timeout = timeout_ms or max(self._timeout_ms, 30000)
         self._drain_pending()
 
-        cmd_str = f"FLASH_UPLOAD {slot}"
+        cmd_str = f"UI:FLASH:UPLOAD {slot}"
         if use_crc:
             cmd_str += " CRC"
         self._transport.send_line(cmd_str)
@@ -723,15 +711,15 @@ class MotorClient:
         # Wait for READY (flash erase may take a moment)
         line = self._recv_response(cmd_str, timeout)
         if line is None:
-            raise ProtocolError("No READY response for FLASH_UPLOAD")
+            raise ProtocolError("No READY response for UI:FLASH:UPLOAD")
 
         if line.startswith("{"):
-            resp = self._parse_json_response(line, "FLASH_UPLOAD")
+            resp = self._parse_json_response(line, "UI:FLASH:UPLOAD")
             if resp.success:
-                raise ProtocolError("Expected READY for FLASH_UPLOAD, got JSON OK")
+                raise ProtocolError("Expected READY for UI:FLASH:UPLOAD, got JSON OK")
             return resp
 
-        resp = self._parse_ascii_response(line, "FLASH_UPLOAD")
+        resp = self._parse_ascii_response(line, "UI:FLASH:UPLOAD")
         ready_bytes = resp.data.get("ready_bytes")
         if ready_bytes is None:
             raise ProtocolError(f"Expected READY response, got: {line}")
@@ -757,8 +745,8 @@ class MotorClient:
         # Final response (programming may take a moment)
         final_line = self._recv_response(cmd_str, timeout)
         if final_line is None:
-            raise ProtocolError("No final response for FLASH_UPLOAD")
-        return self._parse_response(final_line, "FLASH_UPLOAD")
+            raise ProtocolError("No final response for UI:FLASH:UPLOAD")
+        return self._parse_response(final_line, "UI:FLASH:UPLOAD")
 
     # -------------------------------------------------------------------------
     # Display Indicator + RLE Bitmap
@@ -775,7 +763,7 @@ class MotorClient:
             has_translation: Whether translational motion is active.
         """
         return self.send_command(
-            f"DISP_INDICATOR {angle} {rotation_dir} {int(has_translation)}"
+            f"UI:DISP:INDICATOR {angle} {rotation_dir} {int(has_translation)}"
         )
 
     def disp_bitmap_rle(self, x: int, y: int, w: int, h: int,
@@ -787,7 +775,7 @@ class MotorClient:
         Stream RLE-compressed RGB565 bitmap data to the device.
 
         Protocol:
-          1) Send DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes> [CRC]
+          1) Send UI:DISP:BITMAP:RLE <x> <y> <w> <h> <compressed_bytes> [CRC]
           2) Expect "OK READY <compressed_bytes>"
           3) Send compressed data [+ 4-byte CRC32 little-endian]
           4) Receive final OK/ERROR
@@ -799,24 +787,24 @@ class MotorClient:
         self._drain_pending()
 
         compressed_len = len(rle_data)
-        cmd_str = f"DISP_BITMAP_RLE {x} {y} {w} {h} {compressed_len}"
+        cmd_str = f"UI:DISP:BITMAP:RLE {x} {y} {w} {h} {compressed_len}"
         if use_crc:
             cmd_str += " CRC"
         self._transport.send_line(cmd_str)
 
         line = self._recv_response(cmd_str, timeout)
         if line is None:
-            raise ProtocolError("No READY response for DISP_BITMAP_RLE")
+            raise ProtocolError("No READY response for UI:DISP:BITMAP:RLE")
 
         if line.startswith("{"):
-            resp = self._parse_json_response(line, "DISP_BITMAP_RLE")
+            resp = self._parse_json_response(line, "UI:DISP:BITMAP:RLE")
             if resp.success:
                 raise ProtocolError(
-                    "Expected READY for DISP_BITMAP_RLE, got JSON OK"
+                    "Expected READY for UI:DISP:BITMAP:RLE, got JSON OK"
                 )
             return resp
 
-        resp = self._parse_ascii_response(line, "DISP_BITMAP_RLE")
+        resp = self._parse_ascii_response(line, "UI:DISP:BITMAP:RLE")
         ready_bytes = resp.data.get("ready_bytes")
         if ready_bytes is None:
             raise ProtocolError(f"Expected READY response, got: {line}")
@@ -841,8 +829,8 @@ class MotorClient:
 
         final_line = self._recv_response(cmd_str, timeout)
         if final_line is None:
-            raise ProtocolError("No final response for DISP_BITMAP_RLE")
-        return self._parse_response(final_line, "DISP_BITMAP_RLE")
+            raise ProtocolError("No final response for UI:DISP:BITMAP:RLE")
+        return self._parse_response(final_line, "UI:DISP:BITMAP:RLE")
 
     def flash_upload_rle(self, slot: int, rle_data: bytes,
                          timeout_ms: Optional[int] = None,
@@ -852,7 +840,7 @@ class MotorClient:
         Upload RLE-compressed image data to a flash slot.
 
         Protocol:
-          1) Send FLASH_UPLOAD_RLE <slot> <compressed_bytes> [CRC]
+          1) Send UI:FLASH:UPLOAD:RLE <slot> <compressed_bytes> [CRC]
           2) Expect "OK READY <compressed_bytes>"
           3) Send compressed data [+ 4-byte CRC32 little-endian]
           4) Receive final OK/ERROR
@@ -864,24 +852,24 @@ class MotorClient:
         self._drain_pending()
 
         compressed_len = len(rle_data)
-        cmd_str = f"FLASH_UPLOAD_RLE {slot} {compressed_len}"
+        cmd_str = f"UI:FLASH:UPLOAD:RLE {slot} {compressed_len}"
         if use_crc:
             cmd_str += " CRC"
         self._transport.send_line(cmd_str)
 
         line = self._recv_response(cmd_str, timeout)
         if line is None:
-            raise ProtocolError("No READY response for FLASH_UPLOAD_RLE")
+            raise ProtocolError("No READY response for UI:FLASH:UPLOAD:RLE")
 
         if line.startswith("{"):
-            resp = self._parse_json_response(line, "FLASH_UPLOAD_RLE")
+            resp = self._parse_json_response(line, "UI:FLASH:UPLOAD:RLE")
             if resp.success:
                 raise ProtocolError(
-                    "Expected READY for FLASH_UPLOAD_RLE, got JSON OK"
+                    "Expected READY for UI:FLASH:UPLOAD:RLE, got JSON OK"
                 )
             return resp
 
-        resp = self._parse_ascii_response(line, "FLASH_UPLOAD_RLE")
+        resp = self._parse_ascii_response(line, "UI:FLASH:UPLOAD:RLE")
         ready_bytes = resp.data.get("ready_bytes")
         if ready_bytes is None:
             raise ProtocolError(f"Expected READY response, got: {line}")
@@ -906,5 +894,5 @@ class MotorClient:
 
         final_line = self._recv_response(cmd_str, timeout)
         if final_line is None:
-            raise ProtocolError("No final response for FLASH_UPLOAD_RLE")
-        return self._parse_response(final_line, "FLASH_UPLOAD_RLE")
+            raise ProtocolError("No final response for UI:FLASH:UPLOAD:RLE")
+        return self._parse_response(final_line, "UI:FLASH:UPLOAD:RLE")

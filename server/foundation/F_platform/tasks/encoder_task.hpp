@@ -13,7 +13,7 @@
 #ifndef ENCODER_TASK_HPP
 #define ENCODER_TASK_HPP
 
-#include "F_platform/interfaces/velocity_quality_t.hpp"
+#include "F_platform/types/velocity_quality_t.hpp"
 #include <stdint.h>
 
 namespace Tasks {

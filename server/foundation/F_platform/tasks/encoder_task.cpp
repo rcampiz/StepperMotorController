@@ -24,7 +24,7 @@
 #include "L3_services/infra/tick_timer.hpp"
 #include "L3_services/infra/trace.hpp"
 #include "L3_services/motion/motor_config.hpp"
-#include "F_platform/interfaces/telemetry.hpp"
+#include "F_platform/types/telemetry.hpp"
 #include "X_vendor/CMSIS/stm32f401xe.h"
 #include <math.h>
 #include "X_vendor/CMSIS/core_cm4.h"
@@ -217,7 +217,7 @@ bool EncoderTask_Init()
     uint16_t rate = cfg.getEncSampleRateHz();
 
     // Pre-fill DMA buffer with current count to avoid false deltas on first process
-    uint16_t currentCnt = static_cast<uint16_t>(TIM4->CNT & 0xFFFF);
+    auto currentCnt = static_cast<uint16_t>(TIM4->CNT & 0xFFFF);
     for (uint32_t i = 0; i < ENC_DMA_BUF_SIZE; i++) {
         s_dmaBuf[i] = currentCnt;
     }
@@ -453,7 +453,7 @@ void vEncoderTask(void* pvParameters)
 
         while (s_lastDmaIdx != writeIdx) {
             uint16_t rawCount = s_dmaBuf[s_lastDmaIdx];
-            int16_t delta = static_cast<int16_t>(rawCount - s_lastRawCount);
+            auto delta = static_cast<int16_t>(rawCount - s_lastRawCount);
             s_accumulatedCount += delta;
             s_lastRawCount = rawCount;
 
@@ -467,7 +467,7 @@ void vEncoderTask(void* pvParameters)
 
         // --- Compute velocity over measurement window ---
         // windowSamples = measWindowMs * sampleRateHz / 1000
-        uint32_t windowSamples = static_cast<uint32_t>(s_measWindowMs)
+        auto windowSamples = static_cast<uint32_t>(s_measWindowMs)
                                * s_sampleRateHz / 1000;
         if (windowSamples < 1) windowSamples = 1;
         if (windowSamples > ENC_DMA_BUF_SIZE - 1) {
@@ -483,7 +483,7 @@ void vEncoderTask(void* pvParameters)
             uint32_t latestIdx = (writeIdx - 1 + ENC_DMA_BUF_SIZE) % ENC_DMA_BUF_SIZE;
             uint32_t oldIdx = (writeIdx - 1 - windowSamples + ENC_DMA_BUF_SIZE)
                             % ENC_DMA_BUF_SIZE;
-            int16_t delta = static_cast<int16_t>(
+            auto delta = static_cast<int16_t>(
                 s_dmaBuf[latestIdx] - s_dmaBuf[oldIdx]);
             // velocity = delta * sampleRateHz / windowSamples  (counts/sec)
             velocity = static_cast<int32_t>(delta)
@@ -744,7 +744,7 @@ void EncoderTask_SetSampleRate(uint16_t hz)
     stopDMA();
 
     // Pre-fill buffer with current count
-    uint16_t currentCnt = static_cast<uint16_t>(TIM4->CNT & 0xFFFF);
+    auto currentCnt = static_cast<uint16_t>(TIM4->CNT & 0xFFFF);
     for (uint32_t i = 0; i < ENC_DMA_BUF_SIZE; i++) {
         s_dmaBuf[i] = currentCnt;
     }

@@ -5,7 +5,7 @@
 
 #include "F_platform/tasks/motor_task.hpp"
 #include <stdint.h>
-#include "F_platform/interfaces/imotor_driver.hpp"
+#include "F_platform/hal/imotor_driver.hpp"
 #include "L4_drivers/devices/powerstep01.hpp"
 #include "L4_drivers/spi/spi_bus.hpp"
 #include "L4_drivers/spi/spi_manager.hpp"
@@ -13,8 +13,9 @@
 #include "F_util/interface_trace.hpp"
 #ifdef ENABLE_INTERFACE_TRACE
 #include "wiring/traced/traced_motor_driver.hpp"
+#include "wiring/traced/traced_spi_bus.hpp"
 #endif
-#include "F_platform/interfaces/telemetry.hpp"
+#include "F_platform/types/telemetry.hpp"
 #include "L3_services/motion/motor_config.hpp"
 #include "L3_services/dispatch/event_service.hpp"
 #include "L3_services/motion/following_supervisor.hpp"
@@ -81,16 +82,17 @@ bool MotorTask_Init()
     if (spi1 == nullptr) {
         return false;
     }
-    s_spi = new SPIBus(*spi1);
-    if (s_spi == nullptr) {
-        return false;
-    }
+#ifdef ENABLE_INTERFACE_TRACE
+    static TracedSPIBus s_tracedSPI(*spi1);
+    static SPIBus spiBus(s_tracedSPI);
+#else
+    static SPIBus spiBus(*spi1);
+#endif
+    s_spi = &spiBus;
 
     // Initialize PowerSTEP01 motor driver
-    s_rawMotor = new PowerSTEP01(*s_spi);
-    if (s_rawMotor == nullptr) {
-        return false;
-    }
+    static PowerSTEP01 motor(*s_spi);
+    s_rawMotor = &motor;
     s_rawMotor->init();
 
     // Wrap in IMotorDriver adapter
@@ -134,6 +136,7 @@ void vMotorTask(void* pvParameters)
 
     while (true) {
         Trace::setCurrentTaskId(Trace::TASK_MOTOR);
+        Trace::setCurrentServiceId(Trace::SVC_MOTION);
 
         // Wait for command with timeout (allows periodic status updates)
         if (xQueueReceive(g_motorCmdQueue, &cmd, STATUS_UPDATE_PERIOD) == pdTRUE) {
@@ -180,7 +183,7 @@ void vMotorTask(void* pvParameters)
 
                 case MotorCmdType::Run: {
                     auto mode = Services::g_controlMode.getMode();
-                    uint32_t rawSpeed = static_cast<uint32_t>(cmd.param1);
+                    auto rawSpeed = static_cast<uint32_t>(cmd.param1);
                     bool fwd = (cmd.param2 != 0);
                     s_lastRunForward = fwd;
                     s_continuousRunActive = true;  // RUN is continuous motion
@@ -192,7 +195,7 @@ void vMotorTask(void* pvParameters)
                         // setpointTps = rawSpeed * 15625 * encPPR / (1048576 * fpr)
                         uint16_t encPPR = Services::g_motorConfig.getEncoderPPR();
                         uint16_t fpr = Services::g_motorConfig.getFullStepsPerRev();
-                        int32_t setpointTps = static_cast<int32_t>(
+                        auto setpointTps = static_cast<int32_t>(
                             (static_cast<uint64_t>(rawSpeed) * 15625ULL * encPPR)
                             / (1048576ULL * fpr));
                         if (!fwd) { setpointTps = -setpointTps; }
@@ -215,7 +218,7 @@ void vMotorTask(void* pvParameters)
                             Services::SpeedTrimConfig tcfg{};
                             tcfg.kp = Services::g_motorConfig.getPidKp();
                             tcfg.ki = Services::g_motorConfig.getPidKi();
-                            uint16_t pidKd100 = static_cast<uint16_t>(
+                            auto pidKd100 = static_cast<uint16_t>(
                                 Services::g_motorConfig.getPidKd100());
                             tcfg.trimMaxPercent = (pidKd100 > 0 && pidKd100 <= 50)
                                                   ? static_cast<uint8_t>(pidKd100) : 0;
@@ -325,7 +328,7 @@ void vMotorTask(void* pvParameters)
             // Convert raw SPEED register (20-bit) to steps/s
             // Formula: steps_s = raw * 15625 / 1048576
             // (derived from: step/s = raw * 2^-28 / 250ns tick)
-            uint32_t speed = static_cast<uint32_t>(
+            auto speed = static_cast<uint32_t>(
                 (static_cast<uint64_t>(rawSpeed) * 15625ULL) / 1048576ULL);
 
             // Sign-extend 22-bit position to 32-bit
@@ -352,9 +355,9 @@ void vMotorTask(void* pvParameters)
             uint16_t encPPR = Services::g_motorConfig.getEncoderPPR();
             uint16_t fpr = Services::g_motorConfig.getFullStepsPerRev();
 
-            int32_t cmdTicks = static_cast<int32_t>(
+            auto cmdTicks = static_cast<int32_t>(
                 (static_cast<int64_t>(position) * encPPR) / ustepsPerRev);
-            int32_t measTicks = static_cast<int32_t>(snap.encoder.count);
+            auto measTicks = static_cast<int32_t>(snap.encoder.count);
             int32_t followError = cmdTicks - measTicks;
 
             // System identification — overrides normal control when active
@@ -530,7 +533,7 @@ void vMotorTask(void* pvParameters)
                         if (sup.getState() == Services::SupervisorState::MOVING) {
                             uint32_t ustepsPerRev = Services::g_motorConfig.getMicrostepsPerRev();
                             uint16_t encPPR = Services::g_motorConfig.getEncoderPPR();
-                            int32_t cmdTicks = static_cast<int32_t>(
+                            auto cmdTicks = static_cast<int32_t>(
                                 (static_cast<int64_t>(position) * encPPR) / ustepsPerRev);
                             sup.beginHold(cmdTicks);
                         }

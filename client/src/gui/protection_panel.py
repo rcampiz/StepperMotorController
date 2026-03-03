@@ -287,11 +287,11 @@ class ProtectionPanel(QWidget):
         # main_window clears dirty when the final APPLY_PROTECTION response
         # arrives, right before triggering the post-apply refresh.
         self.protection_apply_requested.emit([
-            f"MCONFIG_OCD {ocd}",
-            f"MCONFIG_STALL {stall}",
-            f"MCONFIG_FAULT {fault_flags}",
-            f"MCONFIG_FAULT ACTION {action}",
-            "MCONFIG_APPLY",
+            f"DRV:CFG:OCD {ocd}",
+            f"DRV:CFG:STALL {stall}",
+            f"DRV:CFG:FAULT {fault_flags}",
+            f"DRV:CFG:FAULT ACTION {action}",
+            "DRV:CFG:APPLY",
         ])
 
     @Slot()

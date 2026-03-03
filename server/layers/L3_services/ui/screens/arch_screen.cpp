@@ -26,12 +26,13 @@ static constexpr uint16_t GREEN   = 0x07E0;
 static constexpr uint16_t MAGENTA = 0xF81F;
 static constexpr uint16_t RED     = 0xF800;
 static constexpr uint16_t YELLOW  = 0xFFE0;
+static constexpr uint16_t ORANGE  = 0xFD20;
 static constexpr uint16_t DIM     = 0x4208;
 static constexpr uint16_t PAUSE_COLOR = 0xFFE0;
 
-// Layer colors: L1=cyan, L2=green, L3=white, L4=magenta, L5=red, F=yellow
+// Layer colors: L1=cyan, L2=green, L3=orange, L4=magenta, L5=red, F=yellow
 static constexpr uint16_t LAYER_COLORS[] = {
-    CYAN, GREEN, WHITE, MAGENTA, RED, YELLOW
+    CYAN, GREEN, ORANGE, MAGENTA, RED, YELLOW
 };
 static constexpr const char* LAYER_NAMES[] = {
     "L1 Transport", "L2 Protocol", "L3 Services",
@@ -60,12 +61,17 @@ static uint16_t dimColor(uint16_t c) {
     return ((r / 4) << 11) | ((g / 4) << 5) | (b / 4);
 }
 
-// Map boundary byte to layer index (0-5)
-static uint8_t boundaryToLayer(uint8_t boundary) {
+// Map boundary to layer index (0-5)
+static uint8_t boundaryToLayer(uint16_t boundary) {
     if (boundary & ITrace::L1_L2_TRANSPORT) return 0;  // L1
     if (boundary & ITrace::L2_L3_DISPATCH)  return 1;  // L2
+    if (boundary & ITrace::L2_TELEMETRY)    return 1;  // L2 (telemetry response)
     if (boundary & ITrace::L3_L4_MOTOR)     return 3;  // L4 (driver call)
     if (boundary & ITrace::L3_L4_ENCODER)   return 3;  // L4 (driver call)
+    if (boundary & ITrace::L4_LCD)          return 3;  // L4 (LCD driver)
+    if (boundary & ITrace::L4_FLASH)        return 3;  // L4 (flash driver)
+    if (boundary & ITrace::L4_L5_SPI)       return 4;  // L5 (SPI hardware)
+    if (boundary & ITrace::L5_F_LOCK)       return 5;  // F  (RTOS mutex)
     if (boundary & ITrace::L3_F_SAFETY)     return 2;  // L3 (service)
     if (boundary & ITrace::L3_CMD_SINK)     return 2;  // L3 (command queue)
     return 2;  // Default to L3 for entries with boundary=0
@@ -100,6 +106,7 @@ void ArchScreen::render(LCD& lcd)
         case Mode::DIAGRAM: renderDiagram(lcd); break;
         case Mode::MATRIX:  renderMatrix(lcd);  break;
         case Mode::FLOW:    renderFlow(lcd);    break;
+        case Mode::TASKS:   renderTasks(lcd);   break;
     }
     m_needsRedraw = false;
 }
@@ -335,37 +342,83 @@ void ArchScreen::renderFlow(LCD& lcd)
     lcd.drawHLine(MARGIN, y, LINE_W, CYAN);
     y += 4;
 
-    // --- Scan trace entries to gather per-layer info ---
-    // Canonical SCPI flow always shows L1→L2→L3→L4→L5.
-    // Trace entries for some layers (L2, L5) are rare or absent,
-    // so we always show all layers and fill in live data where available.
+    // --- Scan trace entries — fully data-driven ---
+    // Both per-layer info and per-boundary info come from actual trace
+    // entries.  No static interface name assumptions.
     struct LayerInfo {
-        uint8_t taskId;                  // most recent task seen (0=none)
+        uint8_t taskId;                  // RTOS task that executed (0=none)
         const char* method;              // method name from trace (nullptr=none)
         char detail[Trace::DETAIL_SIZE]; // detail string from trace
         bool active;                     // has trace entries
     };
     LayerInfo layerInfo[NUM_LAYERS] = {};
+
+    // Boundary crossing info — derived from trace, not a static table.
+    // Display boundaries: [0]=L1-L2, [1]=L2-L3, [2]=L3-L4, [3]=L4-L5, [4]=L5-F
+    struct BoundaryData {
+        bool crossed;          // was this boundary actually used?
+        const char* iface;     // interface name (derived from boundary type)
+        const char* method;    // actual method called
+    };
+    BoundaryData bndData[5] = {};
+
     char lastCmd[20] = "(none)";
 
+    // Two-phase scan: find the current SCPI command, then collect data
+    // filtered to that command's RTOS task.
     Trace::Entry entry;
+    size_t cmdRi = SIZE_MAX;
+    uint8_t cmdTaskId = 0;
+
+    // Phase 1: Find the most recent L2_L3_DISPATCH = current command
     for (size_t ri = 0; ri < count; ri++) {
         size_t i = count - 1 - ri;
         if (!Trace::getEntry(i, entry)) continue;
-
-        // Capture most recent command detail
-        if (entry.detail[0] != '\0' && lastCmd[0] == '(') {
+        if (entry.boundary & ITrace::L2_L3_DISPATCH) {
             strncpy(lastCmd, entry.detail, sizeof(lastCmd) - 1);
             lastCmd[sizeof(lastCmd) - 1] = '\0';
+            cmdRi = ri;
+            cmdTaskId = entry.taskId;
+            break;
         }
+    }
 
-        uint8_t layer = boundaryToLayer(entry.boundary);
-        if (layer < NUM_LAYERS && !layerInfo[layer].active) {
-            layerInfo[layer].taskId = entry.taskId;
-            layerInfo[layer].method = entry.method;
-            strncpy(layerInfo[layer].detail, entry.detail, Trace::DETAIL_SIZE - 1);
-            layerInfo[layer].detail[Trace::DETAIL_SIZE - 1] = '\0';
-            layerInfo[layer].active = true;
+    // Phase 2: Collect per-layer AND per-boundary info from trace data
+    if (cmdRi != SIZE_MAX) {
+        for (size_t ri = 0; ri < count && ri <= cmdRi + 12; ri++) {
+            size_t i = count - 1 - ri;
+            if (!Trace::getEntry(i, entry)) continue;
+            if (entry.taskId != cmdTaskId) continue;
+
+            // Fill per-layer info
+            uint8_t layer = boundaryToLayer(entry.boundary);
+            if (layer < NUM_LAYERS && !layerInfo[layer].active) {
+                layerInfo[layer].taskId = entry.taskId;
+                layerInfo[layer].method = entry.method;
+                strncpy(layerInfo[layer].detail, entry.detail, Trace::DETAIL_SIZE - 1);
+                layerInfo[layer].detail[Trace::DETAIL_SIZE - 1] = '\0';
+                layerInfo[layer].active = true;
+            }
+
+            // Fill per-boundary info (map trace boundary → display boundary)
+            if ((entry.boundary & ITrace::L1_L2_TRANSPORT) && !bndData[0].crossed) {
+                bndData[0] = { true, "ITransport", entry.method };
+            }
+            if ((entry.boundary & ITrace::L2_L3_DISPATCH) && !bndData[1].crossed) {
+                bndData[1] = { true, "ICommandDispatcher", entry.method };
+            }
+            if ((entry.boundary & ITrace::L3_L4_MOTOR) && !bndData[2].crossed) {
+                bndData[2] = { true, "IMotorDriver", entry.method };
+            }
+            if ((entry.boundary & ITrace::L3_L4_ENCODER) && !bndData[2].crossed) {
+                bndData[2] = { true, "IEncoder", entry.method };
+            }
+            if ((entry.boundary & ITrace::L4_L5_SPI) && !bndData[3].crossed) {
+                bndData[3] = { true, "ISPIBus", entry.method };
+            }
+            if ((entry.boundary & ITrace::L5_F_LOCK) && !bndData[4].crossed) {
+                bndData[4] = { true, "ILock", entry.method };
+            }
         }
     }
 
@@ -380,18 +433,6 @@ void ArchScreen::renderFlow(LCD& lcd)
     lcd.blitTextLine(MARGIN, y, LINE_W, LINE_H, buf, WHITE, BG);
     y += LINE_H + 2;
 
-    // --- Interface names at each layer boundary ---
-    struct BoundaryInfo {
-        const char* iface;  // Interface name (colored)
-        const char* data;   // What data flows through it
-    };
-    static constexpr BoundaryInfo BOUNDARIES[] = {
-        { "ITransport",         "bytes: read/write/print" },   // L1↔L2
-        { "ICommandDispatcher", "DispatchResult: cmd args" },  // L2→L3
-        { "IMotorDriver",       "run/move/goTo/setParam" },    // L3→L4
-        { "SPIHardware",        "SPI xfer, GPIO set/clr" },    // L4→L5
-    };
-
     // Draw the flow diagram
     static constexpr uint16_t FLOW_X = 20;     // Left margin for layer labels
     static constexpr uint16_t ARROW_X = 14;    // Vertical line x
@@ -400,7 +441,7 @@ void ArchScreen::renderFlow(LCD& lcd)
     static constexpr uint16_t LAYER_H = 16;    // Layer name + method
     static constexpr uint16_t ARROW_GAP = 20;  // Arrow + interface name + data desc
     static constexpr uint16_t STEP_H = LAYER_H + ARROW_GAP;
-    static constexpr uint16_t F_SECTION_H = 30; // F_platform orthogonal section
+    static constexpr uint16_t F_SECTION_H = ARROW_GAP + LAYER_H; // L5→F boundary + F box
 
     // Clear fixed flow area (5 layers + arrows + F_platform section)
     static constexpr uint16_t MAX_FLOW_H = (SHOW_COUNT * STEP_H) + F_SECTION_H;
@@ -413,7 +454,9 @@ void ArchScreen::renderFlow(LCD& lcd)
         bool active = layerInfo[layer].active;
         uint16_t labelColor = active ? color : dimColor(color);
 
-        // --- Layer box ---
+        // --- Layer box: two rows ---
+        //   Row 1: Layer name (e.g. "L3 Services")  — layer color
+        //   Row 2: Live trace method or static desc  — white (live) / dim (static)
         // Colored sidebar
         lcd.fillRect(ARROW_X - 3, y, 7, LAYER_H - 2,
                      active ? dimColor(color) : 0x2104);
@@ -491,46 +534,61 @@ void ArchScreen::renderFlow(LCD& lcd)
             // Small arrowhead
             lcd.fillRect(ARROW_X - 1, y + ARROW_GAP - 6, 3, 1, DIM);
 
-            // Interface name (colored by upper layer)
-            lcd.blitTextLine(FLOW_X, y + 1, LINE_W - FLOW_X, 8,
-                             BOUNDARIES[s].iface, LAYER_COLORS[SHOW_LAYERS[s]], BG);
-            // Data description (dim)
-            lcd.blitTextLine(FLOW_X + 4, y + 10, LINE_W - FLOW_X - 4, 8,
-                             BOUNDARIES[s].data, DIM, BG);
+            // Interface name — data-driven from trace entries.
+            // Only show when the boundary was actually crossed.
+            if (bndData[s].crossed) {
+                uint16_t bndColor = LAYER_COLORS[SHOW_LAYERS[s]];
+                lcd.blitTextLine(FLOW_X, y + 1, LINE_W - FLOW_X, 8,
+                                 bndData[s].iface, bndColor, BG);
+                // Show the actual method that crossed this boundary
+                lcd.blitTextLine(FLOW_X + 4, y + 10, LINE_W - FLOW_X - 4, 8,
+                                 bndData[s].method ? bndData[s].method : "",
+                                 DIM, BG);
+            } else {
+                // Clear the boundary text area (not crossed)
+                lcd.blitTextLine(FLOW_X, y + 1, LINE_W - FLOW_X, 8,
+                                 "", BG, BG);
+                lcd.blitTextLine(FLOW_X + 4, y + 10, LINE_W - FLOW_X - 4, 8,
+                                 "", BG, BG);
+            }
             y += ARROW_GAP;
         }
 
         if (taskId != 0) prevTaskId = taskId;
     }
 
-    // --- F_platform orthogonal section ---
-    // Horizontal separator (dashed line to show orthogonal relationship)
-    y += 2;
-    for (uint16_t dx = MARGIN; dx < LINE_W; dx += 6) {
-        lcd.fillRect(dx, y, 3, 1, DIM);
-    }
-    y += 4;
+    // --- L5 → F_platform boundary (data-driven, same as above) ---
+    lcd.fillRect(ARROW_X, y, 1, ARROW_GAP - 2, DIM);
+    lcd.fillRect(ARROW_X - 1, y + ARROW_GAP - 6, 3, 1, DIM);
 
-    // F_platform box — shown as sideways dependency from L5
-    // Arrow from L5 pointing right into F_platform
-    static constexpr uint16_t F_LABEL_X = FLOW_X + 90;
-    // "L5 uses ILock from:" label
-    lcd.blitTextLine(FLOW_X, y, F_LABEL_X - FLOW_X, 8,
-                     "L5 uses:", dimColor(RED), BG);
-    // F_platform label (yellow)
-    lcd.blitTextLine(F_LABEL_X, y, LINE_W - F_LABEL_X, 8,
-                     "F_platform", YELLOW, BG);
-    y += 10;
-    // Interface details
-    lcd.blitTextLine(FLOW_X + 4, y, LINE_W - FLOW_X - 4, 8,
-                     "ILock: acquire/release SPI mutex", DIM, BG);
-    y += 10;
-    lcd.blitTextLine(FLOW_X + 4, y, LINE_W - FLOW_X - 4, 8,
-                     "FreeRTOSMutex injected at init", dimColor(YELLOW), BG);
+    if (bndData[4].crossed) {
+        lcd.blitTextLine(FLOW_X, y + 1, LINE_W - FLOW_X, 8,
+                         bndData[4].iface, RED, BG);
+        lcd.blitTextLine(FLOW_X + 4, y + 10, LINE_W - FLOW_X - 4, 8,
+                         bndData[4].method != nullptr ? bndData[4].method : "", DIM, BG);
+    } else {
+        lcd.blitTextLine(FLOW_X, y + 1, LINE_W - FLOW_X, 8, "", BG, BG);
+        lcd.blitTextLine(FLOW_X + 4, y + 10, LINE_W - FLOW_X - 4, 8, "", BG, BG);
+    }
+    y += ARROW_GAP;
+
+    // F_platform layer box
+    bool fActive = layerInfo[5].active;
+    lcd.fillRect(ARROW_X - 3, y, 7, LAYER_H - 2,
+                 fActive ? dimColor(YELLOW) : 0x2104);
+    lcd.blitTextLine(FLOW_X, y, 120, 8, "F  Platform",
+                     fActive ? YELLOW : dimColor(YELLOW), BG);
+    if (fActive && (layerInfo[5].method != nullptr)) {
+        snprintf(buf, sizeof(buf), " %s()", layerInfo[5].method);
+        lcd.blitTextLine(FLOW_X + 4, y + 8, 130, 8, buf, WHITE, BG);
+    } else {
+        lcd.blitTextLine(FLOW_X + 4, y + 8, 130, 8,
+                         "FreeRTOSMutex impl", dimColor(YELLOW), BG);
+    }
 
     // Footer
     lcd.blitTextLine(MARGIN, LCD::HEIGHT - 10, LINE_W, 8,
-                     "L:matrix  R:diag  Handoff=yellow",
+                     "L:matrix  R:tasks  Handoff=yellow",
                      m_paused ? PAUSE_COLOR : CYAN, BG);
 }
 
@@ -546,6 +604,7 @@ InputResult ArchScreen::handleInput(JoyDirection dir, bool pressed)
         case Mode::DIAGRAM: return handleDiagramInput(dir);
         case Mode::MATRIX:  return handleMatrixInput(dir);
         case Mode::FLOW:    return handleFlowInput(dir);
+        case Mode::TASKS:   return handleTasksInput(dir);
     }
     return InputResult::HANDLED;
 }
@@ -596,8 +655,255 @@ InputResult ArchScreen::handleFlowInput(JoyDirection dir)
             m_needsRedraw = true;
             return InputResult::HANDLED;
         case JoyDirection::RIGHT:
+            m_mode = Mode::TASKS;
+            m_titleDrawn = false;
+            m_needsRedraw = true;
+            return InputResult::HANDLED;
+        case JoyDirection::CENTER:
+            m_paused = !m_paused;
+            m_needsRedraw = true;
+            return InputResult::HANDLED;
+        default:
+            return InputResult::HANDLED;
+    }
+}
+
+// =============================================================================
+// TASKS mode — per-task layer activity
+// =============================================================================
+
+// Task name table (indexed by m_selectedTask)
+static constexpr const char* TASK_NAMES[] = { "Motor", "Encoder", "Comms", "Display", "Timer" };
+
+void ArchScreen::renderTasks(LCD& lcd)
+{
+    size_t total = Trace::getTotal();
+    size_t count = Trace::getCount();
+    bool newData = (total != m_lastTotal);
+    if (newData) m_lastTotal = total;
+
+    if (!m_needsRedraw && !newData) return;
+    if (!m_needsRedraw && m_paused) return;
+
+    // Throttle live updates
+    if (!m_needsRedraw && newData && !m_paused) {
+        static uint8_t frameSkip = 0;
+        if (++frameSkip < 8) return;
+        frameSkip = 0;
+    }
+
+    uint16_t y = MARGIN;
+    char buf[40];
+    uint8_t selTaskId = TASK_IDS[m_selectedTask];
+
+    // Title: "Task: Motor" etc.
+    if (m_paused) {
+        snprintf(buf, sizeof(buf), "PAUSED  Task: %s", TASK_NAMES[m_selectedTask]);
+        lcd.blitTextLine(MARGIN, y, LINE_W, 8, buf, PAUSE_COLOR, BG);
+    } else {
+        snprintf(buf, sizeof(buf), "Task: %s", TASK_NAMES[m_selectedTask]);
+        lcd.blitTextLine(MARGIN, y, LINE_W, 8, buf, CYAN, BG);
+    }
+    y += TITLE_H;
+    lcd.drawHLine(MARGIN, y, LINE_W, CYAN);
+    y += 4;
+
+    // Scan trace entries filtered by selected taskId
+    struct LayerInfo {
+        const char* method;
+        char detail[Trace::DETAIL_SIZE];
+        bool active;
+    };
+    LayerInfo layerInfo[NUM_LAYERS] = {};
+
+    // Boundary crossing data: [0]=L1-L2, [1]=L2-L3, [2]=L3-L4, [3]=L4-L5, [4]=L5-F
+    struct BoundaryData {
+        bool crossed;
+        const char* iface;
+        const char* method;
+    };
+    BoundaryData bndData[5] = {};
+
+    // "Last" shows the most recent entry for this task
+    char lastMethod[24] = "(idle)";
+
+    Trace::Entry entry;
+    bool foundFirst = false;
+    for (size_t ri = 0; ri < count; ri++) {
+        size_t i = count - 1 - ri;
+        if (!Trace::getEntry(i, entry)) continue;
+        if (entry.taskId != selTaskId) continue;
+
+        // Capture the most recent entry as "Last"
+        if (!foundFirst) {
+            if (entry.detail[0] != '\0') {
+                snprintf(lastMethod, sizeof(lastMethod), "%s(%s)",
+                         entry.method != nullptr ? entry.method : "?", entry.detail);
+            } else {
+                snprintf(lastMethod, sizeof(lastMethod), "%s()",
+                         entry.method != nullptr ? entry.method : "?");
+            }
+            foundFirst = true;
+        }
+
+        // Fill per-layer info
+        uint8_t layer = boundaryToLayer(entry.boundary);
+        if (layer < NUM_LAYERS && !layerInfo[layer].active) {
+            layerInfo[layer].method = entry.method;
+            strncpy(layerInfo[layer].detail, entry.detail, Trace::DETAIL_SIZE - 1);
+            layerInfo[layer].detail[Trace::DETAIL_SIZE - 1] = '\0';
+            layerInfo[layer].active = true;
+        }
+
+        // Fill per-boundary info
+        if ((entry.boundary & ITrace::L1_L2_TRANSPORT) != 0 && !bndData[0].crossed) {
+            bndData[0] = { true, "ITransport", entry.method };
+        }
+        if ((entry.boundary & ITrace::L2_L3_DISPATCH) != 0 && !bndData[1].crossed) {
+            bndData[1] = { true, "ICommandDispatch", entry.method };
+        }
+        if ((entry.boundary & ITrace::L3_L4_MOTOR) != 0 && !bndData[2].crossed) {
+            bndData[2] = { true, "IMotorDriver", entry.method };
+        }
+        if ((entry.boundary & ITrace::L3_L4_ENCODER) != 0 && !bndData[2].crossed) {
+            bndData[2] = { true, "IEncoder", entry.method };
+        }
+        if ((entry.boundary & ITrace::L4_L5_SPI) != 0 && !bndData[3].crossed) {
+            bndData[3] = { true, "ISPIBus", entry.method };
+        }
+        if ((entry.boundary & ITrace::L5_F_LOCK) != 0 && !bndData[4].crossed) {
+            bndData[4] = { true, "ILock", entry.method };
+        }
+
+        // Stop after scanning enough entries for this task
+        if (ri > 100) { break; }
+    }
+
+    // Show last activity
+    snprintf(buf, sizeof(buf), "Last: %s", lastMethod);
+    lcd.blitTextLine(MARGIN, y, LINE_W, LINE_H, buf, WHITE, BG);
+    y += LINE_H + 2;
+
+    // Layout constants (same as FLOW)
+    static constexpr uint16_t FLOW_X = 20;
+    static constexpr uint16_t ARROW_X = 14;
+    static constexpr uint16_t LAYER_H = 16;
+    static constexpr uint16_t ARROW_GAP = 20;
+    static constexpr uint16_t STEP_H = LAYER_H + ARROW_GAP;
+    static constexpr uint8_t SHOW_LAYERS[] = { 0, 1, 2, 3, 4 };
+    static constexpr uint8_t SHOW_COUNT = 5;
+    static constexpr uint16_t F_SECTION_H = ARROW_GAP + LAYER_H;
+    static constexpr uint16_t MAX_FLOW_H = (SHOW_COUNT * STEP_H) + F_SECTION_H;
+
+    lcd.fillRect(MARGIN, y, LINE_W, MAX_FLOW_H, BG);
+
+    for (uint8_t s = 0; s < SHOW_COUNT; s++) {
+        uint8_t layer = SHOW_LAYERS[s];
+        uint16_t color = LAYER_COLORS[layer];
+        bool active = layerInfo[layer].active;
+        uint16_t labelColor = active ? color : dimColor(color);
+
+        // Colored sidebar
+        lcd.fillRect(ARROW_X - 3, y, 7, LAYER_H - 2,
+                     active ? dimColor(color) : 0x2104);
+
+        // Layer name
+        const char* layerLabel;
+        switch (layer) {
+            case 0: layerLabel = "L1 Transport"; break;
+            case 1: layerLabel = "L2 Protocol"; break;
+            case 2: layerLabel = "L3 Services"; break;
+            case 3: layerLabel = "L4 Drivers"; break;
+            default: layerLabel = "L5 Board/HAL"; break;
+        }
+        lcd.blitTextLine(FLOW_X, y, 120, 8, layerLabel, labelColor, BG);
+
+        // Method/detail line
+        if (active && layerInfo[layer].method != nullptr) {
+            if (layerInfo[layer].detail[0] != '\0') {
+                snprintf(buf, sizeof(buf), " %s(%s)",
+                         layerInfo[layer].method, layerInfo[layer].detail);
+            } else {
+                snprintf(buf, sizeof(buf), " %s()", layerInfo[layer].method);
+            }
+            lcd.blitTextLine(FLOW_X + 4, y + 8, 150, 8, buf, WHITE, BG);
+        } else {
+            lcd.blitTextLine(FLOW_X + 4, y + 8, 150, 8, "(no trace)", DIM, BG);
+        }
+        y += LAYER_H;
+
+        // Arrow + boundary between layers
+        if (s < SHOW_COUNT - 1) {
+            lcd.fillRect(ARROW_X, y, 1, ARROW_GAP - 2, DIM);
+            lcd.fillRect(ARROW_X - 1, y + ARROW_GAP - 6, 3, 1, DIM);
+
+            if (bndData[s].crossed) {
+                uint16_t bndColor = LAYER_COLORS[SHOW_LAYERS[s]];
+                lcd.blitTextLine(FLOW_X, y + 1, LINE_W - FLOW_X, 8,
+                                 bndData[s].iface, bndColor, BG);
+                lcd.blitTextLine(FLOW_X + 4, y + 10, LINE_W - FLOW_X - 4, 8,
+                                 bndData[s].method != nullptr ? bndData[s].method : "",
+                                 DIM, BG);
+            } else {
+                lcd.blitTextLine(FLOW_X, y + 1, LINE_W - FLOW_X, 8, "", BG, BG);
+                lcd.blitTextLine(FLOW_X + 4, y + 10, LINE_W - FLOW_X - 4, 8, "", BG, BG);
+            }
+            y += ARROW_GAP;
+        }
+    }
+
+    // L5 → F boundary
+    lcd.fillRect(ARROW_X, y, 1, ARROW_GAP - 2, DIM);
+    lcd.fillRect(ARROW_X - 1, y + ARROW_GAP - 6, 3, 1, DIM);
+    if (bndData[4].crossed) {
+        lcd.blitTextLine(FLOW_X, y + 1, LINE_W - FLOW_X, 8,
+                         bndData[4].iface, RED, BG);
+        lcd.blitTextLine(FLOW_X + 4, y + 10, LINE_W - FLOW_X - 4, 8,
+                         bndData[4].method != nullptr ? bndData[4].method : "", DIM, BG);
+    } else {
+        lcd.blitTextLine(FLOW_X, y + 1, LINE_W - FLOW_X, 8, "", BG, BG);
+        lcd.blitTextLine(FLOW_X + 4, y + 10, LINE_W - FLOW_X - 4, 8, "", BG, BG);
+    }
+    y += ARROW_GAP;
+
+    // F_platform layer box
+    bool fActive = layerInfo[5].active;
+    lcd.fillRect(ARROW_X - 3, y, 7, LAYER_H - 2,
+                 fActive ? dimColor(YELLOW) : 0x2104);
+    lcd.blitTextLine(FLOW_X, y, 120, 8, "F  Platform",
+                     fActive ? YELLOW : dimColor(YELLOW), BG);
+    if (fActive && (layerInfo[5].method != nullptr)) {
+        snprintf(buf, sizeof(buf), " %s()", layerInfo[5].method);
+        lcd.blitTextLine(FLOW_X + 4, y + 8, 150, 8, buf, WHITE, BG);
+    } else {
+        lcd.blitTextLine(FLOW_X + 4, y + 8, 150, 8, "(no trace)", DIM, BG);
+    }
+
+    // Footer
+    lcd.blitTextLine(MARGIN, LCD::HEIGHT - 10, LINE_W, 8,
+                     "L:flow R:diag UD:task CTR:pause",
+                     m_paused ? PAUSE_COLOR : CYAN, BG);
+}
+
+InputResult ArchScreen::handleTasksInput(JoyDirection dir)
+{
+    switch (dir) {
+        case JoyDirection::LEFT:
+            m_mode = Mode::FLOW;
+            m_titleDrawn = false;
+            m_needsRedraw = true;
+            return InputResult::HANDLED;
+        case JoyDirection::RIGHT:
             m_mode = Mode::DIAGRAM;
             m_titleDrawn = false;
+            m_needsRedraw = true;
+            return InputResult::HANDLED;
+        case JoyDirection::UP:
+            m_selectedTask = (m_selectedTask == 0) ? (NUM_TASKS - 1) : (m_selectedTask - 1);
+            m_needsRedraw = true;
+            return InputResult::HANDLED;
+        case JoyDirection::DOWN:
+            m_selectedTask = (m_selectedTask + 1) % NUM_TASKS;
             m_needsRedraw = true;
             return InputResult::HANDLED;
         case JoyDirection::CENTER:

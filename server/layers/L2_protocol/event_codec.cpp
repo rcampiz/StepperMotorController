@@ -4,12 +4,13 @@
  */
 
 #include "L2_protocol/event_codec.hpp"
-#include "F_platform/interfaces/itransport.hpp"
+#include "F_platform/hal/itransport.hpp"
+#include "F_util/interface_trace.hpp"
 #include <stdio.h>
 #include <string.h>
 
 // Shared helpers (eventTypeToString etc.) moved to
-// F_platform/interfaces/async_event_types.cpp
+// F_platform/types/async_event_types.cpp
 
 namespace Comms::EventCodec {
 
@@ -56,6 +57,7 @@ void formatAscii(ITransport& transport, const AsyncEvent& evt, uint32_t seq) {
     char line[128];
     char detail[16];
     const char* typeName = eventTypeToString(evt.type);
+    ITRACE(ITrace::L2_TELEMETRY, "[L2>L1]", "event", typeName);
 
     switch (evt.type) {
         case EventType::FAULT:
@@ -91,6 +93,7 @@ void formatJson(ITransport& transport, const AsyncEvent& evt, uint32_t seq, uint
     char buf[256];
     char detail[16];
     const char* typeName = eventTypeToString(evt.type);
+    ITRACE(ITrace::L2_TELEMETRY, "[L2>L1]", "event", typeName);
 
     switch (evt.type) {
         case EventType::FAULT:

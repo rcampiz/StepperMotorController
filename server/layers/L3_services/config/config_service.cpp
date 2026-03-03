@@ -4,7 +4,7 @@
  */
 
 #include "L3_services/config/config_service.hpp"
-#include "F_platform/interfaces/imotor_command_sink.hpp"
+#include "F_platform/hal/imotor_command_sink.hpp"
 #include "L3_services/infra/trace.hpp"
 
 namespace Services::Config {
@@ -91,32 +91,6 @@ Result setMaxSpeedPhysical(uint32_t stepsPerSec) {
     uint16_t raw = maxSpeedPhysicalToRaw(stepsPerSec);
     if (raw < MAXSPD_RAW_MIN) raw = MAXSPD_RAW_MIN;
     if (raw > MAXSPD_RAW_MAX) raw = MAXSPD_RAW_MAX;
-    return sendParam(MotorCmdType::SetMaxSpeed, raw);
-}
-
-// --- Raw register setters (legacy commands) ---
-
-Result setAccelRaw(uint16_t raw) {
-    Trace::ServiceScope svc(Trace::SVC_CONFIG);
-    if (raw < ACCEL_RAW_MIN || raw > ACCEL_RAW_MAX) {
-        return Result::INVALID_PARAM;
-    }
-    return sendParam(MotorCmdType::SetAccel, raw);
-}
-
-Result setDecelRaw(uint16_t raw) {
-    Trace::ServiceScope svc(Trace::SVC_CONFIG);
-    if (raw < ACCEL_RAW_MIN || raw > ACCEL_RAW_MAX) {
-        return Result::INVALID_PARAM;
-    }
-    return sendParam(MotorCmdType::SetDecel, raw);
-}
-
-Result setMaxSpeedRaw(uint16_t raw) {
-    Trace::ServiceScope svc(Trace::SVC_CONFIG);
-    if (raw < MAXSPD_RAW_MIN || raw > MAXSPD_RAW_MAX) {
-        return Result::INVALID_PARAM;
-    }
     return sendParam(MotorCmdType::SetMaxSpeed, raw);
 }
 

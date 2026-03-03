@@ -6,7 +6,7 @@
 #include "ui/screens/device_info_screen.hpp"
 #include "L4_drivers/devices/lcd_st7789.hpp"
 #include "L3_services/config/device_config.hpp"
-#include "F_platform/interfaces/telemetry.hpp"
+#include "F_platform/types/telemetry.hpp"
 #include <stdio.h>
 
 namespace UI {

@@ -10,11 +10,11 @@
 #ifndef PLATFORM_INIT_HPP
 #define PLATFORM_INIT_HPP
 
-#include "F_platform/interfaces/iclock.hpp"
-#include "F_platform/interfaces/ilock.hpp"
-#include "F_platform/interfaces/iqueue.hpp"
-#include "F_platform/interfaces/itask_stats.hpp"
-#include "F_platform/interfaces/async_event_types.hpp"
+#include "F_platform/hal/iclock.hpp"
+#include "F_platform/hal/ilock.hpp"
+#include "F_platform/hal/iqueue.hpp"
+#include "F_platform/hal/itask_stats.hpp"
+#include "F_platform/types/async_event_types.hpp"
 
 namespace Platform {
 

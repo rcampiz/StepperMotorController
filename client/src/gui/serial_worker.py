@@ -35,8 +35,8 @@ class CommandTag(Enum):
     FLASH_ERASE = auto()
     FLASH_DIAG = auto()
     REFRESH_DRV_CONFIG = auto()
-    REFRESH_PID_CONFIG = auto()
-    APPLY_PID = auto()
+    REFRESH_TRIM_CONFIG = auto()
+    APPLY_TRIM = auto()
     SET_CTRL_MODE = auto()
     SYSID_START = auto()
     SYSID_STATUS = auto()
@@ -374,11 +374,11 @@ class SerialThread:
     def queue_refresh(self):
         """Queue the three refresh commands (MOTOR_DEBUG, ENC, MCONFIG)."""
         self._worker.queue_command(QueuedCommand(
-            "MOTOR_DEBUG", CommandTag.REFRESH_MOTOR_DEBUG, multiline=True))
+            "DBG:MOTOR", CommandTag.REFRESH_MOTOR_DEBUG, multiline=True))
         self._worker.queue_command(QueuedCommand(
-            "ENC", CommandTag.REFRESH_ENC, multiline=True, max_lines=5))
+            "CTRL:ENC?", CommandTag.REFRESH_ENC, multiline=True, max_lines=5))
         self._worker.queue_command(QueuedCommand(
-            "MCONFIG", CommandTag.REFRESH_MCONFIG, multiline=True, max_lines=10))
+            "DRV:CFG?", CommandTag.REFRESH_MCONFIG, multiline=True, max_lines=10))
 
     def start_polling(self):
         """Start telemetry polling."""

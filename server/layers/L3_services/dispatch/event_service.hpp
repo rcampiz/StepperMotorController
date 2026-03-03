@@ -9,8 +9,8 @@
  */
 
 #pragma once
-#include "F_platform/interfaces/iqueue.hpp"
-#include "F_platform/interfaces/async_event_types.hpp"
+#include "F_platform/hal/iqueue.hpp"
+#include "F_platform/types/async_event_types.hpp"
 #include <stdint.h>
 
 namespace Services::Event {

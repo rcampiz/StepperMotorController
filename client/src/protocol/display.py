@@ -88,15 +88,15 @@ class DisplayClient:
 
     def set_remote_mode(self) -> Response:
         """Switch to REMOTE UI mode."""
-        return self._client.send_command("UI_MODE REMOTE")
+        return self._client.send_command("UI:MODE REMOTE")
 
     def set_local_mode(self) -> Response:
         """Switch to LOCAL UI mode."""
-        return self._client.send_command("UI_MODE LOCAL")
+        return self._client.send_command("UI:MODE LOCAL")
 
     def get_mode(self) -> Response:
         """Get current UI mode."""
-        return self._client.send_command("UI_MODE")
+        return self._client.send_command("UI:MODE?")
 
     def clear(self, color: Union[RGB565Color, int] = BLACK) -> Response:
         """
@@ -107,7 +107,7 @@ class DisplayClient:
         """
         if isinstance(color, RGB565Color):
             color = color.value
-        return self._client.send_command(f"DISP_CLEAR {color:04X}")
+        return self._client.send_command(f"UI:DISP:CLEAR {color:04X}")
 
     def draw_text(
         self,
@@ -130,7 +130,7 @@ class DisplayClient:
             fg = fg.value
         if isinstance(bg, RGB565Color):
             bg = bg.value
-        return self._client.send_command(f"DISP_TEXT {x} {y} {fg:04X} {bg:04X} {text}")
+        return self._client.send_command(f"UI:DISP:TEXT {x} {y} {fg:04X} {bg:04X} {text}")
 
     def draw_rect(
         self,
@@ -152,7 +152,7 @@ class DisplayClient:
         """
         if isinstance(color, RGB565Color):
             color = color.value
-        cmd = f"DISP_RECT {x} {y} {w} {h} {color:04X}"
+        cmd = f"UI:DISP:RECT {x} {y} {w} {h} {color:04X}"
         if filled:
             cmd += " fill"
         return self._client.send_command(cmd)
@@ -175,7 +175,7 @@ class DisplayClient:
         """
         if isinstance(color, RGB565Color):
             color = color.value
-        return self._client.send_command(f"DISP_LINE {x0} {y0} {x1} {y1} {color:04X}")
+        return self._client.send_command(f"UI:DISP:LINE {x0} {y0} {x1} {y1} {color:04X}")
 
     def draw_bitmap_b64(
         self,
@@ -196,7 +196,7 @@ class DisplayClient:
             data: Raw RGB565 pixel data (big-endian, 2 bytes per pixel).
         """
         b64_data = base64.b64encode(data).decode("ascii")
-        return self._client.send_command(f"DISP_BITMAP_B64 {x} {y} {w} {h} {b64_data}")
+        return self._client.send_command(f"UI:DISP:BITMAP:B64 {x} {y} {w} {h} {b64_data}")
 
     def draw_bitmap(
         self,

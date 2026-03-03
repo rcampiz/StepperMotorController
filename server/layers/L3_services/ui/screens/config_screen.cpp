@@ -61,7 +61,7 @@ void ConfigScreen::renderField(LCD& lcd, uint8_t field, uint16_t y, bool selecte
 
         case FIELD_KVAL_HOLD: {
             lcd.drawString(MARGIN + FIELD_PAD, y + FIELD_PAD, "KHold:", fg, bg, TEXT_SCALE);
-            uint16_t pct = static_cast<uint16_t>(cfg.kvalHold) * 100 / 256;
+            auto pct = static_cast<uint16_t>(cfg.kvalHold) * 100 / 256;
             snprintf(buf, sizeof(buf), "< %u%% >", pct);
             lcd.drawString(VALUE_X, y + FIELD_PAD, buf, fg, bg, TEXT_SCALE);
             break;
@@ -69,7 +69,7 @@ void ConfigScreen::renderField(LCD& lcd, uint8_t field, uint16_t y, bool selecte
 
         case FIELD_KVAL_RUN: {
             lcd.drawString(MARGIN + FIELD_PAD, y + FIELD_PAD, "KRun:", fg, bg, TEXT_SCALE);
-            uint16_t pct = static_cast<uint16_t>(cfg.kvalRun) * 100 / 256;
+            auto pct = static_cast<uint16_t>(cfg.kvalRun) * 100 / 256;
             snprintf(buf, sizeof(buf), "< %u%% >", pct);
             lcd.drawString(VALUE_X, y + FIELD_PAD, buf, fg, bg, TEXT_SCALE);
             break;
@@ -132,7 +132,7 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
 
     switch (field) {
         case FIELD_STEP_MODE: {
-            int8_t mode = static_cast<int8_t>(cfg.stepMode) + delta;
+            auto mode = static_cast<int8_t>(cfg.stepMode) + delta;
             if (mode < 0) mode = 0;
             if (mode > 7) mode = 7;
             Services::g_motorConfig.setStepMode(static_cast<uint8_t>(mode));
@@ -140,7 +140,7 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
         }
 
         case FIELD_KVAL_HOLD: {
-            int16_t val = static_cast<int16_t>(cfg.kvalHold) + delta;
+            auto val = static_cast<int16_t>(cfg.kvalHold) + delta;
             if (val < 0) val = 0;
             if (val > 255) val = 255;
             Services::g_motorConfig.setKval(
@@ -149,7 +149,7 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
         }
 
         case FIELD_KVAL_RUN: {
-            int16_t val = static_cast<int16_t>(cfg.kvalRun) + delta;
+            auto val = static_cast<int16_t>(cfg.kvalRun) + delta;
             if (val < 0) val = 0;
             if (val > 255) val = 255;
             Services::g_motorConfig.setKval(
@@ -158,7 +158,7 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
         }
 
         case FIELD_OCD: {
-            int16_t val = static_cast<int16_t>(cfg.ocdThreshold) + delta;
+            auto val = static_cast<int16_t>(cfg.ocdThreshold) + delta;
             if (val < 0) val = 0;
             if (val > 31) val = 31;
             Services::g_motorConfig.setOcdThreshold(static_cast<uint8_t>(val));
@@ -166,7 +166,7 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
         }
 
         case FIELD_STALL: {
-            int16_t val = static_cast<int16_t>(cfg.stallThreshold) + delta;
+            auto val = static_cast<int16_t>(cfg.stallThreshold) + delta;
             if (val < 0) val = 0;
             if (val > 127) val = 127;
             Services::g_motorConfig.setStallThreshold(static_cast<uint8_t>(val));
@@ -176,7 +176,7 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
         case FIELD_ACC: {
             // Adjust by ±50 steps/s^2 in physical units
             uint32_t phys = Services::Config::accelRawToPhysical(cfg.acceleration);
-            int32_t newPhys = static_cast<int32_t>(phys) + (delta * 50);
+            auto newPhys = static_cast<int32_t>(phys) + (delta * 50);
             if (newPhys < 15) newPhys = 15;        // Min ~1 raw
             if (newPhys > 59590) newPhys = 59590;  // Max 12-bit raw (4095)
             uint16_t raw = Services::Config::accelPhysicalToRaw(static_cast<uint32_t>(newPhys));
@@ -186,7 +186,7 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
 
         case FIELD_DEC: {
             uint32_t phys = Services::Config::accelRawToPhysical(cfg.deceleration);
-            int32_t newPhys = static_cast<int32_t>(phys) + (delta * 50);
+            auto newPhys = static_cast<int32_t>(phys) + (delta * 50);
             if (newPhys < 15) newPhys = 15;
             if (newPhys > 59590) newPhys = 59590;
             uint16_t raw = Services::Config::accelPhysicalToRaw(static_cast<uint32_t>(newPhys));
@@ -196,7 +196,7 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
 
         case FIELD_MAXSPD: {
             uint32_t phys = Services::Config::maxSpeedRawToPhysical(cfg.maxSpeed);
-            int32_t newPhys = static_cast<int32_t>(phys) + (delta * 50);
+            auto newPhys = static_cast<int32_t>(phys) + (delta * 50);
             if (newPhys < 16) newPhys = 16;         // Min ~1 raw
             if (newPhys > 15625) newPhys = 15625;   // Max 10-bit raw (1023)
             uint16_t raw = Services::Config::maxSpeedPhysicalToRaw(static_cast<uint32_t>(newPhys));

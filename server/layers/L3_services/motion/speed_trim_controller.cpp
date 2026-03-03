@@ -144,11 +144,11 @@ SpeedTrimResult SpeedTrimController::update(const SpeedTrimInput& input) {
     }
 
     // 8. Convert back to raw SPEED register with rounding (not truncation)
-    uint32_t finalRaw = static_cast<uint32_t>(
+    auto finalRaw = static_cast<uint32_t>(
         (finalSpsF * 1048576.0f / 15625.0f) + 0.5f);
 
     // Compute trim in raw units for telemetry (use stored base, not input)
-    int32_t trimRaw = static_cast<int32_t>(finalRaw) - static_cast<int32_t>(m_baseSpeedRaw);
+    auto trimRaw = static_cast<int32_t>(finalRaw) - static_cast<int32_t>(m_baseSpeedRaw);
 
     result.finalSpeedRaw = finalRaw;
     result.trimRaw = trimRaw;

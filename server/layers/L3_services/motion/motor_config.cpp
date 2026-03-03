@@ -176,7 +176,7 @@ void MotorConfigManager::setFollowThresholds(int16_t moveErr, uint16_t moveTimeM
 
 bool MotorConfigManager::loadFromFlash() {
     // Read config from flash
-    const MotorConfig* flashConfig = reinterpret_cast<const MotorConfig*>(MOTOR_CONFIG_FLASH_ADDR);
+    const auto *flashConfig = reinterpret_cast<const MotorConfig*>(MOTOR_CONFIG_FLASH_ADDR);
 
     if (validateConfig(*flashConfig)) {
         m_config = *flashConfig;
@@ -224,7 +224,7 @@ bool MotorConfigManager::saveToFlash() {
     }
 
     // Verify
-    const MotorConfig* flashConfig = reinterpret_cast<const MotorConfig*>(MOTOR_CONFIG_FLASH_ADDR);
+    const auto *flashConfig = reinterpret_cast<const MotorConfig*>(MOTOR_CONFIG_FLASH_ADDR);
     m_valid = (memcmp(&m_config, flashConfig, sizeof(m_config)) == 0);
 
     return m_valid;
@@ -316,7 +316,7 @@ bool MotorConfigManager::writeFlash(const uint8_t* data, size_t len) {
 
     // Write 32 bits at a time
     uint32_t addr = MOTOR_CONFIG_FLASH_ADDR;
-    const uint32_t* src = reinterpret_cast<const uint32_t*>(data);
+    const auto *src = reinterpret_cast<const uint32_t*>(data);
     size_t words = (len + 3) / 4;
 
     for (size_t i = 0; i < words; i++) {

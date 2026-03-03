@@ -40,7 +40,7 @@ void record(Dir d, const char* tag, uint32_t arg0) {
     s_total++;
 }
 
-void recordIface(uint8_t boundary, const char* label, const char* method,
+void recordIface(uint16_t boundary, const char* label, const char* method,
                  uint32_t arg0, const char* detail) {
     InterruptGuard guard;
 

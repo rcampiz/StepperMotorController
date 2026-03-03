@@ -1,92 +1,71 @@
 /**
  * @file command_parser.cpp
- * @brief ASCII command protocol parser implementation
- *
- * Supports synchronized multi-controller operation.
- * See docs/HOST_INTERFACE_AND_SYNC.md for protocol specification.
+ * @brief Core dispatch and response logic. Handlers in handlers/ *.cpp.
  */
-
 #include "L2_protocol/command_parser.hpp"
-#include "F_platform/interfaces/async_event_types.hpp"
-#include "F_platform/interfaces/telemetry.hpp"
-#include "F_util/crc32.hpp"
 #include "F_util/interface_trace.hpp"
 #include <ctype.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-
-// newlib-nano doesn't support %lld — manual int64_t to string
-static void i64toa(int64_t val, char *buf, size_t bufSize) {
-  if (bufSize == 0)
-    return;
-  if (val == 0) {
-    buf[0] = '0';
-    buf[1] = '\0';
-    return;
-  }
-  char tmp[21];
-  int i = 0;
-  bool neg = (val < 0);
-  uint64_t uval =
-      neg ? static_cast<uint64_t>(-val) : static_cast<uint64_t>(val);
-  while (uval > 0 && i < 20) {
-    tmp[i++] = '0' + static_cast<char>(uval % 10);
-    uval /= 10;
-  }
-  size_t j = 0;
-  if (neg && j < bufSize - 1)
-    buf[j++] = '-';
-  while (i > 0 && j < bufSize - 1)
-    buf[j++] = tmp[--i];
-  buf[j] = '\0';
-}
 
 namespace Comms {
 
-// ============================================================================
-// Argument validation limits (based on powerSTEP01 register sizes)
-// ============================================================================
-namespace Limits {
-// Position: 22-bit signed (-2^21 to 2^21-1)
-constexpr int32_t POS_MIN = -2097152;
-constexpr int32_t POS_MAX = 2097151;
+// Count of entries in a static array (used for dispatch table sizing)
+#define NCMD(a) (sizeof(a) / sizeof(*(a)))
 
-// Speed: in steps/s (converted to 20-bit raw register value internally)
-// Max 15625 steps/s per powerSTEP01 datasheet (raw 0xFFFFF * 2^-28 / 250ns)
-constexpr int32_t SPEED_MIN = 0;
-constexpr int32_t SPEED_MAX = 15625; // steps per second
-
-// Acceleration/Deceleration: 12-bit register (0-4095)
-constexpr int32_t ACCEL_MIN = 1;
-constexpr int32_t ACCEL_MAX = 4095;
-
-// Max Speed: 10-bit register (0-1023)
-constexpr int32_t MAXSPD_MIN = 1;
-constexpr int32_t MAXSPD_MAX = 1023;
-
-// Direction: 0 or 1
-constexpr int32_t DIR_MIN = 0;
-constexpr int32_t DIR_MAX = 1;
-} // namespace Limits
-
+// CommandParser reads bytes from a serial transport (USB CDC / RTT), builds up
+// complete lines, tokenizes them into command + arguments, and routes them to
+// the correct handler via SCPI-style two-level dispatch (e.g. "MOT:RUN 1000").
+// Responses are sent back over the same transport in ASCII or JSON format.
 CommandParser::CommandParser(ITransport &transport,
                              ICommandDispatcher &dispatcher)
-    : m_transport(transport), m_dispatcher(dispatcher), m_bufIndex(0),
-      m_format(ResponseFormat::ASCII) {
+    : m_transport(transport), m_dispatcher(dispatcher),
+      m_bufIndex(0),                    // start with empty input buffer
+      m_format(ResponseFormat::ASCII) { // default to ASCII (switch via FMT command)
   memset(m_buffer, 0, sizeof(m_buffer));
   memset(m_currentCmd, 0, sizeof(m_currentCmd));
 }
 
+// --- Table-driven lookup helpers ---
+// Each dispatchFoo() function (e.g. dispatchMotion, dispatchSystem) defines
+// static const arrays of {suffix, handler} pairs, then passes them here.
+// dispatch1: handlers that take a ParsedCommand& (need to read arguments)
+// dispatch0: handlers that take no arguments (simple commands like EN, DIS)
+// Both scan the table linearly — tables are small (<20 entries), so O(n) is
+// fine.
+
+bool CommandParser::dispatch1(const char *suffix, const CmdEntry *table,
+                              size_t count, const ParsedCommand &cmd) {
+  for (size_t i = 0; i < count; i++)
+    if (strcmp(suffix, table[i].name) == 0) {
+      (this->*table[i].fn)(cmd); // call matched handler via member fn ptr
+      return true;
+    }
+  return false;
+}
+
+bool CommandParser::dispatch0(const char *suffix, const CmdEntry0 *table,
+                              size_t count) {
+  for (size_t i = 0; i < count; i++)
+    if (strcmp(suffix, table[i].name) == 0) {
+      (this->*table[i].fn)(); // call matched handler via member fn ptr
+      return true;
+    }
+  return false;
+}
+
+// --- Core processing ---
+// Called periodically from the comms task. Reads bytes one at a time from the
+// transport (USB CDC or RTT), accumulates them into m_buffer, and dispatches
+// complete lines. Provides local echo so the user sees what they type.
+
 void CommandParser::process() {
-  // Read available bytes
   while (m_transport.available()) {
     uint8_t byte;
-    if (!m_transport.readByte(byte, 0)) {
+    if (!m_transport.readByte(byte, 0))
       break;
-    }
 
-    // Handle backspace
+    // Backspace/DEL: erase last char and overwrite on terminal
     if (byte == '\b' || byte == 127) {
       if (m_bufIndex > 0) {
         m_bufIndex--;
@@ -94,18 +73,15 @@ void CommandParser::process() {
       }
       continue;
     }
-
-    // Handle newline (command complete)
+    // CR or LF: end of line — parse and dispatch the buffered command
     if (byte == '\r' || byte == '\n') {
       if (m_bufIndex > 0) {
-        m_transport.println("");
-        m_buffer[m_bufIndex] = '\0';
-
+        m_transport.println("");     // echo newline
+        m_buffer[m_bufIndex] = '\0'; // null-terminate
         ParsedCommand cmd = parse(m_buffer);
         if (cmd.valid) {
-          // Any valid command confirms the baud rate is working
-          m_baudRevertRate = 0;
-          // Track dispatch stats
+          m_baudRevertRate = 0; // valid cmd cancels baud auto-revert
+          // Update dispatch statistics (ring buffer of recent command names)
           m_dispatchStats.totalCommands++;
           uint8_t ri = m_dispatchStats.recentHead;
           strncpy(m_dispatchStats.recentCmds[ri], cmd.cmd, 23);
@@ -115,665 +91,424 @@ void CommandParser::process() {
             m_dispatchStats.recentCount++;
           dispatch(cmd);
         }
-
-        m_bufIndex = 0;
+        m_bufIndex = 0; // reset buffer for next line
       }
       continue;
     }
-
-    // Handle printable characters
-    if (byte >= 32 && byte < 127) {
-      if (m_bufIndex < CMD_BUFFER_SIZE - 1) {
-        m_buffer[m_bufIndex++] = static_cast<char>(byte);
-        // Echo character
-        char echo[2] = {static_cast<char>(byte), '\0'};
-        m_transport.print(echo);
-      }
+    // Printable ASCII: accumulate into buffer and echo back
+    if (byte >= 32 && byte < 127 && m_bufIndex < CMD_BUFFER_SIZE - 1) {
+      m_buffer[m_bufIndex++] = static_cast<char>(byte);
+      char echo[2] = {static_cast<char>(byte), '\0'};
+      m_transport.print(echo);
     }
   }
 }
 
+// Tokenize "MOT:RUN 1000 1" → cmd="MOT:RUN", args=["1000","1"], argCount=2.
+// Command word is uppercased; arguments are left as-is (case-sensitive values).
+// Uses index (pos) instead of pointer arithmetic for readability.
 ParsedCommand CommandParser::parse(const char *line) {
   ParsedCommand cmd = {};
   cmd.valid = false;
   cmd.argCount = 0;
+  size_t pos = 0;
 
-  // Skip leading whitespace
-  while (*line && isspace(*line)) {
-    line++;
-  }
+  while (line[pos] && isspace(line[pos]))
+    pos++; // skip leading whitespace
+  if (!line[pos])
+    return cmd; // empty line → invalid
 
-  if (!*line) {
-    return cmd;
-  }
-
-  // Extract command word
+  // Extract command word (first token), uppercased
   size_t i = 0;
-  while (*line && !isspace(*line) && i < sizeof(cmd.cmd) - 1) {
-    cmd.cmd[i++] = static_cast<char>(toupper(*line++));
-  }
+  while (line[pos] && !isspace(line[pos]) && i < sizeof(cmd.cmd) - 1)
+    cmd.cmd[i++] = static_cast<char>(toupper(line[pos++]));
   cmd.cmd[i] = '\0';
 
-  // Extract arguments
-  while (*line && cmd.argCount < MAX_ARGS) {
-    // Skip whitespace
-    while (*line && isspace(*line)) {
-      line++;
-    }
-    if (!*line)
+  // Extract space-separated arguments (up to MAX_ARGS)
+  while (line[pos] && cmd.argCount < MAX_ARGS) {
+    while (line[pos] && isspace(line[pos]))
+      pos++; // skip inter-arg whitespace
+    if (!line[pos])
       break;
-
-    // Extract argument
     i = 0;
-    while (*line && !isspace(*line) && i < sizeof(cmd.args[0]) - 1) {
-      cmd.args[cmd.argCount][i++] = *line++;
-    }
+    while (line[pos] && !isspace(line[pos]) && i < sizeof(cmd.args[0]) - 1)
+      cmd.args[cmd.argCount][i++] = line[pos++];
     cmd.args[cmd.argCount][i] = '\0';
     cmd.argCount++;
   }
-
   cmd.valid = true;
   return cmd;
 }
 
+// --- Top-level dispatch ---
+// Routes a parsed command to the correct SCPI namespace handler.
+// SCPI commands have a colon: "MOT:RUN" → prefix="MOT", suffix="RUN" →
+// dispatchMotion("RUN", cmd). Non-SCPI commands (*IDN?, FMT) are handled
+// inline. Anything else falls through to debug commands.
+
 void CommandParser::dispatch(const ParsedCommand &cmd) {
   m_dispatcher.traceRecordEntry("CMD:RX");
   ITRACE(ITrace::L2_L3_DISPATCH, "[L2>L3]", "dispatch", cmd.cmd);
-
-  // Store current command for JSON echo
-  strncpy(m_currentCmd, cmd.cmd, sizeof(m_currentCmd) - 1);
+  strncpy(m_currentCmd, cmd.cmd,
+          sizeof(m_currentCmd) - 1); // stash for JSON response echo
   m_currentCmd[sizeof(m_currentCmd) - 1] = '\0';
 
-  // --- Two-level SCPI namespace dispatch ---
-  // Find first ':' to split prefix from suffix
+  // Split on first colon: "MOT:RUN" → prefix="MOT", suffix="RUN"
   const char *colon = strchr(cmd.cmd, ':');
-
-  if (colon != nullptr) {
-    // SCPI-style command with namespace prefix
+  if (colon) {
     char prefix[8] = {};
-    size_t prefixLen = static_cast<size_t>(colon - cmd.cmd);
-    if (prefixLen >= sizeof(prefix))
-      prefixLen = sizeof(prefix) - 1;
-    memcpy(prefix, cmd.cmd, prefixLen);
-    prefix[prefixLen] = '\0';
+    auto plen = static_cast<size_t>(colon - cmd.cmd);
+    if (plen >= sizeof(prefix))
+      plen = sizeof(prefix) - 1;
+    memcpy(prefix, cmd.cmd, plen);
+    const char *suffix = colon + 1; // everything after first colon
 
-    const char *suffix = colon + 1; // everything after first ':'
-
-    if (strcmp(prefix, "MOT") == 0) {
-      dispatchMotion(suffix, cmd);
-    } else if (strcmp(prefix, "SYST") == 0) {
-      dispatchSystem(suffix, cmd);
-    } else if (strcmp(prefix, "SYNC") == 0) {
-      dispatchSync(suffix, cmd);
-    } else if (strcmp(prefix, "DIAG") == 0) {
-      dispatchDiag(suffix, cmd);
-    } else if (strcmp(prefix, "CTRL") == 0) {
-      dispatchCtrl(suffix, cmd);
-    } else if (strcmp(prefix, "DEV") == 0) {
-      dispatchDevice(suffix, cmd);
-    } else if (strcmp(prefix, "FMT") == 0) {
-      // FMT is a leaf — no suffix expected, but handle FMT:xxx just in case
-      m_dispatchStats.unknownCommands++;
-      respondErr("Unknown FMT command");
-    } else if (strcmp(prefix, "UI") == 0) {
-      dispatchUI(suffix, cmd);
-    } else if (strcmp(prefix, "DBG") == 0) {
-      dispatchDebug(suffix, cmd);
-    } else if (strcmp(prefix, "DRV") == 0) {
-      dispatchDriver(suffix, cmd);
-    } else {
+    // Prefix → namespace dispatcher table (same pattern as dispatch1/dispatch0)
+    struct PfxEntry {
+      const char *p;
+      void (CommandParser::*fn)(const char *, const ParsedCommand &);
+    };
+    static const PfxEntry pfx[] = {
+        {"MOT", &CommandParser::dispatchMotion},
+        {"SYST", &CommandParser::dispatchSystem},
+        {"SYNC", &CommandParser::dispatchSync},
+        {"DIAG", &CommandParser::dispatchDiag},
+        {"CTRL", &CommandParser::dispatchCtrl},
+        {"DEV", &CommandParser::dispatchDevice},
+        {"UI", &CommandParser::dispatchUI},
+        {"DBG", &CommandParser::dispatchDebug},
+        {"DRV", &CommandParser::dispatchDriver},
+    };
+    bool found = false;
+    for (size_t i = 0; i < NCMD(pfx); i++)
+      if (strcmp(prefix, pfx[i].p) == 0) {
+        (this->*pfx[i].fn)(suffix, cmd);
+        found = true;
+        break;
+      }
+    if (!found) {
       m_dispatchStats.unknownCommands++;
       respondErr("Unknown namespace prefix");
     }
   } else {
-    // No colon — could be *IDN?, FMT, FMT?, or a legacy flat command
-    if (strcmp(cmd.cmd, "*IDN?") == 0) {
+    // No colon → top-level commands (*IDN?, FMT) or hardware debug commands
+    if (strcmp(cmd.cmd, "*IDN?") == 0)
       cmdVersion();
-    } else if (strcmp(cmd.cmd, "FMT") == 0) {
+    else if (strcmp(cmd.cmd, "FMT") == 0)
       cmdSetFormat(cmd);
-    } else if (strcmp(cmd.cmd, "FMT?") == 0) {
+    else if (strcmp(cmd.cmd, "FMT?") == 0)
       cmdGetFormat();
+    else if (m_debugCommands) {
+      // Fall through to bringup/debug handler (SPI_TEST, REG_READ, etc.)
+      const char *argPtrs[MAX_ARGS];
+      for (uint8_t i = 0; i < cmd.argCount; i++)
+        argPtrs[i] = cmd.args[i];
+      if (!m_debugCommands->dispatch(cmd.cmd, argPtrs, cmd.argCount,
+                                     m_transport)) {
+        m_dispatchStats.unknownCommands++;
+        respondErr("Unknown command");
+      }
     } else {
-      dispatchLegacy(cmd);
+      m_dispatchStats.unknownCommands++;
+      respondErr("Unknown command");
     }
   }
-
   m_dispatcher.traceRecordExit("CMD:RX");
 }
 
-// ============================================================================
-// SCPI Namespace Dispatch Handlers
-// ============================================================================
+// --- SCPI namespace dispatchers ---
+// Each function below handles one SCPI prefix (e.g. MOT, SYST, CTRL).
+// Pattern: define static tables of {suffix, handler} pairs, then call
+// dispatch1/dispatch0 to find a match. Special cases (sub-namespaces
+// like SYST:FAULT:* or UI:DISP:*) are checked first with strncmp.
 
-// --- MOT: Motion commands ---
+// MOT:* — Motor motion and configuration (move, run, stop, enable,
+// accel/decel/maxspd)
 void CommandParser::dispatchMotion(const char *suffix,
                                    const ParsedCommand &cmd) {
-  // MOT:MOVE, MOT:GOTO, MOT:RUN, MOT:STOP, MOT:EN, MOT:DIS, MOT:HOME, MOT:ZERO
-  if (strcmp(suffix, "MOVE") == 0) {
-    cmdMove(cmd);
-  } else if (strcmp(suffix, "GOTO") == 0) {
-    cmdGoTo(cmd);
-  } else if (strcmp(suffix, "RUN") == 0) {
-    cmdRun(cmd);
-  } else if (strcmp(suffix, "STOP") == 0) {
-    cmdStop(cmd);
-  } else if (strcmp(suffix, "EN") == 0) {
-    cmdEnable();
-  } else if (strcmp(suffix, "DIS") == 0) {
-    cmdDisable();
-  } else if (strcmp(suffix, "HOME") == 0) {
-    cmdHome(cmd);
-  } else if (strcmp(suffix, "ZERO") == 0) {
-    cmdZero();
-  }
-  // MOT:CFG:ACCEL, MOT:CFG:DECEL, MOT:CFG:MAXSPD (physical units — steps/s^2,
-  // steps/s)
-  else if (strcmp(suffix, "CFG:ACCEL") == 0) {
-    cmdAccelPhysical(cmd);
-  } else if (strcmp(suffix, "CFG:DECEL") == 0) {
-    cmdDecelPhysical(cmd);
-  } else if (strcmp(suffix, "CFG:MAXSPD") == 0) {
-    cmdMaxSpdPhysical(cmd);
-  } else {
-    respondErr("Unknown MOT command");
-  }
+  static const CmdEntry t1[] = {
+      {"MOVE", &CommandParser::cmdMove},
+      {"GOTO", &CommandParser::cmdGoTo},
+      {"RUN", &CommandParser::cmdRun},
+      {"STOP", &CommandParser::cmdStop},
+      {"HOME", &CommandParser::cmdHome},
+      {"CFG:ACCEL", &CommandParser::cmdAccelPhysical},
+      {"CFG:DECEL", &CommandParser::cmdDecelPhysical},
+      {"CFG:MAXSPD", &CommandParser::cmdMaxSpdPhysical},
+  };
+  static const CmdEntry0 t0[] = {
+      {"EN", &CommandParser::cmdEnable},
+      {"DIS", &CommandParser::cmdDisable},
+      {"ZERO", &CommandParser::cmdZero},
+  };
+  if (dispatch1(suffix, t1, NCMD(t1), cmd))
+    return;
+  if (dispatch0(suffix, t0, NCMD(t0)))
+    return;
+  respondErr("Unknown MOT command");
 }
 
-// --- SYST: System commands ---
+// SYST:* — System commands (estop, heartbeat, baud, events, fault clear, tick)
+// Sub-namespace: SYST:FAULT:CLEAR, SYST:FAULT:FORCE, SYST:FAULT:STAT?
 void CommandParser::dispatchSystem(const char *suffix,
                                    const ParsedCommand &cmd) {
-  // SYST:ESTOP
-  if (strcmp(suffix, "ESTOP") == 0) {
-    cmdEstop();
+  // Check sub-namespace SYST:FAULT:* first (strip "FAULT:" and match remainder)
+  if (strncmp(suffix, "FAULT:", 6) == 0) {
+    static const CmdEntry0 ft[] = {
+        {"CLEAR", &CommandParser::cmdClearFault},
+        {"FORCE", &CommandParser::cmdForceClearFault},
+        {"STAT?", &CommandParser::cmdGetStatus},
+    };
+    if (dispatch0(suffix + 6, ft, NCMD(ft)))
+      return;
+    respondErr("Unknown SYST:FAULT command");
+    return;
   }
-  // SYST:FAULT:CLEAR, SYST:FAULT:STAT?
-  else if (strncmp(suffix, "FAULT:", 6) == 0) {
-    const char *faultSuffix = suffix + 6;
-    if (strcmp(faultSuffix, "CLEAR") == 0) {
-      cmdClearFault();
-    } else if (strcmp(faultSuffix, "FORCE") == 0) {
-      cmdForceClearFault();
-    } else if (strcmp(faultSuffix, "STAT?") == 0) {
-      // TODO: dedicated fault status query (currently use GET_STATUS)
-      cmdGetStatus();
-    } else {
-      respondErr("Unknown SYST:FAULT command");
-    }
-  }
-  // SYST:TICK?
-  else if (strcmp(suffix, "TICK?") == 0) {
-    cmdGetTick();
-  }
-  // SYST:HB <seq> (heartbeat)
-  else if (strcmp(suffix, "HB") == 0) {
-    cmdHeartbeat(cmd);
-  }
-  // SYST:HB:TIMEOUT <ms>
-  else if (strcmp(suffix, "HB:TIMEOUT") == 0) {
-    cmdSetHeartbeat(cmd);
-  }
-  // SYST:HB:STAT?
-  else if (strcmp(suffix, "HB:STAT?") == 0) {
-    cmdGetHeartbeatStatus();
-  }
-  // SYST:VER?
-  else if (strcmp(suffix, "VER?") == 0) {
-    cmdVersion();
-  }
-  // SYST:BAUD <rate>
-  else if (strcmp(suffix, "BAUD") == 0) {
-    cmdSetBaud(cmd);
-  }
-  // SYST:EVT:EN [mask]
-  else if (strcmp(suffix, "EVT:EN") == 0) {
-    cmdEventEnable(cmd);
-  }
-  // SYST:EVT:DIS
-  else if (strcmp(suffix, "EVT:DIS") == 0) {
-    cmdEventDisable();
-  }
-  // SYST:EVT:STAT?
-  else if (strcmp(suffix, "EVT:STAT?") == 0) {
-    cmdEventStatus();
-  }
-  // SYST:ZERO (combined motor + encoder zero)
-  else if (strcmp(suffix, "ZERO") == 0) {
-    cmdZeroAll();
-  }
-  // SYST:DELAY <ms> / SYST:DELAY?
-  else if (strcmp(suffix, "DELAY") == 0) {
-    cmdSystDelay(cmd);
-  } else if (strcmp(suffix, "DELAY?") == 0) {
-    cmdSystDelayQuery();
-  } else {
-    respondErr("Unknown SYST command");
-  }
+  static const CmdEntry t1[] = {
+      {"HB", &CommandParser::cmdHeartbeat},
+      {"HB:TIMEOUT", &CommandParser::cmdSetHeartbeat},
+      {"BAUD", &CommandParser::cmdSetBaud},
+      {"EVT:EN", &CommandParser::cmdEventEnable},
+      {"DELAY", &CommandParser::cmdSystDelay},
+  };
+  static const CmdEntry0 t0[] = {
+      {"ESTOP", &CommandParser::cmdEstop},
+      {"TICK?", &CommandParser::cmdGetTick},
+      {"HB:STAT?", &CommandParser::cmdGetHeartbeatStatus},
+      {"VER?", &CommandParser::cmdVersion},
+      {"EVT:DIS", &CommandParser::cmdEventDisable},
+      {"EVT:STAT?", &CommandParser::cmdEventStatus},
+      {"ZERO", &CommandParser::cmdZeroAll},
+      {"DELAY?", &CommandParser::cmdSystDelayQuery},
+  };
+  if (dispatch1(suffix, t1, NCMD(t1), cmd))
+    return;
+  if (dispatch0(suffix, t0, NCMD(t0)))
+    return;
+  respondErr("Unknown SYST command");
 }
 
-// --- SYNC: Synchronization commands ---
+// SYNC:* — Multi-controller synchronization (queue, arm, start, clear)
 void CommandParser::dispatchSync(const char *suffix, const ParsedCommand &cmd) {
-  if (strcmp(suffix, "QUEUE") == 0) {
-    cmdQueue(cmd);
-  } else if (strcmp(suffix, "ARM") == 0) {
-    cmdArm();
-  } else if (strcmp(suffix, "START") == 0) {
-    cmdStart();
-  } else if (strcmp(suffix, "START:AT") == 0) {
-    cmdStartAt(cmd);
-  } else if (strcmp(suffix, "CLEAR") == 0) {
-    cmdClearQueue();
-  } else {
-    respondErr("Unknown SYNC command");
-  }
+  static const CmdEntry t1[] = {
+      {"QUEUE", &CommandParser::cmdQueue},
+      {"START:AT", &CommandParser::cmdStartAt},
+  };
+  static const CmdEntry0 t0[] = {
+      {"ARM", &CommandParser::cmdArm},
+      {"START", &CommandParser::cmdStart},
+      {"CLEAR", &CommandParser::cmdClearQueue},
+  };
+  if (dispatch1(suffix, t1, NCMD(t1), cmd))
+    return;
+  if (dispatch0(suffix, t0, NCMD(t0)))
+    return;
+  respondErr("Unknown SYNC command");
 }
 
-// --- DIAG: Diagnostics commands ---
+// DIAG:* — Diagnostics (ping for latency, status query)
 void CommandParser::dispatchDiag(const char *suffix, const ParsedCommand &cmd) {
-  if (strcmp(suffix, "PING") == 0) {
-    cmdPing(cmd);
-  } else if (strcmp(suffix, "STAT?") == 0) {
-    cmdGetStatus();
-  } else {
-    respondErr("Unknown DIAG command");
-  }
+  static const CmdEntry t1[] = {{"PING", &CommandParser::cmdPing}};
+  static const CmdEntry0 t0[] = {{"STAT?", &CommandParser::cmdGetStatus}};
+  if (dispatch1(suffix, t1, NCMD(t1), cmd))
+    return;
+  if (dispatch0(suffix, t0, NCMD(t0)))
+    return;
+  respondErr("Unknown DIAG command");
 }
 
-// --- CTRL: Control mode commands ---
+// CTRL:* — Control mode, encoder, following error supervisor, speed-trim PI,
+// sysid Largest namespace. Special cases: ENC:DBG? (debug), ENC:FILT:*
+// (sub-dispatch)
 void CommandParser::dispatchCtrl(const char *suffix, const ParsedCommand &cmd) {
-  if (strcmp(suffix, "MODE?") == 0) {
-    cmdGetMode();
-  } else if (strcmp(suffix, "MODE") == 0) {
-    cmdSetMode(cmd);
-  } else if (strcmp(suffix, "ENC:STAT?") == 0) {
-    cmdGetEncoderStatus();
-  } else if (strcmp(suffix, "ENC?") == 0) {
-    cmdEncoder();
-  } else if (strcmp(suffix, "ENC:ZERO") == 0) {
-    cmdEncoderZero();
-  } else if (strcmp(suffix, "ENC:DBG?") == 0) {
+  // Special: ENC:DBG? — delegate to debug command handler (different interface)
+  if (strcmp(suffix, "ENC:DBG?") == 0) {
     if (m_debugCommands) {
-      const char* noArgs[] = {nullptr};
+      const char *noArgs[] = {nullptr};
       m_debugCommands->dispatch("ENC_DEBUG", noArgs, 0, m_transport);
     }
-  } else if (strcmp(suffix, "ENC:FILT") == 0 ||
-             strcmp(suffix, "ENC:FILT?") == 0) {
-    cmdEncFilter(cmd);
-  } else if (strncmp(suffix, "ENC:FILT:", 9) == 0) {
-    cmdEncFilterSub(suffix + 9, cmd);
-  } else if (strcmp(suffix, "FOLLOW?") == 0) {
-    cmdFollowingError();
-  } else if (strcmp(suffix, "FOLLOW:THRESH?") == 0) {
-    cmdFollowThreshQuery();
-  } else if (strcmp(suffix, "FOLLOW:THRESH") == 0) {
-    cmdFollowThreshSet(cmd);
-  } else if (strcmp(suffix, "FOLLOW:SAVE") == 0) {
-    cmdFollowSave();
-  } else if (strcmp(suffix, "FOLLOW:CLEAR") == 0) {
-    cmdFollowClear();
-  } else if (strcmp(suffix, "TRIM?") == 0) {
-    cmdTrimQuery();
-  } else if (strcmp(suffix, "TRIM:GAINS") == 0) {
-    cmdTrimSetGains(cmd);
-  } else if (strcmp(suffix, "TRIM:LIMITS") == 0) {
-    cmdTrimSetLimits(cmd);
-  } else if (strcmp(suffix, "TRIM:MAXPCT") == 0) {
-    cmdTrimSetMaxPct(cmd);
-  } else if (strcmp(suffix, "TRIM:RESET") == 0) {
-    cmdTrimReset();
-  } else if (strcmp(suffix, "TRIM:SAVE") == 0) {
-    cmdTrimSave();
-    // Legacy PID aliases → route to trim
-  } else if (strcmp(suffix, "PID?") == 0) {
-    cmdPidQuery();
-  } else if (strcmp(suffix, "PID:GAINS") == 0) {
-    cmdPidSetGains(cmd);
-  } else if (strcmp(suffix, "PID:LIMITS") == 0) {
-    cmdPidSetLimits(cmd);
-  } else if (strcmp(suffix, "PID:RESET") == 0) {
-    cmdPidReset();
-  } else if (strcmp(suffix, "PID:SAVE") == 0) {
-    cmdPidSave();
-  } else if (strcmp(suffix, "SYSID:STEP") == 0) {
-    cmdSysIdStep(cmd);
-  } else if (strcmp(suffix, "SYSID:RAMP") == 0) {
-    cmdSysIdRamp(cmd);
-  } else if (strcmp(suffix, "SYSID:SINE") == 0) {
-    cmdSysIdSine(cmd);
-  } else if (strcmp(suffix, "SYSID:TRAPEZOID") == 0) {
-    cmdSysIdTrapezoid(cmd);
-  } else if (strcmp(suffix, "SYSID:RECT") == 0) {
-    cmdSysIdRect(cmd);
-  } else if (strcmp(suffix, "SYSID:STATUS?") == 0) {
-    cmdSysIdStatus();
-  } else if (strcmp(suffix, "SYSID:DATA?") == 0) {
-    cmdSysIdData(cmd);
-  } else if (strcmp(suffix, "SYSID:ABORT") == 0) {
-    cmdSysIdAbort();
-  } else {
-    respondErr("Unknown CTRL command");
+    return;
   }
+  // Special: ENC:FILT sub-dispatch (different handler signature)
+  if (strncmp(suffix, "ENC:FILT:", 9) == 0) {
+    cmdEncFilterSub(suffix + 9, cmd);
+    return;
+  }
+
+  static const CmdEntry t1[] = {
+      {"MODE", &CommandParser::cmdSetMode},
+      {"ENC:FILT", &CommandParser::cmdEncFilter},
+      {"ENC:FILT?", &CommandParser::cmdEncFilter},
+      {"FOLLOW:THRESH", &CommandParser::cmdFollowThreshSet},
+      {"TRIM:GAINS", &CommandParser::cmdTrimSetGains},
+      {"TRIM:LIMITS", &CommandParser::cmdTrimSetLimits},
+      {"TRIM:MAXPCT", &CommandParser::cmdTrimSetMaxPct},
+      {"SYSID:STEP", &CommandParser::cmdSysIdStep},
+      {"SYSID:RAMP", &CommandParser::cmdSysIdRamp},
+      {"SYSID:SINE", &CommandParser::cmdSysIdSine},
+      {"SYSID:TRAPEZOID", &CommandParser::cmdSysIdTrapezoid},
+      {"SYSID:RECT", &CommandParser::cmdSysIdRect},
+      {"SYSID:DATA?", &CommandParser::cmdSysIdData},
+  };
+  static const CmdEntry0 t0[] = {
+      {"MODE?", &CommandParser::cmdGetMode},
+      {"ENC:STAT?", &CommandParser::cmdGetEncoderStatus},
+      {"ENC?", &CommandParser::cmdEncoder},
+      {"ENC:ZERO", &CommandParser::cmdEncoderZero},
+      {"FOLLOW?", &CommandParser::cmdFollowingError},
+      {"FOLLOW:THRESH?", &CommandParser::cmdFollowThreshQuery},
+      {"FOLLOW:SAVE", &CommandParser::cmdFollowSave},
+      {"FOLLOW:CLEAR", &CommandParser::cmdFollowClear},
+      {"TRIM?", &CommandParser::cmdTrimQuery},
+      {"TRIM:RESET", &CommandParser::cmdTrimReset},
+      {"TRIM:SAVE", &CommandParser::cmdTrimSave},
+      {"SYSID:STATUS?", &CommandParser::cmdSysIdStatus},
+      {"SYSID:ABORT", &CommandParser::cmdSysIdAbort},
+  };
+  if (dispatch1(suffix, t1, NCMD(t1), cmd))
+    return;
+  if (dispatch0(suffix, t0, NCMD(t0)))
+    return;
+  respondErr("Unknown CTRL command");
 }
 
-// --- DEV: Device identity commands ---
+// DEV:* — Device identification (device ID, role for multi-controller setups)
 void CommandParser::dispatchDevice(const char *suffix,
                                    const ParsedCommand &cmd) {
-  if (strcmp(suffix, "ID?") == 0) {
-    cmdGetDeviceId();
-  } else if (strcmp(suffix, "ID") == 0) {
-    cmdSetDeviceId(cmd);
-  } else if (strcmp(suffix, "ROLE") == 0) {
-    cmdSetRole(cmd);
-  } else if (strcmp(suffix, "ROLE?") == 0) {
-    cmdGetDeviceId(); // returns ID + role
-  } else {
-    respondErr("Unknown DEV command");
-  }
+  static const CmdEntry t1[] = {
+      {"ID", &CommandParser::cmdSetDeviceId},
+      {"ROLE", &CommandParser::cmdSetRole},
+  };
+  static const CmdEntry0 t0[] = {
+      {"ID?", &CommandParser::cmdGetDeviceId},
+      {"ROLE?", &CommandParser::cmdGetDeviceId},
+  };
+  if (dispatch1(suffix, t1, NCMD(t1), cmd))
+    return;
+  if (dispatch0(suffix, t0, NCMD(t0)))
+    return;
+  respondErr("Unknown DEV command");
 }
 
-// --- UI: Display / UI commands ---
+// UI:* — LCD display rendering and flash image storage
+// Sub-namespaces: UI:DISP:* (draw primitives), UI:FLASH:* (NOR flash images)
 void CommandParser::dispatchUI(const char *suffix, const ParsedCommand &cmd) {
-  if (strcmp(suffix, "MODE") == 0) {
-    cmdUIMode(cmd);
-  } else if (strcmp(suffix, "MODE?") == 0) {
-    cmdUIGetMode();
+  // UI:DISP:* — remote display drawing (text, rect, line, bitmap, etc.)
+  if (strncmp(suffix, "DISP:", 5) == 0) {
+    static const CmdEntry dt[] = {
+        {"CLEAR", &CommandParser::cmdDispClear},
+        {"TEXT", &CommandParser::cmdDispText},
+        {"RECT", &CommandParser::cmdDispRect},
+        {"LINE", &CommandParser::cmdDispLine},
+        {"BITMAP", &CommandParser::cmdDispBitmap},
+        {"BITMAP:B64", &CommandParser::cmdDispBitmapB64},
+        {"BITMAP:RLE", &CommandParser::cmdDispBitmapRle},
+        {"INDICATOR", &CommandParser::cmdDispIndicator},
+    };
+    if (dispatch1(suffix + 5, dt, NCMD(dt), cmd))
+      return;
+    respondErr("Unknown UI:DISP command");
+    return;
   }
-  // UI:DISP:* display rendering commands
-  else if (strncmp(suffix, "DISP:", 5) == 0) {
-    const char *dispSuffix = suffix + 5;
-    if (strcmp(dispSuffix, "CLEAR") == 0) {
-      cmdDispClear(cmd);
-    } else if (strcmp(dispSuffix, "TEXT") == 0) {
-      cmdDispText(cmd);
-    } else if (strcmp(dispSuffix, "RECT") == 0) {
-      cmdDispRect(cmd);
-    } else if (strcmp(dispSuffix, "LINE") == 0) {
-      cmdDispLine(cmd);
-    } else if (strcmp(dispSuffix, "BITMAP") == 0) {
-      cmdDispBitmap(cmd);
-    } else if (strcmp(dispSuffix, "BITMAP:B64") == 0) {
-      cmdDispBitmapB64(cmd);
-    } else {
-      respondErr("Unknown UI:DISP command");
-    }
+  // UI:FLASH:* — NOR flash image upload/show/erase
+  if (strncmp(suffix, "FLASH:", 6) == 0) {
+    static const CmdEntry ft1[] = {
+        {"UPLOAD", &CommandParser::cmdFlashUpload},
+        {"SHOW", &CommandParser::cmdFlashShow},
+        {"UPLOAD:RLE", &CommandParser::cmdFlashUploadRle},
+        {"DUMP", &CommandParser::cmdFlashDump},
+    };
+    static const CmdEntry0 ft0[] = {
+        {"INFO", &CommandParser::cmdFlashInfo},
+        {"ERASE_ALL", &CommandParser::cmdFlashEraseAll},
+        {"TEST", &CommandParser::cmdFlashTest},
+    };
+    if (dispatch1(suffix + 6, ft1, NCMD(ft1), cmd))
+      return;
+    if (dispatch0(suffix + 6, ft0, NCMD(ft0)))
+      return;
+    respondErr("Unknown UI:FLASH command");
+    return;
   }
-  // UI:FLASH:* flash image storage commands
-  else if (strncmp(suffix, "FLASH:", 6) == 0) {
-    const char *flashSuffix = suffix + 6;
-    if (strcmp(flashSuffix, "INFO") == 0) {
-      cmdFlashInfo();
-    } else if (strcmp(flashSuffix, "UPLOAD") == 0) {
-      cmdFlashUpload(cmd);
-    } else if (strcmp(flashSuffix, "SHOW") == 0) {
-      cmdFlashShow(cmd);
-    } else if (strcmp(flashSuffix, "ERASE_ALL") == 0) {
-      cmdFlashEraseAll();
-    } else {
-      respondErr("Unknown UI:FLASH command");
-    }
-  } else {
-    respondErr("Unknown UI command");
-  }
+  static const CmdEntry t1[] = {{"MODE", &CommandParser::cmdUIMode}};
+  static const CmdEntry0 t0[] = {{"MODE?", &CommandParser::cmdUIGetMode}};
+  if (dispatch1(suffix, t1, NCMD(t1), cmd))
+    return;
+  if (dispatch0(suffix, t0, NCMD(t0)))
+    return;
+  respondErr("Unknown UI command");
 }
 
-// --- DBG: Debug commands (bringup diagnostics — not stable contract) ---
+// DBG:* — Debug/trace commands (trace dump/reset, motor debug)
 void CommandParser::dispatchDebug(const char *suffix,
                                   const ParsedCommand &cmd) {
-  (void)cmd;
+  (void)cmd; // no debug commands use parsed args
+  // DBG:MOTOR — delegate to bringup debug handler
   if (strcmp(suffix, "MOTOR") == 0) {
     if (m_debugCommands) {
-      const char* noArgs[] = {nullptr};
+      const char *noArgs[] = {nullptr};
       m_debugCommands->dispatch("MOTOR_DEBUG", noArgs, 0, m_transport);
     }
-  } else if (strcmp(suffix, "TRACE:DUMP") == 0) {
-    cmdTraceDump();
-  } else if (strcmp(suffix, "TRACE:RESET") == 0) {
-    cmdTraceReset();
-  } else {
-    respondErr("Unknown DBG command");
+    return;
   }
+  static const CmdEntry0 t0[] = {
+      {"TRACE:DUMP", &CommandParser::cmdTraceDump},
+      {"TRACE:RESET", &CommandParser::cmdTraceReset},
+  };
+  if (dispatch0(suffix, t0, NCMD(t0)))
+    return;
+  respondErr("Unknown DBG command");
 }
 
-// --- DRV: Driver configuration commands (powerSTEP01 registers) ---
+// DRV:* — Low-level driver config (KVAL, OCD, stall, step mode, encoder PPR,
+// flash persist)
 void CommandParser::dispatchDriver(const char *suffix,
                                    const ParsedCommand &cmd) {
-  if (strcmp(suffix, "CFG?") == 0) {
-    cmdMotorConfigShow();
-  } else if (strcmp(suffix, "CFG:SAVE") == 0) {
-    cmdMotorConfigSave();
-  } else if (strcmp(suffix, "CFG:LOAD") == 0) {
-    cmdMotorConfigLoad();
-  } else if (strcmp(suffix, "CFG:RESET") == 0) {
-    cmdMotorConfigReset();
-  } else if (strcmp(suffix, "CFG:KVAL") == 0) {
-    cmdMotorConfigKval(cmd);
-  } else if (strcmp(suffix, "CFG:OCD") == 0) {
-    cmdMotorConfigOcd(cmd);
-  } else if (strcmp(suffix, "CFG:STALL") == 0) {
-    cmdMotorConfigStall(cmd);
-  } else if (strcmp(suffix, "CFG:FAULT") == 0) {
-    cmdMotorConfigFault(cmd);
-  } else if (strcmp(suffix, "CFG:MOTION") == 0) {
-    cmdMotorConfigMotion(cmd);
-  } else if (strcmp(suffix, "CFG:STEPMODE") == 0) {
-    cmdMotorConfigStepMode(cmd);
-  } else if (strcmp(suffix, "CFG:APPLY") == 0) {
-    cmdMotorConfigApply();
-  }
-  // DRV:STEP_MODE <0-7> / DRV:STEP_MODE? (Hi-Z safe)
-  else if (strcmp(suffix, "STEP_MODE") == 0) {
-    cmdDrvStepMode(cmd);
-  } else if (strcmp(suffix, "STEP_MODE?") == 0) {
-    cmdDrvStepModeQuery();
-  }
-  // DRV:FULL_STEPS <n> / DRV:FULL_STEPS?
-  else if (strcmp(suffix, "FULL_STEPS") == 0) {
-    cmdDrvFullSteps(cmd);
-  } else if (strcmp(suffix, "FULL_STEPS?") == 0) {
-    cmdDrvFullStepsQuery();
-  }
-  // DRV:ENC_PPR <n> / DRV:ENC_PPR?
-  else if (strcmp(suffix, "ENC_PPR") == 0) {
-    cmdDrvEncoderPPR(cmd);
-  } else if (strcmp(suffix, "ENC_PPR?") == 0) {
-    cmdDrvEncoderPPRQuery();
-  } else {
-    respondErr("Unknown DRV command");
-  }
-}
-
-// ============================================================================
-// Legacy flat-command dispatch (backward compatibility)
-// ============================================================================
-void CommandParser::dispatchLegacy(const ParsedCommand &cmd) {
-  // Response format commands
-  if (strcmp(cmd.cmd, "SET_FORMAT") == 0) {
-    cmdSetFormat(cmd);
-  } else if (strcmp(cmd.cmd, "GET_FORMAT") == 0) {
-    cmdGetFormat();
-  } else if (strcmp(cmd.cmd, "SET_BAUD") == 0) {
-    cmdSetBaud(cmd);
-  }
-  // Motion commands
-  else if (strcmp(cmd.cmd, "MOVE") == 0) {
-    cmdMove(cmd);
-  } else if (strcmp(cmd.cmd, "GOTO") == 0) {
-    cmdGoTo(cmd);
-  } else if (strcmp(cmd.cmd, "RUN") == 0) {
-    cmdRun(cmd);
-  } else if (strcmp(cmd.cmd, "STOP") == 0) {
-    cmdStop(cmd);
-  } else if (strcmp(cmd.cmd, "ESTOP") == 0) {
-    cmdEstop();
-  }
-  // Configuration commands
-  else if (strcmp(cmd.cmd, "ENABLE") == 0) {
-    cmdEnable();
-  } else if (strcmp(cmd.cmd, "DISABLE") == 0) {
-    cmdDisable();
-  } else if (strcmp(cmd.cmd, "ACCEL") == 0) {
-    cmdAccel(cmd);
-  } else if (strcmp(cmd.cmd, "DECEL") == 0) {
-    cmdDecel(cmd);
-  } else if (strcmp(cmd.cmd, "MAXSPD") == 0) {
-    cmdMaxSpd(cmd);
-  }
-  // Synchronization commands
-  else if (strcmp(cmd.cmd, "QUEUE") == 0) {
-    cmdQueue(cmd);
-  } else if (strcmp(cmd.cmd, "ARM") == 0) {
-    cmdArm();
-  } else if (strcmp(cmd.cmd, "START") == 0) {
-    cmdStart();
-  } else if (strcmp(cmd.cmd, "START_AT") == 0) {
-    cmdStartAt(cmd);
-  } else if (strcmp(cmd.cmd, "CLEAR_QUEUE") == 0) {
-    cmdClearQueue();
-  }
-  // Motor driver reinit (power-cycle recovery)
-  else if (strcmp(cmd.cmd, "MOTOR_REINIT") == 0) {
+  // DRV:REINIT — re-initialize powerSTEP01 and reapply saved config
+  if (strcmp(suffix, "REINIT") == 0) {
     m_dispatcher.motorReinit();
     respondOk("Motor driver reinitialized and config applied");
+    return;
   }
-  // Timing/diagnostics commands
-  else if (strcmp(cmd.cmd, "PING") == 0) {
-    cmdPing(cmd);
-  } else if (strcmp(cmd.cmd, "GET_TICK") == 0) {
-    cmdGetTick();
-  } else if (strcmp(cmd.cmd, "GET_STATUS") == 0) {
-    cmdGetStatus();
-  } else if (strcmp(cmd.cmd, "CLEAR_FAULT") == 0) {
-    cmdClearFault();
-  } else if (strcmp(cmd.cmd, "FORCE_CLEAR_FAULT") == 0) {
-    cmdForceClearFault();
-  }
-  // Heartbeat commands
-  else if (strcmp(cmd.cmd, "HEARTBEAT") == 0) {
-    cmdHeartbeat(cmd);
-  } else if (strcmp(cmd.cmd, "SET_HEARTBEAT") == 0) {
-    cmdSetHeartbeat(cmd);
-  } else if (strcmp(cmd.cmd, "GET_HEARTBEAT_STATUS") == 0) {
-    cmdGetHeartbeatStatus();
-  }
-  // Event commands (legacy aliases)
-  else if (strcmp(cmd.cmd, "EVENT_ENABLE") == 0) {
-    cmdEventEnable(cmd);
-  } else if (strcmp(cmd.cmd, "EVENT_DISABLE") == 0) {
-    cmdEventDisable();
-  } else if (strcmp(cmd.cmd, "EVENT_STATUS") == 0) {
-    cmdEventStatus();
-  }
-  // Utility commands
-  else if (strcmp(cmd.cmd, "HELP") == 0 || strcmp(cmd.cmd, "?") == 0) {
-    cmdHelp();
-  } else if (strcmp(cmd.cmd, "VER") == 0 || strcmp(cmd.cmd, "VERSION") == 0) {
-    cmdVersion();
-  } else if (strcmp(cmd.cmd, "HOME") == 0) {
-    cmdHome(cmd);
-  } else if (strcmp(cmd.cmd, "ZERO") == 0) {
-    cmdZero();
-  } else if (strcmp(cmd.cmd, "ENC_ZERO") == 0) {
-    cmdEncoderZero();
-  } else if (strcmp(cmd.cmd, "ZERO_ALL") == 0) {
-    cmdZeroAll();
-  } else if (strcmp(cmd.cmd, "ENC_FILTER") == 0) {
-    cmdEncFilter(cmd);
-  } else if (strcmp(cmd.cmd, "ENCODER") == 0 || strcmp(cmd.cmd, "ENC") == 0) {
-    cmdEncoder();
-  }
-  // Device identification commands
-  else if (strcmp(cmd.cmd, "GET_DEVICE_ID") == 0) {
-    cmdGetDeviceId();
-  } else if (strcmp(cmd.cmd, "SET_DEVICE_ID") == 0) {
-    cmdSetDeviceId(cmd);
-  } else if (strcmp(cmd.cmd, "SET_ROLE") == 0) {
-    cmdSetRole(cmd);
-  }
-  // Control mode commands
-  else if (strcmp(cmd.cmd, "GET_MODE") == 0) {
-    cmdGetMode();
-  } else if (strcmp(cmd.cmd, "SET_MODE") == 0) {
-    cmdSetMode(cmd);
-  } else if (strcmp(cmd.cmd, "GET_ENCODER_STATUS") == 0) {
-    cmdGetEncoderStatus();
-  }
-  // UI mode commands
-  else if (strcmp(cmd.cmd, "UI_MODE") == 0) {
-    cmdUIMode(cmd);
-  } else if (strcmp(cmd.cmd, "UI_GET_MODE") == 0) {
-    cmdUIGetMode();
-  }
-  // Display commands (remote rendering)
-  else if (strcmp(cmd.cmd, "DISP_CLEAR") == 0) {
-    cmdDispClear(cmd);
-  } else if (strcmp(cmd.cmd, "DISP_TEXT") == 0) {
-    cmdDispText(cmd);
-  } else if (strcmp(cmd.cmd, "DISP_RECT") == 0) {
-    cmdDispRect(cmd);
-  } else if (strcmp(cmd.cmd, "DISP_LINE") == 0) {
-    cmdDispLine(cmd);
-  } else if (strcmp(cmd.cmd, "DISP_BITMAP") == 0) {
-    cmdDispBitmap(cmd);
-  } else if (strcmp(cmd.cmd, "DISP_BITMAP_B64") == 0) {
-    cmdDispBitmapB64(cmd);
-  } else if (strcmp(cmd.cmd, "DISP_INDICATOR") == 0) {
-    cmdDispIndicator(cmd);
-  } else if (strcmp(cmd.cmd, "DISP_BITMAP_RLE") == 0) {
-    cmdDispBitmapRle(cmd);
-  } else if (strcmp(cmd.cmd, "FLASH_INFO") == 0) {
-    cmdFlashInfo();
-  } else if (strcmp(cmd.cmd, "FLASH_UPLOAD") == 0) {
-    cmdFlashUpload(cmd);
-  } else if (strcmp(cmd.cmd, "FLASH_UPLOAD_RLE") == 0) {
-    cmdFlashUploadRle(cmd);
-  } else if (strcmp(cmd.cmd, "FLASH_SHOW") == 0) {
-    cmdFlashShow(cmd);
-  } else if (strcmp(cmd.cmd, "FLASH_ERASE_ALL") == 0) {
-    cmdFlashEraseAll();
-  } else if (strcmp(cmd.cmd, "FLASH_DUMP") == 0) {
-    cmdFlashDump(cmd);
-  } else if (strcmp(cmd.cmd, "FLASH_TEST") == 0) {
-    cmdFlashTest();
-    // ===== Motor Configuration Commands =====
-  } else if (strcmp(cmd.cmd, "MCONFIG") == 0) {
-    cmdMotorConfigShow();
-  } else if (strcmp(cmd.cmd, "MCONFIG_SAVE") == 0) {
-    cmdMotorConfigSave();
-  } else if (strcmp(cmd.cmd, "MCONFIG_LOAD") == 0) {
-    cmdMotorConfigLoad();
-  } else if (strcmp(cmd.cmd, "MCONFIG_RESET") == 0) {
-    cmdMotorConfigReset();
-  } else if (strcmp(cmd.cmd, "MCONFIG_KVAL") == 0) {
-    cmdMotorConfigKval(cmd);
-  } else if (strcmp(cmd.cmd, "MCONFIG_OCD") == 0) {
-    cmdMotorConfigOcd(cmd);
-  } else if (strcmp(cmd.cmd, "MCONFIG_STALL") == 0) {
-    cmdMotorConfigStall(cmd);
-  } else if (strcmp(cmd.cmd, "MCONFIG_FAULT") == 0) {
-    cmdMotorConfigFault(cmd);
-  } else if (strcmp(cmd.cmd, "MCONFIG_MOTION") == 0) {
-    cmdMotorConfigMotion(cmd);
-  } else if (strcmp(cmd.cmd, "MCONFIG_STEPMODE") == 0) {
-    cmdMotorConfigStepMode(cmd);
-  } else if (strcmp(cmd.cmd, "MCONFIG_APPLY") == 0) {
-    cmdMotorConfigApply();
-
-  } else if (m_debugCommands) {
-    // Delegate to debug command handler for all hardware debug commands
-    const char* argPtrs[MAX_ARGS];
-    for (uint8_t i = 0; i < cmd.argCount; i++) argPtrs[i] = cmd.args[i];
-    if (!m_debugCommands->dispatch(cmd.cmd, argPtrs, cmd.argCount, m_transport)) {
-      m_dispatchStats.unknownCommands++;
-      respondErr("Unknown command. Type HELP for list.");
-    }
-  } else {
-    m_dispatchStats.unknownCommands++;
-    respondErr("Unknown command. Type HELP for list.");
-  }
+  static const CmdEntry t1[] = {
+      {"CFG:KVAL", &CommandParser::cmdMotorConfigKval},
+      {"CFG:OCD", &CommandParser::cmdMotorConfigOcd},
+      {"CFG:STALL", &CommandParser::cmdMotorConfigStall},
+      {"CFG:FAULT", &CommandParser::cmdMotorConfigFault},
+      {"CFG:MOTION", &CommandParser::cmdMotorConfigMotion},
+      {"CFG:STEPMODE", &CommandParser::cmdMotorConfigStepMode},
+      {"STEP_MODE", &CommandParser::cmdDrvStepMode},
+      {"FULL_STEPS", &CommandParser::cmdDrvFullSteps},
+      {"ENC_PPR", &CommandParser::cmdDrvEncoderPPR},
+  };
+  static const CmdEntry0 t0[] = {
+      {"CFG?", &CommandParser::cmdMotorConfigShow},
+      {"CFG:SAVE", &CommandParser::cmdMotorConfigSave},
+      {"CFG:LOAD", &CommandParser::cmdMotorConfigLoad},
+      {"CFG:RESET", &CommandParser::cmdMotorConfigReset},
+      {"CFG:APPLY", &CommandParser::cmdMotorConfigApply},
+      {"STEP_MODE?", &CommandParser::cmdDrvStepModeQuery},
+      {"FULL_STEPS?", &CommandParser::cmdDrvFullStepsQuery},
+      {"ENC_PPR?", &CommandParser::cmdDrvEncoderPPRQuery},
+  };
+  if (dispatch1(suffix, t1, NCMD(t1), cmd))
+    return;
+  if (dispatch0(suffix, t0, NCMD(t0)))
+    return;
+  respondErr("Unknown DRV command");
 }
 
+// --- Response helpers ---
+// All responses go through these functions. They check m_format (ASCII or JSON)
+// and emit the appropriate wire format. ASCII: "OK msg\n" / "ERROR msg\n".
+// JSON: {"status":"ok","command":"MOT:RUN","data":{...}}\n
+
+// Send success response. In ASCII mode: "OK <msg>". In JSON mode: wraps msg as
+// data.
 void CommandParser::respondOk(const char *msg) {
+  ITRACE(ITrace::L2_TELEMETRY, "[L2>L1]", "respond", "ok");
   if (m_format == ResponseFormat::JSON) {
-    if (msg != nullptr && msg[0] != '\0') {
+    if (msg && msg[0] != '\0') {
       char buf[192];
       snprintf(buf, sizeof(buf), "{\"message\":\"%s\"}", msg);
       respondJsonOk(m_currentCmd, buf);
@@ -786,34 +521,39 @@ void CommandParser::respondOk(const char *msg) {
   }
 }
 
+// Send error response. In ASCII mode: "ERROR <msg>". In JSON mode: structured
+// error.
 void CommandParser::respondErr(const char *msg) {
-  if (m_format == ResponseFormat::JSON) {
+  ITRACE(ITrace::L2_TELEMETRY, "[L2>L1]", "respond", "err");
+  if (m_format == ResponseFormat::JSON)
     respondJsonErr(m_currentCmd, "ERROR", msg);
-  } else {
+  else {
     m_transport.print("ERROR ");
     m_transport.println(msg);
   }
 }
 
+// Send multi-line data (used for bulk output like sysid CSV, trace dumps)
 void CommandParser::respondData(const char **lines, size_t count) {
-  for (size_t i = 0; i < count; i++) {
+  for (size_t i = 0; i < count; i++)
     m_transport.println(lines[i]);
-  }
 }
 
+// Emit JSON success: {"status":"ok","command":"<cmd>","data":<json>}
 void CommandParser::respondJsonOk(const char *command, const char *dataJson) {
   char buf[1024];
-  if (dataJson != nullptr && dataJson[0] != '\0') {
+  if (dataJson && dataJson[0] != '\0')
     snprintf(buf, sizeof(buf),
              "{\"status\":\"ok\",\"command\":\"%s\",\"data\":%s}", command,
              dataJson);
-  } else {
+  else
     snprintf(buf, sizeof(buf),
              "{\"status\":\"ok\",\"command\":\"%s\",\"data\":{}}", command);
-  }
   m_transport.println(buf);
 }
 
+// Emit JSON error:
+// {"status":"error","command":"<cmd>","code":"<code>","message":"<msg>"}
 void CommandParser::respondJsonErr(const char *command, const char *code,
                                    const char *message) {
   char buf[256];
@@ -824,3704 +564,12 @@ void CommandParser::respondJsonErr(const char *command, const char *code,
   m_transport.println(buf);
 }
 
-// ============================================================================
-// Motion command handlers
-// ============================================================================
-
-void CommandParser::cmdMove(const ParsedCommand &cmd) {
-  if (cmd.argCount < 2) {
-    respondErr(
-        "Usage: MOVE <steps> <dir> [speed] | MOVE <rev> REV <dir> [speed]");
-    return;
-  }
-
-  // Check for REV unit: MOVE <rev> REV <dir> [speed]
-  bool isRev = (cmd.argCount >= 2 && strcmp(cmd.args[1], "REV") == 0);
-  int32_t steps;
-  int dirArgIdx, speedArgIdx;
-
-  if (isRev) {
-    if (cmd.argCount < 3) {
-      respondErr("Usage: MOVE <rev> REV <dir> [speed]");
-      return;
-    }
-    double rev = atof(cmd.args[0]);
-    uint32_t ustepsPerRev = m_dispatcher.getMicrostepsPerRev();
-    steps = static_cast<int32_t>(rev * static_cast<double>(ustepsPerRev) + 0.5);
-    dirArgIdx = 2;
-    speedArgIdx = 3;
-  } else {
-    steps = static_cast<int32_t>(atol(cmd.args[0]));
-    dirArgIdx = 1;
-    speedArgIdx = 2;
-  }
-
-  int32_t dir = static_cast<int32_t>(atol(cmd.args[dirArgIdx]));
-
-  // Validate direction (must be 0 or 1)
-  if (dir < Limits::DIR_MIN || dir > Limits::DIR_MAX) {
-    respondErr("dir must be 0 or 1");
-    return;
-  }
-
-  // Validate steps (within position range)
-  if (steps < 0 || steps > Limits::POS_MAX) {
-    respondErr("steps out of range (0-2097151)");
-    return;
-  }
-
-  int32_t signedSteps = (dir == 0) ? -steps : steps;
-
-  // Optional speed override (steps/s) — temporarily sets MAX_SPEED for this
-  // move
-  uint32_t speedOverride = 0;
-  if (cmd.argCount > speedArgIdx) {
-    int32_t spd = static_cast<int32_t>(atol(cmd.args[speedArgIdx]));
-    if (spd < 1 || spd > Limits::SPEED_MAX) {
-      respondErr("speed out of range (1-15625 steps/s)");
-      return;
-    }
-    speedOverride = static_cast<uint32_t>(spd);
-  }
-
-  auto r = m_dispatcher.motionMove(signedSteps, speedOverride);
-  if (r.ok) {
-    respondOk("");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-void CommandParser::cmdGoTo(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: GOTO <pos> [speed] | GOTO <rev> REV [speed]");
-    return;
-  }
-
-  // Check for REV unit: GOTO <rev> REV [speed]
-  bool isRev = (cmd.argCount >= 2 && strcmp(cmd.args[1], "REV") == 0);
-  int32_t position;
-  int speedArgIdx;
-
-  if (isRev) {
-    double rev = atof(cmd.args[0]);
-    uint32_t ustepsPerRev = m_dispatcher.getMicrostepsPerRev();
-    double usteps = rev * static_cast<double>(ustepsPerRev);
-    position = (usteps >= 0) ? static_cast<int32_t>(usteps + 0.5)
-                             : static_cast<int32_t>(usteps - 0.5);
-    speedArgIdx = 2;
-  } else {
-    position = static_cast<int32_t>(atol(cmd.args[0]));
-    speedArgIdx = 1;
-  }
-
-  // Validate position (22-bit signed range)
-  if (position < Limits::POS_MIN || position > Limits::POS_MAX) {
-    respondErr("position out of range (-2097152 to 2097151)");
-    return;
-  }
-
-  // Optional speed override (steps/s) — temporarily sets MAX_SPEED for this
-  // move
-  uint32_t speedOverride = 0;
-  if (cmd.argCount > speedArgIdx) {
-    int32_t spd = static_cast<int32_t>(atol(cmd.args[speedArgIdx]));
-    if (spd < 1 || spd > Limits::SPEED_MAX) {
-      respondErr("speed out of range (1-15625 steps/s)");
-      return;
-    }
-    speedOverride = static_cast<uint32_t>(spd);
-  }
-
-  auto r = m_dispatcher.motionGoTo(position, speedOverride);
-  if (r.ok) {
-    respondOk("");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-void CommandParser::cmdRun(const ParsedCommand &cmd) {
-  if (cmd.argCount < 2) {
-    respondErr("Usage: RUN <speed> <dir> | RUN <rpm> RPM <dir>");
-    return;
-  }
-
-  // Check for RPM unit: RUN <rpm> RPM <dir>
-  bool isRpm = (cmd.argCount >= 2 && strcmp(cmd.args[1], "RPM") == 0);
-  int32_t speed;
-  int dirArgIdx;
-
-  if (isRpm) {
-    if (cmd.argCount < 3) {
-      respondErr("Usage: RUN <rpm> RPM <dir>");
-      return;
-    }
-    double rpm = atof(cmd.args[0]);
-    uint16_t fullSteps = m_dispatcher.getFullStepsPerRev();
-    speed =
-        static_cast<int32_t>(rpm * static_cast<double>(fullSteps) / 60.0 + 0.5);
-    dirArgIdx = 2;
-  } else {
-    speed = static_cast<int32_t>(atol(cmd.args[0]));
-    dirArgIdx = 1;
-  }
-
-  int32_t dir = static_cast<int32_t>(atol(cmd.args[dirArgIdx]));
-
-  // Validate direction (must be 0 or 1)
-  if (dir < Limits::DIR_MIN || dir > Limits::DIR_MAX) {
-    respondErr("dir must be 0 or 1");
-    return;
-  }
-
-  // Validate speed (in steps/s)
-  if (speed < Limits::SPEED_MIN || speed > Limits::SPEED_MAX) {
-    respondErr("speed out of range (0-15625 steps/s)");
-    return;
-  }
-
-  auto r = m_dispatcher.motionRun(static_cast<uint32_t>(speed), dir == 1);
-  if (r.ok) {
-    respondOk("");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-void CommandParser::cmdStop(const ParsedCommand &cmd) {
-  // Optional "hard" argument
-  bool hard = (cmd.argCount > 0 && strcmp(cmd.args[0], "hard") == 0);
-
-  auto r = m_dispatcher.motionStop(hard);
-  if (r.ok) {
-    respondOk("");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-void CommandParser::cmdEstop() {
-  m_dispatcher.safetyEstop();
-  respondOk("ESTOP");
-}
-
-// ============================================================================
-// Configuration command handlers
-// ============================================================================
-
-void CommandParser::cmdEnable() {
-  auto r = m_dispatcher.motionEnable();
-  if (r.ok) {
-    respondOk("ENABLED");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-void CommandParser::cmdDisable() {
-  auto r = m_dispatcher.motionDisable();
-  if (r.ok) {
-    respondOk("HI-Z");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-void CommandParser::cmdAccel(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: ACCEL <value>");
-    return;
-  }
-
-  int32_t value = static_cast<int32_t>(atol(cmd.args[0]));
-
-  // Validate acceleration (12-bit register, raw units for legacy command)
-  if (value < Limits::ACCEL_MIN || value > Limits::ACCEL_MAX) {
-    respondErr("accel out of range (1-4095)");
-    return;
-  }
-
-  auto r = m_dispatcher.configSetAccelRaw(static_cast<uint16_t>(value));
-  if (r.ok) {
-    respondOk("");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-void CommandParser::cmdDecel(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: DECEL <value>");
-    return;
-  }
-
-  int32_t value = static_cast<int32_t>(atol(cmd.args[0]));
-
-  // Validate deceleration (12-bit register, raw units for legacy command)
-  if (value < Limits::ACCEL_MIN || value > Limits::ACCEL_MAX) {
-    respondErr("decel out of range (1-4095)");
-    return;
-  }
-
-  auto r = m_dispatcher.configSetDecelRaw(static_cast<uint16_t>(value));
-  if (r.ok) {
-    respondOk("");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-void CommandParser::cmdMaxSpd(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: MAXSPD <value>");
-    return;
-  }
-
-  int32_t value = static_cast<int32_t>(atol(cmd.args[0]));
-
-  // Validate max speed (10-bit register, raw units for legacy command)
-  if (value < Limits::MAXSPD_MIN || value > Limits::MAXSPD_MAX) {
-    respondErr("maxspd out of range (1-1023)");
-    return;
-  }
-
-  auto r = m_dispatcher.configSetMaxSpeedRaw(static_cast<uint16_t>(value));
-  if (r.ok) {
-    respondOk("");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-// ============================================================================
-// Physical-unit configuration commands (SCPI: MOT:CFG:*)
-// ============================================================================
-
-void CommandParser::cmdAccelPhysical(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: MOT:CFG:ACCEL <steps/s^2>");
-    return;
-  }
-
-  int32_t value = static_cast<int32_t>(atol(cmd.args[0]));
-  if (value <= 0) {
-    respondErr("accel must be positive");
-    return;
-  }
-
-  auto r = m_dispatcher.configSetAccelPhysical(static_cast<uint32_t>(value));
-  if (r.ok) {
-    respondOk("");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-void CommandParser::cmdDecelPhysical(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: MOT:CFG:DECEL <steps/s^2>");
-    return;
-  }
-
-  int32_t value = static_cast<int32_t>(atol(cmd.args[0]));
-  if (value <= 0) {
-    respondErr("decel must be positive");
-    return;
-  }
-
-  auto r = m_dispatcher.configSetDecelPhysical(static_cast<uint32_t>(value));
-  if (r.ok) {
-    respondOk("");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-void CommandParser::cmdMaxSpdPhysical(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: MOT:CFG:MAXSPD <steps/s>");
-    return;
-  }
-
-  int32_t value = static_cast<int32_t>(atol(cmd.args[0]));
-  if (value <= 0) {
-    respondErr("maxspd must be positive");
-    return;
-  }
-
-  auto r = m_dispatcher.configSetMaxSpeedPhysical(static_cast<uint32_t>(value));
-  if (r.ok) {
-    respondOk("");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-// ============================================================================
-// Synchronization command handlers
-// ============================================================================
-
-void CommandParser::cmdQueue(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: QUEUE <cmd> [args...]");
-    return;
-  }
-
-  // Parse the queued command type, validate, and dispatch
-  const char *subCmd = cmd.args[0];
-  Comms::DispatchResult r = {false, nullptr};
-
-  if (strcmp(subCmd, "MOVE") == 0 || strcmp(subCmd, "move") == 0) {
-    if (cmd.argCount < 3) {
-      respondErr("Usage: QUEUE MOVE <steps> <dir>");
-      return;
-    }
-    int32_t steps = static_cast<int32_t>(atol(cmd.args[1]));
-    int32_t dir = static_cast<int32_t>(atol(cmd.args[2]));
-    if (dir < Limits::DIR_MIN || dir > Limits::DIR_MAX) {
-      respondErr("dir must be 0 or 1");
-      return;
-    }
-    if (steps < 0 || steps > Limits::POS_MAX) {
-      respondErr("steps out of range (0-2097151)");
-      return;
-    }
-    r = m_dispatcher.queueMove((dir == 0) ? -steps : steps);
-  } else if (strcmp(subCmd, "GOTO") == 0 || strcmp(subCmd, "goto") == 0) {
-    if (cmd.argCount < 2) {
-      respondErr("Usage: QUEUE GOTO <position>");
-      return;
-    }
-    int32_t position = static_cast<int32_t>(atol(cmd.args[1]));
-    if (position < Limits::POS_MIN || position > Limits::POS_MAX) {
-      respondErr("position out of range (-2097152 to 2097151)");
-      return;
-    }
-    r = m_dispatcher.queueGoTo(position);
-  } else if (strcmp(subCmd, "RUN") == 0 || strcmp(subCmd, "run") == 0) {
-    if (cmd.argCount < 3) {
-      respondErr("Usage: QUEUE RUN <speed> <dir>");
-      return;
-    }
-    int32_t speed = static_cast<int32_t>(atol(cmd.args[1]));
-    int32_t dir = static_cast<int32_t>(atol(cmd.args[2]));
-    if (dir < Limits::DIR_MIN || dir > Limits::DIR_MAX) {
-      respondErr("dir must be 0 or 1");
-      return;
-    }
-    if (speed < Limits::SPEED_MIN || speed > Limits::SPEED_MAX) {
-      respondErr("speed out of range (0-15625 steps/s)");
-      return;
-    }
-    // Convert steps/s to raw register value for powerSTEP01
-    uint32_t speedRaw = static_cast<uint32_t>(
-        (static_cast<uint64_t>(speed) * 1048576ULL) / 15625ULL);
-    r = m_dispatcher.queueRun(speedRaw, dir);
-  } else if (strcmp(subCmd, "STOP") == 0 || strcmp(subCmd, "stop") == 0) {
-    bool hard = (cmd.argCount > 1 && strcmp(cmd.args[1], "hard") == 0);
-    r = m_dispatcher.queueStop(hard);
-  } else if (strcmp(subCmd, "HOME") == 0 || strcmp(subCmd, "home") == 0) {
-    r = m_dispatcher.queueHome();
-  } else if (strcmp(subCmd, "ZERO") == 0 || strcmp(subCmd, "zero") == 0) {
-    r = m_dispatcher.queueZero();
-  } else {
-    respondErr("Unknown queue command");
-    return;
-  }
-
-  if (r.ok) {
-    char buf[32];
-    snprintf(buf, sizeof(buf), "QUEUED %u",
-             static_cast<unsigned>(m_dispatcher.getQueueDepth()));
-    respondOk(buf);
-  } else {
-    respondErr(r.message);
-  }
-}
-
-void CommandParser::cmdArm() {
-  auto r = m_dispatcher.queueArm();
-  if (r.ok) {
-    respondOk("ARMED");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-void CommandParser::cmdStart() {
-  auto r = m_dispatcher.queueStart();
-  if (r.ok) {
-    respondOk("RUNNING");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-void CommandParser::cmdStartAt(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: START_AT <tick>");
-    return;
-  }
-
-  uint32_t targetTick =
-      static_cast<uint32_t>(strtoul(cmd.args[0], nullptr, 10));
-  auto r = m_dispatcher.queueStartAt(targetTick);
-  if (r.ok) {
-    respondOk("RUNNING");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-void CommandParser::cmdClearQueue() {
-  auto r = m_dispatcher.queueClear();
-  if (r.ok) {
-    respondOk("CLEARED");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-// ============================================================================
-// Timing/diagnostics command handlers
-// ============================================================================
-
-void CommandParser::cmdPing(const ParsedCommand &cmd) {
-  // Capture RX timestamp (ideally would be captured at byte reception, but
-  // capturing at dispatch start is a reasonable approximation)
-  uint32_t rx_tick = m_dispatcher.getTickUs();
-
-  // Parse sequence number
-  uint32_t seq = 0;
-  if (cmd.argCount >= 1) {
-    const char *s = cmd.args[0];
-    while (*s >= '0' && *s <= '9') {
-      seq = seq * 10 + (*s - '0');
-      s++;
-    }
-  }
-
-  // Capture TX timestamp just before transmit
-  uint32_t tx_tick = m_dispatcher.getTickUs();
-
-  // Get current state
-  const char *stateStr = m_dispatcher.controllerStateString();
-
-  if (m_format == ResponseFormat::JSON) {
-    char buf[128];
-    snprintf(buf, sizeof(buf),
-             "{\"seq\":%lu,\"rx_tick\":%lu,\"tx_tick\":%lu,\"state\":\"%s\"}",
-             static_cast<unsigned long>(seq),
-             static_cast<unsigned long>(rx_tick),
-             static_cast<unsigned long>(tx_tick), stateStr);
-    respondJsonOk("PING", buf);
-  } else {
-    // ASCII format: PONG <seq> <mcu_rx_tick> <mcu_tx_tick> <state>
-    char buf[80];
-    snprintf(buf, sizeof(buf), "PONG %lu %lu %lu %s",
-             static_cast<unsigned long>(seq),
-             static_cast<unsigned long>(rx_tick),
-             static_cast<unsigned long>(tx_tick), stateStr);
-    m_transport.println(buf);
-  }
-}
-
-void CommandParser::cmdGetTick() {
-  uint32_t tick = m_dispatcher.getTickUs();
-
-  if (m_format == ResponseFormat::JSON) {
-    char buf[48];
-    snprintf(buf, sizeof(buf), "{\"tick\":%lu}",
-             static_cast<unsigned long>(tick));
-    respondJsonOk("GET_TICK", buf);
-  } else {
-    char buf[32];
-    snprintf(buf, sizeof(buf), "OK %lu", static_cast<unsigned long>(tick));
-    m_transport.println(buf);
-  }
-}
-
-void CommandParser::cmdGetStatus() {
-  uint32_t tick = m_dispatcher.getTickUs();
-  const char *stateStr = m_dispatcher.controllerStateString();
-  uint32_t queueDepth = m_dispatcher.getQueueDepth();
-  const char *modeStr = m_dispatcher.controlModeString();
-  const char *encStatusStr = m_dispatcher.encoderStatusString();
-
-  // Get actual position and velocity from motor telemetry
-  TelemetrySnapshot snap = g_telemetry.getSnapshot();
-
-  if (m_format == ResponseFormat::JSON) {
-    // Parse status register for direction and error flags
-    uint16_t sr = snap.motor.statusReg;
-    int direction = (sr & (1 << 4)) ? 1 : 0; // bit 4: 1=FWD
-    unsigned motStat = (sr >> 5) & 0x3;      // bits 5-6
-    bool cmdErr = (sr & (1 << 7)) != 0;      // bit 7
-    bool uvlo = !(sr & (1 << 9));            // bit 9 (active low)
-    // Bits 11-12: TH_STATUS 2-bit field
-    // 00=Normal, 01=Warning, 10=Bridge shutdown, 11=Device shutdown
-    uint8_t thStatus = (sr >> 11) & 0x3;
-    bool thermalWarn = (thStatus >= 1);
-    bool thermalSD = (thStatus >= 2);
-    bool ocd = !(sr & (1 << 13));    // bit 13 (active low)
-    bool stallA = !(sr & (1 << 14)); // bit 14 (active low)
-    bool stallB = !(sr & (1 << 15)); // bit 15 (active low)
-
-    // Filter faults against ALARM_EN config — only report faults the user
-    // has enabled. STATUS register always reflects raw hardware state, but
-    // disabled faults (e.g. OCD noise) should not cause GUI error state.
-    bool feOcd, feThermalSD, feThermalWarn, feUvlo, feStallA, feStallB,
-        feCmdErr;
-    m_dispatcher.getFaultEnable(feOcd, feThermalSD, feThermalWarn, feUvlo,
-                                feStallA, feStallB, feCmdErr);
-    bool ocdEn = ocd && feOcd;
-    bool thermalSDEn = thermalSD && feThermalSD;
-    bool thermalWarnEn = thermalWarn && feThermalWarn;
-    bool uvloEn = uvlo && feUvlo;
-    bool stallAEn = stallA && feStallA && snap.motor.speed > 0;
-    bool stallBEn = stallB && feStallB && snap.motor.speed > 0;
-    bool cmdErrEn = cmdErr && feCmdErr;
-    bool anyError = cmdErrEn || uvloEn || thermalSDEn || thermalWarnEn ||
-                    stallAEn || stallBEn || ocdEn;
-
-    // Get heartbeat watchdog status
-    bool hbEnabled;
-    uint32_t hbTimeout, hbLastSeq, hbRemaining;
-    bool hbTimedOut;
-    m_dispatcher.safetyGetHeartbeatStatus(hbEnabled, hbTimeout, hbLastSeq,
-                                          hbRemaining, hbTimedOut);
-
-    // Bypass respondJsonOk (256-byte buffer too small) — format full envelope
-    // newlib-nano: no %lld — pre-format int64_t as string
-    char encCountStr[24];
-    i64toa(snap.encoder.count, encCountStr, sizeof(encCountStr));
-
-    char buf[1024];
-    snprintf(
-        buf, sizeof(buf),
-        "{\"status\":\"ok\",\"command\":\"GET_STATUS\",\"data\":"
-        "{\"state\":\"%s\",\"tick\":%lu,\"queue_depth\":%u,"
-        "\"motor\":{\"position\":%ld,\"speed\":%lu,\"busy\":%s,\"hi_z\":%s,"
-        "\"direction\":%d,\"mot_status\":%u,\"status_reg\":\"%04X\","
-        "\"cmd_err\":%s,\"ocd\":%s,\"thermal_sd\":%s,"
-        "\"thermal_warn\":%s,\"uvlo\":%s,\"stall_a\":%s,\"stall_b\":%s},"
-        "\"encoder\":{\"count\":%s,\"velocity\":%ld,\"index_seen\":%s,"
-        "\"revolutions\":%ld,\"index_period_us\":%lu,\"vel_quality\":%u},"
-        "\"control\":{\"following_error\":%ld,\"setpoint\":%ld,"
-        "\"mode\":%u,\"tracking\":%s,"
-        "\"trim_out\":%d,\"p\":%d,\"i\":%d,\"d\":%d,"
-        "\"sup_state\":%u,\"tier\":%u,\"vel_error\":%ld,\"retries\":%u,"
-        "\"base_spd\":%ld,\"trim_spd\":%ld,\"final_spd\":%ld,"
-        "\"trim_frozen\":%u,\"vel_quality\":%u},"
-        "\"heartbeat\":{\"enabled\":%s,\"timeout_ms\":%lu,"
-        "\"remaining_ms\":%lu,\"timed_out\":%s},"
-        "\"mode\":\"%s\",\"encoder_status\":\"%s\",\"error\":%s}}",
-        stateStr, static_cast<unsigned long>(tick),
-        static_cast<unsigned>(queueDepth),
-        static_cast<long>(snap.motor.position),
-        static_cast<unsigned long>(snap.motor.speed),
-        snap.motor.busy ? "true" : "false", snap.motor.hiZ ? "true" : "false",
-        direction, motStat, static_cast<unsigned>(sr),
-        cmdErrEn ? "true" : "false", ocdEn ? "true" : "false",
-        thermalSDEn ? "true" : "false", thermalWarnEn ? "true" : "false",
-        uvloEn ? "true" : "false", stallAEn ? "true" : "false",
-        stallBEn ? "true" : "false", encCountStr,
-        static_cast<long>(snap.encoder.velocity),
-        snap.encoder.indexSeen ? "true" : "false",
-        static_cast<long>(snap.encoder.revolutions),
-        static_cast<unsigned long>(snap.encoder.indexPeriodUs),
-        static_cast<unsigned>(snap.encoder.velocityQuality),
-        static_cast<long>(snap.control.followingError),
-        static_cast<long>(snap.control.setpoint),
-        static_cast<unsigned>(snap.control.mode),
-        snap.control.tracking ? "true" : "false",
-        static_cast<int>(snap.control.pidOutput),
-        static_cast<int>(snap.control.pTerm),
-        static_cast<int>(snap.control.iTerm),
-        static_cast<int>(snap.control.dTerm),
-        static_cast<unsigned>(snap.control.supervisorState),
-        static_cast<unsigned>(snap.control.currentTier),
-        static_cast<long>(snap.control.velError),
-        static_cast<unsigned>(snap.control.retryCount),
-        static_cast<long>(snap.control.baseSpeedRaw),
-        static_cast<long>(snap.control.trimSpeedRaw),
-        static_cast<long>(snap.control.finalSpeedRaw),
-        static_cast<unsigned>(snap.control.trimFrozen),
-        static_cast<unsigned>(snap.control.velQuality),
-        hbEnabled ? "true" : "false", static_cast<unsigned long>(hbTimeout),
-        static_cast<unsigned long>(hbRemaining), hbTimedOut ? "true" : "false",
-        modeStr, encStatusStr, anyError ? "true" : "false");
-    m_transport.println(buf);
-  } else {
-    // ASCII format: STATUS <state> <tick> <queue_depth> <mode> <encoder_status>
-    // <position> <velocity>
-    char buf[96];
-    snprintf(buf, sizeof(buf), "STATUS %s %lu %u %s %s %ld %lu", stateStr,
-             static_cast<unsigned long>(tick),
-             static_cast<unsigned>(queueDepth), modeStr, encStatusStr,
-             static_cast<long>(snap.motor.position),
-             static_cast<unsigned long>(snap.motor.speed));
-    m_transport.println(buf);
-  }
-}
-
-void CommandParser::cmdClearFault() {
-  char faultBuf[80] = {};
-  auto r = m_dispatcher.safetyClearFault(faultBuf, sizeof(faultBuf));
-  if (r.ok) {
-    respondOk("IDLE");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-void CommandParser::cmdForceClearFault() {
-  auto r = m_dispatcher.safetyForceClearFault();
-  if (r.ok) {
-    respondOk("IDLE");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-// ============================================================================
-// Heartbeat command handlers
-// ============================================================================
-
-void CommandParser::cmdHeartbeat(const ParsedCommand &cmd) {
-  uint32_t seq = 0;
-  if (cmd.argCount >= 1) {
-    seq = static_cast<uint32_t>(atol(cmd.args[0]));
-  }
-
-  m_dispatcher.safetyHeartbeatReceived(seq);
-
-  bool hbEnabled;
-  uint32_t hbTimeout, hbLastSeq, hbRemaining;
-  bool hbTimedOut;
-  m_dispatcher.safetyGetHeartbeatStatus(hbEnabled, hbTimeout, hbLastSeq,
-                                        hbRemaining, hbTimedOut);
-
-  uint32_t mcu_tick = m_dispatcher.getTickUs();
-
-  if (m_format == ResponseFormat::JSON) {
-    char buf[128];
-    snprintf(
-        buf, sizeof(buf), "{\"seq\":%lu,\"mcu_tick\":%lu,\"remaining_ms\":%lu}",
-        static_cast<unsigned long>(seq), static_cast<unsigned long>(mcu_tick),
-        static_cast<unsigned long>(hbRemaining));
-    respondJsonOk("HEARTBEAT", buf);
-  } else {
-    char buf[64];
-    snprintf(buf, sizeof(buf), "HEARTBEAT_ACK %lu %lu %lu",
-             static_cast<unsigned long>(seq),
-             static_cast<unsigned long>(mcu_tick),
-             static_cast<unsigned long>(hbRemaining));
-    m_transport.println(buf);
-  }
-}
-
-void CommandParser::cmdSetHeartbeat(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: SET_HEARTBEAT <timeout_ms>");
-    return;
-  }
-
-  uint32_t requested = static_cast<uint32_t>(atol(cmd.args[0]));
-  uint32_t accepted = m_dispatcher.safetySetHeartbeatTimeout(requested);
-
-  if (m_format == ResponseFormat::JSON) {
-    char buf[96];
-    snprintf(buf, sizeof(buf),
-             "{\"requested\":%lu,\"accepted\":%lu,\"enabled\":%s}",
-             static_cast<unsigned long>(requested),
-             static_cast<unsigned long>(accepted),
-             (accepted > 0) ? "true" : "false");
-    respondJsonOk("SET_HEARTBEAT", buf);
-  } else {
-    char buf[48];
-    snprintf(buf, sizeof(buf), "OK HEARTBEAT %lu",
-             static_cast<unsigned long>(accepted));
-    m_transport.println(buf);
-  }
-}
-
-void CommandParser::cmdGetHeartbeatStatus() {
-  bool hbEnabled;
-  uint32_t hbTimeout, hbLastSeq, hbRemaining;
-  bool hbTimedOut;
-  m_dispatcher.safetyGetHeartbeatStatus(hbEnabled, hbTimeout, hbLastSeq,
-                                        hbRemaining, hbTimedOut);
-
-  if (m_format == ResponseFormat::JSON) {
-    char buf[160];
-    snprintf(
-        buf, sizeof(buf),
-        "{\"enabled\":%s,\"timeout_ms\":%lu,\"last_seq\":%lu,"
-        "\"remaining_ms\":%lu,\"timed_out\":%s}",
-        hbEnabled ? "true" : "false", static_cast<unsigned long>(hbTimeout),
-        static_cast<unsigned long>(hbLastSeq),
-        static_cast<unsigned long>(hbRemaining), hbTimedOut ? "true" : "false");
-    respondJsonOk("GET_HEARTBEAT_STATUS", buf);
-  } else {
-    char buf[80];
-    snprintf(buf, sizeof(buf), "HEARTBEAT_STATUS %s %lu %lu %lu %s",
-             hbEnabled ? "ENABLED" : "DISABLED",
-             static_cast<unsigned long>(hbTimeout),
-             static_cast<unsigned long>(hbLastSeq),
-             static_cast<unsigned long>(hbRemaining),
-             hbTimedOut ? "TIMED_OUT" : "OK");
-    m_transport.println(buf);
-  }
-}
-
-// ============================================================================
-// Utility command handlers
-// ============================================================================
-
-void CommandParser::cmdHelp() {
-  m_transport.println("=== Stepper Motor Controller ===");
-  m_transport.println("Motion:");
-  m_transport.println("  MOVE <steps> <dir>  - Relative move");
-  m_transport.println("  GOTO <position>     - Absolute move");
-  m_transport.println("  RUN <speed> <dir>   - Continuous run");
-  m_transport.println("  STOP [hard]         - Stop motion");
-  m_transport.println("  ESTOP               - Emergency stop");
-  m_transport.println("Sync:");
-  m_transport.println("  QUEUE <cmd> [args]  - Queue command");
-  m_transport.println("  ARM                 - Prepare for start");
-  m_transport.println("  START               - Begin execution");
-  m_transport.println("  PING <seq>          - Latency test");
-  m_transport.println("  GET_TICK            - Query tick");
-  m_transport.println("  GET_STATUS          - Query status");
-  m_transport.println("Heartbeat:");
-  m_transport.println("  HEARTBEAT <seq>       - Reset watchdog");
-  m_transport.println("  SET_HEARTBEAT <ms>    - Set timeout (0=off)");
-  m_transport.println("  GET_HEARTBEAT_STATUS  - Query watchdog");
-  m_transport.println("Config:");
-  m_transport.println("  ENABLE/DISABLE      - Motor outputs");
-  m_transport.println("  ACCEL/DECEL/MAXSPD  - Parameters");
-  m_transport.println("Device:");
-  m_transport.println("  GET_DEVICE_ID       - Query device ID");
-  m_transport.println("  SET_DEVICE_ID <id>  - Set device ID");
-  m_transport.println("  SET_ROLE <role>     - FL/FR/RL/RR/NONE");
-  m_transport.println("Mode:");
-  m_transport.println("  GET_MODE            - Query control mode");
-  m_transport.println("  SET_MODE <mode>     - OPEN_LOOP/CLOSED_LOOP");
-  m_transport.println("  GET_ENCODER_STATUS  - Encoder availability");
-  m_transport.println("Format:");
-  m_transport.println("  SET_FORMAT <fmt>    - ASCII or JSON");
-  m_transport.println("  GET_FORMAT          - Query response format");
-  m_transport.println(
-      "  SET_BAUD <rate>     - Change baud (auto-reverts in 2s)");
-  m_transport.println("UI/Display:");
-  m_transport.println("  UI_MODE [LOCAL|REMOTE] - Get/set UI mode");
-  m_transport.println("  DISP_CLEAR [color]  - Clear display");
-  m_transport.println("  DISP_TEXT x y fg bg text");
-  m_transport.println("  DISP_RECT x y w h color [fill]");
-  m_transport.println("  DISP_LINE x1 y1 x2 y2 color");
-  m_transport.println("  DISP_BITMAP x y w h   - Binary RGB565 stream");
-  m_transport.println("  DISP_BITMAP_B64 x y w h b64data");
-  m_transport.println("Flash Image:");
-  m_transport.println("  FLASH_INFO          - Flash capacity and slot count");
-  m_transport.println("  FLASH_UPLOAD <slot> - Binary upload to flash slot");
-  m_transport.println("  FLASH_SHOW <slot>   - Display image from flash");
-  m_transport.println("  FLASH_ERASE_ALL     - Erase all image slots");
-  m_transport.println("Utility:");
-  m_transport.println("  ENCODER             - Encoder data");
-  m_transport.println("  ENC_DEBUG           - Encoder HW registers");
-  m_transport.println("  VER                 - Version");
-  m_transport.println("  HELP                - This help");
-}
-
-void CommandParser::cmdVersion() {
-  m_transport.println("Stepper Motor Controller v0.3.0");
-  m_transport.println("Build: " __DATE__ " " __TIME__);
-  m_transport.println("Protocol: ARM/START sync v1");
-
-  // Show device identification
-  char buf[48];
-  uint16_t deviceId;
-  const char *roleStr;
-  m_dispatcher.getDeviceInfo(deviceId, roleStr);
-  snprintf(buf, sizeof(buf), "Device: %u (%s)", static_cast<unsigned>(deviceId),
-           roleStr);
-  m_transport.println(buf);
-
-  // Show control mode
-  snprintf(buf, sizeof(buf), "Mode: %s (encoder: %s)",
-           m_dispatcher.controlModeString(),
-           m_dispatcher.encoderStatusString());
-  m_transport.println(buf);
-}
-
-void CommandParser::cmdHome(const ParsedCommand &cmd) {
-  // Optional speed override (steps/s) — temporarily sets MAX_SPEED for this
-  // move
-  uint32_t speedOverride = 0;
-  if (cmd.argCount >= 1) {
-    int32_t spd = static_cast<int32_t>(atol(cmd.args[0]));
-    if (spd < 1 || spd > Limits::SPEED_MAX) {
-      respondErr("speed out of range (1-15625 steps/s)");
-      return;
-    }
-    speedOverride = static_cast<uint32_t>(spd);
-  }
-
-  auto r = m_dispatcher.motionHome(speedOverride);
-  if (r.ok) {
-    respondOk("");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-void CommandParser::cmdZero() {
-  auto r = m_dispatcher.motionZero();
-  if (r.ok) {
-    respondOk("");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-void CommandParser::cmdEncoderZero() {
-  m_dispatcher.encoderResetCount();
-  respondOk("ENCODER_ZEROED");
-}
-
-void CommandParser::cmdZeroAll() {
-  auto r = m_dispatcher.motionZero();
-  m_dispatcher.encoderResetCount();
-  if (r.ok) {
-    respondOk("ALL_ZEROED");
-  } else {
-    respondErr(r.message);
-  }
-}
-
-void CommandParser::cmdEncoder() {
-  // Check if encoder is available
-  if (!m_dispatcher.isEncoderAvailable()) {
-    respondErr("Encoder not available");
-    return;
-  }
-
-  // Get full encoder state via dispatcher
-  int64_t count; int32_t velocity; bool indexSeen;
-  uint32_t indexTick; int32_t revolutions; uint32_t indexPeriodUs;
-  m_dispatcher.getEncoderStateFull(count, velocity, indexSeen,
-                                    indexTick, revolutions, indexPeriodUs);
-
-  // newlib-nano: no %lld — pre-format int64_t as string
-  char countStr[24];
-  i64toa(count, countStr, sizeof(countStr));
-
-  if (m_format == ResponseFormat::JSON) {
-    char buf[192];
-    snprintf(
-        buf, sizeof(buf),
-        "{\"count\":%s,\"velocity\":%ld,\"index_seen\":%s,\"index_tick\":%lu,"
-        "\"revolutions\":%ld,\"index_period_us\":%lu}",
-        countStr, static_cast<long>(velocity),
-        indexSeen ? "true" : "false",
-        static_cast<unsigned long>(indexTick),
-        static_cast<long>(revolutions),
-        static_cast<unsigned long>(indexPeriodUs));
-    respondJsonOk("ENC", buf);
-  } else {
-    // ASCII format: OK count=<n> vel=<n> idx=<0|1> idx_tick=<n> rev=<n>
-    char buf[96];
-    snprintf(buf, sizeof(buf), "count=%s vel=%ld idx=%d idx_tick=%lu rev=%ld",
-             countStr, static_cast<long>(velocity),
-             indexSeen ? 1 : 0,
-             static_cast<unsigned long>(indexTick),
-             static_cast<long>(revolutions));
-    respondOk(buf);
-  }
-}
-
-void CommandParser::cmdEncFilter(const ParsedCommand &cmd) {
-  // Query mode: no arguments → return full filter config
-  if (cmd.argCount < 1) {
-    ICommandDispatcher::EncFilterParams cfg;
-    m_dispatcher.encFilterGetConfig(cfg);
-    char buf[512];
-    unsigned pGain = (cfg.padeGainPct > 0) ? cfg.padeGainPct : 50;
-    unsigned pMax = (cfg.padeMaxCorr > 0) ? cfg.padeMaxCorr : 50;
-    unsigned bqCut = (cfg.biquadCutoffHz > 0) ? cfg.biquadCutoffHz : 10;
-    unsigned ntCtr = (cfg.notchCenterHz > 0) ? cfg.notchCenterHz : 25;
-    unsigned ntQ = (cfg.notchQ10 > 0) ? cfg.notchQ10 : 50;
-    unsigned hAlph = (cfg.holtAlpha > 0) ? cfg.holtAlpha : 51;
-    unsigned hBeta = (cfg.holtBeta > 0) ? cfg.holtBeta : 13;
-    if (m_format == ResponseFormat::JSON) {
-      snprintf(
-          buf, sizeof(buf),
-          "{\"meas_window_ms\":%u,\"sample_rate_hz\":%u,"
-          "\"ema_enabled\":%s,\"ema_alpha\":%u,"
-          "\"sma_enabled\":%s,\"sma_window\":%u,"
-          "\"pade_enabled\":%s,\"pade_gain\":%u,\"pade_max_corr\":%u,"
-          "\"biquad_enabled\":%s,\"biquad_cutoff_hz\":%u,"
-          "\"notch_enabled\":%s,\"notch_center_hz\":%u,\"notch_q10\":%u,"
-          "\"holt_enabled\":%s,\"holt_alpha\":%u,\"holt_beta\":%u}",
-          (unsigned)cfg.measWindowMs, (unsigned)cfg.sampleRateHz,
-          (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_EMA) ? "true" : "false",
-          (unsigned)cfg.emaAlpha,
-          (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_SMA) ? "true" : "false",
-          (unsigned)cfg.smaWindow,
-          (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_PADE) ? "true" : "false", pGain,
-          pMax, (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_BIQUAD) ? "true" : "false",
-          bqCut, (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_NOTCH) ? "true" : "false",
-          ntCtr, ntQ,
-          (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_HOLT) ? "true" : "false", hAlph,
-          hBeta);
-      respondJsonOk(m_currentCmd, buf);
-    } else {
-      snprintf(buf, sizeof(buf),
-               "window=%ums rate=%uHz EMA=%s alpha=%u SMA=%s window=%u"
-               " PADE=%s gain=%u%% max=%utps BIQUAD=%s cut=%uHz"
-               " NOTCH=%s ctr=%uHz Q=%u.%u HOLT=%s a=%u b=%u",
-               (unsigned)cfg.measWindowMs, (unsigned)cfg.sampleRateHz,
-               (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_EMA) ? "ON" : "OFF",
-               (unsigned)cfg.emaAlpha,
-               (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_SMA) ? "ON" : "OFF",
-               (unsigned)cfg.smaWindow,
-               (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_PADE) ? "ON" : "OFF", pGain,
-               pMax, (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_BIQUAD) ? "ON" : "OFF",
-               bqCut, (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_NOTCH) ? "ON" : "OFF",
-               ntCtr, ntQ / 10, ntQ % 10,
-               (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_HOLT) ? "ON" : "OFF", hAlph,
-               hBeta);
-      respondOk(buf);
-    }
-    return;
-  }
-
-  // Legacy set commands: NONE / EMA <alpha> / SMA <window>
-  if (strcmp(cmd.args[0], "NONE") == 0) {
-    m_dispatcher.encFilterSetLegacy(0, 0);
-    m_dispatcher.configSetEncFilter(0, 0);
-    respondOk("NONE");
-    return;
-  }
-
-  if (strcmp(cmd.args[0], "EMA") == 0) {
-    if (cmd.argCount < 2) {
-      respondErr("EMA requires alpha (0-255)");
-      return;
-    }
-    long val = strtol(cmd.args[1], nullptr, 10);
-    if (val < 0 || val > 255) {
-      respondErr("EMA alpha must be 0-255");
-      return;
-    }
-    m_dispatcher.encFilterSetLegacy(1, static_cast<uint8_t>(val));
-    m_dispatcher.configSetEncFilter(ICommandDispatcher::EncFilterParams::FILT_EMA,
-                                    static_cast<uint8_t>(val));
-    char buf[48];
-    snprintf(buf, sizeof(buf), "EMA alpha=%u", (unsigned)val);
-    respondOk(buf);
-    return;
-  }
-
-  if (strcmp(cmd.args[0], "SMA") == 0) {
-    if (cmd.argCount < 2) {
-      respondErr("SMA requires window size (2-32)");
-      return;
-    }
-    long val = strtol(cmd.args[1], nullptr, 10);
-    if (val < 2 || val > 32) {
-      respondErr("SMA window must be 2-32");
-      return;
-    }
-    m_dispatcher.encFilterSetLegacy(2, static_cast<uint8_t>(val));
-    m_dispatcher.configSetEncFilter(ICommandDispatcher::EncFilterParams::FILT_SMA, 0);
-    m_dispatcher.configSetEncSmaWindow(static_cast<uint8_t>(val));
-    char buf[48];
-    snprintf(buf, sizeof(buf), "SMA window=%u", (unsigned)val);
-    respondOk(buf);
-    return;
-  }
-
-  // Legacy: bare number treated as EMA alpha
-  long val = strtol(cmd.args[0], nullptr, 10);
-  if (val < 0 || val > 255) {
-    respondErr("Unknown filter type or alpha out of range (0-255)");
-    return;
-  }
-  m_dispatcher.encFilterSetLegacy(1, static_cast<uint8_t>(val));
-  char buf[48];
-  snprintf(buf, sizeof(buf), "EMA alpha=%u", (unsigned)val);
-  respondOk(buf);
-}
-
-// CTRL:ENC:FILT:* sub-commands
-void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
-  // CTRL:ENC:FILT:WINDOW <ms>
-  if (strcmp(sub, "WINDOW") == 0) {
-    if (cmd.argCount < 1) {
-      respondErr("WINDOW requires ms (1-255)");
-      return;
-    }
-    long val = strtol(cmd.args[0], nullptr, 10);
-    if (val < 1 || val > 255) {
-      respondErr("Window must be 1-255 ms");
-      return;
-    }
-    ICommandDispatcher::EncFilterParams cfg;
-    m_dispatcher.encFilterGetConfig(cfg);
-    cfg.measWindowMs = static_cast<uint8_t>(val);
-    m_dispatcher.encFilterSetConfig(cfg);
-    char buf[32];
-    snprintf(buf, sizeof(buf), "window=%ums", (unsigned)val);
-    respondOk(buf);
-    return;
-  }
-
-  // CTRL:ENC:FILT:EMA <0|1> [alpha]
-  if (strcmp(sub, "EMA") == 0) {
-    if (cmd.argCount < 1) {
-      respondErr("EMA requires 0|1 [alpha]");
-      return;
-    }
-    long enable = strtol(cmd.args[0], nullptr, 10);
-    ICommandDispatcher::EncFilterParams cfg;
-    m_dispatcher.encFilterGetConfig(cfg);
-    if (enable) {
-      cfg.filterFlags |= ICommandDispatcher::EncFilterParams::FILT_EMA;
-      if (cmd.argCount >= 2) {
-        long alpha = strtol(cmd.args[1], nullptr, 10);
-        if (alpha < 0 || alpha > 255) {
-          respondErr("EMA alpha must be 0-255");
-          return;
-        }
-        cfg.emaAlpha = static_cast<uint8_t>(alpha);
-      }
-    } else {
-      cfg.filterFlags &= ~ICommandDispatcher::EncFilterParams::FILT_EMA;
-    }
-    m_dispatcher.encFilterSetConfig(cfg);
-    char buf[48];
-    snprintf(buf, sizeof(buf), "EMA %s alpha=%u",
-             (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_EMA) ? "ON" : "OFF",
-             (unsigned)cfg.emaAlpha);
-    respondOk(buf);
-    return;
-  }
-
-  // CTRL:ENC:FILT:SMA <0|1> [window]
-  if (strcmp(sub, "SMA") == 0) {
-    if (cmd.argCount < 1) {
-      respondErr("SMA requires 0|1 [window]");
-      return;
-    }
-    long enable = strtol(cmd.args[0], nullptr, 10);
-    ICommandDispatcher::EncFilterParams cfg;
-    m_dispatcher.encFilterGetConfig(cfg);
-    if (enable) {
-      cfg.filterFlags |= ICommandDispatcher::EncFilterParams::FILT_SMA;
-      if (cmd.argCount >= 2) {
-        long win = strtol(cmd.args[1], nullptr, 10);
-        if (win < 0 || win > 32) {
-          respondErr("SMA window must be 0-32");
-          return;
-        }
-        cfg.smaWindow = static_cast<uint8_t>(win);
-      }
-    } else {
-      cfg.filterFlags &= ~ICommandDispatcher::EncFilterParams::FILT_SMA;
-    }
-    m_dispatcher.encFilterSetConfig(cfg);
-    char buf[48];
-    snprintf(buf, sizeof(buf), "SMA %s window=%u",
-             (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_SMA) ? "ON" : "OFF",
-             (unsigned)cfg.smaWindow);
-    respondOk(buf);
-    return;
-  }
-
-  // CTRL:ENC:FILT:PADE <0|1> [gain%] [maxCorr]
-  if (strcmp(sub, "PADE") == 0) {
-    if (cmd.argCount < 1) {
-      respondErr("PADE requires 0|1 [gain% 1-100] [maxCorr 1-255]");
-      return;
-    }
-    long enable = strtol(cmd.args[0], nullptr, 10);
-    ICommandDispatcher::EncFilterParams cfg;
-    m_dispatcher.encFilterGetConfig(cfg);
-    if (enable) {
-      cfg.filterFlags |= ICommandDispatcher::EncFilterParams::FILT_PADE;
-      if (cmd.argCount >= 2) {
-        long gain = strtol(cmd.args[1], nullptr, 10);
-        if (gain < 1 || gain > 100) {
-          respondErr("Gain must be 1-100%%");
-          return;
-        }
-        cfg.padeGainPct = static_cast<uint8_t>(gain);
-      }
-      if (cmd.argCount >= 3) {
-        long maxC = strtol(cmd.args[2], nullptr, 10);
-        if (maxC < 1 || maxC > 255) {
-          respondErr("MaxCorr must be 1-255 tps");
-          return;
-        }
-        cfg.padeMaxCorr = static_cast<uint8_t>(maxC);
-      }
-    } else {
-      cfg.filterFlags &= ~ICommandDispatcher::EncFilterParams::FILT_PADE;
-    }
-    m_dispatcher.encFilterSetConfig(cfg);
-    char buf[64];
-    snprintf(buf, sizeof(buf), "PADE %s gain=%u%% max=%utps",
-             (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_PADE) ? "ON" : "OFF",
-             (unsigned)((cfg.padeGainPct > 0) ? cfg.padeGainPct : 50),
-             (unsigned)((cfg.padeMaxCorr > 0) ? cfg.padeMaxCorr : 50));
-    respondOk(buf);
-    return;
-  }
-
-  // CTRL:ENC:FILT:BIQUAD <0|1> [cutoffHz]
-  if (strcmp(sub, "BIQUAD") == 0) {
-    if (cmd.argCount < 1) {
-      respondErr("BIQUAD requires 0|1 [cutoff 1-50 Hz]");
-      return;
-    }
-    long enable = strtol(cmd.args[0], nullptr, 10);
-    ICommandDispatcher::EncFilterParams cfg;
-    m_dispatcher.encFilterGetConfig(cfg);
-    if (enable) {
-      cfg.filterFlags |= ICommandDispatcher::EncFilterParams::FILT_BIQUAD;
-      if (cmd.argCount >= 2) {
-        long cutoff = strtol(cmd.args[1], nullptr, 10);
-        if (cutoff < 1 || cutoff > 50) {
-          respondErr("Cutoff must be 1-50 Hz");
-          return;
-        }
-        cfg.biquadCutoffHz = static_cast<uint8_t>(cutoff);
-      }
-    } else {
-      cfg.filterFlags &= ~ICommandDispatcher::EncFilterParams::FILT_BIQUAD;
-    }
-    m_dispatcher.encFilterSetConfig(cfg);
-    char buf[64];
-    snprintf(buf, sizeof(buf), "BIQUAD %s cutoff=%uHz",
-             (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_BIQUAD) ? "ON" : "OFF",
-             (unsigned)((cfg.biquadCutoffHz > 0) ? cfg.biquadCutoffHz : 10));
-    respondOk(buf);
-    return;
-  }
-
-  // CTRL:ENC:FILT:NOTCH <0|1> [centerHz] [Q×10]
-  if (strcmp(sub, "NOTCH") == 0) {
-    if (cmd.argCount < 1) {
-      respondErr("NOTCH requires 0|1 [center 1-50 Hz] [Q*10 1-100]");
-      return;
-    }
-    long enable = strtol(cmd.args[0], nullptr, 10);
-    ICommandDispatcher::EncFilterParams cfg;
-    m_dispatcher.encFilterGetConfig(cfg);
-    if (enable) {
-      cfg.filterFlags |= ICommandDispatcher::EncFilterParams::FILT_NOTCH;
-      if (cmd.argCount >= 2) {
-        long center = strtol(cmd.args[1], nullptr, 10);
-        if (center < 1 || center > 50) {
-          respondErr("Center must be 1-50 Hz");
-          return;
-        }
-        cfg.notchCenterHz = static_cast<uint8_t>(center);
-      }
-      if (cmd.argCount >= 3) {
-        long q10 = strtol(cmd.args[2], nullptr, 10);
-        if (q10 < 1 || q10 > 100) {
-          respondErr("Q*10 must be 1-100");
-          return;
-        }
-        cfg.notchQ10 = static_cast<uint8_t>(q10);
-      }
-    } else {
-      cfg.filterFlags &= ~ICommandDispatcher::EncFilterParams::FILT_NOTCH;
-    }
-    m_dispatcher.encFilterSetConfig(cfg);
-    char buf[64];
-    unsigned ctr = (cfg.notchCenterHz > 0) ? cfg.notchCenterHz : 25;
-    unsigned q = (cfg.notchQ10 > 0) ? cfg.notchQ10 : 50;
-    snprintf(buf, sizeof(buf), "NOTCH %s center=%uHz Q=%u.%u",
-             (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_NOTCH) ? "ON" : "OFF", ctr,
-             q / 10, q % 10);
-    respondOk(buf);
-    return;
-  }
-
-  // CTRL:ENC:FILT:HOLT <0|1> [alpha] [beta]
-  if (strcmp(sub, "HOLT") == 0) {
-    if (cmd.argCount < 1) {
-      respondErr("HOLT requires 0|1 [alpha 0-255] [beta 0-255]");
-      return;
-    }
-    long enable = strtol(cmd.args[0], nullptr, 10);
-    ICommandDispatcher::EncFilterParams cfg;
-    m_dispatcher.encFilterGetConfig(cfg);
-    if (enable) {
-      cfg.filterFlags |= ICommandDispatcher::EncFilterParams::FILT_HOLT;
-      if (cmd.argCount >= 2) {
-        long alpha = strtol(cmd.args[1], nullptr, 10);
-        if (alpha < 0 || alpha > 255) {
-          respondErr("Alpha must be 0-255");
-          return;
-        }
-        cfg.holtAlpha = static_cast<uint8_t>(alpha);
-      }
-      if (cmd.argCount >= 3) {
-        long beta = strtol(cmd.args[2], nullptr, 10);
-        if (beta < 0 || beta > 255) {
-          respondErr("Beta must be 0-255");
-          return;
-        }
-        cfg.holtBeta = static_cast<uint8_t>(beta);
-      }
-    } else {
-      cfg.filterFlags &= ~ICommandDispatcher::EncFilterParams::FILT_HOLT;
-    }
-    m_dispatcher.encFilterSetConfig(cfg);
-    char buf[64];
-    snprintf(buf, sizeof(buf), "HOLT %s alpha=%u beta=%u",
-             (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_HOLT) ? "ON" : "OFF",
-             (unsigned)((cfg.holtAlpha > 0) ? cfg.holtAlpha : 51),
-             (unsigned)((cfg.holtBeta > 0) ? cfg.holtBeta : 13));
-    respondOk(buf);
-    return;
-  }
-
-  // CTRL:ENC:FILT:RATE <hz>
-  if (strcmp(sub, "RATE") == 0) {
-    if (cmd.argCount < 1) {
-      respondErr("RATE requires hz (100-10000)");
-      return;
-    }
-    long val = strtol(cmd.args[0], nullptr, 10);
-    if (val < 100 || val > 10000) {
-      respondErr("Rate must be 100-10000 Hz");
-      return;
-    }
-    ICommandDispatcher::EncFilterParams cfg;
-    m_dispatcher.encFilterGetConfig(cfg);
-    cfg.sampleRateHz = static_cast<uint16_t>(val);
-    m_dispatcher.encFilterSetConfig(cfg);
-    char buf[32];
-    snprintf(buf, sizeof(buf), "rate=%uHz", (unsigned)val);
-    respondOk(buf);
-    return;
-  }
-
-  // CTRL:ENC:FILT:SAVE
-  if (strcmp(sub, "SAVE") == 0) {
-    ICommandDispatcher::EncFilterParams cfg;
-    m_dispatcher.encFilterGetConfig(cfg);
-    uint8_t rateDiv = (cfg.sampleRateHz != 1000)
-                          ? static_cast<uint8_t>(cfg.sampleRateHz / 100)
-                          : 0;
-    m_dispatcher.configSetEncFilterFull(cfg.filterFlags, cfg.emaAlpha,
-                                        cfg.smaWindow, cfg.measWindowMs,
-                                        rateDiv);
-    if (m_dispatcher.configSaveToFlash()) {
-      respondOk("Filter config saved");
-    } else {
-      respondErr("Flash write failed");
-    }
-    return;
-  }
-
-  // CTRL:ENC:FILT:RESET
-  if (strcmp(sub, "RESET") == 0) {
-    ICommandDispatcher::EncFilterParams cfg = {};
-    cfg.filterFlags = ICommandDispatcher::EncFilterParams::FILT_EMA | ICommandDispatcher::EncFilterParams::FILT_SMA |
-                      ICommandDispatcher::EncFilterParams::FILT_PADE | ICommandDispatcher::EncFilterParams::FILT_BIQUAD;
-    cfg.emaAlpha = 200;
-    cfg.smaWindow = 8;
-    cfg.measWindowMs = 40;
-    cfg.sampleRateHz = 1000;
-    cfg.padeGainPct = 25;
-    cfg.padeMaxCorr = 50;
-    cfg.biquadCutoffHz = 5;
-    cfg.notchCenterHz = 0;
-    cfg.notchQ10 = 0;
-    cfg.holtAlpha = 0;
-    cfg.holtBeta = 0;
-    m_dispatcher.encFilterSetConfig(cfg);
-    respondOk("Filter reset to defaults");
-    return;
-  }
-
-  respondErr("Unknown ENC:FILT sub-command");
-}
-
-// ============================================================================
-// Device identification command handlers
-// ============================================================================
-
-void CommandParser::cmdGetDeviceId() {
-  uint16_t deviceId;
-  const char *roleStr;
-  m_dispatcher.getDeviceInfo(deviceId, roleStr);
-
-  char buf[32];
-  snprintf(buf, sizeof(buf), "%u %s", static_cast<unsigned>(deviceId), roleStr);
-  respondOk(buf);
-}
-
-void CommandParser::cmdSetDeviceId(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: SET_DEVICE_ID <id>");
-    return;
-  }
-
-  uint16_t deviceId = static_cast<uint16_t>(strtoul(cmd.args[0], nullptr, 10));
-
-  if (m_dispatcher.setDeviceId(deviceId)) {
-    respondOk("ID saved");
-  } else {
-    respondErr("Flash write failed");
-  }
-}
-
-void CommandParser::cmdSetRole(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: SET_ROLE <FL|FR|RL|RR|NONE>");
-    return;
-  }
-
-  auto r = m_dispatcher.setRole(cmd.args[0]);
-  if (r.ok) {
-    char buf[32];
-    snprintf(buf, sizeof(buf), "Role=%s", r.message);
-    respondOk(buf);
-  } else {
-    respondErr(r.message);
-  }
-}
-
-// ============================================================================
-// Control mode command handlers
-// ============================================================================
-
-void CommandParser::cmdGetMode() {
-  char buf[48];
-  snprintf(buf, sizeof(buf), "%s encoder=%s", m_dispatcher.controlModeString(),
-           m_dispatcher.encoderStatusString());
-  respondOk(buf);
-}
-
-void CommandParser::cmdSetMode(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: CTRL:MODE OPEN_LOOP|MONITOR|PID");
-    return;
-  }
-
-  auto r = m_dispatcher.setControlMode(cmd.args[0]);
-  if (r.ok) {
-    respondOk(r.message);
-  } else {
-    respondErr(r.message);
-  }
-}
-
-void CommandParser::cmdGetEncoderStatus() {
-  const char *encStr = m_dispatcher.encoderStatusString();
-
-  char buf[80];
-  if (m_dispatcher.isEncoderAvailable()) {
-    int32_t count, velocity;
-    bool indexSeen;
-    m_dispatcher.getEncoderState(count, velocity, indexSeen);
-    snprintf(buf, sizeof(buf), "status=%s count=%ld vel=%ld idx=%d", encStr,
-             static_cast<long>(count), static_cast<long>(velocity),
-             indexSeen ? 1 : 0);
-  } else {
-    snprintf(buf, sizeof(buf), "status=%s", encStr);
-  }
-  respondOk(buf);
-}
-
-// ============================================================================
-// Response format command handlers
-// ============================================================================
-
-void CommandParser::cmdSetFormat(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: SET_FORMAT <ASCII|JSON>");
-    return;
-  }
-
-  const char *formatStr = cmd.args[0];
-
-  if (strcmp(formatStr, "JSON") == 0 || strcmp(formatStr, "json") == 0) {
-    m_format = ResponseFormat::JSON;
-    // Respond in the NEW format (JSON)
-    respondJsonOk("SET_FORMAT", "{\"format\":\"JSON\"}");
-  } else if (strcmp(formatStr, "ASCII") == 0 ||
-             strcmp(formatStr, "ascii") == 0) {
-    m_format = ResponseFormat::ASCII;
-    // Respond in the NEW format (ASCII)
-    m_transport.println("OK ASCII");
-  } else {
-    respondErr("Invalid format. Use ASCII or JSON.");
-  }
-}
-
-void CommandParser::cmdGetFormat() {
-  if (m_format == ResponseFormat::JSON) {
-    respondJsonOk("GET_FORMAT", "{\"format\":\"JSON\"}");
-  } else {
-    m_transport.println("OK ASCII");
-  }
-}
-
-// ============================================================================
-// Baud rate negotiation
-// ============================================================================
-
-void CommandParser::cmdSetBaud(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: SET_BAUD <115200|230400|460800|921600>");
-    return;
-  }
-
-  uint32_t rate = static_cast<uint32_t>(strtoul(cmd.args[0], nullptr, 10));
-
-  // Whitelist supported rates
-  if (rate != 115200 && rate != 230400 && rate != 460800 && rate != 921600) {
-    respondErr("Supported: 115200, 230400, 460800, 921600");
-    return;
-  }
-
-  // Save current rate for auto-revert
-  // (We don't have a getter, but 115200 is always the boot default.
-  //  If already at a non-default rate, revert target is still 115200.)
-  m_baudRevertRate = 115200;
-
-  // Respond at the CURRENT baud rate so the client sees the OK
-  if (m_format == ResponseFormat::JSON) {
-    char buf[48];
-    snprintf(buf, sizeof(buf), "{\"baud\":%lu}", (unsigned long)rate);
-    respondJsonOk("SET_BAUD", buf);
-  } else {
-    char buf[24];
-    snprintf(buf, sizeof(buf), "OK %lu", (unsigned long)rate);
-    m_transport.println(buf);
-  }
-
-  // Flush TX completely before switching
-  m_transport.flush();
-
-  // Switch baud rate on the UART hardware
-  if (!m_transport.setBaudRate(rate)) {
-    // Transport doesn't support baud change (e.g. RTT)
-    m_baudRevertRate = 0;
-    return;
-  }
-
-  // Set 2-second deadline for confirmation (any valid command cancels revert)
-  m_baudRevertDeadline = m_dispatcher.getTickMs() + 2000;
-}
-
-void CommandParser::checkBaudRevert() {
-  if (m_baudRevertRate == 0)
-    return;
-
-  uint32_t now = m_dispatcher.getTickMs();
-  if ((int32_t)(now - m_baudRevertDeadline) >= 0) {
-    // Timeout expired — revert to safe baud rate
-    m_transport.flush();
-    m_transport.setBaudRate(m_baudRevertRate);
-    m_baudRevertRate = 0;
-  }
-}
-
-// ============================================================================
-// UI mode command handlers
-// ============================================================================
-
-void CommandParser::cmdUIMode(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    // No argument - return current mode
-    cmdUIGetMode();
-    return;
-  }
-
-  // Set mode
-  const char *modeStr = cmd.args[0];
-  auto result = m_dispatcher.displaySetMode(modeStr);
-  if (result.ok) {
-    respondOk(m_dispatcher.displayGetModeName());
-  } else {
-    respondErr(result.message);
-  }
-}
-
-void CommandParser::cmdUIGetMode() {
-  respondOk(m_dispatcher.displayGetModeName());
-}
-
-// ============================================================================
-// Display command handlers (remote rendering)
-// ============================================================================
-
-void CommandParser::cmdDispClear(const ParsedCommand &cmd) {
-  // Check if in REMOTE mode
-  if (!m_dispatcher.displayIsRemoteMode()) {
-    respondErr("Not in REMOTE mode");
-    return;
-  }
-
-  // Parse optional color (default black = 0x0000)
-  uint16_t color = 0x0000;
-  if (cmd.argCount >= 1) {
-    color = static_cast<uint16_t>(strtoul(cmd.args[0], nullptr, 16));
-  }
-
-  m_dispatcher.displayClear(color);
-  respondOk("");
-}
-
-void CommandParser::cmdDispText(const ParsedCommand &cmd) {
-  // Check if in REMOTE mode
-  if (!m_dispatcher.displayIsRemoteMode()) {
-    respondErr("Not in REMOTE mode");
-    return;
-  }
-
-  // Usage: DISP_TEXT <x> <y> <fg> <bg> <text>
-  if (cmd.argCount < 5) {
-    respondErr("Usage: DISP_TEXT <x> <y> <fg> <bg> <text>");
-    return;
-  }
-
-  uint16_t x = static_cast<uint16_t>(strtoul(cmd.args[0], nullptr, 10));
-  uint16_t y = static_cast<uint16_t>(strtoul(cmd.args[1], nullptr, 10));
-  uint16_t fg = static_cast<uint16_t>(strtoul(cmd.args[2], nullptr, 16));
-  uint16_t bg = static_cast<uint16_t>(strtoul(cmd.args[3], nullptr, 16));
-  const char *text = cmd.args[4];
-
-  m_dispatcher.displayText(x, y, text, fg, bg);
-  respondOk("");
-}
-
-void CommandParser::cmdDispRect(const ParsedCommand &cmd) {
-  // Check if in REMOTE mode
-  if (!m_dispatcher.displayIsRemoteMode()) {
-    respondErr("Not in REMOTE mode");
-    return;
-  }
-
-  // Usage: DISP_RECT <x> <y> <w> <h> <color> [fill]
-  if (cmd.argCount < 5) {
-    respondErr("Usage: DISP_RECT <x> <y> <w> <h> <color> [fill]");
-    return;
-  }
-
-  uint16_t x = static_cast<uint16_t>(strtoul(cmd.args[0], nullptr, 10));
-  uint16_t y = static_cast<uint16_t>(strtoul(cmd.args[1], nullptr, 10));
-  uint16_t w = static_cast<uint16_t>(strtoul(cmd.args[2], nullptr, 10));
-  uint16_t h = static_cast<uint16_t>(strtoul(cmd.args[3], nullptr, 10));
-  uint16_t color = static_cast<uint16_t>(strtoul(cmd.args[4], nullptr, 16));
-  bool filled = (cmd.argCount > 5 && strcmp(cmd.args[5], "fill") == 0);
-
-  m_dispatcher.displayRect(x, y, w, h, color, filled);
-  respondOk("");
-}
-
-void CommandParser::cmdDispLine(const ParsedCommand &cmd) {
-  // Check if in REMOTE mode
-  if (!m_dispatcher.displayIsRemoteMode()) {
-    respondErr("Not in REMOTE mode");
-    return;
-  }
-
-  // Usage: DISP_LINE <x1> <y1> <x2> <y2> <color>
-  if (cmd.argCount < 5) {
-    respondErr("Usage: DISP_LINE <x1> <y1> <x2> <y2> <color>");
-    return;
-  }
-
-  int16_t x0 = static_cast<int16_t>(strtol(cmd.args[0], nullptr, 10));
-  int16_t y0 = static_cast<int16_t>(strtol(cmd.args[1], nullptr, 10));
-  int16_t x1 = static_cast<int16_t>(strtol(cmd.args[2], nullptr, 10));
-  int16_t y1 = static_cast<int16_t>(strtol(cmd.args[3], nullptr, 10));
-  uint16_t color = static_cast<uint16_t>(strtoul(cmd.args[4], nullptr, 16));
-
-  m_dispatcher.displayLine(x0, y0, x1, y1, color);
-  respondOk("");
-}
-
-void CommandParser::cmdDispBitmap(const ParsedCommand &cmd) {
-  // Check if in REMOTE mode
-  if (!m_dispatcher.displayIsRemoteMode()) {
-    respondErr("Not in REMOTE mode");
-    return;
-  }
-
-  // Usage: DISP_BITMAP <x> <y> <w> <h> [CRC]
-  bool useCrc = hasCrcFlag(cmd);
-  uint32_t minArgs = useCrc ? 5 : 4;
-
-  if (cmd.argCount < minArgs) {
-    respondErr("Usage: DISP_BITMAP <x> <y> <w> <h> [CRC]");
-    return;
-  }
-
-  uint16_t x = static_cast<uint16_t>(strtoul(cmd.args[0], nullptr, 10));
-  uint16_t y = static_cast<uint16_t>(strtoul(cmd.args[1], nullptr, 10));
-  uint16_t w = static_cast<uint16_t>(strtoul(cmd.args[2], nullptr, 10));
-  uint16_t h = static_cast<uint16_t>(strtoul(cmd.args[3], nullptr, 10));
-
-  // Validate dimensions
-  if (w == 0 || h == 0) {
-    respondErr("Invalid dimensions");
-    return;
-  }
-  if (x >= 240 || y >= 320) {
-    respondErr("Position out of bounds");
-    return;
-  }
-
-  // Calculate expected bytes (RGB565 = 2 bytes per pixel)
-  uint32_t expectedBytes = static_cast<uint32_t>(w) * h * 2;
-
-  constexpr uint32_t MAX_BITMAP_BYTES = 240 * 320 * 2;
-  if (expectedBytes > MAX_BITMAP_BYTES) {
-    respondErr("Bitmap too large");
-    return;
-  }
-
-  // Start LCD streaming
-  if (!m_dispatcher.displayStreamStart(x, y, w, h)) {
-    respondErr("LCD streaming failed");
-    return;
-  }
-
-  // Send ready response with expected byte count
-  char buf[32];
-  snprintf(buf, sizeof(buf), "OK READY %lu",
-           static_cast<unsigned long>(expectedBytes));
-  m_transport.println(buf);
-  m_transport.flush();
-
-  // Drain trailing \r/\n from command line before binary read
-  {
-    uint8_t drain;
-    while (m_transport.available() && m_transport.readByte(drain, 1)) {
-      if (drain != '\r' && drain != '\n')
-        break;
-    }
-  }
-
-  // Receive binary data with timeout
-  constexpr uint32_t CHUNK_SIZE = 64;
-  constexpr uint32_t BYTE_TIMEOUT_MS = 100;
-  uint8_t chunk[CHUNK_SIZE];
-  uint32_t bytesReceived = 0;
-  uint32_t crcState = 0xFFFFFFFF;
-
-  while (bytesReceived < expectedBytes) {
-    uint32_t remaining = expectedBytes - bytesReceived;
-    uint32_t toRead = (remaining < CHUNK_SIZE) ? remaining : CHUNK_SIZE;
-
-    uint32_t chunkReceived = 0;
-    while (chunkReceived < toRead) {
-      uint8_t byte;
-      if (m_transport.readByte(byte, BYTE_TIMEOUT_MS)) {
-        chunk[chunkReceived++] = byte;
-      } else {
-        m_dispatcher.displayStreamEnd();
-        char errBuf[48];
-        snprintf(errBuf, sizeof(errBuf), "Timeout at byte %lu/%lu",
-                 static_cast<unsigned long>(bytesReceived + chunkReceived),
-                 static_cast<unsigned long>(expectedBytes));
-        respondErr(errBuf);
-        return;
-      }
-    }
-
-    if (useCrc) {
-      crcState = Util::crc32_update(crcState, chunk, chunkReceived);
-    }
-
-    m_dispatcher.displayStreamData(chunk, chunkReceived);
-    bytesReceived += chunkReceived;
-  }
-
-  m_dispatcher.displayStreamEnd();
-
-  if (useCrc) {
-    if (!verifyCrc(crcState)) {
-      return;
-    }
-  }
-
-  respondOk("");
-}
-
-void CommandParser::cmdDispBitmapB64(const ParsedCommand &cmd) {
-  // Check if in REMOTE mode
-  if (!m_dispatcher.displayIsRemoteMode()) {
-    respondErr("Not in REMOTE mode");
-    return;
-  }
-
-  // Usage: DISP_BITMAP_B64 <x> <y> <w> <h> <base64_data>
-  if (cmd.argCount < 5) {
-    respondErr("Usage: DISP_BITMAP_B64 <x> <y> <w> <h> <base64_data>");
-    return;
-  }
-
-  uint16_t x = static_cast<uint16_t>(strtoul(cmd.args[0], nullptr, 10));
-  uint16_t y = static_cast<uint16_t>(strtoul(cmd.args[1], nullptr, 10));
-  uint16_t w = static_cast<uint16_t>(strtoul(cmd.args[2], nullptr, 10));
-  uint16_t h = static_cast<uint16_t>(strtoul(cmd.args[3], nullptr, 10));
-  const char *b64 = cmd.args[4];
-
-  // Decode base64 to binary buffer
-  // Base64 decodes to ~3/4 of input length
-  size_t b64Len = strlen(b64);
-  size_t maxDecoded = ((b64Len * 3) / 4) + 1;
-
-  // Limit buffer size to prevent stack overflow
-  constexpr size_t MAX_BITMAP_DECODE = 512;
-  if (maxDecoded > MAX_BITMAP_DECODE) {
-    respondErr("Bitmap too large. Max 512 bytes decoded.");
-    return;
-  }
-
-  uint8_t decoded[MAX_BITMAP_DECODE];
-  size_t decodedLen = 0;
-
-  // Simple base64 decode lookup
-  auto b64Val = [](char c) -> int {
-    if (c >= 'A' && c <= 'Z') {
-      return c - 'A';
-    }
-    if (c >= 'a' && c <= 'z') {
-      return c - 'a' + 26;
-    }
-    if (c >= '0' && c <= '9') {
-      return c - '0' + 52;
-    }
-    if (c == '+') {
-      return 62;
-    }
-    if (c == '/') {
-      return 63;
-    }
-    return -1;
-  };
-
-  size_t i = 0;
-  while (i < b64Len && decodedLen < MAX_BITMAP_DECODE) {
-    // Get 4 base64 chars
-    int v[4] = {0, 0, 0, 0};
-    int validChars = 0;
-
-    for (int j = 0; j < 4 && i < b64Len; j++) {
-      if (b64[i] == '=') {
-        i++;
-        continue;
-      }
-      int val = b64Val(b64[i++]);
-      if (val >= 0) {
-        v[j] = val;
-        validChars++;
-      }
-    }
-
-    if (validChars >= 2 && decodedLen < MAX_BITMAP_DECODE) {
-      decoded[decodedLen++] = static_cast<uint8_t>((v[0] << 2) | (v[1] >> 4));
-    }
-    if (validChars >= 3 && decodedLen < MAX_BITMAP_DECODE) {
-      decoded[decodedLen++] = static_cast<uint8_t>((v[1] << 4) | (v[2] >> 2));
-    }
-    if (validChars >= 4 && decodedLen < MAX_BITMAP_DECODE) {
-      decoded[decodedLen++] = static_cast<uint8_t>((v[2] << 6) | v[3]);
-    }
-  }
-
-  // Verify size matches expected
-  size_t expectedSize =
-      static_cast<size_t>(w) * h * 2; // RGB565 = 2 bytes/pixel
-  if (decodedLen < expectedSize) {
-    char buf[48];
-    snprintf(buf, sizeof(buf), "Size mismatch: got %u, expected %u",
-             static_cast<unsigned>(decodedLen),
-             static_cast<unsigned>(expectedSize));
-    respondErr(buf);
-    return;
-  }
-
-  m_dispatcher.displayBitmap(x, y, w, h, decoded, decodedLen);
-  respondOk("");
-}
-
-void CommandParser::cmdDispIndicator(const ParsedCommand &cmd) {
-  if (!m_dispatcher.displayIsRemoteMode()) {
-    respondErr("Not in REMOTE mode");
-    return;
-  }
-
-  if (cmd.argCount < 3) {
-    respondErr("Usage: DISP_INDICATOR <angle> <rot_dir> <has_trans>");
-    return;
-  }
-
-  int32_t angle = strtol(cmd.args[0], nullptr, 10);
-  int32_t rotDir = strtol(cmd.args[1], nullptr, 10);
-  int32_t hasTrans = strtol(cmd.args[2], nullptr, 10);
-
-  if (angle < 0 || angle > 359) {
-    respondErr("Invalid angle");
-    return;
-  }
-  if (rotDir < -1 || rotDir > 1) {
-    respondErr("Invalid rotation_dir");
-    return;
-  }
-  if (hasTrans < 0 || hasTrans > 1) {
-    respondErr("Invalid has_translation");
-    return;
-  }
-
-  m_dispatcher.displayIndicator(
-      static_cast<uint16_t>(angle), static_cast<int8_t>(rotDir), hasTrans != 0);
-  respondOk("");
-}
-
-void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
-  if (!m_dispatcher.displayIsRemoteMode()) {
-    respondErr("Not in REMOTE mode");
-    return;
-  }
-
-  // Usage: DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes> [CRC]
-  bool useCrc = hasCrcFlag(cmd);
-  uint32_t minArgs = useCrc ? 6 : 5;
-
-  if (cmd.argCount < minArgs) {
-    respondErr(
-        "Usage: DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes> [CRC]");
-    return;
-  }
-
-  uint16_t x = static_cast<uint16_t>(strtoul(cmd.args[0], nullptr, 10));
-  uint16_t y = static_cast<uint16_t>(strtoul(cmd.args[1], nullptr, 10));
-  uint16_t w = static_cast<uint16_t>(strtoul(cmd.args[2], nullptr, 10));
-  uint16_t h = static_cast<uint16_t>(strtoul(cmd.args[3], nullptr, 10));
-  uint32_t compressedBytes = strtoul(cmd.args[4], nullptr, 10);
-
-  if (w == 0 || h == 0) {
-    respondErr("Invalid dimensions");
-    return;
-  }
-  if (x >= 240 || y >= 320) {
-    respondErr("Position out of bounds");
-    return;
-  }
-  if (compressedBytes == 0) {
-    respondErr("Invalid compressed size");
-    return;
-  }
-
-  constexpr uint32_t MAX_COMPRESSED = 240 * 320 * 3;
-  if (compressedBytes > MAX_COMPRESSED) {
-    respondErr("Compressed size too large");
-    return;
-  }
-
-  if (!m_dispatcher.displayStreamStart(x, y, w, h)) {
-    respondErr("LCD streaming failed");
-    return;
-  }
-
-  char buf[32];
-  snprintf(buf, sizeof(buf), "OK READY %lu",
-           static_cast<unsigned long>(compressedBytes));
-  m_transport.println(buf);
-  m_transport.flush();
-
-  // Drain trailing \r/\n from command line before binary read
-  {
-    uint8_t drain;
-    while (m_transport.available() && m_transport.readByte(drain, 1)) {
-      if (drain != '\r' && drain != '\n')
-        break;
-    }
-  }
-
-  // RLE streaming decoder state machine
-  enum RleState { HEADER, LITERAL, REPEAT };
-  RleState rleState = HEADER;
-  uint16_t runCount = 0;
-  uint8_t pixelBuf[2] = {0, 0};
-  uint8_t pixelIdx = 0;
-  uint32_t totalPixels = static_cast<uint32_t>(w) * h;
-  uint32_t decodedPixels = 0;
-
-  constexpr uint32_t BYTE_TIMEOUT_MS = 100;
-  uint32_t bytesReceived = 0;
-  uint32_t crcState = 0xFFFFFFFF;
-
-  while (bytesReceived < compressedBytes) {
-    uint8_t byte;
-    if (!m_transport.readByte(byte, BYTE_TIMEOUT_MS)) {
-      m_dispatcher.displayStreamEnd();
-      char errBuf[48];
-      snprintf(errBuf, sizeof(errBuf), "Timeout at byte %lu/%lu",
-               static_cast<unsigned long>(bytesReceived),
-               static_cast<unsigned long>(compressedBytes));
-      respondErr(errBuf);
-      return;
-    }
-    if (useCrc) {
-      crcState = Util::crc32_update(crcState, &byte, 1);
-    }
-    bytesReceived++;
-
-    switch (rleState) {
-    case HEADER:
-      if (byte & 0x80) {
-        runCount = static_cast<uint16_t>(byte - 125);
-        rleState = REPEAT;
-        pixelIdx = 0;
-      } else {
-        runCount = static_cast<uint16_t>(byte + 1);
-        rleState = LITERAL;
-        pixelIdx = 0;
-      }
-      break;
-
-    case LITERAL:
-      pixelBuf[pixelIdx++] = byte;
-      if (pixelIdx >= 2) {
-        m_dispatcher.displayStreamData(pixelBuf, 2);
-        decodedPixels++;
-        pixelIdx = 0;
-        runCount--;
-        if (runCount == 0)
-          rleState = HEADER;
-      }
-      break;
-
-    case REPEAT:
-      pixelBuf[pixelIdx++] = byte;
-      if (pixelIdx >= 2) {
-        for (uint16_t i = 0; i < runCount; i++) {
-          m_dispatcher.displayStreamData(pixelBuf, 2);
-          decodedPixels++;
-        }
-        rleState = HEADER;
-        pixelIdx = 0;
-      }
-      break;
-    }
-  }
-
-  m_dispatcher.displayStreamEnd();
-
-  // Verify CRC if requested
-  if (useCrc) {
-    if (!verifyCrc(crcState)) {
-      return;
-    }
-  }
-
-  // Verify decoded pixel count
-  if (decodedPixels != totalPixels) {
-    char errBuf[64];
-    snprintf(errBuf, sizeof(errBuf), "RLE decode: got %lu pixels, expected %lu",
-             static_cast<unsigned long>(decodedPixels),
-             static_cast<unsigned long>(totalPixels));
-    respondErr(errBuf);
-    return;
-  }
-
-  respondOk("");
-}
-
-// ============================================================================
-// Trace command handlers
-// ============================================================================
-
-void CommandParser::cmdTraceDump() {
-  uint32_t count = m_dispatcher.traceGetCount();
-  char buf[80];
-  snprintf(buf, sizeof(buf), "TRACE: %u entries", static_cast<unsigned>(count));
-  m_transport.println(buf);
-
-  Comms::ICommandDispatcher::TraceEntryData e;
-  for (uint32_t i = 0; i < count; i++) {
-    if (!m_dispatcher.traceGetEntry(i, e))
-      break;
-    snprintf(buf, sizeof(buf), "[%3u] T=%lu %c %s %lu",
-             static_cast<unsigned>(i), static_cast<unsigned long>(e.tick),
-             (e.dir == 0) ? '>' : '<', e.tag,
-             static_cast<unsigned long>(e.arg0));
-    m_transport.println(buf);
-  }
-}
-
-void CommandParser::cmdTraceReset() {
-  m_dispatcher.traceReset();
-  respondOk("Trace cleared");
-}
-
-// ============================================================================
-// Motor configuration command handlers
-// ============================================================================
-
-void CommandParser::cmdMotorConfigShow() {
-  char buf[384];
-  m_dispatcher.formatMotorConfig(buf, sizeof(buf));
-  m_transport.println(buf);
-}
-
-void CommandParser::cmdMotorConfigSave() {
-  if (m_dispatcher.configSaveToFlash()) {
-    respondOk("Config saved to flash");
-  } else {
-    respondErr("Flash write failed");
-  }
-}
-
-void CommandParser::cmdMotorConfigLoad() {
-  if (m_dispatcher.configLoadFromFlash()) {
-    respondOk("Config loaded from flash");
-  } else {
-    respondErr("No valid config in flash");
-  }
-}
-
-void CommandParser::cmdMotorConfigReset() {
-  if (m_dispatcher.configFactoryReset()) {
-    respondOk("Factory defaults restored and saved");
-  } else {
-    respondErr("Flash write failed");
-  }
-}
-
-void CommandParser::cmdMotorConfigKval(const ParsedCommand &cmd) {
-  // Usage: MCONFIG_KVAL <hold> <run> <acc> <dec>
-  if (cmd.argCount < 4) {
-    respondErr("Usage: MCONFIG_KVAL <hold> <run> <acc> <dec> (hex 00-FF)");
-    return;
-  }
-
-  uint8_t hold = static_cast<uint8_t>(strtoul(cmd.args[0], nullptr, 16));
-  uint8_t run = static_cast<uint8_t>(strtoul(cmd.args[1], nullptr, 16));
-  uint8_t acc = static_cast<uint8_t>(strtoul(cmd.args[2], nullptr, 16));
-  uint8_t dec = static_cast<uint8_t>(strtoul(cmd.args[3], nullptr, 16));
-
-  m_dispatcher.configSetKval(hold, run, acc, dec);
-
-  char buf[64];
-  snprintf(buf, sizeof(buf),
-           "KVAL set: H=%02X R=%02X A=%02X D=%02X (not saved)", hold, run, acc,
-           dec);
-  respondOk(buf);
-}
-
-void CommandParser::cmdMotorConfigOcd(const ParsedCommand &cmd) {
-  // Usage: MCONFIG_OCD <threshold>
-  if (cmd.argCount < 1) {
-    respondErr("Usage: MCONFIG_OCD <threshold> (0-31, ~375mA/step)");
-    return;
-  }
-
-  uint8_t thresh = static_cast<uint8_t>(strtoul(cmd.args[0], nullptr, 10));
-  if (thresh > 31) {
-    respondErr("OCD threshold must be 0-31");
-    return;
-  }
-
-  m_dispatcher.configSetOcdThreshold(thresh);
-
-  char buf[48];
-  snprintf(buf, sizeof(buf), "OCD threshold set: %u (not saved)", thresh);
-  respondOk(buf);
-}
-
-void CommandParser::cmdMotorConfigStall(const ParsedCommand &cmd) {
-  // Usage: MCONFIG_STALL <threshold>
-  // powerSTEP01 STALL_TH is 5-bit (0-31), NOT 7-bit like L6470
-  if (cmd.argCount < 1) {
-    respondErr("Usage: MCONFIG_STALL <threshold> (0-31, ~31.25mV/step BEMF)");
-    return;
-  }
-
-  uint8_t thresh = static_cast<uint8_t>(strtoul(cmd.args[0], nullptr, 10));
-  if (thresh > 31) {
-    respondErr("Stall threshold must be 0-31");
-    return;
-  }
-
-  m_dispatcher.configSetStallThreshold(thresh);
-
-  char buf[48];
-  snprintf(buf, sizeof(buf), "Stall threshold set: %u (not saved)", thresh);
-  respondOk(buf);
-}
-
-void CommandParser::cmdMotorConfigFault(const ParsedCommand &cmd) {
-  // Usage: MCONFIG_FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd>
-  //        MCONFIG_FAULT ACTION <0|1|2>
-  if (cmd.argCount < 1) {
-    respondErr(
-        "Usage: MCONFIG_FAULT <ocd> <th_sd> <th_w> <uvlo> <sta> <stb> <cmd>\n"
-        "   or: MCONFIG_FAULT ACTION <0=HardStop|1=HardHiZ|2=SoftStop>");
-    return;
-  }
-
-  // Check for ACTION subcommand
-  if (strcmp(cmd.args[0], "ACTION") == 0 ||
-      strcmp(cmd.args[0], "action") == 0) {
-    if (cmd.argCount < 2) {
-      respondErr("Usage: MCONFIG_FAULT ACTION <0|1|2>");
-      return;
-    }
-    uint8_t action = static_cast<uint8_t>(strtoul(cmd.args[1], nullptr, 10));
-    if (action > 2) {
-      respondErr("Action must be 0=HardStop, 1=HardHiZ, 2=SoftStop");
-      return;
-    }
-    m_dispatcher.configSetFaultAction(action);
-    const char *actionStr = action == 0   ? "HardStop"
-                            : action == 1 ? "HardHiZ"
-                                          : "SoftStop";
-    char buf[48];
-    snprintf(buf, sizeof(buf), "Fault action set: %s (not saved)", actionStr);
-    respondOk(buf);
-    return;
-  }
-
-  // Fault enable flags
-  if (cmd.argCount < 7) {
-    respondErr(
-        "Need 7 flags: ocd th_sd th_w uvlo stall_a stall_b cmd_err (0|1)");
-    return;
-  }
-
-  bool ocd = (strtoul(cmd.args[0], nullptr, 10) != 0);
-  bool thermalSD = (strtoul(cmd.args[1], nullptr, 10) != 0);
-  bool thermalWarn = (strtoul(cmd.args[2], nullptr, 10) != 0);
-  bool uvlo = (strtoul(cmd.args[3], nullptr, 10) != 0);
-  bool stallA = (strtoul(cmd.args[4], nullptr, 10) != 0);
-  bool stallB = (strtoul(cmd.args[5], nullptr, 10) != 0);
-  bool cmdErr = (strtoul(cmd.args[6], nullptr, 10) != 0);
-
-  m_dispatcher.configSetFaultEnableFlags(ocd, thermalSD, thermalWarn, uvlo,
-                                         stallA, stallB, cmdErr);
-  respondOk("Fault enables set (not saved)");
-}
-
-void CommandParser::cmdMotorConfigMotion(const ParsedCommand &cmd) {
-  // Usage: MCONFIG_MOTION <acc> <dec> <maxspd>
-  if (cmd.argCount < 3) {
-    respondErr("Usage: MCONFIG_MOTION <acc> <dec> <maxspd>");
-    return;
-  }
-
-  uint16_t acc = static_cast<uint16_t>(strtoul(cmd.args[0], nullptr, 10));
-  uint16_t dec = static_cast<uint16_t>(strtoul(cmd.args[1], nullptr, 10));
-  uint16_t maxSpd = static_cast<uint16_t>(strtoul(cmd.args[2], nullptr, 10));
-
-  // Validate ranges
-  if (acc > 4095 || dec > 4095) {
-    respondErr("ACC/DEC must be 0-4095");
-    return;
-  }
-  if (maxSpd > 1023) {
-    respondErr("MAXSPD must be 0-1023");
-    return;
-  }
-
-  m_dispatcher.configSetMotionParams(acc, dec, maxSpd);
-
-  char buf[64];
-  snprintf(buf, sizeof(buf),
-           "Motion params set: ACC=%u DEC=%u MAX=%u (not saved)", acc, dec,
-           maxSpd);
-  respondOk(buf);
-}
-
-void CommandParser::cmdMotorConfigStepMode(const ParsedCommand &cmd) {
-  // Usage: MCONFIG_STEPMODE <mode>
-  // mode: 0=full, 1=half, 2=1/4, 3=1/8, 4=1/16, 5=1/32, 6=1/64, 7=1/128
-  // Also accepts microstep counts: 1,2,4,8,16,32,64,128
-  if (cmd.argCount < 1) {
-    respondErr("Usage: MCONFIG_STEPMODE <mode> (0-7 or 1/2/4/8/16/32/64/128)");
-    return;
-  }
-
-  unsigned long val = strtoul(cmd.args[0], nullptr, 10);
-  uint8_t mode;
-
-  // Values 0-7: raw register value (STEP_SEL field)
-  // Values 8,16,32,64,128: microstep denominator
-  if (val <= 7) {
-    mode = static_cast<uint8_t>(val);
-  } else if (val == 8) {
-    mode = 3;
-  } else if (val == 16) {
-    mode = 4;
-  } else if (val == 32) {
-    mode = 5;
-  } else if (val == 64) {
-    mode = 6;
-  } else if (val == 128) {
-    mode = 7;
-  } else {
-    respondErr("Invalid mode. Use 0-7 or microstep count (8/16/32/64/128)");
-    return;
-  }
-
-  m_dispatcher.configSetStepMode(mode);
-
-  char buf[64];
-  snprintf(buf, sizeof(buf), "Step mode set: %u (1/%u microstep, not saved)",
-           (unsigned)mode, 1U << mode);
-  respondOk(buf);
-}
-
-void CommandParser::cmdMotorConfigApply() {
-  // Apply current config to motor driver
-  if (!m_dispatcher.motorApplyConfig()) {
-    respondErr("Failed to apply config to motor");
-    return;
-  }
-
-  // Persist to flash so config survives reboot
-  if (!m_dispatcher.configSaveToFlash()) {
-    respondErr("Applied but flash write failed");
-    return;
-  }
-
-  // Readback chip registers to verify writes actually reached the powerSTEP01
-  Comms::ICommandDispatcher::MotorDebugParams info;
-  if (m_dispatcher.motorGetDebugInfo(info)) {
-    char buf[128];
-    snprintf(buf, sizeof(buf),
-             "Config applied. CHIP: OCD_TH=%02X STALL_TH=%02X ALARM_EN=%02X "
-             "CONFIG=%04X FS_SPD=%03X",
-             (unsigned)info.ocdTh, (unsigned)info.stallTh,
-             (unsigned)info.alarmEn, (unsigned)info.config,
-             (unsigned)info.fsSpd);
-    respondOk(buf);
-  } else {
-    respondOk("Config applied and saved to flash");
-  }
-}
-
-// ============================================================================
-// Event command handlers
-// ============================================================================
-
-void CommandParser::cmdEventEnable(const ParsedCommand &cmd) {
-  // Parse optional mask argument (default: all events)
-  uint8_t mask = EVT_MASK_ALL;
-  if (cmd.argCount >= 1) {
-    char *endp = nullptr;
-    long val = strtol(cmd.args[0], &endp, 0); // base 0: auto-detect dec/hex
-    if (endp == cmd.args[0] || val < 0 || val > 0xFF) {
-      respondErr("Invalid mask (0-255)");
-      return;
-    }
-    mask = static_cast<uint8_t>(val) & EVT_MASK_ALL;
-  }
-
-  // Read current motor status for snapshot-on-enable
-  Comms::TelemetrySnapshot snap = Comms::g_telemetry.getSnapshot();
-  uint16_t currentStatus = snap.motor.statusReg;
-
-  m_dispatcher.enableEvents(mask, currentStatus);
-
-  if (m_format == ResponseFormat::JSON) {
-    char dataBuf[32];
-    snprintf(dataBuf, sizeof(dataBuf), "{\"mask\":%u}",
-             static_cast<unsigned>(mask));
-    respondJsonOk(m_currentCmd, dataBuf);
-  } else {
-    char msg[32];
-    snprintf(msg, sizeof(msg), "mask=%u", static_cast<unsigned>(mask));
-    respondOk(msg);
-  }
-}
-
-void CommandParser::cmdEventDisable() {
-  m_dispatcher.disableEvents();
-  respondOk("");
-}
-
-void CommandParser::cmdEventStatus() {
-  uint32_t sent, lostCritical, lostInfo;
-  uint8_t evtMask, queueDepth;
-  m_dispatcher.getEventStats(sent, lostCritical, lostInfo, evtMask, queueDepth);
-  uint32_t lastSeq = m_dispatcher.getLastEventSeq();
-
-  if (m_format == ResponseFormat::JSON) {
-    char buf[192];
-    snprintf(
-        buf, sizeof(buf),
-        "{\"mask\":%u,\"sent\":%lu,\"lost_critical\":%lu,\"lost_info\":%lu,"
-        "\"last_seq\":%lu,\"depth\":%u}",
-        static_cast<unsigned>(evtMask), static_cast<unsigned long>(sent),
-        static_cast<unsigned long>(lostCritical),
-        static_cast<unsigned long>(lostInfo),
-        static_cast<unsigned long>(lastSeq), static_cast<unsigned>(queueDepth));
-    respondJsonOk(m_currentCmd, buf);
-  } else {
-    char buf[128];
-    snprintf(buf, sizeof(buf),
-             "EVENT_STATUS mask=%u sent=%lu lost_critical=%lu lost_info=%lu "
-             "last_seq=%lu depth=%u",
-             static_cast<unsigned>(evtMask), static_cast<unsigned long>(sent),
-             static_cast<unsigned long>(lostCritical),
-             static_cast<unsigned long>(lostInfo),
-             static_cast<unsigned long>(lastSeq),
-             static_cast<unsigned>(queueDepth));
-    m_transport.println(buf);
-  }
-}
-
-// =============================================================================
-// Flash image commands (delegate to FlashImageService)
-// =============================================================================
-
-void CommandParser::cmdFlashInfo() {
-  if (!m_dispatcher.flashIsAvailable()) {
-    respondErr("Flash not available");
-    return;
-  }
-
-  auto info = m_dispatcher.flashGetInfo();
-
-  if (m_format == ResponseFormat::JSON) {
-    char data[128];
-    snprintf(
-        data, sizeof(data),
-        "{\"manufacturer\":\"%02X\",\"capacity_kb\":%lu,\"max_slots\":%lu}",
-        info.manufacturer,
-        static_cast<unsigned long>(info.capacityBytes / 1024),
-        static_cast<unsigned long>(info.maxSlots));
-    respondJsonOk(m_currentCmd, data);
-  } else {
-    char buf[128];
-    snprintf(buf, sizeof(buf), "FLASH_INFO mfr=%02X cap=%luKB slots=%lu",
-             info.manufacturer,
-             static_cast<unsigned long>(info.capacityBytes / 1024),
-             static_cast<unsigned long>(info.maxSlots));
-    respondOk(buf);
-  }
-}
-
-void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
-  if (!m_dispatcher.flashIsAvailable()) {
-    respondErr("Flash not available");
-    return;
-  }
-
-  // Usage: FLASH_UPLOAD <slot> [CRC]
-  bool useCrc = hasCrcFlag(cmd);
-  uint32_t minArgs = useCrc ? 2 : 1;
-
-  if (cmd.argCount < minArgs) {
-    respondErr("Usage: FLASH_UPLOAD <slot> [CRC]");
-    return;
-  }
-
-  uint32_t slot = strtoul(cmd.args[0], nullptr, 10);
-  if (slot >= m_dispatcher.flashMaxSlots()) {
-    respondErr("Slot out of range");
-    return;
-  }
-
-  constexpr uint32_t expectedBytes =
-      Comms::ICommandDispatcher::FLASH_IMAGE_SIZE;
-
-  // Erase the slot first
-  if (!m_dispatcher.flashEraseSlot(slot)) {
-    respondErr("Flash erase failed");
-    return;
-  }
-
-  // Send ready response
-  char buf[32];
-  snprintf(buf, sizeof(buf), "OK READY %lu",
-           static_cast<unsigned long>(expectedBytes));
-  m_transport.println(buf);
-  m_transport.flush();
-
-  // Drain trailing \r/\n from command line before binary read
-  {
-    uint8_t drain;
-    while (m_transport.available() && m_transport.readByte(drain, 1)) {
-      if (drain != '\r' && drain != '\n')
-        break;
-    }
-  }
-
-  // Receive binary data and program page-by-page
-  constexpr uint32_t PAGE_SIZE = Comms::ICommandDispatcher::FLASH_PAGE_SIZE;
-  constexpr uint32_t BYTE_TIMEOUT_MS = 100;
-  uint8_t page[PAGE_SIZE];
-  uint32_t bytesReceived = 0;
-  uint32_t crcState = 0xFFFFFFFF;
-
-  while (bytesReceived < expectedBytes) {
-    uint32_t remaining = expectedBytes - bytesReceived;
-    uint32_t toRead = (remaining < PAGE_SIZE) ? remaining : PAGE_SIZE;
-
-    // Read one page worth of data
-    uint32_t pageReceived = 0;
-    while (pageReceived < toRead) {
-      uint8_t byte;
-      if (m_transport.readByte(byte, BYTE_TIMEOUT_MS)) {
-        page[pageReceived++] = byte;
-      } else {
-        char errBuf[48];
-        snprintf(errBuf, sizeof(errBuf), "Timeout at byte %lu/%lu",
-                 static_cast<unsigned long>(bytesReceived + pageReceived),
-                 static_cast<unsigned long>(expectedBytes));
-        respondErr(errBuf);
-        return;
-      }
-    }
-
-    if (useCrc) {
-      crcState = Util::crc32_update(crcState, page, toRead);
-    }
-
-    // Program the page to flash
-    if (!m_dispatcher.flashWriteSlotData(slot, bytesReceived, page, toRead)) {
-      respondErr("Flash program failed");
-      return;
-    }
-
-    bytesReceived += toRead;
-  }
-
-  // Verify CRC if requested
-  if (useCrc) {
-    if (!verifyCrc(crcState)) {
-      return;
-    }
-  }
-
-  // Read-back verification: read first 4 bytes from flash to confirm write
-  uint8_t verify[4] = {0xFF, 0xFF, 0xFF, 0xFF};
-  m_dispatcher.flashReadSlotChunk(slot, 0, verify, 4);
-  char okBuf[96];
-  snprintf(okBuf, sizeof(okBuf),
-           "Upload complete (%lu bytes, verify %02X%02X%02X%02X)",
-           static_cast<unsigned long>(bytesReceived), verify[0], verify[1],
-           verify[2], verify[3]);
-  respondOk(okBuf);
-}
-
-void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
-  if (!m_dispatcher.flashIsAvailable()) {
-    respondErr("Flash not available");
-    return;
-  }
-
-  if (cmd.argCount < 1) {
-    respondErr("Usage: FLASH_SHOW <slot>");
-    return;
-  }
-
-  uint32_t slot = strtoul(cmd.args[0], nullptr, 10);
-  if (slot >= m_dispatcher.flashMaxSlots()) {
-    respondErr("Slot out of range");
-    return;
-  }
-
-  // Automatically switch to REMOTE mode for display control
-  m_dispatcher.displaySetMode("REMOTE");
-
-  // Start LCD streaming (full screen)
-  if (!m_dispatcher.displayStreamStart(0, 0, 240, 320)) {
-    respondErr("LCD streaming failed");
-    return;
-  }
-
-  // Double-buffered flash→LCD pipeline: DMA1 (SPI2 flash read) overlaps
-  // with DMA2 (SPI1 LCD write) since they use independent DMA controllers.
-  constexpr uint32_t CHUNK_SIZE = 512;
-  uint8_t buf[2][CHUNK_SIZE];
-  int cur = 0;
-  uint32_t offset = 0;
-  uint32_t nonZeroCount = 0;
-  uint32_t nonFFCount = 0;
-  uint8_t first4[4] = {0};
-
-  // Read first chunk synchronously
-  if (!m_dispatcher.flashReadSlotChunk(slot, 0, buf[cur], CHUNK_SIZE)) {
-    m_dispatcher.displayStreamEnd();
-    respondErr("Flash read failed");
-    return;
-  }
-  for (uint32_t i = 0; i < 4; i++)
-    first4[i] = buf[cur][i];
-  offset = CHUNK_SIZE;
-
-  // Pipeline: start next flash read, then write current chunk to LCD
-  while (offset < Comms::ICommandDispatcher::FLASH_IMAGE_SIZE) {
-    uint32_t remaining = Comms::ICommandDispatcher::FLASH_IMAGE_SIZE - offset;
-    uint32_t toRead = (remaining < CHUNK_SIZE) ? remaining : CHUNK_SIZE;
-
-    // Start async flash read into other buffer (DMA1 on SPI2)
-    if (!m_dispatcher.flashReadSlotChunkStart(slot, offset, buf[1 - cur],
-                                              toRead)) {
-      m_dispatcher.displayStreamEnd();
-      respondErr("Flash read failed");
-      return;
-    }
-
-    // While flash DMA runs, write current buffer to LCD (DMA2 on SPI1)
-    for (uint32_t i = 0; i < CHUNK_SIZE; i++) {
-      if (buf[cur][i] != 0x00)
-        nonZeroCount++;
-      if (buf[cur][i] != 0xFF)
-        nonFFCount++;
-    }
-    m_dispatcher.displayStreamData(buf[cur], CHUNK_SIZE);
-
-    // Wait for flash read to complete
-    m_dispatcher.flashReadSlotChunkFinish();
-
-    cur = 1 - cur;
-    offset += toRead;
-  }
-
-  // Write final chunk to LCD
-  uint32_t lastSize =
-      Comms::ICommandDispatcher::FLASH_IMAGE_SIZE - (offset - CHUNK_SIZE);
-  if (lastSize > CHUNK_SIZE)
-    lastSize = CHUNK_SIZE;
-  for (uint32_t i = 0; i < lastSize; i++) {
-    if (buf[cur][i] != 0x00)
-      nonZeroCount++;
-    if (buf[cur][i] != 0xFF)
-      nonFFCount++;
-  }
-  m_dispatcher.displayStreamData(buf[cur], lastSize);
-
-  m_dispatcher.displayStreamEnd();
-  char okBuf[96];
-  snprintf(okBuf, sizeof(okBuf),
-           "slot=%lu first=%02X%02X%02X%02X nonZero=%lu nonFF=%lu",
-           (unsigned long)slot, first4[0], first4[1], first4[2], first4[3],
-           (unsigned long)nonZeroCount, (unsigned long)nonFFCount);
-  respondOk(okBuf);
-}
-
-void CommandParser::cmdFlashEraseAll() {
-  if (!m_dispatcher.flashIsAvailable()) {
-    respondErr("Flash not available");
-    return;
-  }
-
-  if (!m_dispatcher.flashEraseAll()) {
-    respondErr("Flash erase failed");
-    return;
-  }
-
-  respondOk("All image slots erased");
-}
-
-void CommandParser::cmdFlashDump(const ParsedCommand &cmd) {
-  if (!m_dispatcher.flashIsAvailable()) {
-    respondErr("Flash not available");
-    return;
-  }
-
-  // Usage: FLASH_DUMP <slot> [offset] [len]
-  if (cmd.argCount < 1) {
-    respondErr("Usage: FLASH_DUMP <slot> [offset] [len]");
-    return;
-  }
-
-  uint32_t slot = strtoul(cmd.args[0], nullptr, 10);
-  if (slot >= m_dispatcher.flashMaxSlots()) {
-    respondErr("Slot out of range");
-    return;
-  }
-
-  uint32_t offset = 0;
-  uint32_t len = 64; // Default: dump 64 bytes
-  if (cmd.argCount >= 2)
-    offset = strtoul(cmd.args[1], nullptr, 10);
-  if (cmd.argCount >= 3)
-    len = strtoul(cmd.args[2], nullptr, 10);
-  if (len > 256)
-    len = 256; // Cap at 256 bytes
-  if (offset + len > Comms::ICommandDispatcher::FLASH_IMAGE_SIZE) {
-    respondErr("Offset+len exceeds image size");
-    return;
-  }
-
-  uint8_t buf[256];
-  if (!m_dispatcher.flashReadSlotChunk(slot, offset, buf, len)) {
-    respondErr("Flash read failed");
-    return;
-  }
-
-  // Print hex dump in 16-byte rows
-  char line[80];
-  for (uint32_t i = 0; i < len; i += 16) {
-    int pos = snprintf(line, sizeof(line), "%06lX:",
-                       static_cast<unsigned long>(
-                           m_dispatcher.flashSlotAddress(slot) + offset + i));
-    for (uint32_t j = 0; j < 16 && (i + j) < len; j++) {
-      pos += snprintf(line + pos, sizeof(line) - pos, " %02X", buf[i + j]);
-    }
-    m_transport.println(line);
-  }
-  respondOk("Dump complete");
-}
-
-void CommandParser::cmdFlashTest() {
-  if (!m_dispatcher.flashIsAvailable()) {
-    respondErr("Flash not available");
-    return;
-  }
-
-  // All diagnostics packed into final response (client discards println lines)
-  char result[256];
-  int rpos = 0;
-
-  // Step 0: Read JEDEC ID NOW (verifies SPI2 bus is still alive)
-  auto info = m_dispatcher.flashGetInfo();
-  rpos += snprintf(result + rpos, sizeof(result) - rpos, "jedec=%02X/%02X/%02X",
-                   info.manufacturer, info.memoryType, info.capacityCode);
-
-  // Step 0b+0c: SPI2 peripheral + pin diagnostics (via debug handler)
-  if (m_debugCommands) {
-    rpos += m_debugCommands->formatSpi2Diag(result + rpos, sizeof(result) - rpos);
-  }
-
-  // Step 1: Read before erase (first 4 bytes)
-  uint8_t before[4];
-  m_dispatcher.flashReadSlotChunk(0, 0, before, 4);
-  rpos +=
-      snprintf(result + rpos, sizeof(result) - rpos, " pre=%02X%02X%02X%02X",
-               before[0], before[1], before[2], before[3]);
-
-  // Step 2: Erase slot 0
-  if (!m_dispatcher.flashEraseSlot(0)) {
-    rpos += snprintf(result + rpos, sizeof(result) - rpos, " erase=ERR");
-    respondErr(result);
-    return;
-  }
-
-  // Step 3: Read after erase (should be all FF)
-  uint8_t afterErase[16];
-  m_dispatcher.flashReadSlotChunk(0, 0, afterErase, 16);
-  bool eraseOk = true;
-  for (int i = 0; i < 16; i++) {
-    if (afterErase[i] != 0xFF) {
-      eraseOk = false;
-      break;
-    }
-  }
-  rpos += snprintf(result + rpos, sizeof(result) - rpos,
-                   " era=%s/%02X%02X%02X%02X", eraseOk ? "OK" : "FAIL",
-                   afterErase[0], afterErase[1], afterErase[2], afterErase[3]);
-
-  // Step 4: Write test pattern to first page
-  uint8_t pattern[256];
-  for (int i = 0; i < 256; i++)
-    pattern[i] = (i & 1) ? 0x55 : 0xAA;
-  if (!m_dispatcher.flashWriteSlotData(0, 0, pattern, 256)) {
-    rpos += snprintf(result + rpos, sizeof(result) - rpos, " wr=ERR");
-    respondErr(result);
-    return;
-  }
-
-  // Step 5: Read back and compare
-  uint8_t readback[256];
-  m_dispatcher.flashReadSlotChunk(0, 0, readback, 256);
-  int mismatches = 0;
-  for (int i = 0; i < 256; i++) {
-    if (readback[i] != pattern[i])
-      mismatches++;
-  }
-  rpos += snprintf(result + rpos, sizeof(result) - rpos,
-                   " wr=%s(%d) rb=%02X%02X%02X%02X",
-                   mismatches == 0 ? "OK" : "FAIL", 256 - mismatches,
-                   readback[0], readback[1], readback[2], readback[3]);
-
-  if (mismatches == 0 && eraseOk) {
-    respondOk(result);
-  } else {
-    respondErr(result);
-  }
-}
-
-// ========================================================================
-// CRC32 helpers
-// ========================================================================
-
-bool CommandParser::hasCrcFlag(const ParsedCommand &cmd) const {
-  if (cmd.argCount < 1)
-    return false;
-  return (strcmp(cmd.args[cmd.argCount - 1], "CRC") == 0);
-}
-
-bool CommandParser::verifyCrc(uint32_t computedCrc) {
-  // Finalize CRC
-  uint32_t expected = computedCrc ^ 0xFFFFFFFF;
-
-  // Read 4 CRC bytes (little-endian)
-  constexpr uint32_t CRC_TIMEOUT_MS = 200;
-  uint8_t crcBytes[4];
-  for (int i = 0; i < 4; i++) {
-    if (!m_transport.readByte(crcBytes[i], CRC_TIMEOUT_MS)) {
-      respondErr("CRC bytes timeout");
-      return false;
-    }
-  }
-
-  uint32_t received = static_cast<uint32_t>(crcBytes[0]) |
-                      (static_cast<uint32_t>(crcBytes[1]) << 8) |
-                      (static_cast<uint32_t>(crcBytes[2]) << 16) |
-                      (static_cast<uint32_t>(crcBytes[3]) << 24);
-
-  if (received != expected) {
-    char buf[64];
-    snprintf(buf, sizeof(buf), "CRC mismatch: expected %08lX got %08lX",
-             static_cast<unsigned long>(expected),
-             static_cast<unsigned long>(received));
-    respondErr(buf);
-    return false;
-  }
-
-  return true;
-}
-
-// ========================================================================
-// FLASH_UPLOAD_RLE: upload RLE-compressed image to flash slot
-// ========================================================================
-
-void CommandParser::cmdFlashUploadRle(const ParsedCommand &cmd) {
-  if (!m_dispatcher.flashIsAvailable()) {
-    respondErr("Flash not available");
-    return;
-  }
-
-  // Usage: FLASH_UPLOAD_RLE <slot> <compressed_bytes> [CRC]
-  bool useCrc = hasCrcFlag(cmd);
-  uint32_t minArgs = useCrc ? 3 : 2; // slot, comp_bytes [, CRC]
-
-  if (cmd.argCount < minArgs) {
-    respondErr("Usage: FLASH_UPLOAD_RLE <slot> <compressed_bytes> [CRC]");
-    return;
-  }
-
-  uint32_t slot = strtoul(cmd.args[0], nullptr, 10);
-  if (slot >= m_dispatcher.flashMaxSlots()) {
-    respondErr("Slot out of range");
-    return;
-  }
-
-  uint32_t compressedBytes = strtoul(cmd.args[1], nullptr, 10);
-  if (compressedBytes == 0) {
-    respondErr("Invalid compressed size");
-    return;
-  }
-
-  constexpr uint32_t MAX_COMPRESSED = 240 * 320 * 3;
-  if (compressedBytes > MAX_COMPRESSED) {
-    respondErr("Compressed size too large");
-    return;
-  }
-
-  // Erase the slot first
-  if (!m_dispatcher.flashEraseSlot(slot)) {
-    respondErr("Flash erase failed");
-    return;
-  }
-
-  // Send ready response
-  char buf[32];
-  snprintf(buf, sizeof(buf), "OK READY %lu",
-           static_cast<unsigned long>(compressedBytes));
-  m_transport.println(buf);
-  m_transport.flush();
-
-  // Drain trailing \r/\n from command line before binary read
-  {
-    uint8_t drain;
-    while (m_transport.available() && m_transport.readByte(drain, 1)) {
-      if (drain != '\r' && drain != '\n')
-        break;
-    }
-  }
-
-  // RLE streaming decoder → page buffer → flash
-  enum RleState { HEADER, LITERAL, REPEAT };
-  RleState rleState = HEADER;
-  uint16_t runCount = 0;
-  uint8_t pixelBuf[2] = {0, 0};
-  uint8_t pixelIdx = 0;
-  uint32_t totalPixels = 240UL * 320;
-  uint32_t decodedPixels = 0;
-
-  constexpr uint32_t PAGE_SIZE = Comms::ICommandDispatcher::FLASH_PAGE_SIZE;
-  constexpr uint32_t BYTE_TIMEOUT_MS = 100;
-  uint8_t page[PAGE_SIZE];
-  uint32_t pageOffset = 0;  // Bytes in current page buffer
-  uint32_t flashOffset = 0; // Byte offset into the flash slot
-
-  uint32_t crcState = 0xFFFFFFFF;
-  uint32_t bytesReceived = 0;
-
-  // Helper lambda: flush current page to flash
-  auto flushPage = [&]() -> bool {
-    if (pageOffset == 0)
-      return true;
-    if (!m_dispatcher.flashWriteSlotData(slot, flashOffset, page, pageOffset)) {
-      return false;
-    }
-    flashOffset += pageOffset;
-    pageOffset = 0;
-    return true;
-  };
-
-  // Helper: emit one decoded pixel (2 bytes) into the page buffer
-  auto emitPixel = [&](uint8_t hi, uint8_t lo) -> bool {
-    page[pageOffset++] = hi;
-    if (pageOffset >= PAGE_SIZE) {
-      if (!flushPage())
-        return false;
-    }
-    page[pageOffset++] = lo;
-    if (pageOffset >= PAGE_SIZE) {
-      if (!flushPage())
-        return false;
-    }
-    decodedPixels++;
-    return true;
-  };
-
-  while (bytesReceived < compressedBytes) {
-    uint8_t byte;
-    if (!m_transport.readByte(byte, BYTE_TIMEOUT_MS)) {
-      char errBuf[48];
-      snprintf(errBuf, sizeof(errBuf), "Timeout at byte %lu/%lu",
-               static_cast<unsigned long>(bytesReceived),
-               static_cast<unsigned long>(compressedBytes));
-      respondErr(errBuf);
-      return;
-    }
-    if (useCrc) {
-      crcState = Util::crc32_update(crcState, &byte, 1);
-    }
-    bytesReceived++;
-
-    switch (rleState) {
-    case HEADER:
-      if (byte & 0x80) {
-        runCount = static_cast<uint16_t>(byte - 125);
-        rleState = REPEAT;
-        pixelIdx = 0;
-      } else {
-        runCount = static_cast<uint16_t>(byte + 1);
-        rleState = LITERAL;
-        pixelIdx = 0;
-      }
-      break;
-
-    case LITERAL:
-      pixelBuf[pixelIdx++] = byte;
-      if (pixelIdx >= 2) {
-        if (!emitPixel(pixelBuf[0], pixelBuf[1])) {
-          respondErr("Flash program failed");
-          return;
-        }
-        pixelIdx = 0;
-        runCount--;
-        if (runCount == 0)
-          rleState = HEADER;
-      }
-      break;
-
-    case REPEAT:
-      pixelBuf[pixelIdx++] = byte;
-      if (pixelIdx >= 2) {
-        for (uint16_t i = 0; i < runCount; i++) {
-          if (!emitPixel(pixelBuf[0], pixelBuf[1])) {
-            respondErr("Flash program failed");
-            return;
-          }
-        }
-        rleState = HEADER;
-        pixelIdx = 0;
-      }
-      break;
-    }
-  }
-
-  // Flush remaining page data
-  if (!flushPage()) {
-    respondErr("Flash program failed (final page)");
-    return;
-  }
-
-  // Verify CRC if requested
-  if (useCrc) {
-    if (!verifyCrc(crcState)) {
-      return; // verifyCrc already sent error response
-    }
-  }
-
-  // Verify decoded pixel count
-  if (decodedPixels != totalPixels) {
-    char errBuf[64];
-    snprintf(errBuf, sizeof(errBuf), "RLE decode: got %lu pixels, expected %lu",
-             static_cast<unsigned long>(decodedPixels),
-             static_cast<unsigned long>(totalPixels));
-    respondErr(errBuf);
-    return;
-  }
-
-  // Read-back verification: read first 4 bytes from flash to confirm write
-  uint8_t verify[4] = {0xFF, 0xFF, 0xFF, 0xFF};
-  m_dispatcher.flashReadSlotChunk(slot, 0, verify, 4);
-
-  char okBuf[80];
-  snprintf(okBuf, sizeof(okBuf),
-           "Upload complete (%lu px, verify %02X%02X%02X%02X)",
-           static_cast<unsigned long>(decodedPixels), verify[0], verify[1],
-           verify[2], verify[3]);
-  respondOk(okBuf);
-}
-
-// ============================================================================
-// Phase A: Unit model, safety, and infrastructure commands
-// ============================================================================
-
-// DRV:STEP_MODE <0-7> — Hi-Z safe microstep mode change
-void CommandParser::cmdDrvStepMode(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: DRV:STEP_MODE <0-7>");
-    return;
-  }
-
-  unsigned long mode = strtoul(cmd.args[0], nullptr, 10);
-  if (mode > 7) {
-    respondErr("Step mode must be 0-7");
-    return;
-  }
-
-  // Check motor is not busy
-  Comms::TelemetrySnapshot snap = Comms::g_telemetry.getSnapshot();
-  if (snap.motor.busy) {
-    if (m_format == ResponseFormat::JSON) {
-      respondJsonErr("DRV:STEP_MODE", "MOTOR_BUSY",
-                     "Motor must be idle to change microstep mode");
-    } else {
-      respondErr("MOTOR_BUSY: Motor must be idle to change microstep mode");
-    }
-    return;
-  }
-
-  // Suspend motor task, perform Hi-Z safe write, resume
-  uint8_t readback = 0;
-  bool ok =
-      m_dispatcher.motorSetStepModeSafe(static_cast<uint8_t>(mode), readback);
-
-  if (!ok) {
-    if (m_format == ResponseFormat::JSON) {
-      respondJsonErr("DRV:STEP_MODE", "VERIFY_FAILED",
-                     "STEP_MODE readback mismatch");
-    } else {
-      respondErr("VERIFY_FAILED: STEP_MODE readback mismatch");
-    }
-    return;
-  }
-
-  // Update persistent config (RAM only — user must DRV:CFG:SAVE to persist)
-  m_dispatcher.configSetStepMode(readback);
-  uint32_t ustepsPerRev = m_dispatcher.getMicrostepsPerRev();
-
-  if (m_format == ResponseFormat::JSON) {
-    char json[128];
-    snprintf(
-        json, sizeof(json),
-        "{\"step_mode\":%u,\"microstep_ratio\":%u,\"microsteps_per_rev\":%lu}",
-        (unsigned)readback, 1U << readback,
-        static_cast<unsigned long>(ustepsPerRev));
-    respondJsonOk("DRV:STEP_MODE", json);
-  } else {
-    char buf[80];
-    snprintf(buf, sizeof(buf),
-             "STEP_MODE=%u MICROSTEP_RATIO=1/%u MICROSTEPS_PER_REV=%lu",
-             (unsigned)readback, 1U << readback,
-             static_cast<unsigned long>(ustepsPerRev));
-    respondOk(buf);
-  }
-}
-
-// DRV:STEP_MODE? — read step mode from hardware
-void CommandParser::cmdDrvStepModeQuery() {
-  Comms::ICommandDispatcher::MotorDebugParams info = {};
-  m_dispatcher.motorGetDebugInfo(info);
-  uint8_t mode = info.stepMode;
-  uint32_t ustepsPerRev =
-      static_cast<uint32_t>(m_dispatcher.getFullStepsPerRev()) * (1U << mode);
-
-  if (m_format == ResponseFormat::JSON) {
-    char json[128];
-    snprintf(
-        json, sizeof(json),
-        "{\"step_mode\":%u,\"microstep_ratio\":%u,\"microsteps_per_rev\":%lu}",
-        (unsigned)mode, 1U << mode, static_cast<unsigned long>(ustepsPerRev));
-    respondJsonOk("DRV:STEP_MODE?", json);
-  } else {
-    char buf[80];
-    snprintf(buf, sizeof(buf),
-             "STEP_MODE=%u MICROSTEP_RATIO=1/%u MICROSTEPS_PER_REV=%lu",
-             (unsigned)mode, 1U << mode,
-             static_cast<unsigned long>(ustepsPerRev));
-    respondOk(buf);
-  }
-}
-
-// DRV:FULL_STEPS <n> — set motor full steps per revolution
-void CommandParser::cmdDrvFullSteps(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: DRV:FULL_STEPS <steps_per_rev>");
-    return;
-  }
-
-  unsigned long steps = strtoul(cmd.args[0], nullptr, 10);
-  if (steps == 0 || steps > 10000) {
-    respondErr("Full steps/rev must be 1-10000");
-    return;
-  }
-
-  m_dispatcher.configSetFullStepsPerRev(static_cast<uint16_t>(steps));
-  uint32_t ustepsPerRev = m_dispatcher.getMicrostepsPerRev();
-
-  if (m_format == ResponseFormat::JSON) {
-    char json[96];
-    snprintf(json, sizeof(json),
-             "{\"full_steps_per_rev\":%lu,\"microsteps_per_rev\":%lu}", steps,
-             static_cast<unsigned long>(ustepsPerRev));
-    respondJsonOk("DRV:FULL_STEPS", json);
-  } else {
-    char buf[64];
-    snprintf(buf, sizeof(buf), "FULL_STEPS=%lu MICROSTEPS_PER_REV=%lu", steps,
-             static_cast<unsigned long>(ustepsPerRev));
-    respondOk(buf);
-  }
-}
-
-// DRV:FULL_STEPS? — query motor full steps per revolution
-void CommandParser::cmdDrvFullStepsQuery() {
-  uint16_t steps = m_dispatcher.getFullStepsPerRev();
-  uint32_t ustepsPerRev = m_dispatcher.getMicrostepsPerRev();
-
-  if (m_format == ResponseFormat::JSON) {
-    char json[96];
-    snprintf(json, sizeof(json),
-             "{\"full_steps_per_rev\":%u,\"microsteps_per_rev\":%lu}",
-             (unsigned)steps, static_cast<unsigned long>(ustepsPerRev));
-    respondJsonOk("DRV:FULL_STEPS?", json);
-  } else {
-    char buf[64];
-    snprintf(buf, sizeof(buf), "FULL_STEPS=%u MICROSTEPS_PER_REV=%lu",
-             (unsigned)steps, static_cast<unsigned long>(ustepsPerRev));
-    respondOk(buf);
-  }
-}
-
-// DRV:ENC_PPR <n> — set encoder pulses per revolution
-void CommandParser::cmdDrvEncoderPPR(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: DRV:ENC_PPR <pulses_per_rev>");
-    return;
-  }
-
-  unsigned long ppr = strtoul(cmd.args[0], nullptr, 10);
-  if (ppr == 0 || ppr > 65535) {
-    respondErr("Encoder PPR must be 1-65535");
-    return;
-  }
-
-  m_dispatcher.configSetEncoderPPR(static_cast<uint16_t>(ppr));
-
-  if (m_format == ResponseFormat::JSON) {
-    char json[48];
-    snprintf(json, sizeof(json), "{\"encoder_ppr\":%lu}", ppr);
-    respondJsonOk("DRV:ENC_PPR", json);
-  } else {
-    char buf[32];
-    snprintf(buf, sizeof(buf), "ENC_PPR=%lu", ppr);
-    respondOk(buf);
-  }
-}
-
-// DRV:ENC_PPR? — query encoder pulses per revolution
-void CommandParser::cmdDrvEncoderPPRQuery() {
-  uint16_t ppr = m_dispatcher.configGetEncoderPPR();
-
-  if (m_format == ResponseFormat::JSON) {
-    char json[48];
-    snprintf(json, sizeof(json), "{\"encoder_ppr\":%u}", (unsigned)ppr);
-    respondJsonOk("DRV:ENC_PPR?", json);
-  } else {
-    char buf[32];
-    snprintf(buf, sizeof(buf), "ENC_PPR=%u", (unsigned)ppr);
-    respondOk(buf);
-  }
-}
-
-// SYST:DELAY <ms> — set transport delay compensation
-void CommandParser::cmdSystDelay(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: SYST:DELAY <ms>");
-    return;
-  }
-
-  unsigned long ms = strtoul(cmd.args[0], nullptr, 10);
-  if (ms > 1000) {
-    respondErr("Delay must be 0-1000 ms");
-    return;
-  }
-
-  m_dispatcher.setTransportDelay(static_cast<uint32_t>(ms));
-
-  if (m_format == ResponseFormat::JSON) {
-    char json[48];
-    snprintf(json, sizeof(json), "{\"transport_delay_ms\":%lu}", ms);
-    respondJsonOk("SYST:DELAY", json);
-  } else {
-    char buf[32];
-    snprintf(buf, sizeof(buf), "DELAY=%lu", ms);
-    respondOk(buf);
-  }
-}
-
-// SYST:DELAY? — query transport delay compensation
-void CommandParser::cmdSystDelayQuery() {
-  uint32_t ms = m_dispatcher.getTransportDelay();
-
-  if (m_format == ResponseFormat::JSON) {
-    char json[48];
-    snprintf(json, sizeof(json), "{\"transport_delay_ms\":%lu}",
-             static_cast<unsigned long>(ms));
-    respondJsonOk("SYST:DELAY?", json);
-  } else {
-    char buf[32];
-    snprintf(buf, sizeof(buf), "DELAY=%lu", static_cast<unsigned long>(ms));
-    respondOk(buf);
-  }
-}
-
-// CTRL:FOLLOW? — query following error
-void CommandParser::cmdFollowingError() {
-  // Expanded supervisor status including state, tier, and following error
-  uint8_t svState, svTier, svRetryCount;
-  int32_t svPosError, svVelError, svSetpoint;
-  int16_t svPidOutput;
-  uint32_t svErrorDurationMs;
-  m_dispatcher.getSupervisorTelemetry(svState, svTier, svPosError, svVelError,
-                                      svSetpoint, svPidOutput, svRetryCount,
-                                      svErrorDurationMs);
-  uint8_t mode = m_dispatcher.getControlMode();
-
-  static const char *stateNames[] = {"IDLE", "MOVING", "HOLDING", "RECOVERY",
-                                     "FAULT"};
-  static const char *tierNames[] = {"OBSERVE", "SOFT_CORRECT", "PAUSE_RECOVER",
-                                    "FAULT_LATCH"};
-  uint8_t si = svState;
-  uint8_t ti = svTier;
-  const char *stateName = (si < 5) ? stateNames[si] : "UNKNOWN";
-  const char *tierName = (ti < 4) ? tierNames[ti] : "UNKNOWN";
-
-  if (m_format == ResponseFormat::JSON) {
-    char json[256];
-    snprintf(json, sizeof(json),
-             "{\"state\":\"%s\",\"tier\":\"%s\",\"mode\":%u,"
-             "\"pos_error\":%ld,\"vel_error\":%ld,"
-             "\"setpoint\":%ld,\"pid_out\":%d,"
-             "\"retries\":%u,\"error_ms\":%lu}",
-             stateName, tierName, (unsigned)mode, static_cast<long>(svPosError),
-             static_cast<long>(svVelError), static_cast<long>(svSetpoint),
-             (int)svPidOutput, (unsigned)svRetryCount,
-             static_cast<unsigned long>(svErrorDurationMs));
-    respondJsonOk("CTRL:FOLLOW?", json);
-  } else {
-    char buf[128];
-    snprintf(buf, sizeof(buf),
-             "state=%s tier=%s err=%ld vel_err=%ld retries=%u", stateName,
-             tierName, static_cast<long>(svPosError),
-             static_cast<long>(svVelError), (unsigned)svRetryCount);
-    respondOk(buf);
-  }
-}
-
-void CommandParser::cmdFollowThreshQuery() {
-  int16_t me, he, hl;
-  uint16_t mt, ht;
-  uint8_t mr;
-  m_dispatcher.getFollowThresholds(me, mt, he, ht, hl, mr);
-
-  if (m_format == ResponseFormat::JSON) {
-    char json[160];
-    snprintf(json, sizeof(json),
-             "{\"move_error\":%d,\"move_time_ms\":%u,"
-             "\"hold_error\":%d,\"hold_time_ms\":%u,"
-             "\"hard_limit\":%d,\"max_retries\":%u}",
-             (int)me, (unsigned)mt, (int)he, (unsigned)ht, (int)hl,
-             (unsigned)mr);
-    respondJsonOk("CTRL:FOLLOW:THRESH?", json);
-  } else {
-    char buf[128];
-    snprintf(buf, sizeof(buf),
-             "E_MOVE=%d T_MOVE=%u E_HOLD=%d T_HOLD=%u E_HARD=%d N_RETRY=%u",
-             (int)me, (unsigned)mt, (int)he, (unsigned)ht, (int)hl,
-             (unsigned)mr);
-    respondOk(buf);
-  }
-}
-
-void CommandParser::cmdFollowThreshSet(const ParsedCommand &cmd) {
-  if (cmd.argCount < 6) {
-    respondErr("Usage: CTRL:FOLLOW:THRESH <E_MOVE> <T_MOVE> <E_HOLD> <T_HOLD> "
-               "<E_HARD> <N_RETRY>");
-    return;
-  }
-
-  int16_t moveErr = static_cast<int16_t>(strtol(cmd.args[0], nullptr, 10));
-  uint16_t moveTime = static_cast<uint16_t>(strtoul(cmd.args[1], nullptr, 10));
-  int16_t holdErr = static_cast<int16_t>(strtol(cmd.args[2], nullptr, 10));
-  uint16_t holdTime = static_cast<uint16_t>(strtoul(cmd.args[3], nullptr, 10));
-  int16_t hardLimit = static_cast<int16_t>(strtol(cmd.args[4], nullptr, 10));
-  uint8_t maxRetry = static_cast<uint8_t>(strtoul(cmd.args[5], nullptr, 10));
-
-  m_dispatcher.setFollowThresholds(moveErr, moveTime, holdErr, holdTime,
-                                   hardLimit, maxRetry);
-
-  // Apply immediately to supervisor
-  m_dispatcher.applySupervisorConfig();
-
-  respondOk("Thresholds set");
-}
-
-void CommandParser::cmdFollowSave() {
-  if (m_dispatcher.configSaveToFlash()) {
-    respondOk("Follow config saved");
-  } else {
-    respondErr("Flash write failed");
-  }
-}
-
-void CommandParser::cmdFollowClear() {
-  if (m_dispatcher.supervisorClearFault()) {
-    respondOk("Supervisor fault cleared");
-  } else {
-    respondErr("No fault to clear");
-  }
-}
-
-// =========================================================================
-// CTRL:TRIM:* — Speed-trim PI controller commands
-// =========================================================================
-
-// Helper: parse "1.50" → 150 (×100 fixed-point)
-static int16_t parseGain100(const char *s) {
-  int sign = 1;
-  if (*s == '-') {
-    sign = -1;
-    s++;
-  }
-  int integer = 0;
-  while (*s >= '0' && *s <= '9') {
-    integer = integer * 10 + (*s - '0');
-    s++;
-  }
-  int frac = 0;
-  int fracDigits = 0;
-  if (*s == '.') {
-    s++;
-    while (*s >= '0' && *s <= '9' && fracDigits < 2) {
-      frac = frac * 10 + (*s - '0');
-      s++;
-      fracDigits++;
-    }
-    while (fracDigits < 2) {
-      frac *= 10;
-      fracDigits++;
-    }
-  }
-  return static_cast<int16_t>(sign * (integer * 100 + frac));
-}
-
-void CommandParser::cmdTrimQuery() {
-  int16_t kp100, ki100, kd100;
-  uint16_t outLim, iLim;
-  m_dispatcher.getTrimGains(kp100, ki100, kd100, outLim, iLim);
-  uint8_t maxPct = (kd100 > 0 && kd100 <= 50) ? static_cast<uint8_t>(kd100) : 8;
-
-  TelemetrySnapshot snap = g_telemetry.getSnapshot();
-  bool active = snap.control.tracking;
-  bool frozen = snap.control.trimFrozen != 0;
-
-  if (m_format == ResponseFormat::JSON) {
-    char json[256];
-    snprintf(json, sizeof(json),
-             "{\"kp\":\"%d.%02d\",\"ki\":\"%d.%02d\","
-             "\"out_limit\":%u,\"i_limit\":%u,\"max_pct\":%u,"
-             "\"active\":%s,\"frozen\":%s,"
-             "\"base_spd\":%ld,\"trim_spd\":%ld,\"final_spd\":%ld,"
-             "\"vel_quality\":%u}",
-             kp100 / 100, (kp100 < 0 ? -kp100 : kp100) % 100, ki100 / 100,
-             (ki100 < 0 ? -ki100 : ki100) % 100, (unsigned)outLim,
-             (unsigned)iLim, (unsigned)maxPct, active ? "true" : "false",
-             frozen ? "true" : "false",
-             static_cast<long>(snap.control.baseSpeedRaw),
-             static_cast<long>(snap.control.trimSpeedRaw),
-             static_cast<long>(snap.control.finalSpeedRaw),
-             static_cast<unsigned>(snap.control.velQuality));
-    respondJsonOk("CTRL:TRIM?", json);
-  } else {
-    char buf[128];
-    snprintf(buf, sizeof(buf),
-             "TRIM Kp=%d.%02d Ki=%d.%02d out=%u i=%u maxPct=%u %s%s",
-             kp100 / 100, (kp100 < 0 ? -kp100 : kp100) % 100, ki100 / 100,
-             (ki100 < 0 ? -ki100 : ki100) % 100, (unsigned)outLim,
-             (unsigned)iLim, (unsigned)maxPct, active ? "ACTIVE" : "IDLE",
-             frozen ? " FROZEN" : "");
-    respondOk(buf);
-  }
-}
-
-void CommandParser::cmdTrimSetGains(const ParsedCommand &cmd) {
-  if (cmd.argCount < 2) {
-    respondErr("Usage: CTRL:TRIM:GAINS <kp> <ki>");
-    return;
-  }
-
-  int16_t kp100 = parseGain100(cmd.args[0]);
-  int16_t ki100 = parseGain100(cmd.args[1]);
-
-  m_dispatcher.setTrimGains(kp100, ki100);
-
-  // Reconfigure live trim controller if active
-  m_dispatcher.applyTrimConfig();
-
-  if (m_format == ResponseFormat::JSON) {
-    char json[64];
-    snprintf(json, sizeof(json), "{\"kp\":\"%d.%02d\",\"ki\":\"%d.%02d\"}",
-             kp100 / 100, (kp100 < 0 ? -kp100 : kp100) % 100, ki100 / 100,
-             (ki100 < 0 ? -ki100 : ki100) % 100);
-    respondJsonOk("CTRL:TRIM:GAINS", json);
-  } else {
-    respondOk("Trim gains set");
-  }
-}
-
-void CommandParser::cmdTrimSetLimits(const ParsedCommand &cmd) {
-  if (cmd.argCount < 2) {
-    respondErr("Usage: CTRL:TRIM:LIMITS <output_limit> <integral_limit>");
-    return;
-  }
-
-  uint16_t outLim = static_cast<uint16_t>(strtoul(cmd.args[0], nullptr, 10));
-  uint16_t iLim = static_cast<uint16_t>(strtoul(cmd.args[1], nullptr, 10));
-
-  m_dispatcher.setTrimLimits(outLim, iLim);
-
-  // Reconfigure live trim controller
-  m_dispatcher.applyTrimConfig();
-
-  if (m_format == ResponseFormat::JSON) {
-    char json[64];
-    snprintf(json, sizeof(json), "{\"out_limit\":%u,\"i_limit\":%u}",
-             (unsigned)outLim, (unsigned)iLim);
-    respondJsonOk("CTRL:TRIM:LIMITS", json);
-  } else {
-    respondOk("Trim limits set");
-  }
-}
-
-void CommandParser::cmdTrimSetMaxPct(const ParsedCommand &cmd) {
-  if (cmd.argCount < 1) {
-    respondErr("Usage: CTRL:TRIM:MAXPCT <1-50>");
-    return;
-  }
-
-  int val = atoi(cmd.args[0]);
-  if (val < 1 || val > 50) {
-    respondErr("maxPct must be 1-50");
-    return;
-  }
-
-  m_dispatcher.setTrimMaxPct(static_cast<int16_t>(val));
-
-  // Reconfigure live trim controller
-  m_dispatcher.applyTrimConfig();
-
-  if (m_format == ResponseFormat::JSON) {
-    char json[32];
-    snprintf(json, sizeof(json), "{\"max_pct\":%d}", val);
-    respondJsonOk("CTRL:TRIM:MAXPCT", json);
-  } else {
-    respondOk("Trim max percent set");
-  }
-}
-
-void CommandParser::cmdTrimReset() {
-  m_dispatcher.resetTrim();
-  respondOk("Trim reset");
-}
-
-void CommandParser::cmdTrimSave() {
-  if (m_dispatcher.configSaveToFlash()) {
-    respondOk("Trim config saved");
-  } else {
-    respondErr("Flash write failed");
-  }
-}
-
-// =========================================================================
-// CTRL:PID:* — Legacy aliases (route to trim commands)
-// =========================================================================
-
-void CommandParser::cmdPidQuery() {
-  cmdTrimQuery(); // Same output
-}
-
-void CommandParser::cmdPidSetGains(const ParsedCommand &cmd) {
-  // Accept 2 or 3 args: CTRL:PID:GAINS <kp> <ki> [<kd>]
-  // kd is ignored (always 0 for PI trim), but don't reject old 3-arg callers
-  if (cmd.argCount < 2) {
-    respondErr("Usage: CTRL:PID:GAINS <kp> <ki> [<kd>]");
-    return;
-  }
-  cmdTrimSetGains(cmd); // Uses first 2 args
-}
-
-void CommandParser::cmdPidSetLimits(const ParsedCommand &cmd) {
-  cmdTrimSetLimits(cmd);
-}
-
-void CommandParser::cmdPidReset() { cmdTrimReset(); }
-
-void CommandParser::cmdPidSave() { cmdTrimSave(); }
-
-// --- System Identification commands ---
-
-void CommandParser::cmdSysIdStep(const ParsedCommand &cmd) {
-  if (cmd.argCount < 2) {
-    respondErr("Usage: CTRL:SYSID:STEP <speed_sps> <dir> [dur_ms] [settle_ms]");
-    return;
-  }
-
-  uint16_t targetSpd = static_cast<uint16_t>(atol(cmd.args[0]));
-  bool forward = (atol(cmd.args[1]) != 0);
-  uint16_t durMs =
-      (cmd.argCount >= 3) ? static_cast<uint16_t>(atol(cmd.args[2])) : 5000;
-  uint16_t settleMs =
-      (cmd.argCount >= 4) ? static_cast<uint16_t>(atol(cmd.args[3])) : 1000;
-
-  if (targetSpd == 0 || targetSpd > 15625) {
-    respondErr("speed_sps must be 1-15625");
-    return;
-  }
-
-  if (m_dispatcher.sysIdStart(0, targetSpd, 0, forward, durMs, settleMs, 0)) {
-    respondOk("SYSID step started");
-  } else {
-    respondErr("SYSID already running");
-  }
-}
-
-void CommandParser::cmdSysIdRamp(const ParsedCommand &cmd) {
-  if (cmd.argCount < 3) {
-    respondErr("Usage: CTRL:SYSID:RAMP <start_sps> <end_sps> <dir> [dur_ms] "
-               "[settle_ms]");
-    return;
-  }
-
-  uint16_t startSpd = static_cast<uint16_t>(atol(cmd.args[0]));
-  uint16_t targetSpd = static_cast<uint16_t>(atol(cmd.args[1]));
-  bool forward = (atol(cmd.args[2]) != 0);
-  uint16_t durMs =
-      (cmd.argCount >= 4) ? static_cast<uint16_t>(atol(cmd.args[3])) : 5000;
-  uint16_t settleMs =
-      (cmd.argCount >= 5) ? static_cast<uint16_t>(atol(cmd.args[4])) : 1000;
-
-  if (targetSpd > 15625 || startSpd > 15625) {
-    respondErr("speed must be 0-15625 sps");
-    return;
-  }
-
-  if (m_dispatcher.sysIdStart(1, targetSpd, startSpd, forward, durMs, settleMs,
-                              0)) {
-    respondOk("SYSID ramp started");
-  } else {
-    respondErr("SYSID already running");
-  }
-}
-
-void CommandParser::cmdSysIdStatus() {
-  uint8_t phase = m_dispatcher.sysIdGetPhase();
-  uint16_t count = m_dispatcher.sysIdGetSampleCount();
-
-  if (m_format == ResponseFormat::JSON) {
-    char data[64];
-    snprintf(data, sizeof(data), "{\"phase\":%u,\"samples\":%u}",
-             static_cast<unsigned>(phase), static_cast<unsigned>(count));
-    respondJsonOk("CTRL:SYSID:STATUS", data);
-  } else {
-    char buf[48];
-    snprintf(buf, sizeof(buf), "phase=%u samples=%u",
-             static_cast<unsigned>(phase), static_cast<unsigned>(count));
-    respondOk(buf);
-  }
-}
-
-void CommandParser::cmdSysIdData(const ParsedCommand &cmd) {
-  if (m_dispatcher.sysIdGetPhase() != 4) { // 4 = DONE
-    respondErr("No data ready (test not DONE)");
-    return;
-  }
-
-  uint16_t offset =
-      (cmd.argCount >= 1) ? static_cast<uint16_t>(atol(cmd.args[0])) : 0;
-  uint16_t count =
-      (cmd.argCount >= 2) ? static_cast<uint16_t>(atol(cmd.args[1])) : 20;
-  uint16_t total;
-  const auto *samples = m_dispatcher.sysIdGetSamples(total);
-
-  if (offset >= total) {
-    respondErr("offset past end");
-    return;
-  }
-  if (offset + count > total) {
-    count = total - offset;
-  }
-
-  // Header line
-  char buf[64];
-  snprintf(buf, sizeof(buf), "SYSID_DATA %u %u %u",
-           static_cast<unsigned>(offset), static_cast<unsigned>(count),
-           static_cast<unsigned>(total));
-  m_transport.println(buf);
-
-  // CSV data: time_ms,setpoint_tps,actual_tps,pos_error
-  for (uint16_t i = 0; i < count; i++) {
-    const auto &s = samples[offset + i];
-    snprintf(buf, sizeof(buf), "%u,%d,%d,%d", static_cast<unsigned>(s.time_ms),
-             static_cast<int>(s.setpoint_tps), static_cast<int>(s.actual_tps),
-             static_cast<int>(s.pos_error));
-    m_transport.println(buf);
-  }
-
-  m_transport.println("END");
-}
-
-void CommandParser::cmdSysIdSine(const ParsedCommand &cmd) {
-  // CTRL:SYSID:SINE <baseline_sps> <amplitude_sps> <freq_mHz> <dir> [dur_ms]
-  // [settle_ms]
-  if (cmd.argCount < 4) {
-    respondErr("Usage: CTRL:SYSID:SINE <baseline> <amplitude> <freq_mHz> <dir> "
-               "[dur] [settle]");
-    return;
-  }
-
-  uint16_t baseline = static_cast<uint16_t>(atol(cmd.args[0]));
-  uint16_t amplitude = static_cast<uint16_t>(atol(cmd.args[1]));
-  uint16_t freqMHz = static_cast<uint16_t>(atol(cmd.args[2]));
-  bool forward = (atol(cmd.args[3]) != 0);
-  uint16_t durMs =
-      (cmd.argCount >= 5) ? static_cast<uint16_t>(atol(cmd.args[4])) : 10000;
-  uint16_t settleMs =
-      (cmd.argCount >= 6) ? static_cast<uint16_t>(atol(cmd.args[5])) : 1000;
-
-  if (baseline > 15625 || amplitude > 15625) {
-    respondErr("speed must be 0-15625 sps");
-    return;
-  }
-  if (freqMHz == 0 || freqMHz > 5000) {
-    respondErr("freq_mHz must be 1-5000 (0.001-5.0 Hz)");
-    return;
-  }
-
-  if (m_dispatcher.sysIdStart(2, amplitude, baseline, forward, durMs, settleMs,
-                              freqMHz)) {
-    respondOk("SYSID sine started");
-  } else {
-    respondErr("SYSID already running");
-  }
-}
-
-void CommandParser::cmdSysIdTrapezoid(const ParsedCommand &cmd) {
-  // CTRL:SYSID:TRAPEZOID <speed_sps> <dir> [dur_ms] [settle_ms]
-  if (cmd.argCount < 2) {
-    respondErr(
-        "Usage: CTRL:SYSID:TRAPEZOID <speed_sps> <dir> [dur_ms] [settle_ms]");
-    return;
-  }
-
-  uint16_t targetSpd = static_cast<uint16_t>(atol(cmd.args[0]));
-  bool forward = (atol(cmd.args[1]) != 0);
-  uint16_t durMs =
-      (cmd.argCount >= 3) ? static_cast<uint16_t>(atol(cmd.args[2])) : 8000;
-  uint16_t settleMs =
-      (cmd.argCount >= 4) ? static_cast<uint16_t>(atol(cmd.args[3])) : 1000;
-
-  if (targetSpd == 0 || targetSpd > 15625) {
-    respondErr("speed_sps must be 1-15625");
-    return;
-  }
-
-  if (m_dispatcher.sysIdStart(3, targetSpd, 0, forward, durMs, settleMs, 0)) {
-    respondOk("SYSID trapezoid started");
-  } else {
-    respondErr("SYSID already running");
-  }
-}
-
-void CommandParser::cmdSysIdRect(const ParsedCommand &cmd) {
-  // CTRL:SYSID:RECT <speed_sps> <dir> [dur_ms] [settle_ms]
-  if (cmd.argCount < 2) {
-    respondErr("Usage: CTRL:SYSID:RECT <speed_sps> <dir> [dur_ms] [settle_ms]");
-    return;
-  }
-
-  uint16_t targetSpd = static_cast<uint16_t>(atol(cmd.args[0]));
-  bool forward = (atol(cmd.args[1]) != 0);
-  uint16_t durMs =
-      (cmd.argCount >= 3) ? static_cast<uint16_t>(atol(cmd.args[2])) : 6000;
-  uint16_t settleMs =
-      (cmd.argCount >= 4) ? static_cast<uint16_t>(atol(cmd.args[3])) : 1000;
-
-  if (targetSpd == 0 || targetSpd > 15625) {
-    respondErr("speed_sps must be 1-15625");
-    return;
-  }
-
-  if (m_dispatcher.sysIdStart(4, targetSpd, 0, forward, durMs, settleMs, 0)) {
-    respondOk("SYSID rect started");
-  } else {
-    respondErr("SYSID already running");
-  }
-}
-
-void CommandParser::cmdSysIdAbort() {
-  m_dispatcher.sysIdAbort();
-  respondOk("SYSID aborted");
+// Convenience: map a ServiceStatus (from L3 services) to OK/ERROR response
+void CommandParser::respondStatus(ServiceStatus r, const char *okMsg) {
+  if (r == ServiceStatus::Ok)
+    respondOk(okMsg);
+  else
+    respondErr(statusToString(r));
 }
 
 } // namespace Comms

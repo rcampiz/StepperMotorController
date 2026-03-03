@@ -22,6 +22,7 @@
 #ifdef ENABLE_INTERFACE_TRACE
 #include "wiring/traced/traced_safety_actions.hpp"
 #include "wiring/traced/traced_command_sink.hpp"
+#include "wiring/traced/traced_lock.hpp"
 #endif
 
 // Foundation — tasks
@@ -31,7 +32,7 @@
 #include "F_platform/tasks/motor_task.hpp"
 
 // Layers
-#include "F_platform/interfaces/telemetry.hpp"
+#include "F_platform/types/telemetry.hpp"
 #include "L3_services/config/device_config.hpp"
 #include "L3_services/dispatch/command_queue.hpp"
 #include "L3_services/dispatch/event_service.hpp"
@@ -122,7 +123,13 @@ void initPlatform()
 {
     Platform::init();
     auto& r = Platform::resources();
+#ifdef ENABLE_INTERFACE_TRACE
+    static TracedLock s_tracedSpi1Lock(*r.spi1Lock);
+    static TracedLock s_tracedSpi2Lock(*r.spi2Lock);
+    initOrHalt("SPI Manager", g_spiManager.init(s_tracedSpi1Lock, s_tracedSpi2Lock));
+#else
     initOrHalt("SPI Manager", g_spiManager.init(*r.spi1Lock, *r.spi2Lock));
+#endif
 
     s_norFlash = probeNorFlash();
     if (s_norFlash && Services::g_flashImageService.init(s_norFlash)) {
@@ -164,7 +171,8 @@ void initTasks()
     Services::g_motorCommandSink = &motorSink;
 #endif
     initOrHalt("CommandQueue",
-               Services::g_commandQueue.init(*r.commandQueueLock, *r.clock, motorSink));
+               Services::g_commandQueue.init(*r.commandQueueLock, *r.clock,
+                                             *Services::g_motorCommandSink));
 
     if (s_encoderAvailable) {
         const auto& cfg = Services::g_motorConfig.getConfig();

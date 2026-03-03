@@ -18,9 +18,9 @@
 
 #pragma once
 
-#include "F_platform/interfaces/ilock.hpp"
-#include "F_platform/interfaces/iclock.hpp"
-#include "F_platform/interfaces/imotor_command_sink.hpp"
+#include "F_platform/hal/ilock.hpp"
+#include "F_platform/hal/iclock.hpp"
+#include "F_platform/hal/imotor_command_sink.hpp"
 #include <stddef.h>
 #include <stdint.h>
 

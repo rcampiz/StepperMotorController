@@ -42,7 +42,7 @@ void HardFault_Handler(void) {
 
     // --- PSP frame (task context — where the task was when interrupted) ---
     EarlyDebug::print("PSP=0x"); printHex32(psp); EarlyDebug::println("");
-    uint32_t* pf = reinterpret_cast<uint32_t*>(psp);
+    auto *pf = reinterpret_cast<uint32_t*>(psp);
     EarlyDebug::print("pPC=0x");  printHex32(pf[6]);
     EarlyDebug::print(" pLR=0x"); printHex32(pf[5]); EarlyDebug::println("");
 
@@ -51,7 +51,7 @@ void HardFault_Handler(void) {
     // exception frame (32 bytes). Dump 24 words upward to find both frames.
     EarlyDebug::print("MSP=0x"); printHex32(msp); EarlyDebug::println("");
     EarlyDebug::println("MSP dump (24 words):");
-    uint32_t* mp = reinterpret_cast<uint32_t*>(msp);
+    auto *mp = reinterpret_cast<uint32_t*>(msp);
     for (int i = 0; i < 24; i++) {
         if (i % 4 == 0) {
             EarlyDebug::print("+");

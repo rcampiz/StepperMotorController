@@ -355,23 +355,23 @@ uint32_t FollowingSupervisor::applyPIDCorrection(
         / static_cast<float>(input.encoderPPR);
 
     // Base speed in steps/sec
-    uint32_t baseSps = static_cast<uint32_t>(
+    auto baseSps = static_cast<uint32_t>(
         (static_cast<uint64_t>(m_baseSpeedRaw) * 15625ULL) / 1048576ULL);
 
     // Compute new speed (signed to allow reduction below base)
-    int32_t newSps = static_cast<int32_t>(baseSps)
+    auto newSps = static_cast<int32_t>(baseSps)
                    + static_cast<int32_t>(adjustSps);
 
     // Clamp: no reversal, no exceeding MAX_SPEED
     if (newSps < 0) { newSps = 0; }
-    uint32_t maxSps = static_cast<uint32_t>(
+    auto maxSps = static_cast<uint32_t>(
         (static_cast<uint64_t>(input.maxSpeedRaw) * 15625ULL) / 1024ULL);
     if (static_cast<uint32_t>(newSps) > maxSps) {
         newSps = static_cast<int32_t>(maxSps);
     }
 
     // Convert back to raw speed register value
-    uint32_t newRaw = static_cast<uint32_t>(
+    auto newRaw = static_cast<uint32_t>(
         (static_cast<uint64_t>(newSps) * 1048576ULL) / 15625ULL);
 
     return newRaw;

@@ -8,13 +8,13 @@
 #ifdef ENABLE_INTERFACE_TRACE
 
 #include "F_util/interface_trace.hpp"
-#include "F_platform/interfaces/itrace_sink.hpp"
+#include "F_platform/hal/itrace_sink.hpp"
 #include "X_middlewares/SEGGER/RTT/SEGGER_RTT.h"
 #include <string.h>
 
 namespace ITrace {
 
-static uint8_t s_enableMask = ALL;
+static uint16_t s_enableMask = ALL;
 static ITraceSink* s_sink = nullptr;
 
 void setSink(ITraceSink* sink) {
@@ -32,18 +32,18 @@ void init()
     s_enableMask = ALL;
 }
 
-void setEnabled(uint8_t mask)
+void setEnabled(uint16_t mask)
 {
     s_enableMask = mask;
 }
 
-uint8_t getEnabled()
+uint16_t getEnabled()
 {
     return s_enableMask;
 }
 
 // Pick ANSI color based on boundary type
-static const char* colorForBoundary(uint8_t boundary) {
+static const char* colorForBoundary(uint16_t boundary) {
     switch (boundary) {
         case L1_L2_TRANSPORT: return "\033[36m";  // cyan
         case L2_L3_DISPATCH:  return "\033[32m";  // green
@@ -51,6 +51,11 @@ static const char* colorForBoundary(uint8_t boundary) {
         case L3_L4_ENCODER:   return "\033[35m";  // magenta
         case L3_F_SAFETY:     return "\033[31m";  // red
         case L3_CMD_SINK:     return "\033[37m";  // white
+        case L4_L5_SPI:       return "\033[34m";  // blue
+        case L5_F_LOCK:       return "\033[90m";  // bright black (gray)
+        case L4_LCD:          return "\033[95m";  // bright magenta
+        case L4_FLASH:        return "\033[94m";  // bright blue
+        case L2_TELEMETRY:    return "\033[92m";  // bright green
         default:              return "\033[0m";    // reset
     }
 }
@@ -72,7 +77,7 @@ static void hexFormat(uint32_t val, char* buf) {
 }
 
 // RTT-only output (no ring buffer write)
-static void rttEmit(uint8_t boundary, const char* label, const char* method,
+static void rttEmit(uint16_t boundary, const char* label, const char* method,
                     const char* detail)
 {
     char buf[128];
@@ -112,7 +117,7 @@ static void rttEmit(uint8_t boundary, const char* label, const char* method,
     SEGGER_RTT_Write(0, buf, pos);
 }
 
-void log(uint8_t boundary, const char* label, const char* method,
+void log(uint16_t boundary, const char* label, const char* method,
          const char* detail)
 {
     if (!(s_enableMask & boundary)) return;
@@ -121,7 +126,7 @@ void log(uint8_t boundary, const char* label, const char* method,
     if (s_sink) s_sink->recordIface(boundary, label, method, 0, detail);
 }
 
-void logResult(uint8_t boundary, const char* label, const char* method,
+void logResult(uint16_t boundary, const char* label, const char* method,
                uint32_t result)
 {
     if (!(s_enableMask & boundary)) return;

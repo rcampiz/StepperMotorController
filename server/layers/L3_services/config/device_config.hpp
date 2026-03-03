@@ -13,7 +13,7 @@
 
 #pragma once
 
-#include "F_platform/interfaces/ilock.hpp"
+#include "F_platform/hal/ilock.hpp"
 #include "L4_drivers/devices/flash_nor.hpp"
 #include <stdint.h>
 

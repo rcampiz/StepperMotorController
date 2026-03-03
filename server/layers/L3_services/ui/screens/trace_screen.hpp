@@ -72,14 +72,14 @@ private:
     size_t m_pauseTotal = 0;      // Trace::getTotal() when pause started
     size_t m_scrollOffset = 0;    // Offset from bottom (0 = newest visible)
     bool m_autoScroll = true;
-    uint8_t m_filterMask = 0xFF;  // Bitmask of enabled ITrace::Boundary values
+    uint16_t m_filterMask = 0x07FF;  // Bitmask of enabled ITrace::Boundary values
     uint8_t m_legendCursor = 0;   // Selected row in legend mode (0-6)
     size_t m_matchCount = 0;      // Cached count of filtered entries
     uint8_t m_zoomLevel = 0;      // Graph zoom: 0=auto, 1-7 = fixed block widths
 
     static constexpr uint8_t VISIBLE_LINES = 24;
     static constexpr uint16_t LINE_HEIGHT = 12;
-    static constexpr uint8_t LEGEND_ITEMS = 7;  // Number of boundary filters
+    static constexpr uint8_t LEGEND_ITEMS = 12;  // Number of boundary filters
 
     // Graph mode constants
     static constexpr uint8_t GRAPH_LANES = 6;

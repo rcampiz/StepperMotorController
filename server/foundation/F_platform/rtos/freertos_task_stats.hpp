@@ -12,7 +12,7 @@
 #ifndef FREERTOS_TASK_STATS_HPP
 #define FREERTOS_TASK_STATS_HPP
 
-#include "F_platform/interfaces/itask_stats.hpp"
+#include "F_platform/hal/itask_stats.hpp"
 #include <stdint.h>
 
 class FreeRTOSTaskStats : public ITaskStats {

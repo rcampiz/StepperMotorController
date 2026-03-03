@@ -1,0 +1,30 @@
+---
+# Clang-tidy config for STM32 embedded C++14 project.
+# Suppress checks that conflict with compact dispatch-table style
+# and embedded C idioms (C arrays, pointer-as-bool, snprintf).
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-branch-clone,
+  -bugprone-implicit-bool-conversion,
+  -bugprone-narrowing-conversions,
+  misc-*,
+  -misc-non-private-member-variables-in-classes,
+  -misc-include-cleaner,
+  performance-*,
+  readability-*,
+  -readability-braces-around-statements,
+  -readability-magic-numbers,
+  -readability-identifier-length,
+  -readability-implicit-bool-conversion,
+  -readability-else-after-return,
+  -readability-avoid-const-params-in-decls,
+  modernize-*,
+  -modernize-use-trailing-return-type,
+  -modernize-avoid-c-arrays,
+  -modernize-use-nodiscard,
+  -modernize-use-nullptr,
+  -modernize-raw-string-literal
+CheckOptions:
+  - key: readability-function-cognitive-complexity.Threshold
+    value: 40

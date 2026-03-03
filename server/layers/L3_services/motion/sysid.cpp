@@ -25,7 +25,7 @@ uint32_t SysIdRunner::speedSpsToRaw(uint16_t sps) {
 int16_t SysIdRunner::speedSpsToTps(uint16_t sps, uint16_t fpr, uint16_t ppr) {
     // tps = sps * encoderPPR / fullStepsPerRev
     if (fpr == 0) fpr = 200;
-    int32_t tps = static_cast<int32_t>(sps) * ppr / fpr;
+    auto tps = static_cast<int32_t>(sps) * ppr / fpr;
     return clamp16(tps);
 }
 
@@ -45,8 +45,8 @@ uint16_t SysIdRunner::interpolateRampSpeed() const {
     if (elapsed >= duration) return m_cfg.targetSpeed_sps;
 
     // speed = start + (target - start) * elapsed / duration
-    int32_t start = static_cast<int32_t>(m_cfg.startSpeed_sps);
-    int32_t target = static_cast<int32_t>(m_cfg.targetSpeed_sps);
+    auto start = static_cast<int32_t>(m_cfg.startSpeed_sps);
+    auto target = static_cast<int32_t>(m_cfg.targetSpeed_sps);
     int32_t speed = start + (target - start) * static_cast<int32_t>(elapsed)
                     / static_cast<int32_t>(duration);
 
@@ -81,7 +81,7 @@ uint16_t SysIdRunner::generateTrapezoidSpeed() const {
     uint32_t q2 = dur / 2;
     uint32_t q3 = (dur * 3) / 4;
 
-    int32_t target = static_cast<int32_t>(m_cfg.targetSpeed_sps);
+    auto target = static_cast<int32_t>(m_cfg.targetSpeed_sps);
 
     if (elapsed < q1) {
         // Ramp up: 0 → target

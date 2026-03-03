@@ -13,7 +13,7 @@
 #ifndef F_PLATFORM_UI_MODE_HPP
 #define F_PLATFORM_UI_MODE_HPP
 
-#include "F_platform/interfaces/ilock.hpp"
+#include "F_platform/hal/ilock.hpp"
 #include <stdint.h>
 
 namespace UI {

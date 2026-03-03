@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include "F_platform/interfaces/idebug_commands.hpp"
+#include "F_platform/dispatch/idebug_commands.hpp"
 
 class DebugCommandHandler : public Comms::IDebugCommands {
 public:

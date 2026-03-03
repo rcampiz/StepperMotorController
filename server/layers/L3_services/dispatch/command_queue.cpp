@@ -130,7 +130,7 @@ QueueResult CommandQueue::startAt(uint32_t targetTick)
 
     // Check if target tick has already passed
     uint32_t now = TickTimer_GetTick();
-    int32_t delta = static_cast<int32_t>(targetTick - now);
+    auto delta = static_cast<int32_t>(targetTick - now);
 
     if (delta < 0) {
         // Target tick already passed

@@ -269,24 +269,24 @@ public:
 
         // Red gradient
         for (int i = 0; i < gSteps; i++) {
-            uint16_t r = static_cast<uint16_t>(i * 31 / (gSteps - 1));
+            auto r = static_cast<uint16_t>(i * 31 / (gSteps - 1));
             fillRect(i * gStepW, s3Y, gStepW, chanH, r << 11);
         }
         // Green gradient
         for (int i = 0; i < gSteps; i++) {
-            uint16_t g = static_cast<uint16_t>(i * 63 / (gSteps - 1));
+            auto g = static_cast<uint16_t>(i * 63 / (gSteps - 1));
             fillRect(i * gStepW, s3Y + chanH, gStepW, chanH, g << 5);
         }
         // Blue gradient
         for (int i = 0; i < gSteps; i++) {
-            uint16_t b = static_cast<uint16_t>(i * 31 / (gSteps - 1));
+            auto b = static_cast<uint16_t>(i * 31 / (gSteps - 1));
             fillRect(i * gStepW, s3Y + 2 * chanH, gStepW, chanH, b);
         }
 
         // === 4. 16-step grayscale ramp (220-251) ===
         constexpr uint16_t s4Y = 220, s4H = 32;
         for (int i = 0; i < gSteps; i++) {
-            uint8_t v = static_cast<uint8_t>(i * 255 / (gSteps - 1));
+            auto v = static_cast<uint8_t>(i * 255 / (gSteps - 1));
             fillRect(i * gStepW, s4Y, gStepW, s4H, rgb565Gray(v));
         }
 
@@ -576,8 +576,8 @@ public:
 
         uint16_t fgInv = ~fg;
         uint16_t bgInv = ~bg;
-        uint8_t bgH = static_cast<uint8_t>(bgInv >> 8);
-        uint8_t bgL = static_cast<uint8_t>(bgInv & 0xFF);
+        auto bgH = static_cast<uint8_t>(bgInv >> 8);
+        auto bgL = static_cast<uint8_t>(bgInv & 0xFF);
 
         // Count printable characters that fit
         uint16_t len = 0;
@@ -647,8 +647,8 @@ public:
         if (x + lineW > WIDTH || y + lineH > HEIGHT) return;
 
         uint16_t bgInv = ~bg;
-        uint8_t bgH = static_cast<uint8_t>(bgInv >> 8);
-        uint8_t bgL = static_cast<uint8_t>(bgInv & 0xFF);
+        auto bgH = static_cast<uint8_t>(bgInv >> 8);
+        auto bgL = static_cast<uint8_t>(bgInv & 0xFF);
 
         uint16_t len = 0;
         if (text != nullptr) {
@@ -857,11 +857,11 @@ public:
      * @param color Line color
      */
     void drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color) {
-        int16_t dx = static_cast<int16_t>(x1 > x0 ? x1 - x0 : x0 - x1);
-        int16_t dy = static_cast<int16_t>(y1 > y0 ? y1 - y0 : y0 - y1);
-        int16_t sx = static_cast<int16_t>(x0 < x1 ? 1 : -1);
-        int16_t sy = static_cast<int16_t>(y0 < y1 ? 1 : -1);
-        int16_t err = static_cast<int16_t>(dx - dy);
+        auto dx = static_cast<int16_t>(x1 > x0 ? x1 - x0 : x0 - x1);
+        auto dy = static_cast<int16_t>(y1 > y0 ? y1 - y0 : y0 - y1);
+        auto sx = static_cast<int16_t>(x0 < x1 ? 1 : -1);
+        auto sy = static_cast<int16_t>(y0 < y1 ? 1 : -1);
+        auto err = static_cast<int16_t>(dx - dy);
 
         while (true) {
             if (x0 >= 0 && x0 < WIDTH && y0 >= 0 && y0 < HEIGHT) {
@@ -870,7 +870,7 @@ public:
             if (x0 == x1 && y0 == y1) {
                 break;
             }
-            int16_t e2 = static_cast<int16_t>(2 * err);
+            auto e2 = static_cast<int16_t>(2 * err);
             if (e2 > -dy) {
                 err = static_cast<int16_t>(err - dy);
                 x0 = static_cast<int16_t>(x0 + sx);
@@ -938,7 +938,7 @@ public:
         setWindowLocked(x, y, x + drawW - 1, y + drawH - 1);
 
         // Transfer raw bytes with INVON compensation (invert each byte)
-        size_t maxBytes = static_cast<size_t>(drawW) * drawH * 2;
+        auto maxBytes = static_cast<size_t>(drawW) * drawH * 2;
         size_t transferLen = len < maxBytes ? len : maxBytes;
         for (size_t i = 0; i < transferLen; i++) {
             m_spi.transfer(~data[i]);
@@ -972,7 +972,7 @@ public:
 
         // Invert for INVON compensation, then DMA write
         static uint8_t invBuf[600];
-        size_t len = static_cast<size_t>(drawH) * 2;
+        auto len = static_cast<size_t>(drawH) * 2;
         for (size_t i = 0; i < len; i++) {
             invBuf[i] = ~data[i];
         }

@@ -18,9 +18,10 @@
 #ifndef COMMAND_PARSER_HPP
 #define COMMAND_PARSER_HPP
 
-#include "F_platform/interfaces/itransport.hpp"
-#include "F_platform/interfaces/icommand_dispatcher.hpp"
-#include "F_platform/interfaces/idebug_commands.hpp"
+#include "F_platform/hal/itransport.hpp"
+#include "F_platform/dispatch/icommand_dispatcher.hpp"
+#include "F_platform/dispatch/idebug_commands.hpp"
+#include "F_platform/types/dispatch_result.hpp"
 #include <stdint.h>
 
 namespace Comms {
@@ -149,6 +150,11 @@ public:
   void respondJsonErr(const char *command, const char *code, const char *message);
 
   /**
+   * @brief Convenience: respondOk on success, respondErr(statusToString) on failure
+   */
+  void respondStatus(ServiceStatus r, const char *okMsg);
+
+  /**
    * @brief Get current response format
    */
   ResponseFormat getFormat() const { return m_format; }
@@ -199,6 +205,14 @@ private:
    */
   void dispatch(const ParsedCommand &cmd);
 
+  // Table-driven dispatch types and helpers.
+  // Each dispatchFoo() function (below) defines static const arrays of these,
+  // then calls dispatch1/dispatch0 to find a matching suffix and call the handler.
+  struct CmdEntry  { const char* name; void (CommandParser::*fn)(const ParsedCommand&); };
+  struct CmdEntry0 { const char* name; void (CommandParser::*fn)(); };
+  bool dispatch1(const char* suffix, const CmdEntry* table, size_t count, const ParsedCommand& cmd);
+  bool dispatch0(const char* suffix, const CmdEntry0* table, size_t count);
+
   // Namespace dispatch handlers (SCPI two-level dispatch)
   void dispatchMotion(const char *suffix, const ParsedCommand &cmd);
   void dispatchSystem(const char *suffix, const ParsedCommand &cmd);
@@ -209,7 +223,6 @@ private:
   void dispatchUI(const char *suffix, const ParsedCommand &cmd);
   void dispatchDebug(const char *suffix, const ParsedCommand &cmd);
   void dispatchDriver(const char *suffix, const ParsedCommand &cmd);
-  void dispatchLegacy(const ParsedCommand &cmd);
 
   // Motion command handlers
   void cmdMove(const ParsedCommand &cmd);
@@ -221,9 +234,6 @@ private:
   // Configuration command handlers
   void cmdEnable();
   void cmdDisable();
-  void cmdAccel(const ParsedCommand &cmd);       // Legacy: raw register values
-  void cmdDecel(const ParsedCommand &cmd);       // Legacy: raw register values
-  void cmdMaxSpd(const ParsedCommand &cmd);      // Legacy: raw register values
   void cmdAccelPhysical(const ParsedCommand &cmd);  // SCPI: steps/s^2
   void cmdDecelPhysical(const ParsedCommand &cmd);  // SCPI: steps/s^2
   void cmdMaxSpdPhysical(const ParsedCommand &cmd); // SCPI: steps/s
@@ -248,7 +258,6 @@ private:
   void cmdGetHeartbeatStatus();
 
   // Utility command handlers
-  void cmdHelp();
   void cmdVersion();
   void cmdHome(const ParsedCommand &cmd);
   void cmdZero();
@@ -362,13 +371,6 @@ private:
   void cmdTrimSetMaxPct(const ParsedCommand &cmd);   // CTRL:TRIM:MAXPCT <1-50>
   void cmdTrimReset();                               // CTRL:TRIM:RESET
   void cmdTrimSave();                                // CTRL:TRIM:SAVE
-
-  // Legacy PID aliases (route to trim commands)
-  void cmdPidQuery();                                // CTRL:PID? → CTRL:TRIM?
-  void cmdPidSetGains(const ParsedCommand &cmd);     // CTRL:PID:GAINS → CTRL:TRIM:GAINS
-  void cmdPidSetLimits(const ParsedCommand &cmd);    // CTRL:PID:LIMITS → CTRL:TRIM:LIMITS
-  void cmdPidReset();                                // CTRL:PID:RESET → CTRL:TRIM:RESET
-  void cmdPidSave();                                 // CTRL:PID:SAVE → CTRL:TRIM:SAVE
 
   // System identification commands
   void cmdSysIdStep(const ParsedCommand &cmd);       // CTRL:SYSID:STEP

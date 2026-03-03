@@ -10,7 +10,7 @@
 
 #include "ui/screens/encoder_screen.hpp"
 #include "L4_drivers/devices/lcd_st7789.hpp"
-#include "F_platform/interfaces/telemetry.hpp"
+#include "F_platform/types/telemetry.hpp"
 #include "graphics/trig_lut.hpp"
 #include "graphics/primitives.hpp"
 #include <stdio.h>
@@ -86,9 +86,9 @@ void EncoderScreen::render(LCD& lcd)
     renderNumerical(lcd, telem);
 
     // Compute angle from encoder count
-    int32_t countMod = static_cast<int32_t>(telem.encoder.count % ENCODER_CPR);
+    auto countMod = static_cast<int32_t>(telem.encoder.count % ENCODER_CPR);
     if (countMod < 0) countMod += ENCODER_CPR;
-    int16_t angleDeg = static_cast<int16_t>((countMod * 360L) / ENCODER_CPR);
+    auto angleDeg = static_cast<int16_t>((countMod * 360L) / ENCODER_CPR);
 
     // Draw static dial elements once
     if (!m_dialDrawn) {
@@ -164,7 +164,7 @@ void EncoderScreen::renderNumerical(LCD& lcd, const Comms::TelemetrySnapshot& te
     //   rev   = count / CPR          (2 decimal places)
     //   rev/s = velocity / CPR       (2 decimal places)
     //   RPM   = velocity / CPR * 60  (1 decimal place)
-    int32_t revX100 = static_cast<int32_t>((telem.encoder.count * 100LL) / ENCODER_CPR);
+    auto revX100 = static_cast<int32_t>((telem.encoder.count * 100LL) / ENCODER_CPR);
     int32_t rsX100 = (telem.encoder.velocity * 100L) / ENCODER_CPR;
     int32_t rpmX10 = (telem.encoder.velocity * 600L) / ENCODER_CPR;
 
@@ -291,8 +291,8 @@ void EncoderScreen::renderDialDot(LCD& lcd, int16_t angleDeg)
     uint16_t a = Graphics::deg_to_angle1024(static_cast<uint16_t>(angleDeg));
     int16_t dx, dy;
     Graphics::rotate_point(0, static_cast<int16_t>(-DOT_ORBIT), a, dx, dy);
-    int16_t dotX = static_cast<int16_t>(DIAL_CX + dx);
-    int16_t dotY = static_cast<int16_t>(DIAL_CY + dy);
+    auto dotX = static_cast<int16_t>(DIAL_CX + dx);
+    auto dotY = static_cast<int16_t>(DIAL_CY + dy);
 
     // Draw new dot
     Graphics::fillCircle(lcd, dotX, dotY, DOT_RADIUS, DOT_COLOR);
