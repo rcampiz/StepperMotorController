@@ -4,7 +4,7 @@
  *
  */
 
-#include "L4_drivers/init/encoder_driver_init.hpp"
+#include "harness/pins/encoder_driver_init.hpp"
 #include "harness/pins/encoder_board.hpp"
 #include "L4_drivers/devices/encoder.hpp"
 

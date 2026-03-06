@@ -303,6 +303,156 @@ it is not truly enforced.
 
 ---
 
+## 14) Namespace Boundary Enforcement (Build-Enforced)
+
+Every cross-namespace dependency goes through `Harness::` interfaces.
+No direct includes between namespaces. Always through `server/harness/pins/`.
+
+### Adjacency Graph
+
+```
+System::    ↔ Harness ↔ Services::
+Services::  ↔ Harness ↔ Scheduler::
+
+Transport:: ↔ Harness ↔ Protocol::
+Protocol::  ↔ Harness ↔ Services::
+Services::  ↔ Harness ↔ Drivers::
+Drivers::   ↔ Harness ↔ Board::
+```
+
+### Directory → Namespace Mapping
+
+| Directory                       | Namespace    |
+|---------------------------------|-------------|
+| `server/layers/L1_transport/`   | Transport:: |
+| `server/layers/L2_protocol/`    | Protocol::  |
+| `server/layers/L3_services/`    | Services::  |
+| `server/layers/L4_drivers/`     | Drivers::   |
+| `server/layers/L5_board/`       | Board::     |
+| `server/foundation/F_platform/tasks/` | Scheduler:: |
+| `server/foundation/F_platform/` | Platform::  |
+| `server/harness/`               | Harness::   |
+| `server/system_init.cpp`        | System::    |
+
+### Include Rules
+
+Each namespace may only include:
+
+| Namespace   | Allowed includes                                      |
+|-------------|-------------------------------------------------------|
+| Transport:: | `L1_transport/`, `harness/`                           |
+| Protocol::  | `L2_protocol/`, `harness/`                            |
+| Services::  | `L3_services/`, `harness/`                            |
+| Drivers::   | `L4_drivers/`, `harness/`                             |
+| Board::     | `L5_board/`, `harness/`, `X_vendor/`, `X_middlewares/`|
+| Scheduler:: | `F_platform/`, `harness/`                             |
+| Platform::  | `F_platform/`, `harness/`, `X_vendor/`, `X_middlewares/` |
+| Harness::   | Everything (it IS the bridge)                         |
+| System::    | `harness/`, `L3_services/`                            |
+
+### CMSIS Rule
+
+Only `Board::` (`L5_board/`) may include `X_vendor/CMSIS/stm32*.h` or `core_cm*.h`.
+Platform:: (`F_platform/`) may include CMSIS for low-level runtime support (interrupt guard, runtime stats).
+All other namespaces: CMSIS includes = violation.
+
+### Flow Direction
+
+Dependencies always flow in layer order — never skipping layers:
+
+```
+L1 → L2 → L3 → L4 → L5   (toward hardware)
+L5 → L4 → L3 → L2 → L1   (toward transport)
+```
+
+Init cascades and business logic are always **triggered through Services:: (L3)**.
+L3 is the entry point. It cascades down to L4 → L5 for hardware, and down to L2 → L1 for comms.
+
+System:: (composition root) calls L3. L3 drives everything else.
+
+### SCPI Command Flow
+
+SCPI commands flow through the stack in strict layer order:
+
+```
+Client → Transport (L1) → Protocol (L2) → Services (L3) → Drivers (L4) → Board (L5)
+```
+
+1. **Transport (L1)** receives raw bytes from the client (UART, RTT, etc.)
+2. **Protocol (L2)** frames, parses, and dispatches the command via a command dispatcher
+3. **Services (L3)** receives the dispatched service request and executes business logic
+4. **Drivers (L4)** are called by services to interact with hardware through abstractions
+5. **Board (L5)** performs the actual register/peripheral access
+
+The dispatcher lives in L2 (Protocol). It maps command namespaces to service handlers.
+Services decide what to do. Drivers decide how to do it. Board touches hardware.
+
+No layer may skip another. Protocol never touches drivers. Transport never touches services.
+
+### Harness Role
+
+Harness:: is a wiring harness — it connects interfaces, it does not define them.
+
+The harness has three jobs:
+1. **Connect** — wire provider interfaces to consumer interfaces across namespace boundaries
+2. **Adapt** — reconcile mismatches when provider and consumer interfaces differ
+3. **Tap** — tee off data flow for tracing and system snapshots
+
+The harness does NOT contain business logic, state, or decisions.
+It does NOT own interface definitions — those belong to the namespaces that provide them.
+
+### Interface Ownership
+
+**Interfaces belong to the namespace that provides them — not to the harness.**
+
+In an Altium hierarchical schematic:
+- Each sheet defines its own ports (what it exposes, what it expects)
+- Nets connect ports between sheets — the net has no definition, it's just a wire
+- Each sheet owns its port definitions
+
+In firmware:
+- Each namespace defines its own boundary interfaces at its edge
+- The harness connects interfaces between namespaces — like nets on a schematic
+- Each namespace owns its interface definitions
+
+On each side of a harness boundary is an interface:
+
+```
+L3_services/boundary/  ← "here's what Services needs from a motor driver"
+        ↕ harness connects + taps
+L4_drivers/boundary/   ← "here's what Drivers provides as motor hardware"
+```
+
+The harness connector:
+- Is synchronous (pass-through) or asynchronous (queue-mediated)
+- May adapt when provider and consumer interfaces don't match exactly
+- Tees data to the trace/snapshot system for observability
+- Contains zero domain knowledge
+
+**What lives WHERE:**
+
+| Location | Contains |
+|---|---|
+| `<layer>/boundary/` | Abstract interfaces (pure virtual classes) this namespace provides |
+| `harness/pins/` | Signal types (structs, enums shared across boundaries), init contracts, connector wiring |
+| `harness/taps/` | Traced wrappers (observation proxies at boundaries) |
+| `harness/trace/` | Trace recording infrastructure |
+
+**When both sides need the same interface** (common case): the provider owns the
+single definition. The consumer accesses it through the harness connection.
+
+**When interfaces differ**: each side defines its own, and the harness adapter
+bridges the gap. Neither side includes the other's headers directly.
+
+### Enforcement
+
+`scripts/check_includes.py` scans all `#include` directives and reports violations.
+`scripts/check_interface_ownership.py` reports abstract interfaces in `harness/pins/`
+that should be owned by their providing namespace.
+Run both. Fix violations before they accumulate.
+
+---
+
 ## Summary
 
 This firmware should behave like a hierarchical schematic:

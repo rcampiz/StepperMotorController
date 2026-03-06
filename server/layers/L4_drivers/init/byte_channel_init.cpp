@@ -6,7 +6,7 @@
  * RTT path: constructs L4 internal RttDriver.
  */
 
-#include "L4_drivers/init/byte_channel_init.hpp"
+#include "harness/pins/byte_channel_init.hpp"
 
 // L5 board init through harness (for UART path)
 #include "harness/pins/comms_board.hpp"

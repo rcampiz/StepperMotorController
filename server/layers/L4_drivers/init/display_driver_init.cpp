@@ -3,7 +3,7 @@
  * @brief L4 init for display drivers
  */
 
-#include "L4_drivers/init/display_driver_init.hpp"
+#include "harness/pins/display_driver_init.hpp"
 #include "harness/pins/display_board.hpp"
 #include "L4_drivers/devices/lcd_st7789.hpp"
 #include "L4_drivers/devices/joystick.hpp"

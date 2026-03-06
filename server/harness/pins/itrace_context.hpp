@@ -48,4 +48,10 @@ void setTraceTaskId(uint8_t id);
  */
 void setTraceServiceId(uint8_t id);
 
+/** @brief Get the current task context */
+uint8_t getTraceTaskId();
+
+/** @brief Get the current service context */
+uint8_t getTraceServiceId();
+
 } // namespace Harness

@@ -3,7 +3,7 @@
  * @brief L5 board init for encoder subsystem — implements Harness::initEncoderBoard
  */
 
-#include "L5_board/init/encoder_board.hpp"
+#include "harness/pins/encoder_board.hpp"
 #include "L5_board/gpio.hpp"
 #include "L5_board/board_pins.hpp"
 #include "L5_board/timer/timer_counter_hw.hpp"

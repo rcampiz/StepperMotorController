@@ -6,7 +6,7 @@
  * ServiceDispatcher and CommandParser. Includes L2 + harness headers only.
  */
 
-#include "L2_protocol/init/comms_protocol_init.hpp"
+#include "harness/pins/comms_protocol_init.hpp"
 
 // L1 transport init through harness (L2 cascades to L1)
 #include "harness/pins/transport_init.hpp"

@@ -6,7 +6,7 @@
  * No L4 or L5 includes — only L1 types and harness interfaces.
  */
 
-#include "L1_transport/init/transport_init.hpp"
+#include "harness/pins/transport_init.hpp"
 
 // L1 transports
 #include "L1_transport/rtt_transport.hpp"

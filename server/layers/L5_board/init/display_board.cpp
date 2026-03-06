@@ -3,7 +3,7 @@
  * @brief L5 board init for display subsystem — implements Harness:: init functions
  */
 
-#include "L5_board/init/display_board.hpp"
+#include "harness/pins/display_board.hpp"
 #include "L5_board/gpio.hpp"
 #include "L5_board/board_pins.hpp"
 #include "L5_board/spi/spi_manager.hpp"

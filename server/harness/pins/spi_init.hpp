@@ -1,2 +1,15 @@
+/**
+ * @file spi_init.hpp
+ * @brief Harness contract for SPI manager initialization
+ */
+
 #pragma once
-#include "L5_board/init/spi_init.hpp"
+
+namespace Harness {
+
+class ILock;
+
+/// Initialize the board SPI manager with bus arbitration locks
+bool initSPIManager(ILock& spi1Lock, ILock& spi2Lock);
+
+} // namespace Harness

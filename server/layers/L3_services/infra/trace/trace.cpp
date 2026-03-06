@@ -18,10 +18,6 @@ static Entry s_ring[RING_SIZE];
 static size_t s_head = 0;      // Next write position
 static size_t s_total = 0;     // Total entries ever written
 
-// Thread-local-like context (single-core Cortex-M, set by each task at loop top)
-static uint8_t s_currentTaskId = 0;
-static uint8_t s_currentServiceId = 0;
-
 void record(Dir d, const char* tag, uint32_t arg0) {
     InterruptGuard guard;
 
@@ -31,8 +27,8 @@ void record(Dir d, const char* tag, uint32_t arg0) {
     e.arg0 = arg0;
     e.dir = d;
     e.boundary = 0;
-    e.serviceId = s_currentServiceId;
-    e.taskId = s_currentTaskId;
+    e.serviceId = Harness::getTraceServiceId();
+    e.taskId = Harness::getTraceTaskId();
     e.method = nullptr;
     e.detail[0] = '\0';
 
@@ -50,8 +46,8 @@ void recordIface(uint16_t boundary, const char* label, const char* method,
     e.arg0 = arg0;
     e.dir = ENTRY;
     e.boundary = boundary;
-    e.serviceId = s_currentServiceId;
-    e.taskId = s_currentTaskId;
+    e.serviceId = Harness::getTraceServiceId();
+    e.taskId = Harness::getTraceTaskId();
     e.method = method;
 
     if (detail != nullptr) {
@@ -90,19 +86,19 @@ void reset() {
 }
 
 void setCurrentTaskId(uint8_t id) {
-    s_currentTaskId = id;
+    Harness::setTraceTaskId(id);
 }
 
 void setCurrentServiceId(uint8_t id) {
-    s_currentServiceId = id;
+    Harness::setTraceServiceId(id);
 }
 
 ServiceScope::ServiceScope(uint8_t id) {
-    s_currentServiceId = id;
+    Harness::setTraceServiceId(id);
 }
 
 ServiceScope::~ServiceScope() {
-    s_currentServiceId = SVC_NONE;
+    Harness::setTraceServiceId(SVC_NONE);
 }
 
 } // namespace Trace

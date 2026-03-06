@@ -3,7 +3,7 @@
  * @brief L5 board init for comms subsystem — implements Harness::initCommsBoard
  */
 
-#include "L5_board/init/comms_board.hpp"
+#include "harness/pins/comms_board.hpp"
 #include "L5_board/board_pins.hpp"
 #include "L5_board/uart/uart_hardware.hpp"
 

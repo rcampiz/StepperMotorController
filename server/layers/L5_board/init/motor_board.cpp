@@ -3,7 +3,7 @@
  * @brief L5 board init for motor subsystem — implements Harness::initMotorBoard
  */
 
-#include "L5_board/init/motor_board.hpp"
+#include "harness/pins/motor_board.hpp"
 #include "L5_board/gpio.hpp"
 #include "L5_board/board_pins.hpp"
 #include "L5_board/spi/spi_manager.hpp"

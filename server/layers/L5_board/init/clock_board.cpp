@@ -5,7 +5,7 @@
  * HSE 8 MHz -> PLL -> 84 MHz SYSCLK, APB1 42 MHz, APB2 84 MHz
  */
 
-#include "L5_board/init/clock_board.hpp"
+#include "harness/pins/clock_board.hpp"
 #include "X_vendor/CMSIS/stm32f401xe.h"
 
 extern uint32_t SystemCoreClock;

@@ -3,7 +3,7 @@
  * @brief L4 init for motor driver
  */
 
-#include "L4_drivers/init/motor_driver_init.hpp"
+#include "harness/pins/motor_driver_init.hpp"
 #include "harness/pins/motor_board.hpp"
 #include "L4_drivers/devices/powerstep01.hpp"
 
