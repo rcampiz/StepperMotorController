@@ -12,15 +12,16 @@
 #ifndef DISPLAY_TASK_HPP
 #define DISPLAY_TASK_HPP
 
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
+#include "harness/pins/ischeduler.hpp"
 #include <stddef.h>
 #include <stdint.h>
 
 // Forward declarations
-class LCD;
+namespace Harness { class ICanvas; class IJoystick; class IClock;
+                    class IRemoteDisplay; class IFlashImageAccess;
+                    class IIndicatorRenderer; }
 
-namespace Tasks {
+namespace Scheduler {
 
 // Task configuration
 constexpr uint32_t DISPLAY_TASK_STACK_SIZE = 640;  // uxTaskGetSystemState + snprintf + trig
@@ -41,13 +42,22 @@ enum class DisplayPage : uint8_t {
 /**
  * @brief Initialize display task resources
  *
- * Initializes LCD driver, UI mode manager, clears screen.
- * Uses g_spiManager for SPI communication.
+ * Stores injected dependencies, sets up screen manager and menus.
  * Call before vTaskStartScheduler().
  *
+ * @param lcd         LCD driver (wired by composition root)
+ * @param joystick    Joystick driver (may be nullptr if not available)
+ * @param clock       System clock (for delays and tick timing)
+ * @param flashImages Flash image storage service
+ * @param indicator   Motion indicator rendering service
+ * @param scheduler   Scheduler for suspend/resume (injected, no Platform::resources)
  * @return true on success
  */
-bool DisplayTask_Init();
+bool DisplayTask_Init(Harness::ICanvas& lcd, Harness::IJoystick* joystick,
+                      Harness::IClock& clock,
+                      Harness::IFlashImageAccess& flashImages,
+                      Harness::IIndicatorRenderer& indicator,
+                      Harness::IScheduler& scheduler);
 
 /**
  * @brief Display task entry point
@@ -134,7 +144,7 @@ void DisplayTask_RemoteIndicator(uint16_t angle_deg, int8_t rotation_dir,
  * @brief Get pointer to LCD driver (for advanced use)
  * @return Pointer to LCD instance, or nullptr if not initialized
  */
-LCD* DisplayTask_GetLCD();
+Harness::ICanvas* DisplayTask_GetLCD();
 
 // =============================================================================
 // Bitmap Streaming API (for binary transfer)
@@ -183,7 +193,7 @@ bool DisplayTask_IsStreaming();
 /**
  * @brief Display task handle (for suspend/resume)
  */
-extern TaskHandle_t g_displayTaskHandle;
+extern Harness::TaskHandle g_displayTaskHandle;
 
 /**
  * @brief Suspend display task
@@ -198,6 +208,12 @@ void DisplayTask_Suspend();
  */
 void DisplayTask_Resume();
 
-} // namespace Tasks
+/**
+ * @brief Get IRemoteDisplay interface implemented by this task
+ * @return Pointer to static IRemoteDisplay instance (valid after init)
+ */
+Harness::IRemoteDisplay* DisplayTask_GetRemoteInterface();
+
+} // namespace Scheduler
 
 #endif // DISPLAY_TASK_HPP

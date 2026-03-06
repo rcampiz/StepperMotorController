@@ -38,14 +38,12 @@
 #include <stdint.h>
 #include <stddef.h>
 
-class LCD;
-
 namespace UI {
 
 class TraceScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::TERMINAL; }
-    void render(LCD& lcd) override;
+    void render(Harness::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
 
@@ -56,10 +54,10 @@ public:
 private:
     enum class Mode : uint8_t { TRACE, LEGEND, GRAPH, SERVICE };
 
-    void renderTrace(LCD& lcd);
-    void renderLegend(LCD& lcd);
-    void renderGraph(LCD& lcd);
-    void renderService(LCD& lcd);
+    void renderTrace(Harness::ICanvas& lcd);
+    void renderLegend(Harness::ICanvas& lcd);
+    void renderGraph(Harness::ICanvas& lcd);
+    void renderService(Harness::ICanvas& lcd);
     InputResult handleTraceInput(JoyDirection dir);
     InputResult handleLegendInput(JoyDirection dir);
     InputResult handleGraphInput(JoyDirection dir);
@@ -72,7 +70,7 @@ private:
     size_t m_pauseTotal = 0;      // Trace::getTotal() when pause started
     size_t m_scrollOffset = 0;    // Offset from bottom (0 = newest visible)
     bool m_autoScroll = true;
-    uint16_t m_filterMask = 0x07FF;  // Bitmask of enabled ITrace::Boundary values
+    uint16_t m_filterMask = 0x07FF;  // Bitmask of enabled Harness::ITrace::Boundary values
     uint8_t m_legendCursor = 0;   // Selected row in legend mode (0-6)
     size_t m_matchCount = 0;      // Cached count of filtered entries
     uint8_t m_zoomLevel = 0;      // Graph zoom: 0=auto, 1-7 = fixed block widths

@@ -13,49 +13,15 @@
 #ifndef F_PLATFORM_UI_MODE_HPP
 #define F_PLATFORM_UI_MODE_HPP
 
-#include "F_platform/hal/ilock.hpp"
-#include <stdint.h>
+#include "harness/pins/ilock.hpp"
+#include "harness/pins/iui_mode.hpp"
 
 namespace UI {
 
 /**
- * @brief UI operation mode
- */
-enum class UIMode : uint8_t {
-    LOCAL,   ///< MCU owns UI state machine
-    REMOTE   ///< Upstream controls display content
-};
-
-/**
- * @brief Joystick direction for event forwarding
- */
-enum class JoyDirection : uint8_t {
-    NONE = 0,
-    LEFT,
-    RIGHT,
-    UP,
-    DOWN,
-    CENTER
-};
-
-/**
- * @brief Joystick event structure
- */
-struct JoyEvent {
-    JoyDirection direction;
-    bool pressed;          ///< true = pressed, false = released
-    uint32_t timestamp;    ///< Tick count when event occurred
-};
-
-/**
- * @brief Callback type for joystick events in REMOTE mode
- */
-using JoyEventCallback = void(*)(const JoyEvent& event);
-
-/**
  * @brief UI Mode Manager - thread-safe mode control
  */
-class UIModeManager {
+class UIModeManager : public Harness::IUIModeProvider {
 public:
     /**
      * @brief Initialize the UI mode manager
@@ -63,19 +29,19 @@ public:
      * @param defaultMode Initial mode (default: LOCAL)
      * @return true on success
      */
-    bool init(ILock& lock, UIMode defaultMode = UIMode::LOCAL);
+    bool init(Harness::ILock& lock, UIMode defaultMode = UIMode::LOCAL);
 
     /**
      * @brief Get current UI mode
      */
-    UIMode getMode() const;
+    UIMode getMode() const override;
 
     /**
      * @brief Set UI mode
      * @param mode New mode
      * @return true if mode changed successfully
      */
-    bool setMode(UIMode mode);
+    bool setMode(UIMode mode) override;
 
     /**
      * @brief Set callback for joystick events in REMOTE mode
@@ -103,7 +69,7 @@ public:
 private:
     UIMode m_mode = UIMode::LOCAL;
     JoyEventCallback m_joyCallback = nullptr;
-    ILock* m_lock = nullptr;
+    Harness::ILock* m_lock = nullptr;
 };
 
 // Global UI mode manager instance

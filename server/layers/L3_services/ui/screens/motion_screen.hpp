@@ -20,14 +20,12 @@
 #include "ui/screen.hpp"
 #include <stdint.h>
 
-class LCD;
-
 namespace UI {
 
 class MotionScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::MENU; }
-    void render(LCD& lcd) override;
+    void render(Harness::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
     bool needsFullRedraw() const override { return m_needsRedraw; }
@@ -57,9 +55,9 @@ private:
     static constexpr uint32_t SPEED_STEP = 50;
 
     bool isFieldEnabled(uint8_t field, bool faulted, bool hiZ) const;
-    void renderField(LCD& lcd, uint8_t field, uint16_t y, bool selected,
+    void renderField(Harness::ICanvas& lcd, uint8_t field, uint16_t y, bool selected,
                      bool faulted, bool hiZ);
-    void renderStatus(LCD& lcd);
+    void renderStatus(Harness::ICanvas& lcd);
 };
 
 } // namespace UI

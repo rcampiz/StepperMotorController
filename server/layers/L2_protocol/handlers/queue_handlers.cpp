@@ -5,7 +5,7 @@
 
 #include "L2_protocol/command_parser_internal.hpp"
 
-namespace Comms {
+namespace Protocol {
 
 void CommandParser::cmdQueue(const ParsedCommand &cmd) {
   if (cmd.argCount < 1) {
@@ -108,4 +108,4 @@ void CommandParser::cmdClearQueue() {
   respondStatus(r, "CLEARED");
 }
 
-} // namespace Comms
+} // namespace Protocol

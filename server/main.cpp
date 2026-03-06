@@ -24,7 +24,6 @@ int main(void)
     System::initHardware();   // Clocks (84 MHz), early debug UART, microsecond timer
     System::initPlatform();   // FreeRTOS locks/queues, SPI manager, NOR flash
     System::initServices();   // Control mode, telemetry, events, command queue, UI
-    System::initTasks();      // Encoder, motor, display, comms task init + adapters
-    System::createTasks();    // xTaskCreate × 4
+    System::initTasks();      // Subsystem init + RTOS task creation
     System::start();          // vTaskStartScheduler — never returns
 }

@@ -18,13 +18,20 @@
 #ifndef COMMAND_PARSER_HPP
 #define COMMAND_PARSER_HPP
 
-#include "F_platform/hal/itransport.hpp"
-#include "F_platform/dispatch/icommand_dispatcher.hpp"
-#include "F_platform/dispatch/idebug_commands.hpp"
-#include "F_platform/types/dispatch_result.hpp"
+#include "harness/pins/itransport.hpp"
+#include "harness/pins/icommand_dispatcher.hpp"
+#include "harness/pins/idebug_commands.hpp"
+#include "harness/pins/dispatch_result.hpp"
+#include "harness/pins/icommand_processor.hpp"
 #include <stdint.h>
 
-namespace Comms {
+namespace Protocol {
+
+// Import types moved to Harness:: that are used throughout CommandParser
+using Harness::ServiceStatus;
+using Harness::statusToString;
+using Harness::ICommandDispatcher;
+using Harness::IDebugCommands;
 
 // Maximum command line length
 constexpr size_t CMD_BUFFER_SIZE = 128;
@@ -98,13 +105,13 @@ struct DispatchStats {
 /**
  * @brief Command parser and dispatcher
  */
-class CommandParser {
+class CommandParser : public Harness::ICommandProcessor {
 public:
   /**
    * @brief Construct parser with transport
    * @param transport Transport interface for I/O
    */
-  explicit CommandParser(ITransport &transport,
+  explicit CommandParser(Harness::ITransport &transport,
                         ICommandDispatcher &dispatcher);
 
   /**
@@ -113,7 +120,7 @@ public:
    * Reads available bytes, builds command line,
    * parses and dispatches complete commands.
    */
-  void process();
+  void process() override;
 
   /**
    * @brief Send OK response (format-aware)
@@ -171,7 +178,14 @@ public:
    * and no valid command has been received within 2 seconds,
    * reverts to the previous baud rate.
    */
-  void checkBaudRevert();
+  void checkBaudRevert() override;
+
+  /// Format and send an async event (ICommandProcessor)
+  void formatEvent(Harness::ITransport& transport, const AsyncEvent& evt,
+                   uint32_t seq, uint32_t ts_ms) override;
+
+  /// Get dispatch statistics (ICommandProcessor)
+  void getDispatchStats(Harness::DispatchStats& out) const override;
 
   /**
    * @brief Set response format
@@ -184,7 +198,7 @@ public:
   void setDebugCommands(IDebugCommands* dbg) { m_debugCommands = dbg; }
 
 private:
-  ITransport &m_transport;
+  Harness::ITransport &m_transport;
   ICommandDispatcher &m_dispatcher;
   IDebugCommands *m_debugCommands = nullptr;
   char m_buffer[CMD_BUFFER_SIZE];
@@ -383,6 +397,6 @@ private:
   void cmdSysIdAbort();                              // CTRL:SYSID:ABORT
 };
 
-} // namespace Comms
+} // namespace Protocol
 
 #endif // COMMAND_PARSER_HPP

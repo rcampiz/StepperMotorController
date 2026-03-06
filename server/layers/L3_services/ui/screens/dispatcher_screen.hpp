@@ -17,14 +17,12 @@
 #include "ui/screen.hpp"
 #include <stdint.h>
 
-class LCD;
-
 namespace UI {
 
 class DispatcherScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::STATUS; }
-    void render(LCD& lcd) override;
+    void render(Harness::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
 
@@ -43,7 +41,7 @@ private:
     uint8_t m_historyHead = 0;
     uint8_t m_historyCount = 0;
 
-    void renderQueueBar(LCD& lcd, uint16_t x, uint16_t y,
+    void renderQueueBar(Harness::ICanvas& lcd, uint16_t x, uint16_t y,
                         uint16_t w, uint16_t h,
                         const uint8_t* history, uint8_t maxDepth);
 };

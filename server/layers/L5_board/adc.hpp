@@ -12,6 +12,8 @@
 #include "X_vendor/CMSIS/stm32f401xe.h"
 #include "L5_board/gpio.hpp"
 
+namespace Board {
+
 /**
  * @brief ADC sample time options
  *
@@ -229,5 +231,7 @@ public:
  *   Channel 14 -> PC4
  *   Channel 15 -> PC5
  */
+
+} // namespace Board
 
 #endif // ADC_HPP

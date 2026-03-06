@@ -19,6 +19,7 @@
  */
 #include "X_vendor/CMSIS/stm32f401xe.h"
 
+namespace Board {
 namespace Pins {
 
 // ============================================================================
@@ -191,5 +192,6 @@ namespace VCP_UART {
 }
 
 } // namespace Pins
+} // namespace Board
 
 #endif // BOARD_PINS_HPP

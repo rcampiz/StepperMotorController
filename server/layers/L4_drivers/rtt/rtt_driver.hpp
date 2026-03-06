@@ -2,7 +2,7 @@
  * @file rtt_driver.hpp
  * @brief SEGGER RTT channel driver
  *
- * Wraps the SEGGER RTT vendor library behind the IRttChannel interface
+ * Wraps the SEGGER RTT vendor library behind the IByteChannel interface
  * so that L1 transport code never includes vendor headers directly.
  *
  * Header-only — the SEGGER RTT functions are provided by the
@@ -12,10 +12,12 @@
 #ifndef RTT_DRIVER_HPP
 #define RTT_DRIVER_HPP
 
-#include "F_platform/hal/irtt_channel.hpp"
+#include "harness/pins/ibyte_channel.hpp"
 #include "X_middlewares/SEGGER/RTT/SEGGER_RTT.h"
 
-class RttDriver : public IRttChannel {
+namespace Drivers {
+
+class RttDriver : public Harness::IByteChannel {
 public:
     explicit RttDriver(unsigned channel) : m_channel(channel) {}
 
@@ -28,16 +30,18 @@ public:
         return SEGGER_RTT_HasData(m_channel) > 0;
     }
 
-    size_t read(void* buffer, size_t maxLen) override {
+    size_t read(uint8_t* buffer, size_t maxLen) override {
         return SEGGER_RTT_Read(m_channel, buffer, maxLen);
     }
 
-    size_t write(const void* data, size_t len) override {
+    size_t write(const uint8_t* data, size_t len) override {
         return SEGGER_RTT_Write(m_channel, data, len);
     }
 
 private:
     unsigned m_channel;
 };
+
+} // namespace Drivers
 
 #endif // RTT_DRIVER_HPP

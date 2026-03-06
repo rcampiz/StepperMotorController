@@ -2,16 +2,16 @@
  * @file rtt_transport.cpp
  * @brief RTT transport implementation
  *
- * Implements ITransport over an IRttChannel.  All vendor library
+ * Implements ITransport over an IByteChannel.  All vendor library
  * access is delegated to the channel — this file has no SEGGER includes.
  */
 
 #include "L1_transport/rtt_transport.hpp"
 #include <string.h>
 
-namespace Comms {
+namespace Transport {
 
-RttTransport::RttTransport(IRttChannel& channel) : m_channel(channel) {}
+RttTransport::RttTransport(Harness::IByteChannel& channel) : m_channel(channel) {}
 
 bool RttTransport::init() {
     return m_channel.init();
@@ -53,4 +53,4 @@ void RttTransport::flush() {
     // RTT doesn't require explicit flush - writes go directly to buffer
 }
 
-} // namespace Comms
+} // namespace Transport

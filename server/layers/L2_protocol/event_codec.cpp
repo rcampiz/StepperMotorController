@@ -4,15 +4,14 @@
  */
 
 #include "L2_protocol/event_codec.hpp"
-#include "F_platform/hal/itransport.hpp"
-#include "F_util/interface_trace.hpp"
+#include "harness/pins/itransport.hpp"
+#include "harness/trace/interface_trace.hpp"
 #include <stdio.h>
-#include <string.h>
 
 // Shared helpers (eventTypeToString etc.) moved to
 // F_platform/types/async_event_types.cpp
 
-namespace Comms::EventCodec {
+namespace Protocol::EventCodec {
 
 void faultDetail(uint16_t statusReg, char* buf, size_t bufSize) {
     // Active-low fault bits: OCD (bit13), UVLO (bit9), TH_SD (bits 11-12 == 2 or 3)
@@ -51,13 +50,13 @@ void stallDetail(uint16_t statusReg, char* buf, size_t bufSize) {
     }
 }
 
-void formatAscii(ITransport& transport, const AsyncEvent& evt, uint32_t seq) {
+void formatAscii(Harness::ITransport& transport, const AsyncEvent& evt, uint32_t seq) {
     (void)seq;  // ASCII mode doesn't include seq (deferred to v1.1)
 
     char line[128];
     char detail[16];
     const char* typeName = eventTypeToString(evt.type);
-    ITRACE(ITrace::L2_TELEMETRY, "[L2>L1]", "event", typeName);
+    ITRACE(Harness::ITrace::L2_TELEMETRY, "[L2>L1]", "event", typeName);
 
     switch (evt.type) {
         case EventType::FAULT:
@@ -89,11 +88,11 @@ void formatAscii(ITransport& transport, const AsyncEvent& evt, uint32_t seq) {
     transport.println(line);
 }
 
-void formatJson(ITransport& transport, const AsyncEvent& evt, uint32_t seq, uint32_t ts_ms) {
+void formatJson(Harness::ITransport& transport, const AsyncEvent& evt, uint32_t seq, uint32_t ts_ms) {
     char buf[256];
     char detail[16];
     const char* typeName = eventTypeToString(evt.type);
-    ITRACE(ITrace::L2_TELEMETRY, "[L2>L1]", "event", typeName);
+    ITRACE(Harness::ITrace::L2_TELEMETRY, "[L2>L1]", "event", typeName);
 
     switch (evt.type) {
         case EventType::FAULT:
@@ -142,4 +141,4 @@ void formatJson(ITransport& transport, const AsyncEvent& evt, uint32_t seq, uint
     transport.println(buf);
 }
 
-} // namespace Comms::EventCodec
+} // namespace Protocol::EventCodec

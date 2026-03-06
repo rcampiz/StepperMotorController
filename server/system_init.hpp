@@ -20,11 +20,8 @@ void initPlatform();
 /// Control mode, telemetry, events, command queue, UI mode
 void initServices();
 
-/// Encoder, motor, display, comms Task_Init() + adapter wiring
+/// Subsystem init + RTOS task creation (motor, encoder, comms)
 void initTasks();
-
-/// xTaskCreate × 4 (encoder conditional on hardware)
-void createTasks();
 
 /// vTaskStartScheduler — never returns
 [[noreturn]] void start();

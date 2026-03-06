@@ -7,11 +7,11 @@
  */
 
 #include "ui/screens/dispatcher_screen.hpp"
-#include "L4_drivers/devices/lcd_st7789.hpp"
-#include "F_platform/tasks/comms_task.hpp"
-#include "L3_services/dispatch/command_queue.hpp"
-#include "L3_services/dispatch/event_service.hpp"
-#include "L3_services/infra/trace.hpp"
+#include "harness/pins/icanvas.hpp"
+#include "harness/pins/idispatch_stats.hpp"
+#include "L3_services/dispatch/command_queue/command_queue.hpp"
+#include "L3_services/motion/motion.hpp"
+#include "L3_services/infra/trace/trace.hpp"
 #include <stdio.h>
 #include <string.h>
 
@@ -27,7 +27,7 @@ static constexpr uint16_t GREEN = 0x07E0;
 static constexpr uint16_t YELLOW = 0xFFE0;
 static constexpr uint16_t RED = 0xF800;
 static constexpr uint16_t DIM_GRAY = 0x4208;
-static constexpr uint16_t LINE_W = LCD::WIDTH - (2 * MARGIN);
+static constexpr uint16_t LINE_W = Harness::Canvas::WIDTH - (2 * MARGIN);
 
 // Dim a color to ~25% brightness
 static uint16_t dimColor(uint16_t c) {
@@ -74,7 +74,7 @@ void DispatcherScreen::onActivate()
     memset(m_evtQueueHistory, 0, sizeof(m_evtQueueHistory));
 }
 
-void DispatcherScreen::render(LCD& lcd)
+void DispatcherScreen::render(Harness::ICanvas& lcd)
 {
     if (!m_titleDrawn) {
         lcd.fillScreen(BG_COLOR);
@@ -82,11 +82,11 @@ void DispatcherScreen::render(LCD& lcd)
     }
 
     // Gather data
-    Tasks::CommsDispatchStats dstats;
-    Tasks::CommsTask_GetDispatchStats(dstats);
+    Harness::DispatchStats dstats;
+    Harness::dispatchStats().getStats(dstats);
 
     auto cmdQDepth = static_cast<uint8_t>(Services::g_commandQueue.getQueueDepth());
-    Services::Event::Stats evtStats = Services::Event::getStats();
+    Services::MotorEventStats evtStats = Services::motion.stepper.event.getStats();
 
     // Record queue depths for history graph
     m_cmdQueueHistory[m_historyHead] = cmdQDepth;
@@ -224,7 +224,7 @@ void DispatcherScreen::render(LCD& lcd)
     }
 
     // Footer at fixed bottom position
-    lcd.blitTextLine(MARGIN, LCD::HEIGHT - 10, LINE_W, 8,
+    lcd.blitTextLine(MARGIN, Harness::Canvas::HEIGHT - 10, LINE_W, 8,
                      "UD:scroll  L:back", LABEL_COLOR, BG_COLOR);
 }
 
@@ -259,7 +259,7 @@ InputResult DispatcherScreen::handleInput(JoyDirection dir, bool pressed)
 // Queue depth history bar graph
 // =============================================================================
 
-void DispatcherScreen::renderQueueBar(LCD& lcd, uint16_t x, uint16_t y,
+void DispatcherScreen::renderQueueBar(Harness::ICanvas& lcd, uint16_t x, uint16_t y,
                                        uint16_t w, uint16_t h,
                                        const uint8_t* history, uint8_t maxDepth)
 {

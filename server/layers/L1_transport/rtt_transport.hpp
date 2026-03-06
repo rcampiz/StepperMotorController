@@ -1,8 +1,8 @@
 /**
  * @file rtt_transport.hpp
- * @brief RTT transport implementation (ITransport over IRttChannel)
+ * @brief RTT transport — ITransport over IByteChannel
  *
- * Delegates all RTT operations to an IRttChannel implementation
+ * Delegates all RTT operations to an IByteChannel implementation
  * injected at construction time.
  *
  * No vendor includes appear in this file.
@@ -11,18 +11,18 @@
 #ifndef RTT_TRANSPORT_HPP
 #define RTT_TRANSPORT_HPP
 
-#include "F_platform/hal/itransport.hpp"
-#include "F_platform/hal/irtt_channel.hpp"
+#include "harness/pins/itransport.hpp"
+#include "harness/pins/ibyte_channel.hpp"
 
-namespace Comms {
+namespace Transport {
 
-class RttTransport : public ITransport {
+class RttTransport : public Harness::ITransport {
 public:
     /**
      * @brief Construct RTT transport
-     * @param channel  RTT channel driver (IRttChannel implementation)
+     * @param channel  Byte channel (IByteChannel implementation)
      */
-    explicit RttTransport(IRttChannel& channel);
+    explicit RttTransport(Harness::IByteChannel& channel);
 
     bool init() override;
     bool available() override;
@@ -34,9 +34,9 @@ public:
     void flush() override;
 
 private:
-    IRttChannel& m_channel;
+    Harness::IByteChannel& m_channel;
 };
 
-} // namespace Comms
+} // namespace Transport
 
 #endif // RTT_TRANSPORT_HPP

@@ -4,9 +4,9 @@
  */
 
 #include "ui/screens/config_screen.hpp"
-#include "L4_drivers/devices/lcd_st7789.hpp"
-#include "L3_services/motion/motor_config.hpp"
-#include "L3_services/config/config_service.hpp"
+#include "harness/pins/icanvas.hpp"
+#include "L3_services/motion/motion.hpp"
+#include "L3_services/config/config_service/config_service.hpp"
 #include <stdio.h>
 
 namespace UI {
@@ -39,16 +39,16 @@ void ConfigScreen::onActivate()
     m_saved = false;
 }
 
-void ConfigScreen::renderField(LCD& lcd, uint8_t field, uint16_t y, bool selected)
+void ConfigScreen::renderField(Harness::ICanvas& lcd, uint8_t field, uint16_t y, bool selected)
 {
     uint16_t fg = VALUE_COLOR;
     uint16_t bg = selected ? SEL_BG : BG_COLOR;
-    uint16_t itemW = LCD::WIDTH - 2 * MARGIN;
+    uint16_t itemW = Harness::Canvas::WIDTH - 2 * MARGIN;
     char buf[32];
 
     lcd.fillRect(MARGIN, y, itemW, FIELD_H - 2, bg);
 
-    const auto& cfg = Services::g_motorConfig.getConfig();
+    const auto& cfg = Services::motion.stepper.config.getConfig();
 
     switch (field) {
         case FIELD_STEP_MODE: {
@@ -127,7 +127,7 @@ void ConfigScreen::renderField(LCD& lcd, uint8_t field, uint16_t y, bool selecte
 
 void ConfigScreen::adjustField(uint8_t field, int8_t delta)
 {
-    auto& cfg = Services::g_motorConfig.getConfigMutable();
+    auto& cfg = Services::motion.stepper.config.getConfigMutable();
     m_saved = false;
 
     switch (field) {
@@ -135,7 +135,7 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
             auto mode = static_cast<int8_t>(cfg.stepMode) + delta;
             if (mode < 0) mode = 0;
             if (mode > 7) mode = 7;
-            Services::g_motorConfig.setStepMode(static_cast<uint8_t>(mode));
+            Services::motion.stepper.config.setStepMode(static_cast<uint8_t>(mode));
             break;
         }
 
@@ -143,7 +143,7 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
             auto val = static_cast<int16_t>(cfg.kvalHold) + delta;
             if (val < 0) val = 0;
             if (val > 255) val = 255;
-            Services::g_motorConfig.setKval(
+            Services::motion.stepper.config.setKval(
                 static_cast<uint8_t>(val), cfg.kvalRun, cfg.kvalAcc, cfg.kvalDec);
             break;
         }
@@ -152,7 +152,7 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
             auto val = static_cast<int16_t>(cfg.kvalRun) + delta;
             if (val < 0) val = 0;
             if (val > 255) val = 255;
-            Services::g_motorConfig.setKval(
+            Services::motion.stepper.config.setKval(
                 cfg.kvalHold, static_cast<uint8_t>(val), cfg.kvalAcc, cfg.kvalDec);
             break;
         }
@@ -161,7 +161,7 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
             auto val = static_cast<int16_t>(cfg.ocdThreshold) + delta;
             if (val < 0) val = 0;
             if (val > 31) val = 31;
-            Services::g_motorConfig.setOcdThreshold(static_cast<uint8_t>(val));
+            Services::motion.stepper.config.setOcdThreshold(static_cast<uint8_t>(val));
             break;
         }
 
@@ -169,7 +169,7 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
             auto val = static_cast<int16_t>(cfg.stallThreshold) + delta;
             if (val < 0) val = 0;
             if (val > 127) val = 127;
-            Services::g_motorConfig.setStallThreshold(static_cast<uint8_t>(val));
+            Services::motion.stepper.config.setStallThreshold(static_cast<uint8_t>(val));
             break;
         }
 
@@ -209,12 +209,12 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
     }
 }
 
-void ConfigScreen::render(LCD& lcd)
+void ConfigScreen::render(Harness::ICanvas& lcd)
 {
     uint16_t y = MARGIN;
     lcd.drawString(MARGIN, y, "Driver Config", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
     y += LINE_H + 2;
-    lcd.drawHLine(MARGIN, y, LCD::WIDTH - 2 * MARGIN, LABEL_COLOR);
+    lcd.drawHLine(MARGIN, y, Harness::Canvas::WIDTH - 2 * MARGIN, LABEL_COLOR);
     y = FIELDS_START_Y;
 
     for (uint8_t i = 0; i < NUM_FIELDS; i++) {
@@ -260,7 +260,7 @@ InputResult ConfigScreen::handleInput(JoyDirection dir, bool pressed)
 
         case JoyDirection::CENTER:
             if (m_selectedField == FIELD_SAVE) {
-                m_saved = Services::g_motorConfig.saveToFlash();
+                m_saved = Services::motion.configStore.saveToFlash();
             }
             return InputResult::HANDLED;
 

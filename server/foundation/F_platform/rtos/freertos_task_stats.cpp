@@ -26,7 +26,9 @@ static uint8_t mapState(eTaskState s)
     }
 }
 
-void FreeRTOSTaskStats::getSnapshot(TaskStatsSnapshot& out)
+namespace Platform {
+
+void FreeRTOSTaskStats::getSnapshot(Harness::TaskStatsSnapshot& out)
 {
     TaskStatus_t status[MAX_TASKS];
     configRUN_TIME_COUNTER_TYPE totalRunTime = 0;
@@ -41,7 +43,7 @@ void FreeRTOSTaskStats::getSnapshot(TaskStatsSnapshot& out)
     out.totalCpuCycles = totalRunTime;
 
     for (UBaseType_t i = 0; i < count; i++) {
-        TaskStat& ts = out.tasks[i];
+        Harness::TaskStat& ts = out.tasks[i];
 
         // Copy name (safely)
         strncpy(ts.name, status[i].pcTaskName, sizeof(ts.name) - 1);
@@ -100,3 +102,10 @@ uint8_t FreeRTOSTaskStats::getCurrentTaskIndex()
 
     return 0xFF;
 }
+
+uint32_t FreeRTOSTaskStats::getFreeHeapBytes()
+{
+    return static_cast<uint32_t>(xPortGetFreeHeapSize());
+}
+
+} // namespace Platform

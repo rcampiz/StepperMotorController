@@ -4,8 +4,9 @@
  */
 
 #include "L2_protocol/command_parser_internal.hpp"
+#include "harness/pins/itelemetry.hpp"
 
-namespace Comms {
+namespace Protocol {
 
 // DRV:STEP_MODE <0-7> — Hi-Z safe microstep mode change
 void CommandParser::cmdDrvStepMode(const ParsedCommand &cmd) {
@@ -21,7 +22,7 @@ void CommandParser::cmdDrvStepMode(const ParsedCommand &cmd) {
   }
 
   // Check motor is not busy
-  Comms::TelemetrySnapshot snap = Comms::g_telemetry.getSnapshot();
+  Protocol::TelemetrySnapshot snap = Harness::telemetry().getSnapshot();
   if (snap.motor.busy) {
     if (m_format == ResponseFormat::JSON) {
       respondJsonErr("DRV:STEP_MODE", "MOTOR_BUSY",
@@ -71,7 +72,7 @@ void CommandParser::cmdDrvStepMode(const ParsedCommand &cmd) {
 
 // DRV:STEP_MODE? — read step mode from hardware
 void CommandParser::cmdDrvStepModeQuery() {
-  Comms::ICommandDispatcher::MotorDebugParams info = {};
+  Harness::MotorDebugParams info = {};
   m_dispatcher.motorGetDebugInfo(info);
   uint8_t mode = info.stepMode;
   uint32_t ustepsPerRev =
@@ -184,4 +185,4 @@ void CommandParser::cmdDrvEncoderPPRQuery() {
   }
 }
 
-} // namespace Comms
+} // namespace Protocol

@@ -15,10 +15,8 @@
 #define ENCODER_SCREEN_HPP
 
 #include "ui/screen.hpp"
-#include "F_platform/types/telemetry.hpp"
+#include "harness/pins/itelemetry.hpp"
 #include <stdint.h>
-
-class LCD;
 
 namespace UI {
 
@@ -29,7 +27,7 @@ constexpr int32_t ENCODER_CPR = 4000;
 class EncoderScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::STATUS; }
-    void render(LCD& lcd) override;
+    void render(Harness::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
     bool needsFullRedraw() const override { return m_needsRedraw; }
@@ -67,9 +65,9 @@ private:
     // Numerical section height
     static constexpr uint16_t NUM_SECTION_Y = 160;
 
-    void renderNumerical(LCD& lcd, const Comms::TelemetrySnapshot& telem);
-    void renderDialStatic(LCD& lcd);
-    void renderDialDot(LCD& lcd, int16_t angleDeg);
+    void renderNumerical(Harness::ICanvas& lcd, const Protocol::TelemetrySnapshot& telem);
+    void renderDialStatic(Harness::ICanvas& lcd);
+    void renderDialDot(Harness::ICanvas& lcd, int16_t angleDeg);
 
     // i64toa helper (newlib-nano doesn't support %lld)
     static void i64toa(int64_t val, char* buf, int bufSize);

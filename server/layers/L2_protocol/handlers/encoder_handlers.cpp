@@ -5,7 +5,7 @@
 
 #include "L2_protocol/command_parser_internal.hpp"
 
-namespace Comms {
+namespace Protocol {
 
 void CommandParser::cmdEncoder() {
   // Check if encoder is available
@@ -475,4 +475,4 @@ void CommandParser::cmdGetEncoderStatus() {
   respondOk(buf);
 }
 
-} // namespace Comms
+} // namespace Protocol

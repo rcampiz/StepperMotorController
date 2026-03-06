@@ -11,10 +11,12 @@
 
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/queue.h"
-#include "F_platform/hal/iqueue.hpp"
+#include "harness/pins/iqueue.hpp"
+
+namespace Platform {
 
 template<typename T, size_t Depth>
-class FreeRTOSQueue : public IQueue<T, Depth> {
+class FreeRTOSQueue : public Harness::IQueue<T, Depth> {
 public:
     FreeRTOSQueue() : m_handle(nullptr) {
         m_handle = xQueueCreate(Depth, sizeof(T));
@@ -65,5 +67,7 @@ public:
 private:
     QueueHandle_t m_handle;
 };
+
+} // namespace Platform
 
 #endif // PLATFORM_FREERTOS_QUEUE_HPP

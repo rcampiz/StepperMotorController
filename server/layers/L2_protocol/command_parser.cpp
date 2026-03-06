@@ -3,12 +3,13 @@
  * @brief Core dispatch and response logic. Handlers in handlers/ *.cpp.
  */
 #include "L2_protocol/command_parser.hpp"
-#include "F_util/interface_trace.hpp"
+#include "L2_protocol/event_codec.hpp"
+#include "harness/trace/interface_trace.hpp"
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
 
-namespace Comms {
+namespace Protocol {
 
 // Count of entries in a static array (used for dispatch table sizing)
 #define NCMD(a) (sizeof(a) / sizeof(*(a)))
@@ -17,7 +18,7 @@ namespace Comms {
 // complete lines, tokenizes them into command + arguments, and routes them to
 // the correct handler via SCPI-style two-level dispatch (e.g. "MOT:RUN 1000").
 // Responses are sent back over the same transport in ASCII or JSON format.
-CommandParser::CommandParser(ITransport &transport,
+CommandParser::CommandParser(Harness::ITransport &transport,
                              ICommandDispatcher &dispatcher)
     : m_transport(transport), m_dispatcher(dispatcher),
       m_bufIndex(0),                    // start with empty input buffer
@@ -148,7 +149,7 @@ ParsedCommand CommandParser::parse(const char *line) {
 
 void CommandParser::dispatch(const ParsedCommand &cmd) {
   m_dispatcher.traceRecordEntry("CMD:RX");
-  ITRACE(ITrace::L2_L3_DISPATCH, "[L2>L3]", "dispatch", cmd.cmd);
+  ITRACE(Harness::ITrace::L2_L3_DISPATCH, "[L2>L3]", "dispatch", cmd.cmd);
   strncpy(m_currentCmd, cmd.cmd,
           sizeof(m_currentCmd) - 1); // stash for JSON response echo
   m_currentCmd[sizeof(m_currentCmd) - 1] = '\0';
@@ -506,7 +507,7 @@ void CommandParser::dispatchDriver(const char *suffix,
 // Send success response. In ASCII mode: "OK <msg>". In JSON mode: wraps msg as
 // data.
 void CommandParser::respondOk(const char *msg) {
-  ITRACE(ITrace::L2_TELEMETRY, "[L2>L1]", "respond", "ok");
+  ITRACE(Harness::ITrace::L2_TELEMETRY, "[L2>L1]", "respond", "ok");
   if (m_format == ResponseFormat::JSON) {
     if (msg && msg[0] != '\0') {
       char buf[192];
@@ -524,7 +525,7 @@ void CommandParser::respondOk(const char *msg) {
 // Send error response. In ASCII mode: "ERROR <msg>". In JSON mode: structured
 // error.
 void CommandParser::respondErr(const char *msg) {
-  ITRACE(ITrace::L2_TELEMETRY, "[L2>L1]", "respond", "err");
+  ITRACE(Harness::ITrace::L2_TELEMETRY, "[L2>L1]", "respond", "err");
   if (m_format == ResponseFormat::JSON)
     respondJsonErr(m_currentCmd, "ERROR", msg);
   else {
@@ -572,4 +573,31 @@ void CommandParser::respondStatus(ServiceStatus r, const char *okMsg) {
     respondErr(statusToString(r));
 }
 
-} // namespace Comms
+// --- ICommandProcessor interface ---
+
+void CommandParser::formatEvent(Harness::ITransport &transport,
+                                const AsyncEvent &evt, uint32_t seq,
+                                uint32_t ts_ms) {
+  if (m_format == ResponseFormat::JSON) {
+    EventCodec::formatJson(transport, evt, seq, ts_ms);
+  } else {
+    EventCodec::formatAscii(transport, evt, seq);
+  }
+}
+
+void CommandParser::getDispatchStats(Harness::DispatchStats &out) const {
+  out.totalCommands = m_dispatchStats.totalCommands;
+  out.unknownCommands = m_dispatchStats.unknownCommands;
+  out.parseErrors = m_dispatchStats.parseErrors;
+  out.recentCount = m_dispatchStats.recentCount;
+  // Copy recent commands (most recent first)
+  for (uint8_t i = 0; i < m_dispatchStats.recentCount && i < 8; i++) {
+    uint8_t idx = (m_dispatchStats.recentHead + DispatchStats::RECENT_SIZE - 1 -
+                   i) %
+                  DispatchStats::RECENT_SIZE;
+    strncpy(out.recentCmds[i], m_dispatchStats.recentCmds[idx], 23);
+    out.recentCmds[i][23] = '\0';
+  }
+}
+
+} // namespace Protocol

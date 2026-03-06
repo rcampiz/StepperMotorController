@@ -4,7 +4,7 @@
  *
  * Edit powerSTEP01 parameters: step mode, KVAL, OCD, stall thresholds.
  * Changes applied to RAM immediately, saved to flash on explicit Save.
- * All changes go through Services::g_motorConfig.
+ * All changes go through Services::motion.motorConfig.
  *
  * No RTOS headers.
  */
@@ -15,14 +15,12 @@
 #include "ui/screen.hpp"
 #include <stdint.h>
 
-class LCD;
-
 namespace UI {
 
 class ConfigScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::MENU; }
-    void render(LCD& lcd) override;
+    void render(Harness::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
     bool needsFullRedraw() const override { return m_needsRedraw; }
@@ -44,7 +42,7 @@ private:
     bool m_needsRedraw = true;
     bool m_saved = false;  // Show "Saved!" feedback briefly
 
-    void renderField(LCD& lcd, uint8_t field, uint16_t y, bool selected);
+    void renderField(Harness::ICanvas& lcd, uint8_t field, uint16_t y, bool selected);
     void adjustField(uint8_t field, int8_t delta);
 };
 

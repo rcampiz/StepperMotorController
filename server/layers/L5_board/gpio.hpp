@@ -10,6 +10,9 @@
 #define GPIO_HPP
 
 #include "X_vendor/CMSIS/stm32f401xe.h"
+#include "harness/pins/igpio.hpp"
+
+namespace Board {
 
 /**
  * @brief GPIO pin modes
@@ -49,12 +52,21 @@ enum class GPIOPull : uint32_t {
 };
 
 /**
+ * @brief EXTI edge trigger selection
+ */
+enum class ExtiEdge : uint8_t {
+    Rising,
+    Falling,
+    Both
+};
+
+/**
  * @brief Base GPIO class for pin control
  *
  * Provides common GPIO functionality including initialization,
  * reading, writing, and toggling pins.
  */
-class GPIO {
+class GPIO : public Harness::IGPIO {
 protected:
     GPIO_TypeDef* port;
     uint8_t pin;
@@ -147,6 +159,61 @@ public:
     }
 
     /**
+     * @brief Enable EXTI interrupt on this pin
+     * @param edge Edge trigger selection (Rising, Falling, or Both)
+     * @param priority NVIC priority (use configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY for FreeRTOS-safe)
+     *
+     * Configures SYSCFG EXTICR mux, EXTI edge, unmasks the line, and enables the NVIC IRQ.
+     */
+    void enableExti(ExtiEdge edge, uint32_t priority) {
+        // Enable SYSCFG clock
+        RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
+        volatile uint32_t dummy = RCC->APB2ENR;
+        (void)dummy;
+
+        // Map EXTI line to this GPIO port via SYSCFG->EXTICR
+        // Port encoding: GPIOA=0, GPIOB=1, GPIOC=2, GPIOD=3, GPIOE=4, GPIOH=7
+        uint8_t portCode = 0;
+        if      (port == GPIOB) portCode = 1;
+        else if (port == GPIOC) portCode = 2;
+        else if (port == GPIOD) portCode = 3;
+        else if (port == GPIOE) portCode = 4;
+        else if (port == GPIOH) portCode = 7;
+
+        uint8_t crIdx  = pin / 4;
+        uint8_t crShift = (pin % 4) * 4;
+        SYSCFG->EXTICR[crIdx] = (SYSCFG->EXTICR[crIdx] & ~(0xFU << crShift))
+                               | (portCode << crShift);
+
+        // Configure edge trigger
+        uint32_t lineMask = (1U << pin);
+        if (edge == ExtiEdge::Rising || edge == ExtiEdge::Both)
+            EXTI->RTSR |= lineMask;
+        else
+            EXTI->RTSR &= ~lineMask;
+        if (edge == ExtiEdge::Falling || edge == ExtiEdge::Both)
+            EXTI->FTSR |= lineMask;
+        else
+            EXTI->FTSR &= ~lineMask;
+
+        // Unmask the EXTI line
+        EXTI->IMR |= lineMask;
+
+        // Enable NVIC IRQ for this EXTI line
+        IRQn_Type irqn;
+        if      (pin == 0) irqn = EXTI0_IRQn;
+        else if (pin == 1) irqn = EXTI1_IRQn;
+        else if (pin == 2) irqn = EXTI2_IRQn;
+        else if (pin == 3) irqn = EXTI3_IRQn;
+        else if (pin == 4) irqn = EXTI4_IRQn;
+        else if (pin <= 9) irqn = EXTI9_5_IRQn;
+        else               irqn = EXTI15_10_IRQn;
+
+        NVIC_SetPriority(irqn, priority);
+        NVIC_EnableIRQ(irqn);
+    }
+
+    /**
      * @brief Construct a new GPIO object
      * @param gpio_port Pointer to GPIO port (GPIOA, GPIOB, etc.)
      * @param gpio_pin Pin number (0-15)
@@ -156,16 +223,13 @@ public:
         enableClock();
     }
 
-    /**
-     * @brief Virtual destructor for proper inheritance
-     */
-    virtual ~GPIO() = default;
+    ~GPIO() override = default;
 
     /**
      * @brief Write a digital value to the pin
      * @param value true for HIGH, false for LOW
      */
-    void write(bool value) {
+    void write(bool value) override {
         if (value) {
             port->BSRR = (1UL << pin);  // Set bit
         } else {
@@ -177,7 +241,7 @@ public:
      * @brief Read the current state of the pin
      * @return true if pin is HIGH, false if LOW
      */
-    bool read() const {
+    bool read() const override {
         return (port->IDR & (1UL << pin)) != 0;
     }
 
@@ -204,5 +268,7 @@ public:
         return pin;
     }
 };
+
+} // namespace Board
 
 #endif // GPIO_HPP

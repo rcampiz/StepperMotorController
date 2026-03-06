@@ -5,7 +5,7 @@
  * TIM4 in quadrature encoder mode on PB6/PB7 (16-bit, wraps at 65535).
  * TIM3 triggers DMA1_Stream2 at configurable rate (default 1kHz) to sample
  * TIM4->CNT into a circular buffer. Encoder task wakes every 10ms to process
- * DMA buffer, compute velocity, and apply composable filter chain.
+ * DMA buffer, compute velocity, and delegate filtering to EncoderProcessor.
  * Monitors PC9 (EZ) for index pulse via EXTI9.
  * Priority: Medium (tskIDLE_PRIORITY + 2)
  */
@@ -13,10 +13,25 @@
 #ifndef ENCODER_TASK_HPP
 #define ENCODER_TASK_HPP
 
-#include "F_platform/types/velocity_quality_t.hpp"
+#include "harness/pins/encoder_filter_config.hpp"
+#include "harness/pins/velocity_quality.hpp"
 #include <stdint.h>
 
-namespace Tasks {
+namespace Harness { class IClock; class IEncoder; class IEncoderFilterControl;
+                    class IEncoderProcessing; class IEncoderStatusSink;
+                    class IEncoderHardware; class IEncoderSampler;
+                    class ICriticalSection; class ITimerCounter; }
+
+namespace Scheduler {
+
+// Re-export filter types and constants from harness
+using Harness::EncoderFilterConfig;
+using Harness::ENC_FILT_EMA;
+using Harness::ENC_FILT_SMA;
+using Harness::ENC_FILT_PADE;
+using Harness::ENC_FILT_BIQUAD;
+using Harness::ENC_FILT_NOTCH;
+using Harness::ENC_FILT_HOLT;
 
 // Task configuration
 constexpr uint32_t ENCODER_TASK_STACK_SIZE = 128;
@@ -26,37 +41,8 @@ constexpr uint32_t ENCODER_SAMPLE_PERIOD_MS = 10; // 100 Hz task wake
 // DMA buffer size (must be power of 2 for efficient modulo)
 constexpr uint32_t ENC_DMA_BUF_SIZE = 256;
 
-// Filter flag bits
-constexpr uint8_t ENC_FILT_EMA    = 0x01;  // bit 0: EMA enabled
-constexpr uint8_t ENC_FILT_SMA    = 0x02;  // bit 1: SMA enabled
-constexpr uint8_t ENC_FILT_PADE   = 0x04;  // bit 2: Padé [1/1] sharpener enabled
-constexpr uint8_t ENC_FILT_BIQUAD = 0x08;  // bit 3: Butterworth 2nd-order IIR low-pass
-constexpr uint8_t ENC_FILT_NOTCH  = 0x10;  // bit 4: Notch (band-reject) filter
-constexpr uint8_t ENC_FILT_HOLT   = 0x20;  // bit 5: Holt's double exponential smoothing
-
 /**
- * @brief Composable encoder filter configuration
- *
- * Each filter stage is independently enabled. Pipeline:
- *   raw velocity → EMA → SMA → Padé → Butterworth → Notch → Holt → deadband → output
- */
-struct EncoderFilterConfig {
-    uint8_t  filterFlags;      // Bitfield: ENC_FILT_EMA | SMA | PADE | BIQUAD | NOTCH | HOLT
-    uint8_t  emaAlpha;         // EMA smoothing (0-255, higher = smoother)
-    uint8_t  smaWindow;        // SMA window (2-32, 0 = speed-adaptive)
-    uint8_t  measWindowMs;     // Measurement window in ms (1-255, 0 = default 10)
-    uint16_t sampleRateHz;     // DMA sample rate (100-10000, 0 = default 1000)
-    uint8_t  padeGainPct;      // Padé correction strength (0-100%, 0 = default 50)
-    uint8_t  padeMaxCorr;      // Max absolute correction (tps, 0 = default 50)
-    uint8_t  biquadCutoffHz;   // Butterworth cutoff frequency (1-50 Hz, 0 = default 10)
-    uint8_t  notchCenterHz;    // Notch center frequency (1-50 Hz, 0 = default 25)
-    uint8_t  notchQ10;         // Notch Q factor × 10 (1-100 → Q 0.1-10.0, 0 = default 50)
-    uint8_t  holtAlpha;        // Holt level smoothing (0-255, 0 = default 51 ≈ 0.20)
-    uint8_t  holtBeta;         // Holt trend smoothing (0-255, 0 = default 13 ≈ 0.05)
-};
-
-/**
- * @brief Encoder state snapshot
+ * @brief Encoder state snapshot (includes hardware fields from encoder driver)
  */
 struct EncoderState {
   int64_t count;          // Accumulated encoder count (64-bit, no wrap)
@@ -71,12 +57,29 @@ struct EncoderState {
 /**
  * @brief Initialize encoder task resources
  *
- * Configures TIM4 in encoder mode, TIM3 + DMA for periodic sampling,
- * sets up EXTI for index pulse. Call before vTaskStartScheduler().
+ * Stores injected dependencies from composition root, configures
+ * TIM3 + DMA for periodic sampling. Call before vTaskStartScheduler().
  *
- * @return true on success
+ * @param encoder       Encoder hardware interface (from L4 driver)
+ * @param timer         Timer counter for TIM4 (wired by composition root)
+ * @param sampler       DMA sampler (from L4 driver)
+ * @param critSection   Critical section for thread-safe state access
+ * @param clock         System clock (for delays and tick timing)
+ * @param processor     Encoder signal processing service
+ * @param statusSink    Encoder status reporting sink
+ * @param measWindowMs  Measurement window in ms (0 = default 40)
+ * @param sampleRateHz  DMA sample rate in Hz (0 = default 1000)
+ * @return true on success, false if hardware not available
  */
-bool EncoderTask_Init();
+bool EncoderTask_Init(Harness::IEncoderHardware& encoder,
+                      Harness::ITimerCounter& timer,
+                      Harness::IEncoderSampler& sampler,
+                      Harness::ICriticalSection& critSection,
+                      Harness::IClock& clock,
+                      Harness::IEncoderProcessing& processor,
+                      Harness::IEncoderStatusSink& statusSink,
+                      uint8_t measWindowMs,
+                      uint16_t sampleRateHz);
 
 /**
  * @brief Check if encoder hardware is available
@@ -149,6 +152,18 @@ void EncoderTask_SetSampleRate(uint16_t hz);
  */
 void EncoderTask_IndexISR();
 
-} // namespace Tasks
+/**
+ * @brief Get IEncoder interface implemented by this task
+ * @return Pointer to static IEncoder instance (valid after init)
+ */
+Harness::IEncoder* EncoderTask_GetEncoderInterface();
+
+/**
+ * @brief Get IEncoderFilterControl interface implemented by this task
+ * @return Pointer to static IEncoderFilterControl instance (valid after init)
+ */
+Harness::IEncoderFilterControl* EncoderTask_GetFilterInterface();
+
+} // namespace Scheduler
 
 #endif // ENCODER_TASK_HPP

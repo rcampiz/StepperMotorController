@@ -10,7 +10,7 @@ namespace UI {
 // Global instance
 UIModeManager g_uiMode;
 
-bool UIModeManager::init(ILock& lock, UIMode defaultMode) {
+bool UIModeManager::init(Harness::ILock& lock, UIMode defaultMode) {
     m_lock = &lock;
     m_mode = defaultMode;
     m_joyCallback = nullptr;

@@ -7,9 +7,9 @@
  */
 
 #include "ui/screens/arch_screen.hpp"
-#include "L4_drivers/devices/lcd_st7789.hpp"
-#include "L3_services/infra/trace.hpp"
-#include "F_util/interface_trace.hpp"
+#include "harness/pins/icanvas.hpp"
+#include "L3_services/infra/trace/trace.hpp"
+#include "harness/trace/interface_trace.hpp"
 #include <stdio.h>
 #include <string.h>
 
@@ -18,7 +18,7 @@ namespace UI {
 static constexpr uint16_t MARGIN = 4;
 static constexpr uint16_t TITLE_H = 16;
 static constexpr uint16_t LINE_H = 12;
-static constexpr uint16_t LINE_W = LCD::WIDTH - (2 * MARGIN);
+static constexpr uint16_t LINE_W = Harness::Canvas::WIDTH - (2 * MARGIN);
 static constexpr uint16_t WHITE   = 0xFFFF;
 static constexpr uint16_t BG      = 0x0000;
 static constexpr uint16_t CYAN    = 0x07FF;
@@ -63,17 +63,17 @@ static uint16_t dimColor(uint16_t c) {
 
 // Map boundary to layer index (0-5)
 static uint8_t boundaryToLayer(uint16_t boundary) {
-    if (boundary & ITrace::L1_L2_TRANSPORT) return 0;  // L1
-    if (boundary & ITrace::L2_L3_DISPATCH)  return 1;  // L2
-    if (boundary & ITrace::L2_TELEMETRY)    return 1;  // L2 (telemetry response)
-    if (boundary & ITrace::L3_L4_MOTOR)     return 3;  // L4 (driver call)
-    if (boundary & ITrace::L3_L4_ENCODER)   return 3;  // L4 (driver call)
-    if (boundary & ITrace::L4_LCD)          return 3;  // L4 (LCD driver)
-    if (boundary & ITrace::L4_FLASH)        return 3;  // L4 (flash driver)
-    if (boundary & ITrace::L4_L5_SPI)       return 4;  // L5 (SPI hardware)
-    if (boundary & ITrace::L5_F_LOCK)       return 5;  // F  (RTOS mutex)
-    if (boundary & ITrace::L3_F_SAFETY)     return 2;  // L3 (service)
-    if (boundary & ITrace::L3_CMD_SINK)     return 2;  // L3 (command queue)
+    if (boundary & Harness::ITrace::L1_L2_TRANSPORT) return 0;  // L1
+    if (boundary & Harness::ITrace::L2_L3_DISPATCH)  return 1;  // L2
+    if (boundary & Harness::ITrace::L2_TELEMETRY)    return 1;  // L2 (telemetry response)
+    if (boundary & Harness::ITrace::L3_L4_MOTOR)     return 3;  // L4 (driver call)
+    if (boundary & Harness::ITrace::L3_L4_ENCODER)   return 3;  // L4 (driver call)
+    if (boundary & Harness::ITrace::L4_LCD)          return 3;  // L4 (LCD driver)
+    if (boundary & Harness::ITrace::L4_FLASH)        return 3;  // L4 (flash driver)
+    if (boundary & Harness::ITrace::L4_L5_SPI)       return 4;  // L5 (SPI hardware)
+    if (boundary & Harness::ITrace::L5_F_LOCK)       return 5;  // F  (RTOS mutex)
+    if (boundary & Harness::ITrace::L3_F_SAFETY)     return 2;  // L3 (service)
+    if (boundary & Harness::ITrace::L3_CMD_SINK)     return 2;  // L3 (command queue)
     return 2;  // Default to L3 for entries with boundary=0
 }
 
@@ -95,7 +95,7 @@ void ArchScreen::onActivate()
     memset(m_cellCounts, 0, sizeof(m_cellCounts));
 }
 
-void ArchScreen::render(LCD& lcd)
+void ArchScreen::render(Harness::ICanvas& lcd)
 {
     if (!m_titleDrawn) {
         lcd.fillScreen(BG);
@@ -115,7 +115,7 @@ void ArchScreen::render(LCD& lcd)
 // DIAGRAM mode — static architecture overview
 // =============================================================================
 
-void ArchScreen::renderDiagram(LCD& lcd)
+void ArchScreen::renderDiagram(Harness::ICanvas& lcd)
 {
     if (!m_needsRedraw) return;
 
@@ -161,7 +161,7 @@ void ArchScreen::renderDiagram(LCD& lcd)
 
         // Draw arrow between L1-L5 layers (not after L5 or F)
         if (i < 4) {
-            uint16_t arrowX = LCD::WIDTH / 2;
+            uint16_t arrowX = Harness::Canvas::WIDTH / 2;
             uint16_t midY = y + ARROW_H / 2;
             lcd.fillRect(arrowX, y, 1, ARROW_H, DIM);
             // Small arrowhead
@@ -173,7 +173,7 @@ void ArchScreen::renderDiagram(LCD& lcd)
     }
 
     // Footer
-    lcd.blitTextLine(MARGIN, LCD::HEIGHT - 10, LINE_W, 8,
+    lcd.blitTextLine(MARGIN, Harness::Canvas::HEIGHT - 10, LINE_W, 8,
                      "L:back  R:matrix", CYAN, BG);
 }
 
@@ -181,7 +181,7 @@ void ArchScreen::renderDiagram(LCD& lcd)
 // MATRIX mode — live layers x tasks heatmap
 // =============================================================================
 
-void ArchScreen::renderMatrix(LCD& lcd)
+void ArchScreen::renderMatrix(Harness::ICanvas& lcd)
 {
     size_t total = Trace::getTotal();
     size_t count = Trace::getCount();
@@ -308,7 +308,7 @@ void ArchScreen::renderMatrix(LCD& lcd)
     y += LINE_H;
 
     // Footer
-    lcd.blitTextLine(MARGIN, LCD::HEIGHT - 10, LINE_W, 8,
+    lcd.blitTextLine(MARGIN, Harness::Canvas::HEIGHT - 10, LINE_W, 8,
                      "CTR:pause L:diag R:flow",
                      m_paused ? PAUSE_COLOR : CYAN, BG);
 }
@@ -317,7 +317,7 @@ void ArchScreen::renderMatrix(LCD& lcd)
 // FLOW mode — SCPI command lifecycle
 // =============================================================================
 
-void ArchScreen::renderFlow(LCD& lcd)
+void ArchScreen::renderFlow(Harness::ICanvas& lcd)
 {
     size_t total = Trace::getTotal();
     size_t count = Trace::getCount();
@@ -374,7 +374,7 @@ void ArchScreen::renderFlow(LCD& lcd)
     for (size_t ri = 0; ri < count; ri++) {
         size_t i = count - 1 - ri;
         if (!Trace::getEntry(i, entry)) continue;
-        if (entry.boundary & ITrace::L2_L3_DISPATCH) {
+        if (entry.boundary & Harness::ITrace::L2_L3_DISPATCH) {
             strncpy(lastCmd, entry.detail, sizeof(lastCmd) - 1);
             lastCmd[sizeof(lastCmd) - 1] = '\0';
             cmdRi = ri;
@@ -401,22 +401,22 @@ void ArchScreen::renderFlow(LCD& lcd)
             }
 
             // Fill per-boundary info (map trace boundary → display boundary)
-            if ((entry.boundary & ITrace::L1_L2_TRANSPORT) && !bndData[0].crossed) {
+            if ((entry.boundary & Harness::ITrace::L1_L2_TRANSPORT) && !bndData[0].crossed) {
                 bndData[0] = { true, "ITransport", entry.method };
             }
-            if ((entry.boundary & ITrace::L2_L3_DISPATCH) && !bndData[1].crossed) {
+            if ((entry.boundary & Harness::ITrace::L2_L3_DISPATCH) && !bndData[1].crossed) {
                 bndData[1] = { true, "ICommandDispatcher", entry.method };
             }
-            if ((entry.boundary & ITrace::L3_L4_MOTOR) && !bndData[2].crossed) {
+            if ((entry.boundary & Harness::ITrace::L3_L4_MOTOR) && !bndData[2].crossed) {
                 bndData[2] = { true, "IMotorDriver", entry.method };
             }
-            if ((entry.boundary & ITrace::L3_L4_ENCODER) && !bndData[2].crossed) {
+            if ((entry.boundary & Harness::ITrace::L3_L4_ENCODER) && !bndData[2].crossed) {
                 bndData[2] = { true, "IEncoder", entry.method };
             }
-            if ((entry.boundary & ITrace::L4_L5_SPI) && !bndData[3].crossed) {
+            if ((entry.boundary & Harness::ITrace::L4_L5_SPI) && !bndData[3].crossed) {
                 bndData[3] = { true, "ISPIBus", entry.method };
             }
-            if ((entry.boundary & ITrace::L5_F_LOCK) && !bndData[4].crossed) {
+            if ((entry.boundary & Harness::ITrace::L5_F_LOCK) && !bndData[4].crossed) {
                 bndData[4] = { true, "ILock", entry.method };
             }
         }
@@ -587,7 +587,7 @@ void ArchScreen::renderFlow(LCD& lcd)
     }
 
     // Footer
-    lcd.blitTextLine(MARGIN, LCD::HEIGHT - 10, LINE_W, 8,
+    lcd.blitTextLine(MARGIN, Harness::Canvas::HEIGHT - 10, LINE_W, 8,
                      "L:matrix  R:tasks  Handoff=yellow",
                      m_paused ? PAUSE_COLOR : CYAN, BG);
 }
@@ -675,7 +675,7 @@ InputResult ArchScreen::handleFlowInput(JoyDirection dir)
 // Task name table (indexed by m_selectedTask)
 static constexpr const char* TASK_NAMES[] = { "Motor", "Encoder", "Comms", "Display", "Timer" };
 
-void ArchScreen::renderTasks(LCD& lcd)
+void ArchScreen::renderTasks(Harness::ICanvas& lcd)
 {
     size_t total = Trace::getTotal();
     size_t count = Trace::getCount();
@@ -756,22 +756,22 @@ void ArchScreen::renderTasks(LCD& lcd)
         }
 
         // Fill per-boundary info
-        if ((entry.boundary & ITrace::L1_L2_TRANSPORT) != 0 && !bndData[0].crossed) {
+        if ((entry.boundary & Harness::ITrace::L1_L2_TRANSPORT) != 0 && !bndData[0].crossed) {
             bndData[0] = { true, "ITransport", entry.method };
         }
-        if ((entry.boundary & ITrace::L2_L3_DISPATCH) != 0 && !bndData[1].crossed) {
+        if ((entry.boundary & Harness::ITrace::L2_L3_DISPATCH) != 0 && !bndData[1].crossed) {
             bndData[1] = { true, "ICommandDispatch", entry.method };
         }
-        if ((entry.boundary & ITrace::L3_L4_MOTOR) != 0 && !bndData[2].crossed) {
+        if ((entry.boundary & Harness::ITrace::L3_L4_MOTOR) != 0 && !bndData[2].crossed) {
             bndData[2] = { true, "IMotorDriver", entry.method };
         }
-        if ((entry.boundary & ITrace::L3_L4_ENCODER) != 0 && !bndData[2].crossed) {
+        if ((entry.boundary & Harness::ITrace::L3_L4_ENCODER) != 0 && !bndData[2].crossed) {
             bndData[2] = { true, "IEncoder", entry.method };
         }
-        if ((entry.boundary & ITrace::L4_L5_SPI) != 0 && !bndData[3].crossed) {
+        if ((entry.boundary & Harness::ITrace::L4_L5_SPI) != 0 && !bndData[3].crossed) {
             bndData[3] = { true, "ISPIBus", entry.method };
         }
-        if ((entry.boundary & ITrace::L5_F_LOCK) != 0 && !bndData[4].crossed) {
+        if ((entry.boundary & Harness::ITrace::L5_F_LOCK) != 0 && !bndData[4].crossed) {
             bndData[4] = { true, "ILock", entry.method };
         }
 
@@ -880,7 +880,7 @@ void ArchScreen::renderTasks(LCD& lcd)
     }
 
     // Footer
-    lcd.blitTextLine(MARGIN, LCD::HEIGHT - 10, LINE_W, 8,
+    lcd.blitTextLine(MARGIN, Harness::Canvas::HEIGHT - 10, LINE_W, 8,
                      "L:flow R:diag UD:task CTR:pause",
                      m_paused ? PAUSE_COLOR : CYAN, BG);
 }

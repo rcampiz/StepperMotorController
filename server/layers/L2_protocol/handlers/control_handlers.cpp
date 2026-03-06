@@ -4,9 +4,9 @@
  */
 
 #include "L2_protocol/command_parser_internal.hpp"
-#include "F_platform/types/telemetry.hpp"
+#include "harness/pins/itelemetry.hpp"
 
-namespace Comms {
+namespace Protocol {
 
 void CommandParser::cmdGetMode() {
   char buf[48];
@@ -173,7 +173,7 @@ void CommandParser::cmdTrimQuery() {
   auto tc = m_dispatcher.getTrimConfig();
   uint8_t maxPct = (tc.kd100 > 0 && tc.kd100 <= 50) ? static_cast<uint8_t>(tc.kd100) : 8;
 
-  TelemetrySnapshot snap = g_telemetry.getSnapshot();
+  TelemetrySnapshot snap = Harness::telemetry().getSnapshot();
   bool active = snap.control.tracking;
   bool frozen = snap.control.trimFrozen != 0;
 
@@ -501,4 +501,4 @@ void CommandParser::cmdSysIdAbort() {
   respondOk("SYSID aborted");
 }
 
-} // namespace Comms
+} // namespace Protocol

@@ -9,16 +9,11 @@
 #pragma once
 
 #include "L2_protocol/command_parser.hpp"
-#include "F_platform/types/async_event_types.hpp"
-#include "F_platform/types/telemetry.hpp"
-#include "F_util/crc32.hpp"
-#include "F_util/interface_trace.hpp"
-#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-namespace Comms {
+namespace Protocol {
 
 // newlib-nano doesn't support %lld — manual int64_t to string
 inline void i64toa(int64_t val, char *buf, size_t bufSize) {
@@ -138,4 +133,4 @@ inline uint8_t parseDisplayMode(const char* s) {
     return 0xFF;
 }
 
-} // namespace Comms
+} // namespace Protocol

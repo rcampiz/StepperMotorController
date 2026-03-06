@@ -14,11 +14,10 @@
  */
 
 #include "ui/screens/task_monitor_screen.hpp"
-#include "L4_drivers/devices/lcd_st7789.hpp"
-#include "F_platform/hal/itask_stats.hpp"
-#include "F_platform/rtos/platform_init.hpp"
-#include "F_platform/types/telemetry.hpp"
-#include "L3_services/infra/trace.hpp"
+#include "harness/pins/icanvas.hpp"
+#include "harness/pins/itask_stats.hpp"
+#include "harness/pins/itelemetry.hpp"
+#include "L3_services/infra/trace/trace.hpp"
 #include <stdio.h>
 #include <string.h>
 
@@ -32,7 +31,7 @@ static constexpr uint16_t WHITE = 0xFFFF;
 static constexpr uint16_t BG_COLOR = 0x0000;
 static constexpr uint16_t PAUSE_COLOR = 0xFFE0;  // Yellow
 static constexpr uint16_t DIM_GRAY = 0x4208;
-static constexpr uint16_t LINE_W = LCD::WIDTH - (2 * MARGIN);
+static constexpr uint16_t LINE_W = Harness::Canvas::WIDTH - (2 * MARGIN);
 
 // State character: R=Running, r=Ready, B=Blocked, S=Suspended, D=Deleted
 static char stateChar(uint8_t state) {
@@ -140,15 +139,15 @@ void TaskMonitorScreen::onActivate()
     m_scrollOffset = 0;
     m_activeLaneCount = 0;
 
-    ITaskStats* stats = Platform::resources().taskStats;
+    Harness::ITaskStats* stats = Harness::taskStatsProvider();
     if (stats != nullptr) {
-        TaskStatsSnapshot snap;
+        Harness::TaskStatsSnapshot snap;
         stats->getSnapshot(snap);
         m_lastTaskCount = snap.count;
     }
 }
 
-void TaskMonitorScreen::render(LCD& lcd)
+void TaskMonitorScreen::render(Harness::ICanvas& lcd)
 {
     if (!m_titleDrawn) {
         lcd.fillScreen(BG_COLOR);
@@ -166,20 +165,20 @@ void TaskMonitorScreen::render(LCD& lcd)
 // STATS mode — task table
 // =============================================================================
 
-void TaskMonitorScreen::renderStats(LCD& lcd)
+void TaskMonitorScreen::renderStats(Harness::ICanvas& lcd)
 {
     if (!m_titleDrawn) {
         m_titleDrawn = true;
     }
 
-    ITaskStats* stats = Platform::resources().taskStats;
+    Harness::ITaskStats* stats = Harness::taskStatsProvider();
     if (stats == nullptr) {
         lcd.blitTextLine(MARGIN, MARGIN, LINE_W, 8,
                          "No task stats", WHITE, BG_COLOR);
         return;
     }
 
-    TaskStatsSnapshot snap;
+    Harness::TaskStatsSnapshot snap;
     stats->getSnapshot(snap);
     m_lastTaskCount = snap.count;
 
@@ -200,7 +199,7 @@ void TaskMonitorScreen::renderStats(LCD& lcd)
 
     // Task rows
     for (uint8_t i = 0; i < snap.count && i < 8; i++) {
-        const TaskStat& t = snap.tasks[i];
+        const Harness::TaskStat& t = snap.tasks[i];
 
         char name[9];
         strncpy(name, t.name, 8);
@@ -234,7 +233,7 @@ void TaskMonitorScreen::renderStats(LCD& lcd)
     y += 4;
 
     // System info
-    Comms::TelemetrySnapshot telem = Comms::g_telemetry.getSnapshot();
+    Protocol::TelemetrySnapshot telem = Harness::telemetry().getSnapshot();
     uint32_t secs = telem.system.uptimeTicks / 1000;
     uint32_t mins = secs / 60;
     secs %= 60;
@@ -258,7 +257,7 @@ void TaskMonitorScreen::renderStats(LCD& lcd)
 // TIMELINE mode — trace-based task activity graph
 // =============================================================================
 
-void TaskMonitorScreen::renderTimeline(LCD& lcd)
+void TaskMonitorScreen::renderTimeline(Harness::ICanvas& lcd)
 {
     if (!m_titleDrawn) {
         m_titleDrawn = true;
@@ -290,9 +289,9 @@ void TaskMonitorScreen::renderTimeline(LCD& lcd)
     // Layout constants
     static constexpr uint16_t LANES_Y = MARGIN + TITLE_H + 4;
     static constexpr uint16_t FOOTER_SPACE = 22;
-    uint16_t availH = LCD::HEIGHT - LANES_Y - FOOTER_SPACE;
+    uint16_t availH = Harness::Canvas::HEIGHT - LANES_Y - FOOTER_SPACE;
     uint16_t timelineX = 38;
-    uint16_t timelineRight = LCD::WIDTH - MARGIN;
+    uint16_t timelineRight = Harness::Canvas::WIDTH - MARGIN;
     uint16_t timelineW = timelineRight - timelineX;
 
     // --- Always show all task lanes (even without trace activity) ---
@@ -378,7 +377,7 @@ void TaskMonitorScreen::renderTimeline(LCD& lcd)
 
     // --- Compute lane layout & draw lanes ---
     // Clear label column (prevents stale text when active tasks change)
-    lcd.fillRect(MARGIN, LANES_Y, timelineX - MARGIN, LCD::HEIGHT - LANES_Y, BG_COLOR);
+    lcd.fillRect(MARGIN, LANES_Y, timelineX - MARGIN, Harness::Canvas::HEIGHT - LANES_Y, BG_COLOR);
 
     // Mapping arrays for plotting phase
     int8_t taskToLane[6];
@@ -497,8 +496,8 @@ void TaskMonitorScreen::renderTimeline(LCD& lcd)
     }
 
     // Clear timeline area below lanes to screen bottom
-    if (lanesBottom < LCD::HEIGHT) {
-        lcd.fillRect(timelineX, lanesBottom, timelineW, LCD::HEIGHT - lanesBottom, BG_COLOR);
+    if (lanesBottom < Harness::Canvas::HEIGHT) {
+        lcd.fillRect(timelineX, lanesBottom, timelineW, Harness::Canvas::HEIGHT - lanesBottom, BG_COLOR);
     }
 
     // =================================================================
@@ -591,7 +590,7 @@ void TaskMonitorScreen::renderTimeline(LCD& lcd)
 
         // Footer
         {
-            uint16_t footerY = LCD::HEIGHT - FOOTER_SPACE;
+            uint16_t footerY = Harness::Canvas::HEIGHT - FOOTER_SPACE;
             char axisBuf[40];
             size_t endIdx = startIdx + visibleEntries;
             if (endIdx > count) endIdx = count;
@@ -686,7 +685,7 @@ void TaskMonitorScreen::renderTimeline(LCD& lcd)
 
         // Footer
         {
-            uint16_t footerY = LCD::HEIGHT - FOOTER_SPACE;
+            uint16_t footerY = Harness::Canvas::HEIGHT - FOOTER_SPACE;
             char axisBuf[40];
             uint32_t startMs = windowStart / 1000;
             uint32_t endMs = windowEnd / 1000;
@@ -847,7 +846,7 @@ InputResult TaskMonitorScreen::handleTimelineInput(JoyDirection dir)
 // LEGEND mode — color key for services, tasks, and tick markers
 // =============================================================================
 
-void TaskMonitorScreen::renderLegend(LCD& lcd)
+void TaskMonitorScreen::renderLegend(Harness::ICanvas& lcd)
 {
     if (!m_needsRedraw) return;
 
@@ -947,7 +946,7 @@ void TaskMonitorScreen::renderLegend(LCD& lcd)
                      "Zoom: auto=entries, 1-128ms=time", DIM_GRAY, BG_COLOR);
 
     // Footer
-    lcd.blitTextLine(MARGIN, LCD::HEIGHT - 10, LINE_W, 8,
+    lcd.blitTextLine(MARGIN, Harness::Canvas::HEIGHT - 10, LINE_W, 8,
                      "L:back to timeline", LABEL_COLOR, BG_COLOR);
 }
 

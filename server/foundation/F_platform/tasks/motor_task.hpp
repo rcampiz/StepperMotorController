@@ -9,33 +9,47 @@
 #ifndef MOTOR_TASK_HPP
 #define MOTOR_TASK_HPP
 
-#include "F_platform/hal/imotor_command_sink.hpp"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/queue.h"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
+#include "harness/pins/motor_debug_params.hpp"
+#include "harness/pins/imotor_command_sink.hpp"
+#include "harness/pins/ischeduler.hpp"
+#include "harness/pins/iqueue.hpp"
+#include "harness/pins/iclock.hpp"
+#include "harness/pins/imotor_driver.hpp"
 #include <stdint.h>
 
-namespace Tasks {
+namespace Harness { class IMotorTaskControl; class IMotorControlService; }
+
+namespace Scheduler {
 
 // Task configuration
 constexpr uint32_t MOTOR_TASK_STACK_SIZE = 1024; // 4096 bytes (sysid + trim + supervisor + telemetry snapshot)
 constexpr uint32_t MOTOR_TASK_PRIORITY = 4;
 constexpr size_t MOTOR_CMD_QUEUE_DEPTH = 8;
 
-// Types moved to Services namespace — aliases for backward compatibility
-using Services::MotorCmdType;
-using Services::MotorCommand;
+// Types moved to Harness namespace — aliases for backward compatibility
+using Harness::MotorCmdType;
+using Harness::MotorCommand;
+using Harness::MotorDebugParams;
 
 /**
  * @brief Initialize motor task resources
  *
- * Creates command queue and initializes powerSTEP01 driver.
- * Uses g_spiManager for SPI communication.
+ * Stores injected dependencies and initializes motor configuration.
+ * Queue and driver are created/wired by the composition root.
  * Call before vTaskStartScheduler().
  *
+ * @param driver     Motor driver (wired by composition root)
+ * @param cmdQueue   Command queue (receive side; send side via IMotorCommandSink)
+ * @param clock      System clock (for delays and tick timing)
+ * @param controller Motor control service (L3, wired by composition root)
+ * @param scheduler  Scheduler for suspend/resume (injected, no Platform::resources)
  * @return true on success
  */
-bool MotorTask_Init();
+bool MotorTask_Init(Harness::IMotorDriver& driver,
+                    Harness::IQueue<Harness::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
+                    Harness::IClock& clock,
+                    Harness::IMotorControlService& controller,
+                    Harness::IScheduler& scheduler);
 
 /**
  * @brief Motor task entry point
@@ -66,32 +80,11 @@ bool MotorTask_Move(int32_t steps);
 bool MotorTask_Stop(bool hard = false);
 
 /**
- * @brief Debug info from powerSTEP01 registers
- */
-struct MotorDebugInfo {
-    uint16_t status;      // STATUS register
-    uint8_t kvalHold;     // KVAL_HOLD
-    uint8_t kvalRun;      // KVAL_RUN
-    uint8_t kvalAcc;      // KVAL_ACC
-    uint8_t kvalDec;      // KVAL_DEC
-    uint16_t accel;       // ACC register
-    uint16_t decel;       // DEC register
-    uint16_t maxSpeed;    // MAX_SPEED register
-    int32_t absPos;       // ABS_POS register
-    uint8_t ocdTh;        // OCD_TH register (readback from chip)
-    uint8_t stallTh;      // STALL_TH register (readback from chip)
-    uint16_t config;      // CONFIG register
-    uint8_t alarmEn;      // ALARM_EN register
-    uint16_t fsSpd;       // FS_SPD register
-    uint8_t stepMode;     // STEP_MODE register (bits [2:0])
-};
-
-/**
  * @brief Read debug info from powerSTEP01
  * @param info Output structure
  * @return true if successful
  */
-bool MotorTask_GetDebugInfo(MotorDebugInfo& info);
+bool MotorTask_GetDebugInfo(MotorDebugParams& info);
 
 /**
  * @brief Suspend motor task (for SPI debug commands)
@@ -114,7 +107,7 @@ void MotorTask_Reinit();
 /**
  * @brief Apply motor configuration to powerSTEP01 driver
  *
- * Reads the current configuration from g_motorConfig and applies
+ * Reads the current configuration from motion.motorConfig and applies
  * all settings to the powerSTEP01 registers (KVAL, thresholds,
  * motion params, alarm enables).
  *
@@ -135,12 +128,15 @@ bool MotorTask_ApplyConfig();
  */
 bool MotorTask_SetStepModeSafe(uint8_t mode, uint8_t& readback);
 
-// Command queue handle (for direct access if needed)
-extern QueueHandle_t g_motorCmdQueue;
+// Task handle (for suspend/resume via IScheduler)
+extern Harness::TaskHandle g_motorTaskHandle;
 
-// Task handle (for suspend/resume)
-extern TaskHandle_t g_motorTaskHandle;
+/**
+ * @brief Get IMotorTaskControl interface implemented by this task
+ * @return Pointer to static IMotorTaskControl instance (valid after init)
+ */
+Harness::IMotorTaskControl* MotorTask_GetControlInterface();
 
-} // namespace Tasks
+} // namespace Scheduler
 
 #endif // MOTOR_TASK_HPP

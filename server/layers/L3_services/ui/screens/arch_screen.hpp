@@ -39,14 +39,12 @@
 #include <stdint.h>
 #include <stddef.h>
 
-class LCD;
-
 namespace UI {
 
 class ArchScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::STATUS; }
-    void render(LCD& lcd) override;
+    void render(Harness::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
 
@@ -56,10 +54,10 @@ public:
 private:
     enum class Mode : uint8_t { DIAGRAM, MATRIX, FLOW, TASKS };
 
-    void renderDiagram(LCD& lcd);
-    void renderMatrix(LCD& lcd);
-    void renderFlow(LCD& lcd);
-    void renderTasks(LCD& lcd);
+    void renderDiagram(Harness::ICanvas& lcd);
+    void renderMatrix(Harness::ICanvas& lcd);
+    void renderFlow(Harness::ICanvas& lcd);
+    void renderTasks(Harness::ICanvas& lcd);
     InputResult handleDiagramInput(JoyDirection dir);
     InputResult handleMatrixInput(JoyDirection dir);
     InputResult handleFlowInput(JoyDirection dir);

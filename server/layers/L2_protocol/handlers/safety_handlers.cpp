@@ -5,7 +5,7 @@
 
 #include "L2_protocol/command_parser_internal.hpp"
 
-namespace Comms {
+namespace Protocol {
 
 void CommandParser::cmdClearFault() {
   char faultBuf[80] = {};
@@ -103,4 +103,4 @@ void CommandParser::cmdGetHeartbeatStatus() {
   }
 }
 
-} // namespace Comms
+} // namespace Protocol

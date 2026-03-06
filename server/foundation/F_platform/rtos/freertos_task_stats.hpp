@@ -12,16 +12,19 @@
 #ifndef FREERTOS_TASK_STATS_HPP
 #define FREERTOS_TASK_STATS_HPP
 
-#include "F_platform/hal/itask_stats.hpp"
+#include "harness/pins/itask_stats.hpp"
 #include <stdint.h>
 
-class FreeRTOSTaskStats : public ITaskStats {
+namespace Platform {
+
+class FreeRTOSTaskStats : public Harness::ITaskStats {
 public:
-    void getSnapshot(TaskStatsSnapshot& out) override;
+    void getSnapshot(Harness::TaskStatsSnapshot& out) override;
     uint8_t getCurrentTaskIndex() override;
+    uint32_t getFreeHeapBytes() override;
 
 private:
-    static constexpr uint8_t MAX_TASKS = TaskStatsSnapshot::MAX_TASKS;
+    static constexpr uint8_t MAX_TASKS = Harness::TaskStatsSnapshot::MAX_TASKS;
 
     // Previous snapshot for delta-based CPU% computation
     uint32_t m_prevRunTime[MAX_TASKS] = {};
@@ -34,5 +37,7 @@ private:
     void* m_taskHandles[MAX_TASKS] = {};
     uint8_t  m_taskCount = 0;
 };
+
+} // namespace Platform
 
 #endif // FREERTOS_TASK_STATS_HPP

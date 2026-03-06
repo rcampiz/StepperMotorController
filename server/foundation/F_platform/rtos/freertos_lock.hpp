@@ -11,9 +11,11 @@
 
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/semphr.h"
-#include "F_platform/hal/ilock.hpp"
+#include "harness/pins/ilock.hpp"
 
-class FreeRTOSMutex : public ILock {
+namespace Platform {
+
+class FreeRTOSMutex : public Harness::ILock {
 public:
     FreeRTOSMutex() : m_sem(nullptr) {
         m_sem = xSemaphoreCreateMutex();
@@ -46,5 +48,7 @@ public:
 private:
     SemaphoreHandle_t m_sem;
 };
+
+} // namespace Platform
 
 #endif // PLATFORM_FREERTOS_LOCK_HPP

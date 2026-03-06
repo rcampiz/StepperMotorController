@@ -1,16 +1,20 @@
 /**
  * @file flash.hpp
  * @brief SPI NOR Flash driver for X-NUCLEO-GFX01M2
+ *
+ * CS pin is injected via constructor — no CMSIS dependency.
  */
 
 #ifndef FLASH_HPP
 #define FLASH_HPP
 
-#include "X_vendor/CMSIS/stm32f401xe.h"
-#include "L5_board/board_pins.hpp"
-#include "L4_drivers/spi/spi_bus.hpp"
+#include "harness/pins/igpio.hpp"
+#include "harness/pins/ispi_bus.hpp"
+#include "harness/pins/iflash.hpp"
 
-class SPIFlash {
+namespace Drivers {
+
+class SPIFlash : public Harness::IFlash {
 public:
     // Standard SPI flash commands
     enum class Cmd : uint8_t {
@@ -32,14 +36,15 @@ public:
         ReadUID       = 0x4B
     };
 
-    struct JEDEC_ID {
-        uint8_t manufacturer;
-        uint8_t memoryType;
-        uint8_t capacity;
-    };
+    using JEDEC_ID = Harness::FlashJedecId;
 
-    SPIFlash(SPIBus& spi) : m_spi(spi) {
-        initPins();
+    /**
+     * @brief Construct with SPI bus and pre-configured CS GPIO
+     *
+     * CS pin must be configured as output (high) before construction.
+     */
+    SPIFlash(Harness::ISPIBus& spi, Harness::IGPIO& cs) : m_spi(spi), m_cs(cs) {
+        csHigh();
     }
 
     void init() {
@@ -75,7 +80,7 @@ public:
         return readStatus1() & 0x02;
     }
 
-    JEDEC_ID readJEDEC() {
+    Harness::FlashJedecId readJEDEC() override {
         JEDEC_ID id;
         m_spi.lock();
         csLow();
@@ -106,7 +111,7 @@ public:
         while (isBusy());
     }
 
-    void read(uint32_t addr, uint8_t* buf, size_t len) {
+    void read(uint32_t addr, uint8_t* buf, size_t len) override {
         m_spi.lock();
         csLow();
         m_spi.transfer(static_cast<uint8_t>(Cmd::FastRead));
@@ -125,7 +130,7 @@ public:
      * Bus lock and CS are held until readFinish() is called.
      * Caller must call readFinish() before using the data.
      */
-    void readStart(uint32_t addr, uint8_t* buf, size_t len) {
+    void readStart(uint32_t addr, uint8_t* buf, size_t len) override {
         m_spi.lock();
         csLow();
         m_spi.transfer(static_cast<uint8_t>(Cmd::FastRead));
@@ -139,7 +144,7 @@ public:
     /**
      * @brief Finish non-blocking flash read (waits for DMA, releases CS and bus lock)
      */
-    void readFinish() {
+    void readFinish() override {
         m_spi.waitAsyncRead();
         csHigh();
         m_spi.unlock();
@@ -153,7 +158,7 @@ public:
         m_spi.unlock();
     }
 
-    void pageProgram(uint32_t addr, const uint8_t* data, size_t len) {
+    void pageProgram(uint32_t addr, const uint8_t* data, size_t len) override {
         writeEnable();
         m_spi.lock();
         csLow();
@@ -167,7 +172,7 @@ public:
         waitReady();
     }
 
-    void sectorErase(uint32_t addr) {
+    void sectorErase(uint32_t addr) override {
         writeEnable();
         m_spi.lock();
         csLow();
@@ -202,7 +207,7 @@ public:
      * @brief Get flash capacity in bytes from JEDEC ID
      * @return Capacity in bytes, or 0 if unknown
      */
-    uint32_t capacityBytes() {
+    uint32_t capacityBytes() override {
         JEDEC_ID id = readJEDEC();
         // Capacity byte: 0x14=1MB, 0x15=2MB, 0x16=4MB, 0x17=8MB, 0x18=16MB
         if (id.capacity >= 0x10 && id.capacity <= 0x20) {
@@ -215,7 +220,7 @@ public:
      * @brief Erase a 64KB block at the given address
      * @param addr Address within the block (will be aligned to 64KB boundary)
      */
-    void blockErase64(uint32_t addr) {
+    void blockErase64(uint32_t addr) override {
         writeEnable();
         m_spi.lock();
         csLow();
@@ -243,23 +248,13 @@ public:
     }
 
 private:
-    SPIBus& m_spi;
+    Harness::ISPIBus& m_spi;
+    Harness::IGPIO& m_cs;
 
-    void initPins() {
-        RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN;
-
-        // CS - output, high
-        auto port = Pins::GFX_Flash::CS_PORT;
-        auto pin = Pins::GFX_Flash::CS_PIN;
-        port->MODER &= ~(0x3 << (pin * 2));
-        port->MODER |= (0x1 << (pin * 2));
-        port->OTYPER &= ~(1 << pin);
-        port->OSPEEDR |= (0x3 << (pin * 2));
-        csHigh();
-    }
-
-    void csLow()  { Pins::GFX_Flash::CS_PORT->BSRR = (1 << (Pins::GFX_Flash::CS_PIN + 16)); }
-    void csHigh() { Pins::GFX_Flash::CS_PORT->BSRR = (1 << Pins::GFX_Flash::CS_PIN); }
+    void csLow()  { m_cs.write(false); }
+    void csHigh() { m_cs.write(true); }
 };
+
+} // namespace Drivers
 
 #endif // FLASH_HPP

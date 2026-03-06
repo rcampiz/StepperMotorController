@@ -4,15 +4,15 @@
  */
 
 #include "F_platform/tasks/display_task.hpp"
-#include "L4_drivers/devices/lcd_st7789.hpp"
-#include "L4_drivers/devices/joystick.hpp"
-#include "L4_drivers/spi/spi_bus.hpp"
-#include "L4_drivers/spi/spi_manager.hpp"
-#include "F_platform/types/telemetry.hpp"
-#include "L3_services/infra/indicator_service.hpp"
+#include "harness/pins/iclock.hpp"
+#include "harness/pins/iremote_display.hpp"
+#include "harness/pins/icanvas.hpp"
+#include "harness/pins/ijoystick.hpp"
+#include "harness/pins/iflash_image_access.hpp"
+#include "harness/pins/iindicator_renderer.hpp"
 #include "F_platform/ui/ui_mode.hpp"
-#include "ui/screen_manager.hpp"
-#include "ui/menu_screen.hpp"
+#include "ui/screen_manager/screen_manager.hpp"
+#include "ui/menu_screen/menu_screen.hpp"
 #include "ui/screens/boot_color_screen.hpp"
 #include "ui/screens/device_info_screen.hpp"
 #include "ui/screens/encoder_screen.hpp"
@@ -24,22 +24,14 @@
 #include "ui/screens/task_monitor_screen.hpp"
 #include "ui/screens/dispatcher_screen.hpp"
 #include "ui/screens/arch_screen.hpp"
-#include "L3_services/infra/flash_image_service.hpp"
-#include "L3_services/infra/trace.hpp"
-#include "F_util/interface_trace.hpp"
-#ifdef ENABLE_INTERFACE_TRACE
-#include "wiring/traced/traced_spi_bus.hpp"
-#endif
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
+#include "harness/pins/itrace_context.hpp"
+#include "harness/trace/interface_trace.hpp"
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 
-namespace Tasks {
+namespace Scheduler {
 
-// Helper to convert Joystick::Direction to UI::JoyDirection
-static UI::JoyDirection convertDirection(Joystick::Direction dir);
 
 // Screen manager and screen instances (static allocation, no heap)
 static UI::ScreenManager s_screenManager;
@@ -60,6 +52,14 @@ static UI::TaskMonitorScreen s_taskMonitorScreen;
 static UI::DispatcherScreen s_dispatcherScreen;
 static UI::ArchScreen s_archScreen;
 
+// Injected dependencies (set by DisplayTask_Init)
+static Harness::ICanvas* s_lcd = nullptr;
+static Harness::IJoystick* s_joystick = nullptr;
+static Harness::IClock* s_clock = nullptr;
+static Harness::IFlashImageAccess* s_flashImages = nullptr;
+static Harness::IIndicatorRenderer* s_indicator = nullptr;
+static Harness::IScheduler* s_scheduler = nullptr;
+
 // Forward declaration
 static void populateImageMenu();
 
@@ -72,7 +72,7 @@ static bool onImageActionSelect(uint8_t index) {
         return true;
     } else if (index == 1) {
         // Erase
-        Services::g_flashImageService.eraseSlot(s_activeSlot);
+        s_flashImages->eraseSlot(s_activeSlot);
         populateImageMenu();  // Refresh browser to reflect deletion
         return false;  // Pop action menu, back to browser
     }
@@ -83,18 +83,17 @@ static bool onImageActionSelect(uint8_t index) {
 static void populateImageMenu() {
     s_imageMenu.clearItems();
 
-    auto& svc = Services::g_flashImageService;
-    if (!svc.isAvailable()) {
+    if (!s_flashImages->isAvailable()) {
         s_imageMenu.addItem("Flash unavailable", nullptr, false);
         return;
     }
 
-    uint32_t maxSlots = svc.maxSlots();
+    uint32_t maxSlots = s_flashImages->maxSlots();
     uint8_t found = 0;
     uint8_t probe[4];
 
     for (uint32_t slot = 0; slot < maxSlots && found < UI::MENU_MAX_ITEMS; slot++) {
-        if (svc.readSlotChunk(slot, 0, probe, 4)) {
+        if (s_flashImages->readSlotChunk(slot, 0, probe, 4)) {
             // Non-0xFF means slot has image data (erased flash = all 0xFF)
             if (probe[0] != 0xFF || probe[1] != 0xFF ||
                 probe[2] != 0xFF || probe[3] != 0xFF) {
@@ -163,40 +162,18 @@ static uint8_t s_holdCount = 0;
 static constexpr uint8_t HOLD_DELAY_POLLS = 8;   // 400ms before repeat starts
 static constexpr uint8_t HOLD_REPEAT_POLLS = 2;  // 100ms between repeats
 
-// Driver instances (created in init)
-static SPIBus* s_spi = nullptr;
-static LCD* s_lcd = nullptr;
-static Joystick* s_joystick = nullptr;
-
-bool DisplayTask_Init()
+bool DisplayTask_Init(Harness::ICanvas& lcd, Harness::IJoystick* joystick,
+                      Harness::IClock& clock,
+                      Harness::IFlashImageAccess& flashImages,
+                      Harness::IIndicatorRenderer& indicator,
+                      Harness::IScheduler& scheduler)
 {
-    // UI mode manager is initialized by main.cpp (composition root)
-
-    // Create SPIBus wrapper around SPI1 from manager
-    // LCD (ST7789) uses SPI1 with Mode0
-    ISPIBus* spi1 = g_spiManager.getSPI1();
-    if (spi1 == nullptr) {
-        return false;
-    }
-#ifdef ENABLE_INTERFACE_TRACE
-    static TracedSPIBus s_tracedSPI(*spi1);
-    static SPIBus spiBus(s_tracedSPI);
-#else
-    static SPIBus spiBus(*spi1);
-#endif
-    s_spi = &spiBus;
-
-    // Initialize LCD driver with shared SPI bus
-    static LCD lcd(*s_spi);
     s_lcd = &lcd;
-    s_lcd->init();
-
-    // Initialize indicator service (service layer, no RTOS dependency)
-    Services::g_indicatorService.init(s_lcd);
-
-    // Initialize joystick
-    static Joystick joystick;
-    s_joystick = &joystick;
+    s_joystick = joystick;
+    s_clock = &clock;
+    s_flashImages = &flashImages;
+    s_indicator = &indicator;
+    s_scheduler = &scheduler;
 
     // Set up main menu
     s_mainMenu.addItem("Boot Color Screen");
@@ -225,32 +202,32 @@ void vDisplayTask(void* pvParameters)
 {
     (void)pvParameters;
 
-    TickType_t lastWakeTime = xTaskGetTickCount();
-    Joystick::Direction lastDir = Joystick::Direction::None;
+    uint32_t lastWakeMs = s_clock->getTickMs();
+    UI::JoyDirection lastDir = UI::JoyDirection::NONE;
 
     while (true) {
-        Trace::setCurrentTaskId(Trace::TASK_DISPLAY);
-        Trace::setCurrentServiceId(Trace::SVC_UI);
+        Harness::setTraceTaskId(Harness::TASK_DISPLAY);
+        Harness::setTraceServiceId(Harness::SVC_UI);
 
         // Handle joystick input
         if (s_joystick != nullptr) {
-            Joystick::Direction dir = s_joystick->readDirection();
+            UI::JoyDirection dir = s_joystick->readDirection();
 
             // In REMOTE mode, forward joystick events upstream
             if (UI::g_uiMode.getMode() == UI::UIMode::REMOTE) {
                 if (dir != lastDir) {
-                    bool wasPressed = (dir != Joystick::Direction::None);
+                    bool wasPressed = (dir != UI::JoyDirection::NONE);
                     UI::JoyEvent event;
-                    event.direction = convertDirection(dir);
+                    event.direction = dir;
                     event.pressed = wasPressed;
-                    event.timestamp = xTaskGetTickCount();
+                    event.timestamp = s_clock->getTickMs();
                     UI::g_uiMode.reportJoyEvent(event);
                     lastDir = dir;
                 }
                 s_centerHoldCount = 0;
             } else {
                 // LOCAL mode: long-press CENTER detection
-                if (dir == Joystick::Direction::Center) {
+                if (dir == UI::JoyDirection::CENTER) {
                     s_centerHoldCount++;
                     if (s_centerHoldCount == LONG_PRESS_POLLS) {
                         // Long-press CENTER → return to main menu
@@ -265,18 +242,18 @@ void vDisplayTask(void* pvParameters)
 
                 // Edge-detected input → screen manager
                 if (dir != lastDir) {
-                    if (dir != Joystick::Direction::None) {
-                        s_screenManager.handleInput(convertDirection(dir), true);
+                    if (dir != UI::JoyDirection::NONE) {
+                        s_screenManager.handleInput(dir, true);
                     }
                     lastDir = dir;
                     s_holdCount = 0;
-                } else if (dir == Joystick::Direction::Up
-                        || dir == Joystick::Direction::Down) {
+                } else if (dir == UI::JoyDirection::UP
+                        || dir == UI::JoyDirection::DOWN) {
                     // Auto-repeat for held UP/DOWN only (LEFT/RIGHT switch modes)
                     s_holdCount++;
                     if (s_holdCount >= HOLD_DELAY_POLLS
                         && (s_holdCount % HOLD_REPEAT_POLLS) == 0) {
-                        s_screenManager.handleInput(convertDirection(dir), true);
+                        s_screenManager.handleInput(dir, true);
                     }
                 }
             }
@@ -285,12 +262,12 @@ void vDisplayTask(void* pvParameters)
 render:
         // Render current screen in LOCAL mode
         if (s_lcd != nullptr && UI::g_uiMode.getMode() == UI::UIMode::LOCAL) {
-            ITRACE(ITrace::L4_LCD, "[UI>L4]", "lcd.render");
+            ITRACE(Harness::ITrace::L4_LCD, "[UI>L4]", "lcd.render");
             s_screenManager.render();
         }
 
         // Wait for next refresh cycle
-        vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(DISPLAY_REFRESH_PERIOD_MS));
+        s_clock->sleepUntilMs(lastWakeMs, DISPLAY_REFRESH_PERIOD_MS);
     }
 }
 
@@ -313,17 +290,6 @@ void DisplayTask_Refresh()
 // Helper functions
 // =============================================================================
 
-static UI::JoyDirection convertDirection(Joystick::Direction dir)
-{
-    switch (dir) {
-        case Joystick::Direction::Left:   return UI::JoyDirection::LEFT;
-        case Joystick::Direction::Right:  return UI::JoyDirection::RIGHT;
-        case Joystick::Direction::Up:     return UI::JoyDirection::UP;
-        case Joystick::Direction::Down:   return UI::JoyDirection::DOWN;
-        case Joystick::Direction::Center: return UI::JoyDirection::CENTER;
-        default:                          return UI::JoyDirection::NONE;
-    }
-}
 
 // =============================================================================
 // Remote Rendering API
@@ -375,10 +341,10 @@ void DisplayTask_RemoteBitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
 void DisplayTask_RemoteIndicator(uint16_t angle_deg, int8_t rotation_dir,
                                   bool has_translation)
 {
-    Services::g_indicatorService.draw({angle_deg, rotation_dir, has_translation});
+    s_indicator->draw({angle_deg, rotation_dir, has_translation});
 }
 
-LCD* DisplayTask_GetLCD()
+Harness::ICanvas* DisplayTask_GetLCD()
 {
     return s_lcd;
 }
@@ -414,21 +380,60 @@ bool DisplayTask_IsStreaming()
     return s_lcd != nullptr && s_lcd->isStreaming();
 }
 
-// Task handle for suspend/resume
-TaskHandle_t g_displayTaskHandle = nullptr;
+// Task handle for suspend/resume (opaque, managed by IScheduler)
+Harness::TaskHandle g_displayTaskHandle = nullptr;
 
 void DisplayTask_Suspend()
 {
-    if (g_displayTaskHandle != nullptr) {
-        vTaskSuspend(g_displayTaskHandle);
-    }
+    s_scheduler->suspendTask(g_displayTaskHandle);
 }
 
 void DisplayTask_Resume()
 {
-    if (g_displayTaskHandle != nullptr) {
-        vTaskResume(g_displayTaskHandle);
-    }
+    s_scheduler->resumeTask(g_displayTaskHandle);
 }
 
-} // namespace Tasks
+// ============================================================================
+// Harness interface implementation (eliminates wiring adapter)
+// ============================================================================
+
+class RemoteDisplayAccess : public Harness::IRemoteDisplay {
+public:
+    void clear(uint16_t color) override {
+        DisplayTask_RemoteClear(color);
+    }
+    void text(uint16_t x, uint16_t y, const char* t,
+              uint16_t fg, uint16_t bg) override {
+        DisplayTask_RemoteText(x, y, t, fg, bg);
+    }
+    void rect(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+              uint16_t color, bool filled) override {
+        DisplayTask_RemoteRect(x, y, w, h, color, filled);
+    }
+    void line(int16_t x0, int16_t y0, int16_t x1, int16_t y1,
+              uint16_t color) override {
+        DisplayTask_RemoteLine(x0, y0, x1, y1, color);
+    }
+    void bitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+                const uint8_t* data, uint32_t len) override {
+        DisplayTask_RemoteBitmap(x, y, w, h, data, len);
+    }
+    void indicator(uint16_t angle, int8_t rotation, bool translation) override {
+        DisplayTask_RemoteIndicator(angle, rotation, translation);
+    }
+    bool streamStart(uint16_t x, uint16_t y, uint16_t w, uint16_t h) override {
+        return DisplayTask_StreamBitmapStart(x, y, w, h);
+    }
+    void streamData(const uint8_t* data, uint32_t len) override {
+        DisplayTask_StreamBitmapData(data, len);
+    }
+    void streamEnd() override {
+        DisplayTask_StreamBitmapEnd();
+    }
+};
+
+static RemoteDisplayAccess s_remoteAccess;
+
+Harness::IRemoteDisplay* DisplayTask_GetRemoteInterface() { return &s_remoteAccess; }
+
+} // namespace Scheduler

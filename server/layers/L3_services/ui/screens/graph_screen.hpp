@@ -15,14 +15,12 @@
 #include "ui/screen.hpp"
 #include <stdint.h>
 
-class LCD;
-
 namespace UI {
 
 class GraphScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::STATUS; }
-    void render(LCD& lcd) override;
+    void render(Harness::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
     bool needsFullRedraw() const override { return m_needsRedraw; }
@@ -64,8 +62,8 @@ private:
     uint16_t channelColor() const;
     const char* channelUnit() const;
     void computeRange(int32_t& outMin, int32_t& outMax) const;
-    void renderGraph(LCD& lcd);
-    void renderHeader(LCD& lcd);
+    void renderGraph(Harness::ICanvas& lcd);
+    void renderHeader(Harness::ICanvas& lcd);
 };
 
 } // namespace UI

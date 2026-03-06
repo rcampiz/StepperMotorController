@@ -4,8 +4,9 @@
  */
 
 #include "L2_protocol/command_parser_internal.hpp"
+#include "harness/pins/crc32.hpp"
 
-namespace Comms {
+namespace Protocol {
 
 void CommandParser::cmdUIMode(const ParsedCommand &cmd) {
   if (cmd.argCount < 1) {
@@ -592,7 +593,7 @@ void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
   }
 
   constexpr uint32_t expectedBytes =
-      Comms::ICommandDispatcher::FLASH_IMAGE_SIZE;
+      Harness::ICommandDispatcher::FLASH_IMAGE_SIZE;
 
   // Erase the slot first
   if (!m_dispatcher.flashEraseSlot(slot)) {
@@ -617,7 +618,7 @@ void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
   }
 
   // Receive binary data and program page-by-page
-  constexpr uint32_t PAGE_SIZE = Comms::ICommandDispatcher::FLASH_PAGE_SIZE;
+  constexpr uint32_t PAGE_SIZE = Harness::ICommandDispatcher::FLASH_PAGE_SIZE;
   constexpr uint32_t BYTE_TIMEOUT_MS = 100;
   uint8_t page[PAGE_SIZE];
   uint32_t bytesReceived = 0;
@@ -738,7 +739,7 @@ void CommandParser::cmdFlashUploadRle(const ParsedCommand &cmd) {
   uint32_t totalPixels = 240UL * 320;
   uint32_t decodedPixels = 0;
 
-  constexpr uint32_t PAGE_SIZE = Comms::ICommandDispatcher::FLASH_PAGE_SIZE;
+  constexpr uint32_t PAGE_SIZE = Harness::ICommandDispatcher::FLASH_PAGE_SIZE;
   constexpr uint32_t BYTE_TIMEOUT_MS = 100;
   uint8_t page[PAGE_SIZE];
   uint32_t pageOffset = 0;  // Bytes in current page buffer
@@ -915,8 +916,8 @@ void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
   offset = CHUNK_SIZE;
 
   // Pipeline: start next flash read, then write current chunk to LCD
-  while (offset < Comms::ICommandDispatcher::FLASH_IMAGE_SIZE) {
-    uint32_t remaining = Comms::ICommandDispatcher::FLASH_IMAGE_SIZE - offset;
+  while (offset < Harness::ICommandDispatcher::FLASH_IMAGE_SIZE) {
+    uint32_t remaining = Harness::ICommandDispatcher::FLASH_IMAGE_SIZE - offset;
     uint32_t toRead = (remaining < CHUNK_SIZE) ? remaining : CHUNK_SIZE;
 
     // Start async flash read into other buffer (DMA1 on SPI2)
@@ -945,7 +946,7 @@ void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
 
   // Write final chunk to LCD
   uint32_t lastSize =
-      Comms::ICommandDispatcher::FLASH_IMAGE_SIZE - (offset - CHUNK_SIZE);
+      Harness::ICommandDispatcher::FLASH_IMAGE_SIZE - (offset - CHUNK_SIZE);
   if (lastSize > CHUNK_SIZE)
     lastSize = CHUNK_SIZE;
   for (uint32_t i = 0; i < lastSize; i++) {
@@ -1005,7 +1006,7 @@ void CommandParser::cmdFlashDump(const ParsedCommand &cmd) {
     len = strtoul(cmd.args[2], nullptr, 10);
   if (len > 256)
     len = 256; // Cap at 256 bytes
-  if (offset + len > Comms::ICommandDispatcher::FLASH_IMAGE_SIZE) {
+  if (offset + len > Harness::ICommandDispatcher::FLASH_IMAGE_SIZE) {
     respondErr("Offset+len exceeds image size");
     return;
   }
@@ -1108,4 +1109,4 @@ void CommandParser::cmdFlashTest() {
   }
 }
 
-} // namespace Comms
+} // namespace Protocol

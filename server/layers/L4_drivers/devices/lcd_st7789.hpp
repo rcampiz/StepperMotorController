@@ -1,15 +1,20 @@
 /**
  * @file lcd_st7789.hpp
  * @brief SPI LCD driver for X-NUCLEO-GFX01M2 (ST7789-based display)
+ *
+ * GPIO pins are injected via constructor — no CMSIS dependency.
+ * Caller must configure pin modes before construction.
  */
 
 #ifndef LCD_ST7789_HPP
 #define LCD_ST7789_HPP
 
 #include <stdint.h>
-#include "X_vendor/CMSIS/stm32f401xe.h"
-#include "L5_board/board_pins.hpp"
-#include "L4_drivers/spi/spi_bus.hpp"
+#include "harness/pins/igpio.hpp"
+#include "harness/pins/ispi_bus.hpp"
+#include "harness/pins/icanvas.hpp"
+
+namespace Drivers {
 
 // 5x7 bitmap font (ASCII 32-126)
 // Each character is 5 columns, each column is 7 bits (LSB = top)
@@ -111,7 +116,7 @@ static const uint8_t FONT_5X7[][5] = {
     {0x08, 0x08, 0x2A, 0x1C, 0x08}, // 126 '~'
 };
 
-class LCD {
+class LCD : public Harness::ICanvas {
 public:
     static constexpr uint16_t WIDTH = 240;
     static constexpr uint16_t HEIGHT = 320;
@@ -134,8 +139,18 @@ public:
     static constexpr uint16_t MAGENTA = 0xF81F;
     static constexpr uint16_t GRAY    = 0x8410;
 
-    LCD(SPIBus& spi) : m_spi(spi) {
-        initPins();
+    /**
+     * @brief Construct with SPI bus and pre-configured GPIO pins
+     *
+     * All pins must be configured before construction:
+     *   cs, dc, nreset: output, push-pull, high speed
+     *   te:             input (no pull)
+     */
+    LCD(Harness::ISPIBus& spi, Harness::IGPIO& cs, Harness::IGPIO& dc, Harness::IGPIO& nreset, Harness::IGPIO& te)
+        : m_spi(spi), m_cs(cs), m_dc(dc), m_nreset(nreset), m_te(te) {
+        csHigh();
+        dcLow();
+        nresetHigh();
     }
 
     void init() {
@@ -176,7 +191,7 @@ public:
 
     void setWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
         m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setMode(Harness::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x0, y0, x1, y1);
@@ -188,9 +203,9 @@ public:
         fillRect(0, 0, WIDTH, HEIGHT, color);
     }
 
-    void fillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) {
+    void fillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) override {
         m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setMode(Harness::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x, y, x + w - 1, y + h - 1);
@@ -204,11 +219,11 @@ public:
         m_spi.unlock();
     }
 
-    void drawPixel(uint16_t x, uint16_t y, uint16_t color) {
+    void drawPixel(uint16_t x, uint16_t y, uint16_t color) override {
         if (x >= WIDTH || y >= HEIGHT) return;
 
         m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setMode(Harness::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x, y, x, y);
@@ -243,7 +258,7 @@ public:
      *   Rows 284-319  Info text + PLUGE near-black patches
      *   + 1px white border + center crosshair
      */
-    void drawTestPattern() {
+    void drawTestPattern() override {
         // --- Constants ---
         constexpr uint16_t bw = WIDTH / 7;          // 34px per color bar
         constexpr uint16_t bwLast = WIDTH - 6 * bw;  // last bar absorbs remainder
@@ -358,7 +373,7 @@ public:
      * @param scale 1 = 6×8 (small), 2 = 12×16 (large), 3 = 8×12 (medium)
      */
     void drawChar(uint16_t x, uint16_t y, char c, uint16_t fg, uint16_t bg,
-                  uint8_t scale = 1) {
+                  uint8_t scale = 1) override {
         if (c < 32 || c > 126) c = '?';
 
         const uint8_t* glyph = FONT_5X7[c - 32];
@@ -393,7 +408,7 @@ public:
             }
 
             m_spi.lock();
-            m_spi.setMode(SPIBus::Mode::Mode0);
+            m_spi.setMode(Harness::SPIMode::Mode0);
             m_spi.setPrescaler(m_prescaler);
             csLow();
             setWindowLocked(x, y, static_cast<uint16_t>(x + MED_CHAR_W - 1),
@@ -442,7 +457,7 @@ public:
         }
 
         m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setMode(Harness::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x, y, static_cast<uint16_t>(x + charW - 1),
@@ -462,7 +477,7 @@ public:
      * @param scale 1 = 6×8 (small), 2 = 12×16 (large), 3 = 8×12 (medium)
      */
     void drawString(uint16_t x, uint16_t y, const char* str, uint16_t fg, uint16_t bg,
-                    uint8_t scale = 1) {
+                    uint8_t scale = 1) override {
         if (str == nullptr) return;
 
         // Medium font: separate rendering path
@@ -497,7 +512,7 @@ public:
             uint8_t rowBuf[WIDTH * 2];
 
             m_spi.lock();
-            m_spi.setMode(SPIBus::Mode::Mode0);
+            m_spi.setMode(Harness::SPIMode::Mode0);
             m_spi.setPrescaler(m_prescaler);
             csLow();
             setWindowLocked(x, y, static_cast<uint16_t>(x + pixelW - 1),
@@ -571,7 +586,7 @@ public:
      * @param bg     Background color (RGB565)
      */
     void blitTextLine(uint16_t x, uint16_t y, uint16_t lineW, uint16_t lineH,
-                      const char* text, uint16_t fg, uint16_t bg) {
+                      const char* text, uint16_t fg, uint16_t bg) override {
         if (x + lineW > WIDTH || y + lineH > HEIGHT) return;
 
         uint16_t fgInv = ~fg;
@@ -589,7 +604,7 @@ public:
         uint8_t rowBuf[WIDTH * 2];
 
         m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setMode(Harness::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x, y, static_cast<uint16_t>(x + lineW - 1),
@@ -643,7 +658,7 @@ public:
      *                   Must have at least strlen(text) entries.
      */
     void blitTextLineColored(uint16_t x, uint16_t y, uint16_t lineW, uint16_t lineH,
-                             const char* text, const uint16_t* charColors, uint16_t bg) {
+                             const char* text, const uint16_t* charColors, uint16_t bg) override {
         if (x + lineW > WIDTH || y + lineH > HEIGHT) return;
 
         uint16_t bgInv = ~bg;
@@ -665,7 +680,7 @@ public:
         uint8_t rowBuf[WIDTH * 2];
 
         m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setMode(Harness::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x, y, static_cast<uint16_t>(x + lineW - 1),
@@ -732,7 +747,7 @@ public:
             uint8_t rowBuf[WIDTH * 2];
 
             m_spi.lock();
-            m_spi.setMode(SPIBus::Mode::Mode0);
+            m_spi.setMode(Harness::SPIMode::Mode0);
             m_spi.setPrescaler(m_prescaler);
             csLow();
             setWindowLocked(x, y, static_cast<uint16_t>(x + pixelW - 1),
@@ -789,7 +804,7 @@ public:
      * @param bg Background color
      */
     void drawInt(uint16_t x, uint16_t y, int32_t value, uint8_t fieldWidth,
-                 uint16_t fg, uint16_t bg, uint8_t scale = 1) {
+                 uint16_t fg, uint16_t bg, uint8_t scale = 1) override {
         char buf[12];
         int idx = 0;
         bool neg = false;
@@ -825,7 +840,7 @@ public:
      * @brief Draw an unsigned integer value (right-aligned in field)
      */
     void drawUInt(uint16_t x, uint16_t y, uint32_t value, uint8_t fieldWidth,
-                  uint16_t fg, uint16_t bg, uint8_t scale = 1) {
+                  uint16_t fg, uint16_t bg, uint8_t scale = 1) override {
         char buf[12];
         int idx = 0;
 
@@ -856,7 +871,7 @@ public:
      * @param x1, y1 End point
      * @param color Line color
      */
-    void drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color) {
+    void drawLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color) override {
         auto dx = static_cast<int16_t>(x1 > x0 ? x1 - x0 : x0 - x1);
         auto dy = static_cast<int16_t>(y1 > y0 ? y1 - y0 : y0 - y1);
         auto sx = static_cast<int16_t>(x0 < x1 ? 1 : -1);
@@ -898,7 +913,7 @@ public:
         uint16_t drawH = (y + h > HEIGHT) ? HEIGHT - y : h;
 
         m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setMode(Harness::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x, y, x + drawW - 1, y + drawH - 1);
@@ -923,7 +938,7 @@ public:
      * @param len Length of data in bytes
      */
     void drawBitmapRaw(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
-                       const uint8_t* data, size_t len) {
+                       const uint8_t* data, size_t len) override {
         if (x >= WIDTH || y >= HEIGHT) {
             return;
         }
@@ -932,7 +947,7 @@ public:
         uint16_t drawH = (y + h > HEIGHT) ? HEIGHT - y : h;
 
         m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setMode(Harness::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x, y, x + drawW - 1, y + drawH - 1);
@@ -960,12 +975,12 @@ public:
      * @param h Column height in pixels
      * @param data Pre-built pixel data (h * 2 bytes, RGB565 big-endian)
      */
-    void blitColumn(uint16_t x, uint16_t y, uint16_t h, const uint8_t* data) {
+    void blitColumn(uint16_t x, uint16_t y, uint16_t h, const uint8_t* data) override {
         if (x >= WIDTH || y >= HEIGHT) return;
         uint16_t drawH = (y + h > HEIGHT) ? static_cast<uint16_t>(HEIGHT - y) : h;
 
         m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setMode(Harness::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x, y, x, static_cast<uint16_t>(y + drawH - 1));
@@ -991,7 +1006,7 @@ public:
      * @param x, y Top-left position
      * @param w, h Bitmap dimensions
      */
-    void streamBitmapStart(uint16_t x, uint16_t y, uint16_t w, uint16_t h) {
+    void streamBitmapStart(uint16_t x, uint16_t y, uint16_t w, uint16_t h) override {
         if (x >= WIDTH || y >= HEIGHT) {
             return;
         }
@@ -1000,7 +1015,7 @@ public:
         uint16_t drawH = (y + h > HEIGHT) ? HEIGHT - y : h;
 
         m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setMode(Harness::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x, y, x + drawW - 1, y + drawH - 1);
@@ -1015,7 +1030,7 @@ public:
      * @param data Pointer to raw RGB565 byte data
      * @param len Number of bytes to transfer
      */
-    void streamBitmapData(const uint8_t* data, size_t len) {
+    void streamBitmapData(const uint8_t* data, size_t len) override {
         if (!m_streaming) {
             return;
         }
@@ -1038,7 +1053,7 @@ public:
      *
      * Releases the SPI lock held by streamBitmapStart().
      */
-    void streamBitmapEnd() {
+    void streamBitmapEnd() override {
         if (!m_streaming) {
             return;
         }
@@ -1051,49 +1066,26 @@ public:
      * @brief Check if currently streaming bitmap data
      * @return true if streaming is active
      */
-    bool isStreaming() const { return m_streaming; }
+    bool isStreaming() const override { return m_streaming; }
 
-    void setSPIPrescaler(SPIBus::Prescaler p) { m_prescaler = p; }
-    SPIBus::Prescaler getSPIPrescaler() const { return m_prescaler; }
+    void setSPIPrescaler(Harness::SPIPrescaler p) { m_prescaler = p; }
+    Harness::SPIPrescaler getSPIPrescaler() const { return m_prescaler; }
 
 private:
     bool m_streaming = false;
-    SPIBus& m_spi;
-    SPIBus::Prescaler m_prescaler = SPIBus::Prescaler::Div2;  // 42 MHz (84 MHz APB2 / 2)
+    Harness::ISPIBus& m_spi;
+    Harness::IGPIO& m_cs;
+    Harness::IGPIO& m_dc;
+    Harness::IGPIO& m_nreset;
+    Harness::IGPIO& m_te;
+    Harness::SPIPrescaler m_prescaler = Harness::SPIPrescaler::Div2;  // 42 MHz (84 MHz APB2 / 2)
 
-    void initPins() {
-        RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_GPIOBEN
-                     | RCC_AHB1ENR_GPIOCEN;
-
-        // CS - output
-        configureOutput(Pins::GFX_LCD::CS_PORT, Pins::GFX_LCD::CS_PIN);
-        csHigh();
-
-        // DC - output
-        configureOutput(Pins::GFX_LCD::DC_PORT, Pins::GFX_LCD::DC_PIN);
-        dcLow();
-
-        // NRESET - output
-        configureOutput(Pins::GFX_LCD::NRESET_PORT, Pins::GFX_LCD::NRESET_PIN);
-        nresetHigh();
-
-        // TE - input (optional tearing effect sync)
-        Pins::GFX_LCD::TE_PORT->MODER &= ~(0x3 << (Pins::GFX_LCD::TE_PIN * 2));
-    }
-
-    void configureOutput(GPIO_TypeDef* port, uint8_t pin) {
-        port->MODER &= ~(0x3 << (pin * 2));
-        port->MODER |= (0x1 << (pin * 2));
-        port->OTYPER &= ~(1 << pin);
-        port->OSPEEDR |= (0x3 << (pin * 2));
-    }
-
-    void csLow()      { Pins::GFX_LCD::CS_PORT->BSRR = (1 << (Pins::GFX_LCD::CS_PIN + 16)); }
-    void csHigh()     { Pins::GFX_LCD::CS_PORT->BSRR = (1 << Pins::GFX_LCD::CS_PIN); }
-    void dcLow()      { Pins::GFX_LCD::DC_PORT->BSRR = (1 << (Pins::GFX_LCD::DC_PIN + 16)); }
-    void dcHigh()     { Pins::GFX_LCD::DC_PORT->BSRR = (1 << Pins::GFX_LCD::DC_PIN); }
-    void nresetLow()  { Pins::GFX_LCD::NRESET_PORT->BSRR = (1 << (Pins::GFX_LCD::NRESET_PIN + 16)); }
-    void nresetHigh() { Pins::GFX_LCD::NRESET_PORT->BSRR = (1 << Pins::GFX_LCD::NRESET_PIN); }
+    void csLow()      { m_cs.write(false); }
+    void csHigh()     { m_cs.write(true); }
+    void dcLow()      { m_dc.write(false); }
+    void dcHigh()     { m_dc.write(true); }
+    void nresetLow()  { m_nreset.write(false); }
+    void nresetHigh() { m_nreset.write(true); }
 
     void setWindowLocked(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
         uint16_t r0 = y0 + ROW_OFFSET;
@@ -1110,7 +1102,7 @@ private:
 
     void writeCmd(uint8_t cmd) {
         m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setMode(Harness::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         dcLow();
@@ -1121,7 +1113,7 @@ private:
 
     void writeData(uint8_t data) {
         m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode0);
+        m_spi.setMode(Harness::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         dcHigh();
@@ -1134,5 +1126,7 @@ private:
         for (volatile uint32_t i = 0; i < ms * 8000; i++);
     }
 };
+
+} // namespace Drivers
 
 #endif // LCD_HPP

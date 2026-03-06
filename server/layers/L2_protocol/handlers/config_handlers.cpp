@@ -5,7 +5,7 @@
 
 #include "L2_protocol/command_parser_internal.hpp"
 
-namespace Comms {
+namespace Protocol {
 
 void CommandParser::cmdAccelPhysical(const ParsedCommand &cmd) {
   if (cmd.argCount < 1) {
@@ -302,7 +302,7 @@ void CommandParser::cmdMotorConfigApply() {
   }
 
   // Readback chip registers to verify writes actually reached the powerSTEP01
-  Comms::ICommandDispatcher::MotorDebugParams info;
+  Harness::MotorDebugParams info;
   if (m_dispatcher.motorGetDebugInfo(info)) {
     char buf[128];
     snprintf(buf, sizeof(buf),
@@ -317,4 +317,4 @@ void CommandParser::cmdMotorConfigApply() {
   }
 }
 
-} // namespace Comms
+} // namespace Protocol

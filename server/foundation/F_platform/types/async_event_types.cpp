@@ -3,7 +3,7 @@
  * @brief Event type utility functions (layer-independent)
  */
 
-#include "F_platform/types/async_event_types.hpp"
+#include "harness/pins/async_event.hpp"
 
 const char* eventTypeToString(EventType t) {
     switch (t) {

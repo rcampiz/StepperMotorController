@@ -1,37 +1,26 @@
 /**
  * @file comms_task.cpp
- * @brief Communications task implementation
+ * @brief Communications task — pure scheduling shell
+ *
+ * Receives pre-wired Hardware::CommsHw from the composition root.
+ * No FreeRTOS types, no object construction, no L4/L5 includes.
  */
 
 #include "F_platform/tasks/comms_task.hpp"
-#include "F_platform/rtos/freertos_clock.hpp"
-#include "F_platform/hal/itransport.hpp"
-#include "L5_board/uart/uart_hardware.hpp"
-#include "L4_drivers/rtt/rtt_driver.hpp"
-#include "L1_transport/uart_transport.hpp"
-#include "L1_transport/rtt_transport.hpp"
-#include "L5_board/board_pins.hpp"
-#include "L2_protocol/command_parser.hpp"
-#include "wiring/service_dispatcher.hpp"
-#include "wiring/encoder_adapter.hpp"
-#include "wiring/debug_commands.hpp"
-#include "F_util/interface_trace.hpp"
-#ifdef ENABLE_INTERFACE_TRACE
-#include "wiring/traced/traced_transport.hpp"
-#include "wiring/traced/traced_encoder.hpp"
-#endif
-#include "F_platform/types/telemetry.hpp"
-#include "L2_protocol/event_codec.hpp"
-#include "L3_services/infra/trace.hpp"
-#include "L3_services/dispatch/command_queue.hpp"
-#include "L3_services/dispatch/event_service.hpp"
+#include "harness/pins/icommand_processor.hpp"
+#include "harness/pins/iclock.hpp"
+#include "harness/pins/itransport.hpp"
+#include "harness/pins/itelemetry.hpp"
+#include "F_platform/types/async_event_types.hpp"
+#include "harness/pins/imotor_event_receiver.hpp"
+#include "harness/pins/iemergency_stop.hpp"
+#include "harness/pins/itrace_context.hpp"
 #include "F_platform/ui/ui_mode.hpp"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
-#include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
+#include "harness/trace/interface_trace.hpp"
 #include <stdint.h>
 #include <string.h>
 
-namespace Tasks {
+namespace Scheduler {
 
 // Simple integer-to-string helpers (no printf dependency)
 static void intToStr(int32_t val, char* buf) {
@@ -67,89 +56,37 @@ static void uintToStr(uint32_t val, char* buf) {
 // Forward declaration
 static void publishTelemetry();
 
-// Transport and parser instances
-static Comms::ITransport* s_transport = nullptr;
-static Comms::CommandParser* s_parser = nullptr;
+// Context from composition root
+static Harness::ITransport* s_transport = nullptr;
+static Harness::ICommandProcessor* s_parser = nullptr;
+static Harness::IClock* s_clock = nullptr;
+static Harness::IMotorEventReceiver* s_eventReceiver = nullptr;
+static Harness::IEmergencyStop* s_emergencyStop = nullptr;
 
 // Telemetry publishing state
 static bool s_telemetryEnabled = false;
-static TickType_t s_lastTelemetryTime = 0;
+static uint32_t s_lastTelemetryTime = 0;
 
 // Heartbeat watchdog state (all accessed from CommsTask context only)
 static uint32_t s_heartbeatTimeoutMs = 0;   // 0 = disabled
-static TickType_t s_lastHeartbeatTick = 0;  // FreeRTOS tick of last HEARTBEAT rx
+static uint32_t s_lastHeartbeatMs = 0;
 static uint32_t s_lastHeartbeatSeq = 0;
 static bool s_commsTimedOut = false;
 
 // Async event send state (accessed from CommsTask context only)
 static uint32_t s_eventSeq = 0;  // monotonic wire sequence number
 
-bool CommsTask_Init(TransportType transport)
+bool CommsTask_Init(Harness::ITransport& transport,
+                    Harness::ICommandProcessor& parser,
+                    Harness::IClock& clock,
+                    Harness::IMotorEventReceiver& eventReceiver,
+                    Harness::IEmergencyStop& emergencyStop)
 {
-    // NOTE: Telemetry is initialized in main.cpp before tasks are created
-
-    // Clock for transport timing (static — persists for lifetime of transport)
-    static FreeRTOSClock commsClock;
-
-    // Create transport based on selection
-    switch (transport) {
-        case TransportType::VCP_UART:
-            {
-                // Hardware driver (L5) — owns all CMSIS register access
-                static UartHardware uartHw(
-                    Pins::VCP_UART::INSTANCE, Pins::VCP_UART::PORT,
-                    Pins::VCP_UART::TX_PIN, Pins::VCP_UART::RX_PIN,
-                    Pins::VCP_UART::AF, Pins::VCP_UART::APB1_CLOCK_HZ);
-                // Transport (L1) — ring buffer + ITransport, no CMSIS
-                static Comms::UartTransport vcpTransport(
-                    uartHw, commsClock, 115200,
-                    configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 1);
-                s_transport = &vcpTransport;
-            }
-            break;
-
-        case TransportType::RTT:
-            {
-                // Driver (L4) — wraps SEGGER RTT vendor library
-                static RttDriver rttHw(0);  // Channel 0
-                // Transport (L1) — ITransport, no vendor includes
-                static Comms::RttTransport rttTransport(rttHw);
-                s_transport = &rttTransport;
-            }
-            break;
-    }
-
-    if (s_transport == nullptr) {
-        return false;
-    }
-
-    if (!s_transport->init()) {
-        return false;
-    }
-
-#ifdef ENABLE_INTERFACE_TRACE
-    // Wrap transport in traced decorator
-    static TracedTransport tracedTransport(*s_transport);
-    Comms::ITransport& activeTransport = tracedTransport;
-#else
-    Comms::ITransport& activeTransport = *s_transport;
-#endif
-
-    // Create command dispatcher and parser
-    static EncoderAdapter encoderAdapter;
-#ifdef ENABLE_INTERFACE_TRACE
-    static TracedEncoder tracedEncoder(encoderAdapter);
-    static ServiceDispatcher dispatcher(&tracedEncoder);
-#else
-    static ServiceDispatcher dispatcher(&encoderAdapter);
-#endif
-    static Comms::CommandParser parser(activeTransport, dispatcher);
-    s_parser = &parser;
-
-    // Wire debug command handler for hardware debug/bringup commands
-    static DebugCommandHandler debugCommands;
-    s_parser->setDebugCommands(&debugCommands);
-
+    s_transport     = &transport;
+    s_parser        = &parser;
+    s_clock         = &clock;
+    s_eventReceiver = &eventReceiver;
+    s_emergencyStop = &emergencyStop;
     return true;
 }
 
@@ -158,7 +95,7 @@ void vCommsTask(void* pvParameters)
     (void)pvParameters;
 
     // Wait for system startup
-    vTaskDelay(pdMS_TO_TICKS(200));
+    s_clock->delayMs(200);
 
     // Print welcome banner
     if (s_transport != nullptr) {
@@ -170,11 +107,11 @@ void vCommsTask(void* pvParameters)
         s_transport->println("");
     }
 
-    TickType_t lastWakeTime = xTaskGetTickCount();
+    uint32_t lastWakeMs = s_clock->getTickMs();
 
     while (true) {
-        Trace::setCurrentTaskId(Trace::TASK_COMMS);
-        Trace::setCurrentServiceId(Trace::SVC_COMMS);
+        Harness::setTraceTaskId(Harness::TASK_COMMS);
+        Harness::setTraceServiceId(Harness::SVC_COMMS);
 
         // Process incoming commands
         if (s_parser != nullptr) {
@@ -184,8 +121,8 @@ void vCommsTask(void* pvParameters)
 
         // Publish periodic telemetry if enabled
         if (s_telemetryEnabled) {
-            TickType_t now = xTaskGetTickCount();
-            if ((now - s_lastTelemetryTime) >= pdMS_TO_TICKS(TELEMETRY_PERIOD_MS)) {
+            uint32_t now = s_clock->getTickMs();
+            if ((now - s_lastTelemetryTime) >= TELEMETRY_PERIOD_MS) {
                 s_lastTelemetryTime = now;
                 publishTelemetry();
             }
@@ -194,37 +131,33 @@ void vCommsTask(void* pvParameters)
         // Drain and send async events
         if (s_transport != nullptr && s_parser != nullptr) {
             AsyncEvent evt;
-            while (Services::Event::receive(evt)) {
+            while (s_eventReceiver->receive(evt)) {
                 s_eventSeq++;
-                auto ts_ms = static_cast<uint32_t>(xTaskGetTickCount());
-                if (s_parser->getFormat() == Comms::ResponseFormat::JSON) {
-                    Comms::EventCodec::formatJson(*s_transport, evt, s_eventSeq, ts_ms);
-                } else {
-                    Comms::EventCodec::formatAscii(*s_transport, evt, s_eventSeq);
-                }
+                uint32_t ts_ms = s_clock->getTickMs();
+                s_parser->formatEvent(*s_transport, evt, s_eventSeq, ts_ms);
             }
         }
 
         // Check heartbeat watchdog
         if (s_heartbeatTimeoutMs > 0 && !s_commsTimedOut) {
-            TickType_t elapsed = xTaskGetTickCount() - s_lastHeartbeatTick;
-            if (elapsed >= pdMS_TO_TICKS(s_heartbeatTimeoutMs)) {
+            uint32_t elapsed = s_clock->getTickMs() - s_lastHeartbeatMs;
+            if (elapsed >= s_heartbeatTimeoutMs) {
                 s_commsTimedOut = true;
-                ITRACE(ITrace::L3_F_SAFETY, "[L3~L3]", "hbTimeout");
-                Services::g_commandQueue.emergencyStop();
+                ITRACE(Harness::ITrace::L3_F_SAFETY, "[L3~L3]", "hbTimeout");
+                s_emergencyStop->emergencyStop();
             }
         }
 
         // Sleep until next poll
-        vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(COMMS_POLL_PERIOD_MS));
+        s_clock->sleepUntilMs(lastWakeMs, COMMS_POLL_PERIOD_MS);
     }
 }
 
 void CommsTask_EnableTelemetry(bool enable)
 {
     s_telemetryEnabled = enable;
-    if (enable) {
-        s_lastTelemetryTime = xTaskGetTickCount();
+    if (enable && s_clock != nullptr) {
+        s_lastTelemetryTime = s_clock->getTickMs();
     }
 }
 
@@ -240,7 +173,7 @@ static void publishTelemetry()
         return;
     }
 
-    Comms::TelemetrySnapshot snap = Comms::g_telemetry.getSnapshot();
+    Protocol::TelemetrySnapshot snap = Harness::telemetry().getSnapshot();
 
     // Format and send telemetry line
     // Format: TELEM: pos=<pos> spd=<spd> enc=<enc> vel=<vel>
@@ -295,7 +228,9 @@ void CommsTask_RegisterJoyCallback()
 
 void CommsTask_HeartbeatReceived(uint32_t seq)
 {
-    s_lastHeartbeatTick = xTaskGetTickCount();
+    if (s_clock != nullptr) {
+        s_lastHeartbeatMs = s_clock->getTickMs();
+    }
     s_lastHeartbeatSeq = seq;
 }
 
@@ -313,7 +248,9 @@ uint32_t CommsTask_SetHeartbeatTimeout(uint32_t timeout_ms)
         timeout_ms = HEARTBEAT_TIMEOUT_MAX_MS;
     }
     s_heartbeatTimeoutMs = timeout_ms;
-    s_lastHeartbeatTick = xTaskGetTickCount();
+    if (s_clock != nullptr) {
+        s_lastHeartbeatMs = s_clock->getTickMs();
+    }
     s_commsTimedOut = false;
     return timeout_ms;
 }
@@ -328,11 +265,10 @@ void CommsTask_GetHeartbeatStatus(
     out_last_seq = s_lastHeartbeatSeq;
     out_timed_out = s_commsTimedOut;
 
-    if (s_heartbeatTimeoutMs > 0 && !s_commsTimedOut) {
-        TickType_t elapsed = xTaskGetTickCount() - s_lastHeartbeatTick;
-        auto elapsed_ms = static_cast<uint32_t>(elapsed);
-        if (elapsed_ms < s_heartbeatTimeoutMs) {
-            out_remaining_ms = s_heartbeatTimeoutMs - elapsed_ms;
+    if (s_heartbeatTimeoutMs > 0 && !s_commsTimedOut && s_clock != nullptr) {
+        uint32_t elapsed = s_clock->getTickMs() - s_lastHeartbeatMs;
+        if (elapsed < s_heartbeatTimeoutMs) {
+            out_remaining_ms = s_heartbeatTimeoutMs - elapsed;
         } else {
             out_remaining_ms = 0;
         }
@@ -344,11 +280,9 @@ void CommsTask_GetHeartbeatStatus(
 void CommsTask_ClearCommsTimeout()
 {
     s_commsTimedOut = false;
-    // Reset timer so watchdog doesn't fire during recovery,
-    // but keep s_heartbeatTimeoutMs so watchdog stays armed.
-    // Client heartbeats are already flowing and will feed the timer.
-    // To actually disable the watchdog, use SET_HEARTBEAT 0.
-    s_lastHeartbeatTick = xTaskGetTickCount();
+    if (s_clock != nullptr) {
+        s_lastHeartbeatMs = s_clock->getTickMs();
+    }
 }
 
 // =========================================================================
@@ -366,18 +300,32 @@ void CommsTask_GetDispatchStats(CommsDispatchStats& out)
         memset(&out, 0, sizeof(out));
         return;
     }
-    const Comms::DispatchStats& src = s_parser->getDispatchStats();
+    Harness::DispatchStats src = {};
+    s_parser->getDispatchStats(src);
     out.totalCommands = src.totalCommands;
     out.unknownCommands = src.unknownCommands;
     out.parseErrors = src.parseErrors;
     out.recentCount = src.recentCount;
-    // Copy recent commands ring buffer (most recent first)
-    for (uint8_t i = 0; i < src.recentCount && i < 8; i++) {
-        uint8_t idx = (src.recentHead + Comms::DispatchStats::RECENT_SIZE - 1 - i)
-                      % Comms::DispatchStats::RECENT_SIZE;
-        strncpy(out.recentCmds[i], src.recentCmds[idx], 23);
-        out.recentCmds[i][23] = '\0';
-    }
+    memcpy(out.recentCmds, src.recentCmds, sizeof(out.recentCmds));
 }
 
-} // namespace Tasks
+// IDispatchStats adapter — bridges Scheduler stats to Harness interface
+class CommsDispatchStatsAdapter : public Harness::IDispatchStats {
+public:
+    void getStats(Harness::DispatchStats& out) override {
+        if (s_parser != nullptr) {
+            s_parser->getDispatchStats(out);
+        } else {
+            memset(&out, 0, sizeof(out));
+        }
+    }
+};
+
+static CommsDispatchStatsAdapter s_dispatchStatsAdapter;
+
+Harness::IDispatchStats* CommsTask_GetDispatchStatsInterface()
+{
+    return &s_dispatchStatsAdapter;
+}
+
+} // namespace Scheduler

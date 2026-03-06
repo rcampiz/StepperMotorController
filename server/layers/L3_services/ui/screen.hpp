@@ -9,15 +9,12 @@
 #ifndef SCREEN_HPP
 #define SCREEN_HPP
 
-#include "ui/ui_mode.hpp"
+#include "harness/pins/icanvas.hpp"
+#include "harness/pins/ui_types.hpp"
+#include "ui/ui_types.hpp"
 #include <stdint.h>
 
-// Forward declaration
-class LCD;
-
 namespace UI {
-
-// ScreenType is defined in ui_mode.hpp
 
 /**
  * @brief Input action result from screen
@@ -54,7 +51,7 @@ public:
      * its current state. May be called frequently, so should be
      * efficient and avoid unnecessary redraws.
      */
-    virtual void render(LCD& lcd) = 0;
+    virtual void render(Harness::ICanvas& lcd) = 0;
 
     /**
      * @brief Handle joystick input

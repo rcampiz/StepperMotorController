@@ -1,15 +1,17 @@
 /**
  * @file sn74hc595.hpp
- * @brief SN74HC595N 8-bit shift register driver for STM32F401RE
+ * @brief SN74HC595N 8-bit shift register driver
  *
  * Driver for controlling the SN74HC595N shift register.
- * Pins must be defined in board_config.hpp
+ * GPIO pins are injected via constructor — no CMSIS dependency.
  */
 
 #ifndef SN74HC595_HPP
 #define SN74HC595_HPP
 
-#include "L5_board/gpio.hpp"
+#include "harness/pins/igpio.hpp"
+
+namespace Drivers {
 
 /**
  * @brief SN74HC595N 8-bit shift register driver
@@ -19,137 +21,64 @@
  */
 class SN74HC595 {
 private:
-    GPIO* ser;      // Serial data input (SER/DS)
-    GPIO* nOE;      // Output enable (active low)
-    GPIO* rclk;     // Storage register clock (latch)
-    GPIO* srclk;    // Shift register clock
-    GPIO* nSRCLR;   // Shift register clear (active low)
-
-    bool ownsGPIOs; // Track if this object owns the GPIO instances
+    Harness::IGPIO& ser;      // Serial data input (SER/DS)
+    Harness::IGPIO& nOE;      // Output enable (active low)
+    Harness::IGPIO& rclk;     // Storage register clock (latch)
+    Harness::IGPIO& srclk;    // Shift register clock
+    Harness::IGPIO& nSRCLR;   // Shift register clear (active low)
 
     /**
      * @brief Generate a clock pulse on the shift clock
      */
     void pulseShiftClock() {
-        srclk->write(true);
+        srclk.write(true);
         // Small delay for clock pulse (can be removed if MCU is slow enough)
         for (volatile int i = 0; i < 10; i++);
-        srclk->write(false);
+        srclk.write(false);
     }
 
     /**
      * @brief Generate a clock pulse on the latch clock
      */
     void pulseLatchClock() {
-        rclk->write(true);
+        rclk.write(true);
         // Small delay for clock pulse
         for (volatile int i = 0; i < 10; i++);
-        rclk->write(false);
+        rclk.write(false);
     }
 
 public:
     /**
-     * @brief Construct with port/pin parameters
+     * @brief Construct with pre-configured GPIO references
      *
-     * Creates and owns GPIO objects internally.
-     * Pin assignments should come from board_config.hpp
+     * Caller is responsible for pin mode configuration before construction.
      *
-     * @param ser_port GPIO port for SER pin
-     * @param ser_pin Pin number for SER
-     * @param noe_port GPIO port for nOE pin
-     * @param noe_pin Pin number for nOE
-     * @param rclk_port GPIO port for RCLK pin
-     * @param rclk_pin Pin number for RCLK
-     * @param srclk_port GPIO port for SRCLK pin
-     * @param srclk_pin Pin number for SRCLK
-     * @param nsrclr_port GPIO port for nSRCLR pin
-     * @param nsrclr_pin Pin number for nSRCLR
+     * @param ser_gpio   GPIO for SER pin (output)
+     * @param noe_gpio   GPIO for nOE pin (output)
+     * @param rclk_gpio  GPIO for RCLK pin (output)
+     * @param srclk_gpio GPIO for SRCLK pin (output)
+     * @param nsrclr_gpio GPIO for nSRCLR pin (output)
      */
-    SN74HC595(GPIO_TypeDef* ser_port, uint8_t ser_pin,
-              GPIO_TypeDef* noe_port, uint8_t noe_pin,
-              GPIO_TypeDef* rclk_port, uint8_t rclk_pin,
-              GPIO_TypeDef* srclk_port, uint8_t srclk_pin,
-              GPIO_TypeDef* nsrclr_port, uint8_t nsrclr_pin)
-        : ser(new GPIO(ser_port, ser_pin)),
-          nOE(new GPIO(noe_port, noe_pin)),
-          rclk(new GPIO(rclk_port, rclk_pin)),
-          srclk(new GPIO(srclk_port, srclk_pin)),
-          nSRCLR(new GPIO(nsrclr_port, nsrclr_pin)),
-          ownsGPIOs(true) {
-        init();
-    }
-
-    /**
-     * @brief Construct with pre-existing GPIO pointers
-     *
-     * Does NOT own the GPIO objects - caller is responsible for cleanup.
-     *
-     * @param ser_gpio Pointer to GPIO for SER pin
-     * @param noe_gpio Pointer to GPIO for nOE pin
-     * @param rclk_gpio Pointer to GPIO for RCLK pin
-     * @param srclk_gpio Pointer to GPIO for SRCLK pin
-     * @param nsrclr_gpio Pointer to GPIO for nSRCLR pin
-     */
-    SN74HC595(GPIO* ser_gpio, GPIO* noe_gpio, GPIO* rclk_gpio,
-              GPIO* srclk_gpio, GPIO* nsrclr_gpio)
+    SN74HC595(Harness::IGPIO& ser_gpio, Harness::IGPIO& noe_gpio, Harness::IGPIO& rclk_gpio,
+              Harness::IGPIO& srclk_gpio, Harness::IGPIO& nsrclr_gpio)
         : ser(ser_gpio),
           nOE(noe_gpio),
           rclk(rclk_gpio),
           srclk(srclk_gpio),
-          nSRCLR(nsrclr_gpio),
-          ownsGPIOs(false) {
+          nSRCLR(nsrclr_gpio) {
         init();
-    }
-
-    /**
-     * @brief Destructor - clean up owned GPIO instances
-     */
-    ~SN74HC595() {
-        if (ownsGPIOs) {
-            delete ser;
-            delete nOE;
-            delete rclk;
-            delete srclk;
-            delete nSRCLR;
-        }
     }
 
     /**
      * @brief Initialize the shift register pins and clear the register
      */
     void init() {
-        // Configure all pins as outputs with pull-down resistors
-        ser->setMode(GPIOMode::Output);
-        ser->setOutputType(GPIOOutputType::PushPull);
-        ser->setSpeed(GPIOSpeed::High);
-        ser->setPull(GPIOPull::PullDown);
-
-        nOE->setMode(GPIOMode::Output);
-        nOE->setOutputType(GPIOOutputType::PushPull);
-        nOE->setSpeed(GPIOSpeed::High);
-        nOE->setPull(GPIOPull::PullDown);
-
-        rclk->setMode(GPIOMode::Output);
-        rclk->setOutputType(GPIOOutputType::PushPull);
-        rclk->setSpeed(GPIOSpeed::High);
-        rclk->setPull(GPIOPull::PullDown);
-
-        srclk->setMode(GPIOMode::Output);
-        srclk->setOutputType(GPIOOutputType::PushPull);
-        srclk->setSpeed(GPIOSpeed::High);
-        srclk->setPull(GPIOPull::PullDown);
-
-        nSRCLR->setMode(GPIOMode::Output);
-        nSRCLR->setOutputType(GPIOOutputType::PushPull);
-        nSRCLR->setSpeed(GPIOSpeed::High);
-        nSRCLR->setPull(GPIOPull::PullDown);
-
         // Set initial states
-        ser->write(false);
-        srclk->write(false);
-        rclk->write(false);
-        nSRCLR->write(true);  // Not clearing (active low)
-        nOE->write(false);    // Outputs enabled (active low)
+        ser.write(false);
+        srclk.write(false);
+        rclk.write(false);
+        nSRCLR.write(true);  // Not clearing (active low)
+        nOE.write(false);    // Outputs enabled (active low)
 
         // Clear the shift register
         clear();
@@ -159,9 +88,9 @@ public:
      * @brief Clear the shift register (all outputs LOW)
      */
     void clear() {
-        nSRCLR->write(false);  // Assert clear (active low)
+        nSRCLR.write(false);  // Assert clear (active low)
         for (volatile int i = 0; i < 10; i++);
-        nSRCLR->write(true);   // Release clear
+        nSRCLR.write(true);   // Release clear
         pulseLatchClock();    // Latch the cleared state
     }
 
@@ -169,14 +98,14 @@ public:
      * @brief Enable outputs
      */
     void enableOutput() {
-        nOE->write(false);  // Active low
+        nOE.write(false);  // Active low
     }
 
     /**
      * @brief Disable outputs (high impedance)
      */
     void disableOutput() {
-        nOE->write(true);  // Active low
+        nOE.write(true);  // Active low
     }
 
     /**
@@ -189,7 +118,7 @@ public:
         // Shift out MSB first
         for (int i = 7; i >= 0; i--) {
             // Set data bit
-            ser->write((data >> i) & 0x01);
+            ser.write((data >> i) & 0x01);
 
             // Pulse shift clock to load bit
             pulseShiftClock();
@@ -227,5 +156,7 @@ public:
         shiftOut(pattern, true);
     }
 };
+
+} // namespace Drivers
 
 #endif // SN74HC595_HPP

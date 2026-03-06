@@ -13,14 +13,12 @@
 
 #include "ui/screen.hpp"
 
-class LCD;
-
 namespace UI {
 
 class BootColorScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::IMAGE; }
-    void render(LCD& lcd) override;
+    void render(Harness::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
 

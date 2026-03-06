@@ -4,9 +4,10 @@
  */
 
 #include "L2_protocol/command_parser_internal.hpp"
-#include "F_platform/types/telemetry.hpp"
+#include "harness/pins/async_event.hpp"
+#include "harness/pins/itelemetry.hpp"
 
-namespace Comms {
+namespace Protocol {
 
 void CommandParser::cmdPing(const ParsedCommand &cmd) {
   // Capture RX timestamp (ideally would be captured at byte reception, but
@@ -71,7 +72,7 @@ void CommandParser::cmdGetStatus() {
   const char *encStatusStr = encoderStatusToString(m_dispatcher.getEncoderStatus());
 
   // Get actual position and velocity from motor telemetry
-  TelemetrySnapshot snap = g_telemetry.getSnapshot();
+  TelemetrySnapshot snap = Harness::telemetry().getSnapshot();
 
   if (m_format == ResponseFormat::JSON) {
     // Parse status register for direction and error flags
@@ -344,7 +345,7 @@ void CommandParser::cmdEventEnable(const ParsedCommand &cmd) {
   }
 
   // Read current motor status for snapshot-on-enable
-  Comms::TelemetrySnapshot snap = Comms::g_telemetry.getSnapshot();
+  Protocol::TelemetrySnapshot snap = Harness::telemetry().getSnapshot();
   uint16_t currentStatus = snap.motor.statusReg;
 
   m_dispatcher.enableEvents(mask, currentStatus);
@@ -441,7 +442,7 @@ void CommandParser::cmdTraceDump() {
   snprintf(buf, sizeof(buf), "TRACE: %u entries", static_cast<unsigned>(count));
   m_transport.println(buf);
 
-  Comms::ICommandDispatcher::TraceEntryData e;
+  Harness::ICommandDispatcher::TraceEntryData e;
   for (uint32_t i = 0; i < count; i++) {
     if (!m_dispatcher.traceGetEntry(i, e))
       break;
@@ -458,4 +459,4 @@ void CommandParser::cmdTraceReset() {
   respondOk("Trace cleared");
 }
 
-} // namespace Comms
+} // namespace Protocol

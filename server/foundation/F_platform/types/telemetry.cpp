@@ -6,12 +6,12 @@
 #include "F_platform/types/telemetry.hpp"
 #include <string.h>
 
-namespace Comms {
+namespace Protocol {
 
 // Global instance
 TelemetryManager g_telemetry;
 
-bool TelemetryManager::init(ILock& lock, IClock& clock) {
+bool TelemetryManager::init(Harness::ILock& lock, Harness::IClock& clock) {
   m_lock = &lock;
   m_clock = &clock;
 
@@ -58,4 +58,4 @@ TelemetrySnapshot TelemetryManager::getSnapshot() {
   return snapshot;
 }
 
-} // namespace Comms
+} // namespace Protocol

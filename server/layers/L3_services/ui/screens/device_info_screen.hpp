@@ -16,14 +16,12 @@
 #include "ui/screen.hpp"
 #include <stdint.h>
 
-class LCD;
-
 namespace UI {
 
 class DeviceInfoScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::STATUS; }
-    void render(LCD& lcd) override;
+    void render(Harness::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
     bool needsFullRedraw() const override { return m_needsRedraw; }

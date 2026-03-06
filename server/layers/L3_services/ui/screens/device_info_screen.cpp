@@ -4,9 +4,9 @@
  */
 
 #include "ui/screens/device_info_screen.hpp"
-#include "L4_drivers/devices/lcd_st7789.hpp"
-#include "L3_services/config/device_config.hpp"
-#include "F_platform/types/telemetry.hpp"
+#include "harness/pins/icanvas.hpp"
+#include "L3_services/config/device_config/device_config.hpp"
+#include "harness/pins/itelemetry.hpp"
 #include <stdio.h>
 
 namespace UI {
@@ -25,7 +25,7 @@ void DeviceInfoScreen::onActivate()
     m_needsRedraw = true;
 }
 
-void DeviceInfoScreen::render(LCD& lcd)
+void DeviceInfoScreen::render(Harness::ICanvas& lcd)
 {
     uint16_t y = MARGIN;
     char buf[32];
@@ -33,7 +33,7 @@ void DeviceInfoScreen::render(LCD& lcd)
     // Title
     lcd.drawString(MARGIN, y, "Device Info", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
     y += LINE_H + 4;
-    lcd.drawHLine(MARGIN, y, LCD::WIDTH - 2 * MARGIN, LABEL_COLOR);
+    lcd.drawHLine(MARGIN, y, Harness::Canvas::WIDTH - 2 * MARGIN, LABEL_COLOR);
     y += 6;
 
     // Device ID
@@ -56,11 +56,11 @@ void DeviceInfoScreen::render(LCD& lcd)
 
     // Separator
     y += 4;
-    lcd.drawHLine(MARGIN, y, LCD::WIDTH - 2 * MARGIN, 0x8410);
+    lcd.drawHLine(MARGIN, y, Harness::Canvas::WIDTH - 2 * MARGIN, 0x8410);
     y += 6;
 
     // System info from telemetry
-    Comms::TelemetrySnapshot telem = Comms::g_telemetry.getSnapshot();
+    Protocol::TelemetrySnapshot telem = Harness::telemetry().getSnapshot();
 
     // Uptime
     lcd.drawString(MARGIN, y, "Uptime:", LABEL_COLOR, BG_COLOR, TEXT_SCALE);

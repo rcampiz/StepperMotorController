@@ -11,6 +11,8 @@
 
 #include "L5_board/gpio.hpp"
 
+namespace Board {
+
 /**
  * @brief LED class for controlling LEDs
  *
@@ -78,5 +80,7 @@ public:
         delay_func(off_time);
     }
 };
+
+} // namespace Board
 
 #endif // LED_HPP

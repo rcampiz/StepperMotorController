@@ -7,10 +7,10 @@
  */
 
 #pragma once
-#include "F_platform/types/async_event_types.hpp"
+#include "harness/pins/async_event.hpp"
 #include "L2_protocol/command_parser.hpp"
 
-namespace Comms::EventCodec {
+namespace Protocol::EventCodec {
 
 /**
  * @brief Format an event as ASCII and write to transport
@@ -20,7 +20,7 @@ namespace Comms::EventCodec {
  *
  * Output: !FAULT status=0x1234 detail=OCD\r\n
  */
-void formatAscii(ITransport& transport, const AsyncEvent& evt, uint32_t seq);
+void formatAscii(Harness::ITransport& transport, const AsyncEvent& evt, uint32_t seq);
 
 /**
  * @brief Format an event as JSON and write to transport
@@ -31,7 +31,7 @@ void formatAscii(ITransport& transport, const AsyncEvent& evt, uint32_t seq);
  *
  * Output: {"kind":"event","type":"FAULT","seq":1,"ts_ms":12345,"data":{"status":4660,"detail":"OCD"}}\r\n
  */
-void formatJson(ITransport& transport, const AsyncEvent& evt, uint32_t seq, uint32_t ts_ms);
+void formatJson(Harness::ITransport& transport, const AsyncEvent& evt, uint32_t seq, uint32_t ts_ms);
 
 /**
  * @brief Build the detail string for a fault event
@@ -49,4 +49,4 @@ void faultDetail(uint16_t statusReg, char* buf, size_t bufSize);
  */
 void stallDetail(uint16_t statusReg, char* buf, size_t bufSize);
 
-} // namespace Comms::EventCodec
+} // namespace Protocol::EventCodec

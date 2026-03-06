@@ -1,16 +1,21 @@
 /**
  * @file powerstep01.hpp
  * @brief powerSTEP01 stepper motor driver for X-NUCLEO-IHM03A1
+ *
+ * GPIO pins are injected via constructor — no CMSIS dependency.
+ * Caller must configure pin modes before construction.
  */
 
 #ifndef POWERSTEP01_HPP
 #define POWERSTEP01_HPP
 
-#include "X_vendor/CMSIS/stm32f401xe.h"
-#include "L5_board/board_pins.hpp"
-#include "L4_drivers/spi/spi_bus.hpp"
+#include "harness/pins/igpio.hpp"
+#include "harness/pins/ispi_bus.hpp"
+#include "harness/pins/imotor_driver.hpp"
 
-class PowerSTEP01 {
+namespace Drivers {
+
+class PowerSTEP01 : public Harness::IMotorDriver {
 public:
     // Application commands
     enum class Cmd : uint8_t {
@@ -66,34 +71,20 @@ public:
         STATUS       = 0x1B
     };
 
-    // Status register bits
-    struct Status {
-        uint16_t raw;
-        bool hiZ()       const { return raw & (1 << 0); }
-        bool busy()      const { return !(raw & (1 << 1)); }
-        bool swOn()      const { return raw & (1 << 2); }
-        bool swEvent()   const { return raw & (1 << 3); }
-        bool dir()       const { return raw & (1 << 4); }
-        uint8_t motStatus() const { return (raw >> 5) & 0x3; }
-        bool cmdErr()    const { return raw & (1 << 7); }
-        bool stckMod()   const { return raw & (1 << 8); }
-        bool uvlo()      const { return !(raw & (1 << 9)); }
-        bool uvloADC()   const { return !(raw & (1 << 10)); }
-        // Bits 11-12: TH_STATUS 2-bit field
-        // 00=Normal, 01=Warning, 10=Bridge shutdown, 11=Device shutdown
-        uint8_t thStatus() const { return (raw >> 11) & 0x3; }
-        bool thermalWarn() const { return thStatus() >= 1; }
-        bool thermalSD()   const { return thStatus() >= 2; }
-        bool ocd()       const { return !(raw & (1 << 13)); }
-        bool stallA()    const { return !(raw & (1 << 14)); }
-        bool stallB()    const { return !(raw & (1 << 15)); }
-    };
-
-    PowerSTEP01(SPIBus& spi) : m_spi(spi) {
-        initPins();
+    /**
+     * @brief Construct with SPI bus and pre-configured GPIO pins
+     *
+     * All pins must be configured before construction:
+     *   cs, stbyRst: output, push-pull, high speed
+     *   busy, flag:  input with pull-up
+     */
+    PowerSTEP01(Harness::ISPIBus& spi, Harness::IGPIO& cs, Harness::IGPIO& stbyRst, Harness::IGPIO& busy, Harness::IGPIO& flag)
+        : m_spi(spi), m_cs(cs), m_stbyRst(stbyRst), m_busy(busy), m_flag(flag) {
+        csHigh();
+        setStandby(true);
     }
 
-    void init() {
+    void init() override {
         // Release standby/reset
         setStandby(false);
         for (volatile int i = 0; i < 10000; i++);  // Brief delay
@@ -143,11 +134,11 @@ public:
         getStatus();
     }
 
-    Status getStatus() {
-        Status s;
+    Harness::MotorStatus getStatus() override {
+        Harness::MotorStatus s;
         m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode3);
-        m_spi.setPrescaler(SPIBus::Prescaler::Div32);
+        m_spi.setMode(Harness::SPIMode::Mode3);
+        m_spi.setPrescaler(Harness::SPIPrescaler::Div32);
         // powerSTEP01 requires CS toggle between each byte!
         transferByte(static_cast<uint8_t>(Cmd::GetStatus));
         uint8_t hi = transferByte(0x00);
@@ -157,13 +148,21 @@ public:
         return s;
     }
 
+    // IMotorDriver overrides (uint8_t register address)
+    uint32_t getParam(uint8_t reg) override {
+        return getParam(static_cast<Reg>(reg));
+    }
+    void setParam(uint8_t reg, uint32_t value) override {
+        setParam(static_cast<Reg>(reg), value);
+    }
+
     uint32_t getParam(Reg reg) {
         uint8_t len = paramLen(reg);
         uint32_t val = 0;
 
         m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode3);
-        m_spi.setPrescaler(SPIBus::Prescaler::Div32);
+        m_spi.setMode(Harness::SPIMode::Mode3);
+        m_spi.setPrescaler(Harness::SPIPrescaler::Div32);
         // powerSTEP01 requires CS toggle between each byte!
         transferByte(static_cast<uint8_t>(Cmd::GetParam) | static_cast<uint8_t>(reg));
         for (uint8_t i = 0; i < len; i++) {
@@ -177,8 +176,8 @@ public:
         uint8_t len = paramLen(reg);
 
         m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode3);
-        m_spi.setPrescaler(SPIBus::Prescaler::Div32);
+        m_spi.setMode(Harness::SPIMode::Mode3);
+        m_spi.setPrescaler(Harness::SPIPrescaler::Div32);
         // powerSTEP01 requires CS toggle between each byte!
         transferByte(static_cast<uint8_t>(Cmd::SetParam) | static_cast<uint8_t>(reg));
         for (int8_t i = len - 1; i >= 0; i--) {
@@ -187,10 +186,10 @@ public:
         m_spi.unlock();
     }
 
-    void run(bool forward, uint32_t speed) {
+    void run(bool forward, uint32_t speed) override {
         m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode3);
-        m_spi.setPrescaler(SPIBus::Prescaler::Div32);
+        m_spi.setMode(Harness::SPIMode::Mode3);
+        m_spi.setPrescaler(Harness::SPIPrescaler::Div32);
         // powerSTEP01 requires CS toggle between each byte!
         transferByte(static_cast<uint8_t>(Cmd::Run) | (forward ? 1 : 0));
         transferByte((speed >> 16) & 0x0F);
@@ -199,10 +198,10 @@ public:
         m_spi.unlock();
     }
 
-    void move(bool forward, uint32_t steps) {
+    void move(bool forward, uint32_t steps) override {
         m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode3);
-        m_spi.setPrescaler(SPIBus::Prescaler::Div32);
+        m_spi.setMode(Harness::SPIMode::Mode3);
+        m_spi.setPrescaler(Harness::SPIPrescaler::Div32);
         // powerSTEP01 requires CS toggle per byte
         transferByte(static_cast<uint8_t>(Cmd::Move) | (forward ? 1 : 0));
         transferByte((steps >> 16) & 0x3F);
@@ -211,10 +210,10 @@ public:
         m_spi.unlock();
     }
 
-    void goTo(int32_t pos) {
+    void goTo(int32_t pos) override {
         m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode3);
-        m_spi.setPrescaler(SPIBus::Prescaler::Div32);
+        m_spi.setMode(Harness::SPIMode::Mode3);
+        m_spi.setPrescaler(Harness::SPIPrescaler::Div32);
         // powerSTEP01 requires CS toggle per byte
         transferByte(static_cast<uint8_t>(Cmd::GoTo));
         transferByte((pos >> 16) & 0x3F);
@@ -223,67 +222,29 @@ public:
         m_spi.unlock();
     }
 
-    void softStop() { sendCommand(Cmd::SoftStop); }
-    void hardStop() { sendCommand(Cmd::HardStop); }
-    void softHiZ()  { sendCommand(Cmd::SoftHiZ); }
-    void hardHiZ()  { sendCommand(Cmd::HardHiZ); }
-    void resetPos() { sendCommand(Cmd::ResetPos); }
-    void goHome()   { sendCommand(Cmd::GoHome); }
-    void goMark()   { sendCommand(Cmd::GoMark); }
+    void softStop() override { sendCommand(Cmd::SoftStop); }
+    void hardStop() override { sendCommand(Cmd::HardStop); }
+    void softHiZ()  override { sendCommand(Cmd::SoftHiZ); }
+    void hardHiZ()  override { sendCommand(Cmd::HardHiZ); }
+    void resetPos() override { sendCommand(Cmd::ResetPos); }
+    void goHome()   override { sendCommand(Cmd::GoHome); }
+    void goMark()   override { sendCommand(Cmd::GoMark); }
 
-    bool isBusy() {
-        return (Pins::IHM03A1::BUSY_PORT->IDR & (1 << Pins::IHM03A1::BUSY_PIN)) == 0;
-    }
+    bool isBusy() override { return !m_busy.read(); }
 
-    bool flagActive() {
-        return (Pins::IHM03A1::FLAG_PORT->IDR & (1 << Pins::IHM03A1::FLAG_PIN)) == 0;
-    }
+    bool flagActive() override { return !m_flag.read(); }
 
-    void setStandby(bool standby) {
-        if (standby) {
-            Pins::IHM03A1::STBY_RST_PORT->BSRR = (1 << (Pins::IHM03A1::STBY_RST_PIN + 16));
-        } else {
-            Pins::IHM03A1::STBY_RST_PORT->BSRR = (1 << Pins::IHM03A1::STBY_RST_PIN);
-        }
-    }
+    void setStandby(bool standby) { m_stbyRst.write(!standby); }
 
 private:
-    SPIBus& m_spi;
+    Harness::ISPIBus& m_spi;
+    Harness::IGPIO& m_cs;
+    Harness::IGPIO& m_stbyRst;
+    Harness::IGPIO& m_busy;
+    Harness::IGPIO& m_flag;
 
-    void initPins() {
-        // Enable GPIO clocks
-        RCC->AHB1ENR |= RCC_AHB1ENR_GPIOAEN | RCC_AHB1ENR_GPIOBEN | RCC_AHB1ENR_GPIOCEN;
-
-        // CS pin - output, push-pull, high
-        configureOutput(Pins::IHM03A1::CS_PORT, Pins::IHM03A1::CS_PIN);
-        csHigh();
-
-        // STBY/RST pin - output, push-pull
-        configureOutput(Pins::IHM03A1::STBY_RST_PORT, Pins::IHM03A1::STBY_RST_PIN);
-        setStandby(true);  // Start in standby
-
-        // FLAG pin - input with pull-up
-        configureInput(Pins::IHM03A1::FLAG_PORT, Pins::IHM03A1::FLAG_PIN);
-
-        // BUSY pin - input with pull-up
-        configureInput(Pins::IHM03A1::BUSY_PORT, Pins::IHM03A1::BUSY_PIN);
-    }
-
-    void configureOutput(GPIO_TypeDef* port, uint8_t pin) {
-        port->MODER &= ~(0x3 << (pin * 2));
-        port->MODER |= (0x1 << (pin * 2));   // Output
-        port->OTYPER &= ~(1 << pin);          // Push-pull
-        port->OSPEEDR |= (0x3 << (pin * 2)); // High speed
-    }
-
-    void configureInput(GPIO_TypeDef* port, uint8_t pin) {
-        port->MODER &= ~(0x3 << (pin * 2));  // Input mode
-        port->PUPDR &= ~(0x3 << (pin * 2));
-        port->PUPDR |= (0x1 << (pin * 2));   // Pull-up
-    }
-
-    void csLow()  { Pins::IHM03A1::CS_PORT->BSRR = (1 << (Pins::IHM03A1::CS_PIN + 16)); }
-    void csHigh() { Pins::IHM03A1::CS_PORT->BSRR = (1 << Pins::IHM03A1::CS_PIN); }
+    void csLow()  { m_cs.write(false); }
+    void csHigh() { m_cs.write(true); }
 
     /**
      * @brief Transfer one byte with CS toggle (required by powerSTEP01)
@@ -303,8 +264,8 @@ private:
 
     void sendCommand(Cmd cmd) {
         m_spi.lock();
-        m_spi.setMode(SPIBus::Mode::Mode3);
-        m_spi.setPrescaler(SPIBus::Prescaler::Div32);
+        m_spi.setMode(Harness::SPIMode::Mode3);
+        m_spi.setPrescaler(Harness::SPIPrescaler::Div32);
         // powerSTEP01 requires CS toggle per byte
         transferByte(static_cast<uint8_t>(cmd));
         m_spi.unlock();
@@ -332,5 +293,7 @@ private:
         }
     }
 };
+
+} // namespace Drivers
 
 #endif // POWERSTEP01_HPP

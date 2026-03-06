@@ -4,7 +4,7 @@
  */
 
 #include "ui/screens/boot_color_screen.hpp"
-#include "L4_drivers/devices/lcd_st7789.hpp"
+#include "harness/pins/icanvas.hpp"
 
 namespace UI {
 
@@ -13,7 +13,7 @@ void BootColorScreen::onActivate()
     m_drawn = false;
 }
 
-void BootColorScreen::render(LCD& lcd)
+void BootColorScreen::render(Harness::ICanvas& lcd)
 {
     if (!m_drawn) {
         lcd.drawTestPattern();

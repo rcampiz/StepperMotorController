@@ -27,15 +27,14 @@
 #include <stdint.h>
 #include <stddef.h>
 
-class LCD;
-class ITaskStats;
+namespace Harness { class ITaskStats; }
 
 namespace UI {
 
 class TaskMonitorScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::STATUS; }
-    void render(LCD& lcd) override;
+    void render(Harness::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
 
@@ -45,9 +44,9 @@ public:
 private:
     enum class Mode : uint8_t { STATS, TIMELINE, LEGEND };
 
-    void renderStats(LCD& lcd);
-    void renderTimeline(LCD& lcd);
-    void renderLegend(LCD& lcd);
+    void renderStats(Harness::ICanvas& lcd);
+    void renderTimeline(Harness::ICanvas& lcd);
+    void renderLegend(Harness::ICanvas& lcd);
     InputResult handleStatsInput(JoyDirection dir);
     InputResult handleTimelineInput(JoyDirection dir);
     InputResult handleLegendInput(JoyDirection dir);

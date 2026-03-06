@@ -12,7 +12,11 @@
 
 #include <stdint.h>
 
-namespace Tasks {
+namespace Harness { class ITransport; class IClock;
+                    class IMotorEventReceiver; class IEmergencyStop;
+                    class IDispatchStats; class ICommandProcessor; }
+
+namespace Scheduler {
 
 // Task configuration
 constexpr uint32_t COMMS_TASK_STACK_SIZE = 2048;  // 8192 bytes (GET_STATUS JSON uses 640B local buf + snprintf)
@@ -21,23 +25,21 @@ constexpr uint32_t COMMS_POLL_PERIOD_MS = 10; // Command polling
 constexpr uint32_t TELEMETRY_PERIOD_MS = 100; // Telemetry publish rate
 
 /**
- * @brief Transport type selection
- */
-enum class TransportType : uint8_t {
-  VCP_UART, // USART2 via ST-LINK/J-Link Virtual COM Port
-  RTT       // SEGGER RTT channel 0
-};
-
-/**
- * @brief Initialize comms task resources
+ * @brief Initialize comms task with injected dependencies
  *
- * Initializes selected transport and command parser.
+ * Stores references from the composition root. No object construction.
  * Call before vTaskStartScheduler().
  *
- * @param transport Transport to use
+ * @param transport  Byte-level I/O (wired by composition root)
+ * @param parser     Command parser (wired by composition root)
+ * @param clock      System clock (for delays and tick timing)
  * @return true on success
  */
-bool CommsTask_Init(TransportType transport = TransportType::VCP_UART);
+bool CommsTask_Init(Harness::ITransport& transport,
+                    Harness::ICommandProcessor& parser,
+                    Harness::IClock& clock,
+                    Harness::IMotorEventReceiver& eventReceiver,
+                    Harness::IEmergencyStop& emergencyStop);
 
 /**
  * @brief Comms task entry point
@@ -129,6 +131,12 @@ struct CommsDispatchStats {
  */
 void CommsTask_GetDispatchStats(CommsDispatchStats& out);
 
-} // namespace Tasks
+/**
+ * @brief Get IDispatchStats interface for L3 consumption
+ * @return Pointer to static IDispatchStats adapter (valid after init)
+ */
+Harness::IDispatchStats* CommsTask_GetDispatchStatsInterface();
+
+} // namespace Scheduler
 
 #endif // COMMS_TASK_HPP

@@ -5,7 +5,7 @@
 
 #include "L2_protocol/command_parser_internal.hpp"
 
-namespace Comms {
+namespace Protocol {
 
 void CommandParser::cmdMove(const ParsedCommand &cmd) {
   if (cmd.argCount < 2) {
@@ -212,4 +212,4 @@ void CommandParser::cmdZeroAll() {
   respondStatus(r, "ALL_ZEROED");
 }
 
-} // namespace Comms
+} // namespace Protocol
