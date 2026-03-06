@@ -21,11 +21,11 @@ namespace Drivers {
  */
 class SN74HC595 {
 private:
-    Harness::IGPIO& ser;      // Serial data input (SER/DS)
-    Harness::IGPIO& nOE;      // Output enable (active low)
-    Harness::IGPIO& rclk;     // Storage register clock (latch)
-    Harness::IGPIO& srclk;    // Shift register clock
-    Harness::IGPIO& nSRCLR;   // Shift register clear (active low)
+    Board::IGPIO& ser;      // Serial data input (SER/DS)
+    Board::IGPIO& nOE;      // Output enable (active low)
+    Board::IGPIO& rclk;     // Storage register clock (latch)
+    Board::IGPIO& srclk;    // Shift register clock
+    Board::IGPIO& nSRCLR;   // Shift register clear (active low)
 
     /**
      * @brief Generate a clock pulse on the shift clock
@@ -59,8 +59,8 @@ public:
      * @param srclk_gpio GPIO for SRCLK pin (output)
      * @param nsrclr_gpio GPIO for nSRCLR pin (output)
      */
-    SN74HC595(Harness::IGPIO& ser_gpio, Harness::IGPIO& noe_gpio, Harness::IGPIO& rclk_gpio,
-              Harness::IGPIO& srclk_gpio, Harness::IGPIO& nsrclr_gpio)
+    SN74HC595(Board::IGPIO& ser_gpio, Board::IGPIO& noe_gpio, Board::IGPIO& rclk_gpio,
+              Board::IGPIO& srclk_gpio, Board::IGPIO& nsrclr_gpio)
         : ser(ser_gpio),
           nOE(noe_gpio),
           rclk(rclk_gpio),

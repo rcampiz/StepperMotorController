@@ -12,7 +12,7 @@
 
 namespace Board {
 
-class TimerCounterTIM4 : public Harness::ITimerCounter {
+class TimerCounterTIM4 : public Board::ITimerCounter {
 public:
     /**
      * @brief Initialize TIM4 in encoder mode

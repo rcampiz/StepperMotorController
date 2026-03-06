@@ -8,13 +8,14 @@
 
 #pragma once
 
+namespace Board { class ITimerCounter; }
+
 namespace Harness {
 
-class ITimerCounter;
 class IEncoderSampler;
 
 struct EncoderPins {
-    ITimerCounter* timer = nullptr;
+    Board::ITimerCounter* timer = nullptr;
     IEncoderSampler* sampler = nullptr;
 };
 

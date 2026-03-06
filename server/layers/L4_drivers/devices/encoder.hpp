@@ -37,7 +37,7 @@ public:
    *
    * Timer must be configured in encoder mode before construction.
    */
-  explicit Encoder(Harness::ITimerCounter& timer)
+  explicit Encoder(Board::ITimerCounter& timer)
       : m_timer(timer), m_status(Status::NOT_INITIALIZED),
         m_indexSeen(false), m_indexTick(0),
         m_revolutions(0), m_lastIndexUs(0), m_indexPeriodUs(0) {}
@@ -98,7 +98,7 @@ public:
   uint32_t getIndexPeriodUs() const override { return m_indexPeriodUs; }
 
 private:
-  Harness::ITimerCounter& m_timer;
+  Board::ITimerCounter& m_timer;
   Status m_status;
   volatile bool m_indexSeen;
   volatile uint32_t m_indexTick;

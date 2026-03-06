@@ -7,7 +7,8 @@
 
 #pragma once
 
-namespace Harness { class IEncoderHardware; class ITimerCounter; class IEncoderSampler; }
+namespace Harness { class IEncoderHardware; class IEncoderSampler; }
+namespace Board { struct ITimerCounter; }
 
 namespace Drivers {
 
@@ -16,7 +17,7 @@ namespace Drivers {
  */
 struct EncoderDriverHandle {
     Harness::IEncoderHardware* encoder = nullptr;
-    Harness::ITimerCounter* timer = nullptr;
+    Board::ITimerCounter* timer = nullptr;
     Harness::IEncoderSampler* sampler = nullptr;
 };
 

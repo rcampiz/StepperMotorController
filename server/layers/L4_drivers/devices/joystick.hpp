@@ -40,7 +40,7 @@ public:
      *
      * All pins must be configured as inputs with pull-up before construction.
      */
-    Joystick(Harness::IGPIO& left, Harness::IGPIO& right, Harness::IGPIO& up, Harness::IGPIO& down, Harness::IGPIO& center)
+    Joystick(Board::IGPIO& left, Board::IGPIO& right, Board::IGPIO& up, Board::IGPIO& down, Board::IGPIO& center)
         : m_left(left), m_right(right), m_up(up), m_down(down), m_center(center) {}
 
     State read() const {
@@ -106,11 +106,11 @@ public:
     }
 
 private:
-    Harness::IGPIO& m_left;
-    Harness::IGPIO& m_right;
-    Harness::IGPIO& m_up;
-    Harness::IGPIO& m_down;
-    Harness::IGPIO& m_center;
+    Board::IGPIO& m_left;
+    Board::IGPIO& m_right;
+    Board::IGPIO& m_up;
+    Board::IGPIO& m_down;
+    Board::IGPIO& m_center;
 };
 
 } // namespace Drivers

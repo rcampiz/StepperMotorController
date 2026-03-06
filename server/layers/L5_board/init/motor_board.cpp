@@ -25,7 +25,7 @@ namespace Pins = Board::Pins;
 bool Harness::initMotorBoard(Harness::MotorPins& pins)
 {
     // SPI1 from manager (shared with LCD)
-    Harness::ISPIBus* spi1 = g_spiManager.getSPI1();
+    Board::ISPIBus* spi1 = g_spiManager.getSPI1();
     if (spi1 == nullptr) {
         return false;
     }

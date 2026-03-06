@@ -43,7 +43,7 @@ public:
      *
      * CS pin must be configured as output (high) before construction.
      */
-    SPIFlash(Harness::ISPIBus& spi, Harness::IGPIO& cs) : m_spi(spi), m_cs(cs) {
+    SPIFlash(Board::ISPIBus& spi, Board::IGPIO& cs) : m_spi(spi), m_cs(cs) {
         csHigh();
     }
 
@@ -248,8 +248,8 @@ public:
     }
 
 private:
-    Harness::ISPIBus& m_spi;
-    Harness::IGPIO& m_cs;
+    Board::ISPIBus& m_spi;
+    Board::IGPIO& m_cs;
 
     void csLow()  { m_cs.write(false); }
     void csHigh() { m_cs.write(true); }

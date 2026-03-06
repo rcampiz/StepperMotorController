@@ -146,7 +146,7 @@ public:
      *   cs, dc, nreset: output, push-pull, high speed
      *   te:             input (no pull)
      */
-    LCD(Harness::ISPIBus& spi, Harness::IGPIO& cs, Harness::IGPIO& dc, Harness::IGPIO& nreset, Harness::IGPIO& te)
+    LCD(Board::ISPIBus& spi, Board::IGPIO& cs, Board::IGPIO& dc, Board::IGPIO& nreset, Board::IGPIO& te)
         : m_spi(spi), m_cs(cs), m_dc(dc), m_nreset(nreset), m_te(te) {
         csHigh();
         dcLow();
@@ -191,7 +191,7 @@ public:
 
     void setWindow(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1) {
         m_spi.lock();
-        m_spi.setMode(Harness::SPIMode::Mode0);
+        m_spi.setMode(Board::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x0, y0, x1, y1);
@@ -205,7 +205,7 @@ public:
 
     void fillRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color) override {
         m_spi.lock();
-        m_spi.setMode(Harness::SPIMode::Mode0);
+        m_spi.setMode(Board::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x, y, x + w - 1, y + h - 1);
@@ -223,7 +223,7 @@ public:
         if (x >= WIDTH || y >= HEIGHT) return;
 
         m_spi.lock();
-        m_spi.setMode(Harness::SPIMode::Mode0);
+        m_spi.setMode(Board::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x, y, x, y);
@@ -408,7 +408,7 @@ public:
             }
 
             m_spi.lock();
-            m_spi.setMode(Harness::SPIMode::Mode0);
+            m_spi.setMode(Board::SPIMode::Mode0);
             m_spi.setPrescaler(m_prescaler);
             csLow();
             setWindowLocked(x, y, static_cast<uint16_t>(x + MED_CHAR_W - 1),
@@ -457,7 +457,7 @@ public:
         }
 
         m_spi.lock();
-        m_spi.setMode(Harness::SPIMode::Mode0);
+        m_spi.setMode(Board::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x, y, static_cast<uint16_t>(x + charW - 1),
@@ -512,7 +512,7 @@ public:
             uint8_t rowBuf[WIDTH * 2];
 
             m_spi.lock();
-            m_spi.setMode(Harness::SPIMode::Mode0);
+            m_spi.setMode(Board::SPIMode::Mode0);
             m_spi.setPrescaler(m_prescaler);
             csLow();
             setWindowLocked(x, y, static_cast<uint16_t>(x + pixelW - 1),
@@ -604,7 +604,7 @@ public:
         uint8_t rowBuf[WIDTH * 2];
 
         m_spi.lock();
-        m_spi.setMode(Harness::SPIMode::Mode0);
+        m_spi.setMode(Board::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x, y, static_cast<uint16_t>(x + lineW - 1),
@@ -680,7 +680,7 @@ public:
         uint8_t rowBuf[WIDTH * 2];
 
         m_spi.lock();
-        m_spi.setMode(Harness::SPIMode::Mode0);
+        m_spi.setMode(Board::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x, y, static_cast<uint16_t>(x + lineW - 1),
@@ -747,7 +747,7 @@ public:
             uint8_t rowBuf[WIDTH * 2];
 
             m_spi.lock();
-            m_spi.setMode(Harness::SPIMode::Mode0);
+            m_spi.setMode(Board::SPIMode::Mode0);
             m_spi.setPrescaler(m_prescaler);
             csLow();
             setWindowLocked(x, y, static_cast<uint16_t>(x + pixelW - 1),
@@ -913,7 +913,7 @@ public:
         uint16_t drawH = (y + h > HEIGHT) ? HEIGHT - y : h;
 
         m_spi.lock();
-        m_spi.setMode(Harness::SPIMode::Mode0);
+        m_spi.setMode(Board::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x, y, x + drawW - 1, y + drawH - 1);
@@ -947,7 +947,7 @@ public:
         uint16_t drawH = (y + h > HEIGHT) ? HEIGHT - y : h;
 
         m_spi.lock();
-        m_spi.setMode(Harness::SPIMode::Mode0);
+        m_spi.setMode(Board::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x, y, x + drawW - 1, y + drawH - 1);
@@ -980,7 +980,7 @@ public:
         uint16_t drawH = (y + h > HEIGHT) ? static_cast<uint16_t>(HEIGHT - y) : h;
 
         m_spi.lock();
-        m_spi.setMode(Harness::SPIMode::Mode0);
+        m_spi.setMode(Board::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x, y, x, static_cast<uint16_t>(y + drawH - 1));
@@ -1015,7 +1015,7 @@ public:
         uint16_t drawH = (y + h > HEIGHT) ? HEIGHT - y : h;
 
         m_spi.lock();
-        m_spi.setMode(Harness::SPIMode::Mode0);
+        m_spi.setMode(Board::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x, y, x + drawW - 1, y + drawH - 1);
@@ -1068,17 +1068,17 @@ public:
      */
     bool isStreaming() const override { return m_streaming; }
 
-    void setSPIPrescaler(Harness::SPIPrescaler p) { m_prescaler = p; }
-    Harness::SPIPrescaler getSPIPrescaler() const { return m_prescaler; }
+    void setSPIPrescaler(Board::SPIPrescaler p) { m_prescaler = p; }
+    Board::SPIPrescaler getSPIPrescaler() const { return m_prescaler; }
 
 private:
     bool m_streaming = false;
-    Harness::ISPIBus& m_spi;
-    Harness::IGPIO& m_cs;
-    Harness::IGPIO& m_dc;
-    Harness::IGPIO& m_nreset;
-    Harness::IGPIO& m_te;
-    Harness::SPIPrescaler m_prescaler = Harness::SPIPrescaler::Div2;  // 42 MHz (84 MHz APB2 / 2)
+    Board::ISPIBus& m_spi;
+    Board::IGPIO& m_cs;
+    Board::IGPIO& m_dc;
+    Board::IGPIO& m_nreset;
+    Board::IGPIO& m_te;
+    Board::SPIPrescaler m_prescaler = Board::SPIPrescaler::Div2;  // 42 MHz (84 MHz APB2 / 2)
 
     void csLow()      { m_cs.write(false); }
     void csHigh()     { m_cs.write(true); }
@@ -1102,7 +1102,7 @@ private:
 
     void writeCmd(uint8_t cmd) {
         m_spi.lock();
-        m_spi.setMode(Harness::SPIMode::Mode0);
+        m_spi.setMode(Board::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         dcLow();
@@ -1113,7 +1113,7 @@ private:
 
     void writeData(uint8_t data) {
         m_spi.lock();
-        m_spi.setMode(Harness::SPIMode::Mode0);
+        m_spi.setMode(Board::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         dcHigh();

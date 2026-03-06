@@ -7,9 +7,9 @@
 
 namespace Harness {
 
-static IMicrosecondClock* s_usClock = nullptr;
+static Board::IMicrosecondClock* s_usClock = nullptr;
 
-void setMicrosecondClock(IMicrosecondClock* clock) { s_usClock = clock; }
-IMicrosecondClock* microsecondClock() { return s_usClock; }
+void setMicrosecondClock(Board::IMicrosecondClock* clock) { s_usClock = clock; }
+Board::IMicrosecondClock* microsecondClock() { return s_usClock; }
 
 } // namespace Harness

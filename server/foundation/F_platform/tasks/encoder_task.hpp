@@ -17,10 +17,11 @@
 #include "harness/pins/velocity_quality.hpp"
 #include <stdint.h>
 
+namespace Board { class ITimerCounter; }
 namespace Harness { class IClock; class IEncoder; class IEncoderFilterControl;
                     class IEncoderProcessing; class IEncoderStatusSink;
                     class IEncoderHardware; class IEncoderSampler;
-                    class ICriticalSection; class ITimerCounter; }
+                    class ICriticalSection; }
 
 namespace Scheduler {
 
@@ -72,7 +73,7 @@ struct EncoderState {
  * @return true on success, false if hardware not available
  */
 bool EncoderTask_Init(Harness::IEncoderHardware& encoder,
-                      Harness::ITimerCounter& timer,
+                      Board::ITimerCounter& timer,
                       Harness::IEncoderSampler& sampler,
                       Harness::ICriticalSection& critSection,
                       Harness::IClock& clock,

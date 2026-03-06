@@ -37,7 +37,7 @@ constexpr size_t SPI_MAX_TXN_SIZE = 64;
  */
 struct SPITransaction {
     SPIDevice device;
-    Harness::SPIMode mode;
+    Board::SPIMode mode;
     uint8_t txData[SPI_MAX_TXN_SIZE];
     uint8_t rxData[SPI_MAX_TXN_SIZE];
     size_t length;
@@ -56,7 +56,7 @@ struct SPITransaction {
         success = false;
     }
 
-    void initWithMode(SPIDevice dev, Harness::SPIMode m, const uint8_t* tx, size_t len) {
+    void initWithMode(SPIDevice dev, Board::SPIMode m, const uint8_t* tx, size_t len) {
         init(dev, tx, len);
         mode = m;
     }
@@ -96,8 +96,8 @@ public:
             Pins::SPI1_Bus::MISO_PIN,
             Pins::SPI1_Bus::MOSI_PIN,
             Pins::SPI1_Bus::AF,
-            Harness::SPIMode::Mode3,
-            Harness::SPIPrescaler::Div32,  // 84 MHz / 32 = 2.625 MHz
+            Board::SPIMode::Mode3,
+            Board::SPIPrescaler::Div32,  // 84 MHz / 32 = 2.625 MHz
             spi1Lock
         );
 
@@ -109,8 +109,8 @@ public:
             Pins::SPI2_Bus::MISO_PORT, Pins::SPI2_Bus::MISO_PIN,
             Pins::SPI2_Bus::MOSI_PORT, Pins::SPI2_Bus::MOSI_PIN,
             Pins::SPI2_Bus::AF,
-            Harness::SPIMode::Mode0,
-            Harness::SPIPrescaler::Div2,  // 42 MHz / 2 = 21 MHz
+            Board::SPIMode::Mode0,
+            Board::SPIPrescaler::Div2,  // 42 MHz / 2 = 21 MHz
             spi2Lock
         );
 
@@ -146,7 +146,7 @@ public:
         }
 
         uint8_t bus = getDeviceBus(txn.device);
-        Harness::ISPIBus* spi = (bus == 1) ? m_spi1 : m_spi2;
+        Board::ISPIBus* spi = (bus == 1) ? m_spi1 : m_spi2;
 
         // Acquire bus lock (blocks until available)
         spi->lock();
@@ -221,12 +221,12 @@ public:
 
     bool isInitialized() const { return m_initialized; }
 
-    Harness::ISPIBus* getSPI1() { return m_spi1; }
-    Harness::ISPIBus* getSPI2() { return m_spi2; }
+    Board::ISPIBus* getSPI1() { return m_spi1; }
+    Board::ISPIBus* getSPI2() { return m_spi2; }
 
 private:
-    Harness::ISPIBus* m_spi1;
-    Harness::ISPIBus* m_spi2;
+    Board::ISPIBus* m_spi1;
+    Board::ISPIBus* m_spi2;
     bool m_initialized;
 };
 

@@ -78,7 +78,7 @@ public:
      *   cs, stbyRst: output, push-pull, high speed
      *   busy, flag:  input with pull-up
      */
-    PowerSTEP01(Harness::ISPIBus& spi, Harness::IGPIO& cs, Harness::IGPIO& stbyRst, Harness::IGPIO& busy, Harness::IGPIO& flag)
+    PowerSTEP01(Board::ISPIBus& spi, Board::IGPIO& cs, Board::IGPIO& stbyRst, Board::IGPIO& busy, Board::IGPIO& flag)
         : m_spi(spi), m_cs(cs), m_stbyRst(stbyRst), m_busy(busy), m_flag(flag) {
         csHigh();
         setStandby(true);
@@ -137,8 +137,8 @@ public:
     Harness::MotorStatus getStatus() override {
         Harness::MotorStatus s;
         m_spi.lock();
-        m_spi.setMode(Harness::SPIMode::Mode3);
-        m_spi.setPrescaler(Harness::SPIPrescaler::Div32);
+        m_spi.setMode(Board::SPIMode::Mode3);
+        m_spi.setPrescaler(Board::SPIPrescaler::Div32);
         // powerSTEP01 requires CS toggle between each byte!
         transferByte(static_cast<uint8_t>(Cmd::GetStatus));
         uint8_t hi = transferByte(0x00);
@@ -161,8 +161,8 @@ public:
         uint32_t val = 0;
 
         m_spi.lock();
-        m_spi.setMode(Harness::SPIMode::Mode3);
-        m_spi.setPrescaler(Harness::SPIPrescaler::Div32);
+        m_spi.setMode(Board::SPIMode::Mode3);
+        m_spi.setPrescaler(Board::SPIPrescaler::Div32);
         // powerSTEP01 requires CS toggle between each byte!
         transferByte(static_cast<uint8_t>(Cmd::GetParam) | static_cast<uint8_t>(reg));
         for (uint8_t i = 0; i < len; i++) {
@@ -176,8 +176,8 @@ public:
         uint8_t len = paramLen(reg);
 
         m_spi.lock();
-        m_spi.setMode(Harness::SPIMode::Mode3);
-        m_spi.setPrescaler(Harness::SPIPrescaler::Div32);
+        m_spi.setMode(Board::SPIMode::Mode3);
+        m_spi.setPrescaler(Board::SPIPrescaler::Div32);
         // powerSTEP01 requires CS toggle between each byte!
         transferByte(static_cast<uint8_t>(Cmd::SetParam) | static_cast<uint8_t>(reg));
         for (int8_t i = len - 1; i >= 0; i--) {
@@ -188,8 +188,8 @@ public:
 
     void run(bool forward, uint32_t speed) override {
         m_spi.lock();
-        m_spi.setMode(Harness::SPIMode::Mode3);
-        m_spi.setPrescaler(Harness::SPIPrescaler::Div32);
+        m_spi.setMode(Board::SPIMode::Mode3);
+        m_spi.setPrescaler(Board::SPIPrescaler::Div32);
         // powerSTEP01 requires CS toggle between each byte!
         transferByte(static_cast<uint8_t>(Cmd::Run) | (forward ? 1 : 0));
         transferByte((speed >> 16) & 0x0F);
@@ -200,8 +200,8 @@ public:
 
     void move(bool forward, uint32_t steps) override {
         m_spi.lock();
-        m_spi.setMode(Harness::SPIMode::Mode3);
-        m_spi.setPrescaler(Harness::SPIPrescaler::Div32);
+        m_spi.setMode(Board::SPIMode::Mode3);
+        m_spi.setPrescaler(Board::SPIPrescaler::Div32);
         // powerSTEP01 requires CS toggle per byte
         transferByte(static_cast<uint8_t>(Cmd::Move) | (forward ? 1 : 0));
         transferByte((steps >> 16) & 0x3F);
@@ -212,8 +212,8 @@ public:
 
     void goTo(int32_t pos) override {
         m_spi.lock();
-        m_spi.setMode(Harness::SPIMode::Mode3);
-        m_spi.setPrescaler(Harness::SPIPrescaler::Div32);
+        m_spi.setMode(Board::SPIMode::Mode3);
+        m_spi.setPrescaler(Board::SPIPrescaler::Div32);
         // powerSTEP01 requires CS toggle per byte
         transferByte(static_cast<uint8_t>(Cmd::GoTo));
         transferByte((pos >> 16) & 0x3F);
@@ -237,11 +237,11 @@ public:
     void setStandby(bool standby) { m_stbyRst.write(!standby); }
 
 private:
-    Harness::ISPIBus& m_spi;
-    Harness::IGPIO& m_cs;
-    Harness::IGPIO& m_stbyRst;
-    Harness::IGPIO& m_busy;
-    Harness::IGPIO& m_flag;
+    Board::ISPIBus& m_spi;
+    Board::IGPIO& m_cs;
+    Board::IGPIO& m_stbyRst;
+    Board::IGPIO& m_busy;
+    Board::IGPIO& m_flag;
 
     void csLow()  { m_cs.write(false); }
     void csHigh() { m_cs.write(true); }
@@ -264,8 +264,8 @@ private:
 
     void sendCommand(Cmd cmd) {
         m_spi.lock();
-        m_spi.setMode(Harness::SPIMode::Mode3);
-        m_spi.setPrescaler(Harness::SPIPrescaler::Div32);
+        m_spi.setMode(Board::SPIMode::Mode3);
+        m_spi.setPrescaler(Board::SPIPrescaler::Div32);
         // powerSTEP01 requires CS toggle per byte
         transferByte(static_cast<uint8_t>(cmd));
         m_spi.unlock();

@@ -29,7 +29,7 @@ namespace Board {
  * Implements ISPIBus interface using the hardware SPI engine.
  * Much faster than bit-banging with precise timing guaranteed by hardware.
  */
-class SPIHardware : public Harness::ISPIBus {
+class SPIHardware : public Board::ISPIBus {
 public:
     /**
      * @brief Construct hardware SPI on specified peripheral and pins (single port)
@@ -47,8 +47,8 @@ public:
     SPIHardware(SPI_TypeDef* spi,
                 GPIO_TypeDef* gpioPort, uint8_t sckPin, uint8_t misoPin, uint8_t mosiPin,
                 uint8_t af,
-                Harness::SPIMode mode,
-                Harness::SPIPrescaler prescaler,
+                Board::SPIMode mode,
+                Board::SPIPrescaler prescaler,
                 Harness::ILock& lock)
         : m_spi(spi), m_mode(mode), m_prescaler(prescaler), m_lock(lock)
     {
@@ -76,8 +76,8 @@ public:
                 GPIO_TypeDef* misoPort, uint8_t misoPin,
                 GPIO_TypeDef* mosiPort, uint8_t mosiPin,
                 uint8_t af,
-                Harness::SPIMode mode,
-                Harness::SPIPrescaler prescaler,
+                Board::SPIMode mode,
+                Board::SPIPrescaler prescaler,
                 Harness::ILock& lock)
         : m_spi(spi), m_mode(mode), m_prescaler(prescaler), m_lock(lock)
     {
@@ -104,7 +104,7 @@ public:
      *
      * Must disable SPI to change clock polarity/phase, then re-enable.
      */
-    void setMode(Harness::SPIMode mode) override {
+    void setMode(Board::SPIMode mode) override {
         if (mode == m_mode) return;
 
         // Disable SPI to modify CPOL/CPHA
@@ -126,7 +126,7 @@ public:
     /**
      * @brief Get current SPI mode
      */
-    Harness::SPIMode getMode() const override {
+    Board::SPIMode getMode() const override {
         return m_mode;
     }
 
@@ -136,7 +136,7 @@ public:
      * Disables SPI, updates BR[2:0] bits in CR1, re-enables.
      * Caller must hold the bus lock.
      */
-    void setPrescaler(Harness::SPIPrescaler prescaler) override {
+    void setPrescaler(Board::SPIPrescaler prescaler) override {
         if (prescaler == m_prescaler) return;
         uint8_t raw = static_cast<uint8_t>(prescaler);
         m_spi->CR1 &= ~SPI_CR1_SPE;
@@ -212,7 +212,7 @@ public:
             startReadDMA(data, static_cast<uint32_t>(len));
             return;
         }
-        Harness::ISPIBus::startAsyncRead(data, len);  // sync fallback
+        ISPIBus::startAsyncRead(data, len);  // sync fallback
     }
 
     /**
@@ -251,8 +251,8 @@ public:
 
 private:
     SPI_TypeDef* m_spi;
-    Harness::SPIMode m_mode;
-    Harness::SPIPrescaler m_prescaler;
+    Board::SPIMode m_mode;
+    Board::SPIPrescaler m_prescaler;
     Harness::ILock& m_lock;
     bool m_asyncReadActive = false;
 
@@ -295,7 +295,7 @@ private:
     /**
      * @brief Initialize SPI peripheral
      */
-    void initSPI(Harness::SPIPrescaler prescaler) {
+    void initSPI(Board::SPIPrescaler prescaler) {
         // Enable SPI clock
         if (m_spi == SPI1) {
             RCC->APB2ENR |= RCC_APB2ENR_SPI1EN;
@@ -439,7 +439,7 @@ private:
         }
         if (bufFill == 0) {
             // Pattern larger than buffer — fall back to polled
-            Harness::ISPIBus::writeFill(pattern, patternLen, totalBytes / static_cast<uint32_t>(patternLen));
+            ISPIBus::writeFill(pattern, patternLen, totalBytes / static_cast<uint32_t>(patternLen));
             return;
         }
 

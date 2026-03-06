@@ -8,17 +8,16 @@
 
 #pragma once
 
+namespace Board { class IGPIO; class ISPIBus; }
+
 namespace Harness {
 
-class IGPIO;
-class ISPIBus;
-
 struct MotorPins {
-    IGPIO* cs = nullptr;
-    IGPIO* stbyRst = nullptr;
-    IGPIO* busy = nullptr;
-    IGPIO* flag = nullptr;
-    ISPIBus* spi = nullptr;
+    Board::IGPIO* cs = nullptr;
+    Board::IGPIO* stbyRst = nullptr;
+    Board::IGPIO* busy = nullptr;
+    Board::IGPIO* flag = nullptr;
+    Board::ISPIBus* spi = nullptr;
 };
 
 /**

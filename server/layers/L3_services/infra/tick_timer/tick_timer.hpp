@@ -18,7 +18,7 @@
 
 #include <stdint.h>
 
-namespace Harness { class IMicrosecondClock; }
+namespace Board { class IMicrosecondClock; }
 
 namespace Services {
 
@@ -80,6 +80,6 @@ inline bool TickTimer_IsExpired(uint32_t startTick, uint32_t timeoutUs) {
 void TickTimer_DelayUs(uint32_t delayUs);
 
 /** @brief Get IMicrosecondClock adapter (valid after TickTimer_Init) */
-Harness::IMicrosecondClock* TickTimer_GetMicrosecondClock();
+Board::IMicrosecondClock* TickTimer_GetMicrosecondClock();
 
 } // namespace Services

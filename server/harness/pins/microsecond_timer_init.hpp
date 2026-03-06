@@ -8,11 +8,11 @@
 
 #pragma once
 
+namespace Board { class IMicrosecondClock; }
+
 namespace Harness {
 
-class IMicrosecondClock;
-
 /** Initialize the hardware microsecond timer. Returns IMicrosecondClock adapter. */
-IMicrosecondClock* initMicrosecondTimer();
+Board::IMicrosecondClock* initMicrosecondTimer();
 
 } // namespace Harness

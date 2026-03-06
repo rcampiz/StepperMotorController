@@ -8,30 +8,29 @@
 
 #pragma once
 
+namespace Board { class IGPIO; class ISPIBus; }
+
 namespace Harness {
 
-class IGPIO;
-class ISPIBus;
-
 struct LCDPins {
-    IGPIO* cs = nullptr;
-    IGPIO* dc = nullptr;
-    IGPIO* nreset = nullptr;
-    IGPIO* te = nullptr;
-    ISPIBus* spi = nullptr;
+    Board::IGPIO* cs = nullptr;
+    Board::IGPIO* dc = nullptr;
+    Board::IGPIO* nreset = nullptr;
+    Board::IGPIO* te = nullptr;
+    Board::ISPIBus* spi = nullptr;
 };
 
 struct JoystickPins {
-    IGPIO* left = nullptr;
-    IGPIO* right = nullptr;
-    IGPIO* up = nullptr;
-    IGPIO* down = nullptr;
-    IGPIO* center = nullptr;
+    Board::IGPIO* left = nullptr;
+    Board::IGPIO* right = nullptr;
+    Board::IGPIO* up = nullptr;
+    Board::IGPIO* down = nullptr;
+    Board::IGPIO* center = nullptr;
 };
 
 struct FlashPins {
-    IGPIO* cs = nullptr;
-    ISPIBus* spi = nullptr;
+    Board::IGPIO* cs = nullptr;
+    Board::ISPIBus* spi = nullptr;
 };
 
 bool initLCDBoard(LCDPins& pins);

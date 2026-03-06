@@ -67,10 +67,10 @@ typedef struct {
  * Implements ISPIBus interface using GPIO bit-banging.
  * Can be used as a drop-in replacement for hardware SPI.
  */
-class SPIBitBang : public Harness::ISPIBus {
+class SPIBitBang : public Board::ISPIBus {
 public:
     // Use the common SPIMode enum from ISPIBus
-    using Mode = Harness::SPIMode;
+    using Mode = Board::SPIMode;
 
     /**
      * @brief Construct bit-banged SPI on pre-configured GPIO pins

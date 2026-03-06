@@ -11,7 +11,7 @@
 #include "harness/pins/microsecond_timer_init.hpp"
 
 // Stored pointer to L5 timer implementation
-static Harness::IMicrosecondClock* s_usTimer = nullptr;
+static Board::IMicrosecondClock* s_usTimer = nullptr;
 
 namespace Services {
 
@@ -35,6 +35,6 @@ void TickTimer_DelayUs(uint32_t delayUs)
 
 } // namespace Services
 
-Harness::IMicrosecondClock* Services::TickTimer_GetMicrosecondClock() {
+Board::IMicrosecondClock* Services::TickTimer_GetMicrosecondClock() {
     return s_usTimer;
 }

@@ -37,12 +37,12 @@ inline uint8_t getDeviceBus(SPIDevice device) {
     }
 }
 
-inline Harness::SPIMode getDeviceMode(SPIDevice device) {
+inline Board::SPIMode getDeviceMode(SPIDevice device) {
     switch (device) {
-        case SPIDevice::Motor:    return Harness::SPIMode::Mode3;
-        case SPIDevice::LCD:      return Harness::SPIMode::Mode0;
-        case SPIDevice::NORFlash: return Harness::SPIMode::Mode0;
-        default:                  return Harness::SPIMode::Mode0;
+        case SPIDevice::Motor:    return Board::SPIMode::Mode3;
+        case SPIDevice::LCD:      return Board::SPIMode::Mode0;
+        case SPIDevice::NORFlash: return Board::SPIMode::Mode0;
+        default:                  return Board::SPIMode::Mode0;
     }
 }
 

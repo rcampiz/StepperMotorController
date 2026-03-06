@@ -28,7 +28,7 @@ namespace Pins = Board::Pins;
 
 bool Harness::initLCDBoard(Harness::LCDPins& pins)
 {
-    Harness::ISPIBus* spi1 = g_spiManager.getSPI1();
+    Board::ISPIBus* spi1 = g_spiManager.getSPI1();
     if (spi1 == nullptr) {
         return false;
     }
@@ -108,7 +108,7 @@ bool Harness::initJoystickBoard(Harness::JoystickPins& pins)
 
 bool Harness::initFlashBoard(Harness::FlashPins& pins)
 {
-    Harness::ISPIBus* spi2 = g_spiManager.getSPI2();
+    Board::ISPIBus* spi2 = g_spiManager.getSPI2();
     if (spi2 == nullptr) {
         return false;
     }

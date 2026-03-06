@@ -1,27 +1,19 @@
 /**
  * @file imicrosecond_clock.hpp
- * @brief Microsecond-resolution hardware timer — boundary contract
+ * @brief Harness connector for Board::IMicrosecondClock + global accessors
  *
- * Abstraction for TIM5-based microsecond counter. ISR-safe, single read.
- * Separate from IClock (which is RTOS-level scheduling).
+ * Interface definition owned by Board:: (L5_board/boundary/imicrosecond_clock.hpp).
+ * This connector provides the global accessor (wired by composition root).
  */
 
 #pragma once
 
-#include <stdint.h>
+#include "L5_board/boundary/imicrosecond_clock.hpp"
 
 namespace Harness {
 
-class IMicrosecondClock {
-public:
-    virtual ~IMicrosecondClock() = default;
-
-    /** @brief Get current tick in microseconds (ISR-safe, wraps ~71 min) */
-    virtual uint32_t getTickUs() const = 0;
-};
-
 /// Global accessor (wired by composition root)
-void setMicrosecondClock(IMicrosecondClock* clock);
-IMicrosecondClock* microsecondClock();
+void setMicrosecondClock(Board::IMicrosecondClock* clock);
+Board::IMicrosecondClock* microsecondClock();
 
 } // namespace Harness

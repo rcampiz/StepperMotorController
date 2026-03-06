@@ -39,7 +39,7 @@ namespace Scheduler {
 
 // Injected dependencies (set by EncoderTask_Init)
 static Harness::IEncoderHardware* s_encoder = nullptr;
-static Harness::ITimerCounter* s_timer = nullptr;
+static Board::ITimerCounter* s_timer = nullptr;
 static Harness::IEncoderSampler* s_sampler = nullptr;
 static Harness::ICriticalSection* s_critSection = nullptr;
 static Harness::IClock* s_clock = nullptr;
@@ -63,7 +63,7 @@ static uint8_t s_measWindowMs = 40;
 // ============================================================================
 
 bool EncoderTask_Init(Harness::IEncoderHardware& encoder,
-                      Harness::ITimerCounter& timer,
+                      Board::ITimerCounter& timer,
                       Harness::IEncoderSampler& sampler,
                       Harness::ICriticalSection& critSection,
                       Harness::IClock& clock,

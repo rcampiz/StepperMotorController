@@ -21,9 +21,9 @@
 
 namespace Harness {
 
-class TracedSPIBus : public Harness::ISPIBus {
+class TracedSPIBus : public Board::ISPIBus {
 public:
-    explicit TracedSPIBus(Harness::ISPIBus& real) : m_real(real) {}
+    explicit TracedSPIBus(Board::ISPIBus& real) : m_real(real) {}
 
     void lock() override {
         Harness::ITrace::log(Harness::ITrace::L4_L5_SPI, "[L4>L5]", "spi.lock");
@@ -35,18 +35,18 @@ public:
         Harness::ITrace::log(Harness::ITrace::L4_L5_SPI, "[L4<L5]", "spi.unlock");
     }
 
-    void setMode(Harness::SPIMode mode) override {
+    void setMode(Board::SPIMode mode) override {
         char detail[6];
         snprintf(detail, sizeof(detail), "M%u", static_cast<unsigned>(mode));
         Harness::ITrace::log(Harness::ITrace::L4_L5_SPI, "[L4>L5]", "spi.setMode", detail);
         m_real.setMode(mode);
     }
 
-    Harness::SPIMode getMode() const override {
+    Board::SPIMode getMode() const override {
         return m_real.getMode();
     }
 
-    void setPrescaler(Harness::SPIPrescaler prescaler) override {
+    void setPrescaler(Board::SPIPrescaler prescaler) override {
         m_real.setPrescaler(prescaler);
     }
 
@@ -89,7 +89,7 @@ public:
     }
 
 private:
-    Harness::ISPIBus& m_real;
+    Board::ISPIBus& m_real;
 };
 
 } // namespace Harness

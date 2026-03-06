@@ -12,7 +12,7 @@
 
 namespace {
 
-class MicrosecondTimerTIM5 : public Harness::IMicrosecondClock {
+class MicrosecondTimerTIM5 : public Board::IMicrosecondClock {
 public:
     void init() {
         // Enable TIM5 clock (APB1)
@@ -51,7 +51,7 @@ static MicrosecondTimerTIM5 s_timer;
 
 } // anonymous namespace
 
-Harness::IMicrosecondClock* Harness::initMicrosecondTimer()
+Board::IMicrosecondClock* Harness::initMicrosecondTimer()
 {
     s_timer.init();
     return &s_timer;

@@ -66,7 +66,7 @@ enum class ExtiEdge : uint8_t {
  * Provides common GPIO functionality including initialization,
  * reading, writing, and toggling pins.
  */
-class GPIO : public Harness::IGPIO {
+class GPIO : public Board::IGPIO {
 protected:
     GPIO_TypeDef* port;
     uint8_t pin;
