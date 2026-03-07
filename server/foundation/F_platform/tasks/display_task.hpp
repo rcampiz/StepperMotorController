@@ -17,9 +17,9 @@
 #include <stdint.h>
 
 // Forward declarations
-namespace Harness { class ICanvas; class IJoystick; class IClock;
-                    class IRemoteDisplay; class IFlashImageAccess;
-                    class IIndicatorRenderer; }
+namespace Drivers { class ICanvas; class IJoystick; }
+namespace Harness { class IClock; class IRemoteDisplay;
+                    class IFlashImageAccess; class IIndicatorRenderer; }
 
 namespace Scheduler {
 
@@ -53,7 +53,7 @@ enum class DisplayPage : uint8_t {
  * @param scheduler   Scheduler for suspend/resume (injected, no Platform::resources)
  * @return true on success
  */
-bool DisplayTask_Init(Harness::ICanvas& lcd, Harness::IJoystick* joystick,
+bool DisplayTask_Init(Drivers::ICanvas& lcd, Drivers::IJoystick* joystick,
                       Harness::IClock& clock,
                       Harness::IFlashImageAccess& flashImages,
                       Harness::IIndicatorRenderer& indicator,
@@ -144,7 +144,7 @@ void DisplayTask_RemoteIndicator(uint16_t angle_deg, int8_t rotation_dir,
  * @brief Get pointer to LCD driver (for advanced use)
  * @return Pointer to LCD instance, or nullptr if not initialized
  */
-Harness::ICanvas* DisplayTask_GetLCD();
+Drivers::ICanvas* DisplayTask_GetLCD();
 
 // =============================================================================
 // Bitmap Streaming API (for binary transfer)

@@ -7,17 +7,17 @@
 
 #pragma once
 
-namespace Harness { class ICanvas; class IJoystick; class IFlash; }
+namespace Drivers { class ICanvas; class IJoystick; class IFlash; }
 
 namespace Drivers {
 
 /**
- * @brief Display driver init result -- harness interfaces only
+ * @brief Display driver init result -- boundary interfaces only
  */
 struct DisplayDriverHandle {
-    Harness::ICanvas* lcd = nullptr;
-    Harness::IJoystick* joystick = nullptr;
-    Harness::IFlash* norFlash = nullptr;  // nullptr if no device detected
+    Drivers::ICanvas* lcd = nullptr;
+    Drivers::IJoystick* joystick = nullptr;
+    Drivers::IFlash* norFlash = nullptr;  // nullptr if no device detected
 };
 
 /**

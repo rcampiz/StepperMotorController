@@ -14,7 +14,7 @@
 
 namespace Drivers {
 
-class Joystick : public Harness::IJoystick {
+class Joystick : public Drivers::IJoystick {
 public:
     enum class Direction : uint8_t {
         None   = 0,

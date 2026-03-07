@@ -27,7 +27,7 @@ constexpr int32_t ENCODER_CPR = 4000;
 class EncoderScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::STATUS; }
-    void render(Harness::ICanvas& lcd) override;
+    void render(Drivers::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
     bool needsFullRedraw() const override { return m_needsRedraw; }
@@ -65,9 +65,9 @@ private:
     // Numerical section height
     static constexpr uint16_t NUM_SECTION_Y = 160;
 
-    void renderNumerical(Harness::ICanvas& lcd, const Protocol::TelemetrySnapshot& telem);
-    void renderDialStatic(Harness::ICanvas& lcd);
-    void renderDialDot(Harness::ICanvas& lcd, int16_t angleDeg);
+    void renderNumerical(Drivers::ICanvas& lcd, const Protocol::TelemetrySnapshot& telem);
+    void renderDialStatic(Drivers::ICanvas& lcd);
+    void renderDialDot(Drivers::ICanvas& lcd, int16_t angleDeg);
 
     // i64toa helper (newlib-nano doesn't support %lld)
     static void i64toa(int64_t val, char* buf, int bufSize);

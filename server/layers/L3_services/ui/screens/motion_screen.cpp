@@ -47,7 +47,7 @@ bool MotionScreen::isFieldEnabled(uint8_t field, bool faulted, bool hiZ) const
     return !faulted;
 }
 
-void MotionScreen::renderStatus(Harness::ICanvas& lcd)
+void MotionScreen::renderStatus(Drivers::ICanvas& lcd)
 {
     Protocol::TelemetrySnapshot telem = Harness::telemetry().getSnapshot();
     char buf[32];
@@ -55,7 +55,7 @@ void MotionScreen::renderStatus(Harness::ICanvas& lcd)
 
     lcd.drawString(MARGIN, y, "Motion", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
     y += LINE_H + 2;
-    lcd.drawHLine(MARGIN, y, Harness::Canvas::WIDTH - 2 * MARGIN, LABEL_COLOR);
+    lcd.drawHLine(MARGIN, y, Drivers::Canvas::WIDTH - 2 * MARGIN, LABEL_COLOR);
     y += 4;
 
     // Position
@@ -84,13 +84,13 @@ void MotionScreen::renderStatus(Harness::ICanvas& lcd)
     lcd.drawString(180, y, state, stateColor, BG_COLOR, TEXT_SCALE);
 }
 
-void MotionScreen::renderField(Harness::ICanvas& lcd, uint8_t field, uint16_t y,
+void MotionScreen::renderField(Drivers::ICanvas& lcd, uint8_t field, uint16_t y,
                                 bool selected, bool faulted, bool hiZ)
 {
     bool enabled = isFieldEnabled(field, faulted, hiZ);
     uint16_t fg = enabled ? VALUE_COLOR : DISABLED_COLOR;
     uint16_t bg = selected ? SEL_BG : BG_COLOR;
-    uint16_t itemW = Harness::Canvas::WIDTH - 2 * MARGIN;
+    uint16_t itemW = Drivers::Canvas::WIDTH - 2 * MARGIN;
     char buf[32];
 
     lcd.fillRect(MARGIN, y, itemW, FIELD_H - 2, bg);
@@ -136,7 +136,7 @@ void MotionScreen::renderField(Harness::ICanvas& lcd, uint8_t field, uint16_t y,
     }
 }
 
-void MotionScreen::render(Harness::ICanvas& lcd)
+void MotionScreen::render(Drivers::ICanvas& lcd)
 {
     Protocol::TelemetrySnapshot telem = Harness::telemetry().getSnapshot();
     bool faulted = telem.motor.stalled;

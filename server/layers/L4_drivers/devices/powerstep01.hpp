@@ -15,7 +15,7 @@
 
 namespace Drivers {
 
-class PowerSTEP01 : public Harness::IMotorDriver {
+class PowerSTEP01 : public Drivers::IMotorDriver {
 public:
     // Application commands
     enum class Cmd : uint8_t {
@@ -134,8 +134,8 @@ public:
         getStatus();
     }
 
-    Harness::MotorStatus getStatus() override {
-        Harness::MotorStatus s;
+    Drivers::MotorStatus getStatus() override {
+        Drivers::MotorStatus s;
         m_spi.lock();
         m_spi.setMode(Board::SPIMode::Mode3);
         m_spi.setPrescaler(Board::SPIPrescaler::Div32);

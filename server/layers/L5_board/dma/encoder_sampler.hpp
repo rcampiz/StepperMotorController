@@ -14,7 +14,7 @@
 
 namespace Board {
 
-class EncoderSampler : public Harness::IEncoderSampler {
+class EncoderSampler : public Board::IEncoderSampler {
 public:
     static constexpr uint32_t BUF_SIZE = 256;
 

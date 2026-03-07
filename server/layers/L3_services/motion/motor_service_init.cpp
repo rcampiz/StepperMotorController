@@ -56,7 +56,7 @@ bool initMotorSubsystem(
     MotorSubsystemResult& result)
 {
     // L4 driver (through harness → L4 → L5)
-    Harness::IMotorDriver* driver = nullptr;
+    Drivers::IMotorDriver* driver = nullptr;
     if (!Drivers::initMotorDriver(driver)) {
         return false;
     }

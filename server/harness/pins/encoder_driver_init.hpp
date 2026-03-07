@@ -7,18 +7,18 @@
 
 #pragma once
 
-namespace Harness { class IEncoderHardware; class IEncoderSampler; }
-namespace Board { struct ITimerCounter; }
+namespace Drivers { class IEncoderHardware; }
+namespace Board { class ITimerCounter; class IEncoderSampler; }
 
 namespace Drivers {
 
 /**
- * @brief Encoder driver init result -- harness interfaces only
+ * @brief Encoder driver init result -- boundary interfaces only
  */
 struct EncoderDriverHandle {
-    Harness::IEncoderHardware* encoder = nullptr;
+    Drivers::IEncoderHardware* encoder = nullptr;
     Board::ITimerCounter* timer = nullptr;
-    Harness::IEncoderSampler* sampler = nullptr;
+    Board::IEncoderSampler* sampler = nullptr;
 };
 
 /**

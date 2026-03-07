@@ -12,7 +12,7 @@ namespace Services {
 // Global instance
 FlashImageService g_flashImageService;
 
-bool FlashImageService::init(Harness::IFlash* flash) {
+bool FlashImageService::init(Drivers::IFlash* flash) {
     if (flash == nullptr) {
         return false;
     }

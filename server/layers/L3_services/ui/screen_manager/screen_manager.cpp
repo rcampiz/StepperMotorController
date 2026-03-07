@@ -8,7 +8,7 @@
 
 namespace UI {
 
-void ScreenManager::init(IScreen* rootScreen, Harness::ICanvas* lcd)
+void ScreenManager::init(IScreen* rootScreen, Drivers::ICanvas* lcd)
 {
     m_lcd = lcd;
     m_depth = 0;
@@ -85,7 +85,7 @@ void ScreenManager::render()
 
     // Clear screen on transitions or when screen requests it
     if (m_needsClear || screen->needsFullRedraw()) {
-        m_lcd->fillScreen(Harness::Canvas::BLACK);
+        m_lcd->fillScreen(Drivers::Canvas::BLACK);
         m_needsClear = false;
         screen->clearRedrawFlag();
     }

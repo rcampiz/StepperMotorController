@@ -21,7 +21,7 @@ namespace UI {
 class DeviceInfoScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::STATUS; }
-    void render(Harness::ICanvas& lcd) override;
+    void render(Drivers::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
     bool needsFullRedraw() const override { return m_needsRedraw; }

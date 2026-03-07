@@ -19,13 +19,13 @@
 namespace Services {
 
 // Harness pin types used extensively in this module
-using Harness::IMotorDriver;
-using Harness::MotorStatus;
+using Drivers::IMotorDriver;
+using Drivers::MotorStatus;
 using Harness::IMotorCommandSink;
 using Harness::MotorCmdType;
 using Harness::MotorCommand;
 using Harness::MotorDebugParams;
-namespace MotorReg = Harness::MotorReg;
+namespace MotorReg = Drivers::MotorReg;
 
 class MotorController : public Harness::IMotorControlService {
 public:

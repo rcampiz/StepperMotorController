@@ -23,7 +23,7 @@ namespace Drivers {
  * Index pulse detection available via external EXTI interrupt.
  * Implements IEncoderHardware for task-level decoupling.
  */
-class Encoder : public Harness::IEncoderHardware {
+class Encoder : public Drivers::IEncoderHardware {
 public:
   enum class Status : uint8_t {
     NOT_INITIALIZED = 0,

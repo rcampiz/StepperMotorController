@@ -22,7 +22,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-namespace Harness { class IFlash; }
+namespace Drivers { class IFlash; }
 
 namespace Services {
 
@@ -56,7 +56,7 @@ public:
      * @param flash  Pointer to an initialised SPIFlash driver (not owned).
      * @return true if flash detected and usable.
      */
-    bool init(Harness::IFlash* flash);
+    bool init(Drivers::IFlash* flash);
 
     /** @brief Is the service ready? */
     bool isAvailable() const override { return m_flash != nullptr && m_maxSlots > 0; }
@@ -131,7 +131,7 @@ public:
     }
 
 private:
-    Harness::IFlash* m_flash       = nullptr;
+    Drivers::IFlash* m_flash       = nullptr;
     uint32_t  m_maxSlots    = 0;
     uint32_t  m_capacityBytes = 0;
 };

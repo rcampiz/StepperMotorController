@@ -34,7 +34,7 @@ namespace UI {
 class TaskMonitorScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::STATUS; }
-    void render(Harness::ICanvas& lcd) override;
+    void render(Drivers::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
 
@@ -44,9 +44,9 @@ public:
 private:
     enum class Mode : uint8_t { STATS, TIMELINE, LEGEND };
 
-    void renderStats(Harness::ICanvas& lcd);
-    void renderTimeline(Harness::ICanvas& lcd);
-    void renderLegend(Harness::ICanvas& lcd);
+    void renderStats(Drivers::ICanvas& lcd);
+    void renderTimeline(Drivers::ICanvas& lcd);
+    void renderLegend(Drivers::ICanvas& lcd);
     InputResult handleStatsInput(JoyDirection dir);
     InputResult handleTimelineInput(JoyDirection dir);
     InputResult handleLegendInput(JoyDirection dir);

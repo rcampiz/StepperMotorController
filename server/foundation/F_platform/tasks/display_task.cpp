@@ -53,8 +53,8 @@ static UI::DispatcherScreen s_dispatcherScreen;
 static UI::ArchScreen s_archScreen;
 
 // Injected dependencies (set by DisplayTask_Init)
-static Harness::ICanvas* s_lcd = nullptr;
-static Harness::IJoystick* s_joystick = nullptr;
+static Drivers::ICanvas* s_lcd = nullptr;
+static Drivers::IJoystick* s_joystick = nullptr;
 static Harness::IClock* s_clock = nullptr;
 static Harness::IFlashImageAccess* s_flashImages = nullptr;
 static Harness::IIndicatorRenderer* s_indicator = nullptr;
@@ -162,7 +162,7 @@ static uint8_t s_holdCount = 0;
 static constexpr uint8_t HOLD_DELAY_POLLS = 8;   // 400ms before repeat starts
 static constexpr uint8_t HOLD_REPEAT_POLLS = 2;  // 100ms between repeats
 
-bool DisplayTask_Init(Harness::ICanvas& lcd, Harness::IJoystick* joystick,
+bool DisplayTask_Init(Drivers::ICanvas& lcd, Drivers::IJoystick* joystick,
                       Harness::IClock& clock,
                       Harness::IFlashImageAccess& flashImages,
                       Harness::IIndicatorRenderer& indicator,
@@ -344,7 +344,7 @@ void DisplayTask_RemoteIndicator(uint16_t angle_deg, int8_t rotation_dir,
     s_indicator->draw({angle_deg, rotation_dir, has_translation});
 }
 
-Harness::ICanvas* DisplayTask_GetLCD()
+Drivers::ICanvas* DisplayTask_GetLCD()
 {
     return s_lcd;
 }

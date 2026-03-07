@@ -17,10 +17,10 @@
 #include "harness/pins/velocity_quality.hpp"
 #include <stdint.h>
 
-namespace Board { class ITimerCounter; }
+namespace Board { class ITimerCounter; class IEncoderSampler; }
+namespace Drivers { class IEncoderHardware; }
 namespace Harness { class IClock; class IEncoder; class IEncoderFilterControl;
                     class IEncoderProcessing; class IEncoderStatusSink;
-                    class IEncoderHardware; class IEncoderSampler;
                     class ICriticalSection; }
 
 namespace Scheduler {
@@ -72,9 +72,9 @@ struct EncoderState {
  * @param sampleRateHz  DMA sample rate in Hz (0 = default 1000)
  * @return true on success, false if hardware not available
  */
-bool EncoderTask_Init(Harness::IEncoderHardware& encoder,
+bool EncoderTask_Init(Drivers::IEncoderHardware& encoder,
                       Board::ITimerCounter& timer,
-                      Harness::IEncoderSampler& sampler,
+                      Board::IEncoderSampler& sampler,
                       Harness::ICriticalSection& critSection,
                       Harness::IClock& clock,
                       Harness::IEncoderProcessing& processor,

@@ -8,7 +8,7 @@
 
 #pragma once
 
-namespace Harness { class IMotorDriver; }
+namespace Drivers { class IMotorDriver; }
 
 namespace Drivers {
 
@@ -21,6 +21,6 @@ namespace Drivers {
  * @param driver Output pointer to initialized motor driver
  * @return true on success
  */
-bool initMotorDriver(Harness::IMotorDriver*& driver);
+bool initMotorDriver(Drivers::IMotorDriver*& driver);
 
 } // namespace Drivers

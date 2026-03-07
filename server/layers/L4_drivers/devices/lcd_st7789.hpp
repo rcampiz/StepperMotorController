@@ -116,7 +116,7 @@ static const uint8_t FONT_5X7[][5] = {
     {0x08, 0x08, 0x2A, 0x1C, 0x08}, // 126 '~'
 };
 
-class LCD : public Harness::ICanvas {
+class LCD : public Drivers::ICanvas {
 public:
     static constexpr uint16_t WIDTH = 240;
     static constexpr uint16_t HEIGHT = 320;

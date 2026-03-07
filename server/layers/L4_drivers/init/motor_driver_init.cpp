@@ -15,7 +15,7 @@
 
 namespace Drivers {
 
-bool initMotorDriver(Harness::IMotorDriver*& driver)
+bool initMotorDriver(Drivers::IMotorDriver*& driver)
 {
     // Board init through harness — GPIO + SPI
     Harness::MotorPins pins;

@@ -12,8 +12,9 @@
 #include "harness/pins/iqueue.hpp"
 #include "harness/pins/imotor_command_sink.hpp"
 
+namespace Drivers { class IMotorDriver; }
+
 namespace Harness {
-class IMotorDriver;
 class IClock;
 class IMotorControlService;
 class IMotorTaskControl;
@@ -42,7 +43,7 @@ struct MotorTaskResult {
  * @param result Output: motor task interfaces (populated on success)
  * @return true on success
  */
-bool initMotorTask(IMotorDriver& driver,
+bool initMotorTask(Drivers::IMotorDriver& driver,
                    IQueue<MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
                    IClock& clock,
                    IMotorControlService& controller,

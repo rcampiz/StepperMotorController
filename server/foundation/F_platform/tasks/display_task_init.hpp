@@ -9,10 +9,13 @@
 
 #pragma once
 
-namespace Harness {
-
+namespace Drivers {
 class ICanvas;
 class IJoystick;
+}
+
+namespace Harness {
+
 class IClock;
 class IRemoteDisplay;
 class IScheduler;
@@ -38,8 +41,8 @@ struct DisplayTaskResult {
  * @param result        Output: remote display interface
  * @return true on success
  */
-bool initDisplayTask(ICanvas& lcd,
-                     IJoystick* joystick,
+bool initDisplayTask(Drivers::ICanvas& lcd,
+                     Drivers::IJoystick* joystick,
                      IClock& clock,
                      IFlashImageAccess& flashImages,
                      IIndicatorRenderer& indicator,

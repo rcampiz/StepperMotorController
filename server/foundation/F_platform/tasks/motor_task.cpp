@@ -18,7 +18,7 @@
 namespace Scheduler {
 
 // Injected dependencies (set by MotorTask_Init)
-static Harness::IMotorDriver* s_driver = nullptr;
+static Drivers::IMotorDriver* s_driver = nullptr;
 static Harness::IQueue<Harness::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>* s_cmdQueue = nullptr;
 static Harness::IClock* s_clock = nullptr;
 static Harness::IMotorControlService* s_controller = nullptr;
@@ -27,7 +27,7 @@ static Harness::IScheduler* s_scheduler = nullptr;
 // Task handle for suspend/resume (opaque, managed by IScheduler)
 Harness::TaskHandle g_motorTaskHandle = nullptr;
 
-bool MotorTask_Init(Harness::IMotorDriver& driver,
+bool MotorTask_Init(Drivers::IMotorDriver& driver,
                     Harness::IQueue<Harness::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
                     Harness::IClock& clock,
                     Harness::IMotorControlService& controller,

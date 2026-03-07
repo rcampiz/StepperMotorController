@@ -14,7 +14,7 @@
 
 namespace Drivers {
 
-class SPIFlash : public Harness::IFlash {
+class SPIFlash : public Drivers::IFlash {
 public:
     // Standard SPI flash commands
     enum class Cmd : uint8_t {
@@ -36,7 +36,7 @@ public:
         ReadUID       = 0x4B
     };
 
-    using JEDEC_ID = Harness::FlashJedecId;
+    using JEDEC_ID = Drivers::FlashJedecId;
 
     /**
      * @brief Construct with SPI bus and pre-configured CS GPIO
@@ -80,7 +80,7 @@ public:
         return readStatus1() & 0x02;
     }
 
-    Harness::FlashJedecId readJEDEC() override {
+    Drivers::FlashJedecId readJEDEC() override {
         JEDEC_ID id;
         m_spi.lock();
         csLow();

@@ -25,7 +25,7 @@ void DeviceInfoScreen::onActivate()
     m_needsRedraw = true;
 }
 
-void DeviceInfoScreen::render(Harness::ICanvas& lcd)
+void DeviceInfoScreen::render(Drivers::ICanvas& lcd)
 {
     uint16_t y = MARGIN;
     char buf[32];
@@ -33,7 +33,7 @@ void DeviceInfoScreen::render(Harness::ICanvas& lcd)
     // Title
     lcd.drawString(MARGIN, y, "Device Info", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
     y += LINE_H + 4;
-    lcd.drawHLine(MARGIN, y, Harness::Canvas::WIDTH - 2 * MARGIN, LABEL_COLOR);
+    lcd.drawHLine(MARGIN, y, Drivers::Canvas::WIDTH - 2 * MARGIN, LABEL_COLOR);
     y += 6;
 
     // Device ID
@@ -56,7 +56,7 @@ void DeviceInfoScreen::render(Harness::ICanvas& lcd)
 
     // Separator
     y += 4;
-    lcd.drawHLine(MARGIN, y, Harness::Canvas::WIDTH - 2 * MARGIN, 0x8410);
+    lcd.drawHLine(MARGIN, y, Drivers::Canvas::WIDTH - 2 * MARGIN, 0x8410);
     y += 6;
 
     // System info from telemetry

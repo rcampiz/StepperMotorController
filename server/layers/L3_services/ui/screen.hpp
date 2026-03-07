@@ -51,7 +51,7 @@ public:
      * its current state. May be called frequently, so should be
      * efficient and avoid unnecessary redraws.
      */
-    virtual void render(Harness::ICanvas& lcd) = 0;
+    virtual void render(Drivers::ICanvas& lcd) = 0;
 
     /**
      * @brief Handle joystick input

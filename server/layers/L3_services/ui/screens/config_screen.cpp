@@ -39,11 +39,11 @@ void ConfigScreen::onActivate()
     m_saved = false;
 }
 
-void ConfigScreen::renderField(Harness::ICanvas& lcd, uint8_t field, uint16_t y, bool selected)
+void ConfigScreen::renderField(Drivers::ICanvas& lcd, uint8_t field, uint16_t y, bool selected)
 {
     uint16_t fg = VALUE_COLOR;
     uint16_t bg = selected ? SEL_BG : BG_COLOR;
-    uint16_t itemW = Harness::Canvas::WIDTH - 2 * MARGIN;
+    uint16_t itemW = Drivers::Canvas::WIDTH - 2 * MARGIN;
     char buf[32];
 
     lcd.fillRect(MARGIN, y, itemW, FIELD_H - 2, bg);
@@ -209,12 +209,12 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
     }
 }
 
-void ConfigScreen::render(Harness::ICanvas& lcd)
+void ConfigScreen::render(Drivers::ICanvas& lcd)
 {
     uint16_t y = MARGIN;
     lcd.drawString(MARGIN, y, "Driver Config", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
     y += LINE_H + 2;
-    lcd.drawHLine(MARGIN, y, Harness::Canvas::WIDTH - 2 * MARGIN, LABEL_COLOR);
+    lcd.drawHLine(MARGIN, y, Drivers::Canvas::WIDTH - 2 * MARGIN, LABEL_COLOR);
     y = FIELDS_START_Y;
 
     for (uint8_t i = 0; i < NUM_FIELDS; i++) {

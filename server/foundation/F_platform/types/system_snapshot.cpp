@@ -29,7 +29,7 @@ Protocol::TelemetrySnapshot SystemSnapshot::getSnapshot() {
     m_lock->acquire();
 
     // Motor: convert raw → display
-    Harness::MotorStatus mst{m_motorStatusReg};
+    Drivers::MotorStatus mst{m_motorStatusReg};
     snap.motor.statusReg = m_motorStatusReg;
     snap.motor.position = Harness::signExtendAbsPos(m_motorRawAbsPos);
     snap.motor.speed = Harness::rawSpeedToStepsPerSec(m_motorRawSpeed);
@@ -58,9 +58,9 @@ void SystemSnapshot::writeMotorStatus(uint16_t statusReg) {
 
 void SystemSnapshot::writeMotorParam(uint8_t reg, uint32_t value) {
     m_lock->acquire();
-    if (reg == Harness::MotorReg::ABS_POS) {
+    if (reg == Drivers::MotorReg::ABS_POS) {
         m_motorRawAbsPos = value;
-    } else if (reg == Harness::MotorReg::SPEED) {
+    } else if (reg == Drivers::MotorReg::SPEED) {
         m_motorRawSpeed = value;
     }
     m_timestamp = m_clock->getTickMs();

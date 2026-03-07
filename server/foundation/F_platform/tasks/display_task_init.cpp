@@ -12,8 +12,8 @@
 
 namespace Harness {
 
-bool initDisplayTask(ICanvas& lcd,
-                     IJoystick* joystick,
+bool initDisplayTask(Drivers::ICanvas& lcd,
+                     Drivers::IJoystick* joystick,
                      IClock& clock,
                      IFlashImageAccess& flashImages,
                      IIndicatorRenderer& indicator,

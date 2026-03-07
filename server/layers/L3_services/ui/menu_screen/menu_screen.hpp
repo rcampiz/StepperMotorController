@@ -56,7 +56,7 @@ public:
 
     // IScreen interface
     ScreenType getType() const override { return ScreenType::MENU; }
-    void render(Harness::ICanvas& lcd) override;
+    void render(Drivers::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
     bool needsFullRedraw() const override { return m_needsRedraw; }
@@ -117,7 +117,7 @@ private:
     bool m_dirty;  // Per-frame render gate (skip render when nothing changed)
 
     void ensureSelectionVisible();
-    void renderItem(Harness::ICanvas& lcd, uint8_t itemIndex, uint16_t y, bool selected);
+    void renderItem(Drivers::ICanvas& lcd, uint8_t itemIndex, uint16_t y, bool selected);
 };
 
 } // namespace UI

@@ -18,9 +18,9 @@
 
 namespace Harness {
 
-class TracedMotorDriver : public Harness::IMotorDriver {
+class TracedMotorDriver : public Drivers::IMotorDriver {
 public:
-    explicit TracedMotorDriver(Harness::IMotorDriver& real) : m_real(real) {}
+    explicit TracedMotorDriver(Drivers::IMotorDriver& real) : m_real(real) {}
 
     void init() override {
         Harness::ITrace::log(Harness::ITrace::L3_L4_MOTOR, "[L3>L4]", "motor.init");
@@ -100,8 +100,8 @@ public:
         m_real.setParam(reg, value);
     }
 
-    Harness::MotorStatus getStatus() override {
-        Harness::MotorStatus st = m_real.getStatus();
+    Drivers::MotorStatus getStatus() override {
+        Drivers::MotorStatus st = m_real.getStatus();
         Harness::ITrace::logResult(Harness::ITrace::L3_L4_MOTOR, "[L3<L4]", "getStatus",
                           static_cast<uint32_t>(st.raw));
         Harness::snapshotWriter().writeMotorStatus(st.raw);
@@ -117,7 +117,7 @@ public:
     }
 
 private:
-    Harness::IMotorDriver& m_real;
+    Drivers::IMotorDriver& m_real;
 };
 
 } // namespace Harness

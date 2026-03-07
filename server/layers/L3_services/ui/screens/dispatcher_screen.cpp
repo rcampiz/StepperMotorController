@@ -27,7 +27,7 @@ static constexpr uint16_t GREEN = 0x07E0;
 static constexpr uint16_t YELLOW = 0xFFE0;
 static constexpr uint16_t RED = 0xF800;
 static constexpr uint16_t DIM_GRAY = 0x4208;
-static constexpr uint16_t LINE_W = Harness::Canvas::WIDTH - (2 * MARGIN);
+static constexpr uint16_t LINE_W = Drivers::Canvas::WIDTH - (2 * MARGIN);
 
 // Dim a color to ~25% brightness
 static uint16_t dimColor(uint16_t c) {
@@ -74,7 +74,7 @@ void DispatcherScreen::onActivate()
     memset(m_evtQueueHistory, 0, sizeof(m_evtQueueHistory));
 }
 
-void DispatcherScreen::render(Harness::ICanvas& lcd)
+void DispatcherScreen::render(Drivers::ICanvas& lcd)
 {
     if (!m_titleDrawn) {
         lcd.fillScreen(BG_COLOR);
@@ -224,7 +224,7 @@ void DispatcherScreen::render(Harness::ICanvas& lcd)
     }
 
     // Footer at fixed bottom position
-    lcd.blitTextLine(MARGIN, Harness::Canvas::HEIGHT - 10, LINE_W, 8,
+    lcd.blitTextLine(MARGIN, Drivers::Canvas::HEIGHT - 10, LINE_W, 8,
                      "UD:scroll  L:back", LABEL_COLOR, BG_COLOR);
 }
 
@@ -259,7 +259,7 @@ InputResult DispatcherScreen::handleInput(JoyDirection dir, bool pressed)
 // Queue depth history bar graph
 // =============================================================================
 
-void DispatcherScreen::renderQueueBar(Harness::ICanvas& lcd, uint16_t x, uint16_t y,
+void DispatcherScreen::renderQueueBar(Drivers::ICanvas& lcd, uint16_t x, uint16_t y,
                                        uint16_t w, uint16_t h,
                                        const uint8_t* history, uint8_t maxDepth)
 {

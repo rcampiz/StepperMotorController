@@ -84,7 +84,7 @@ public:
    * @param flash Reference to initialized flash driver
    * @return true if valid config loaded, false if defaults applied
    */
-  bool init(Harness::IFlash &flash, Harness::ILock& lock);
+  bool init(Drivers::IFlash &flash, Harness::ILock& lock);
 
   /**
    * @brief Check if configuration is valid
@@ -134,7 +134,7 @@ public:
 
 private:
   DeviceConfig m_config;
-  Harness::IFlash *m_flash;
+  Drivers::IFlash *m_flash;
   Harness::ILock* m_lock;
   bool m_valid;
 

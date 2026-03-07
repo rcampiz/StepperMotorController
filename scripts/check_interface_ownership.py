@@ -53,12 +53,16 @@ PROVIDER_MAP = {
 
     # Drivers:: (L4) provides
     "IMotorDriver":        ("Drivers",   "L4_drivers"),
-    "IEncoder":            ("Drivers",   "L4_drivers"),
     "IEncoderHardware":    ("Drivers",   "L4_drivers"),
-    "IEncoderSampler":     ("Drivers",   "L4_drivers"),
     "ICanvas":             ("Drivers",   "L4_drivers"),
     "IJoystick":           ("Drivers",   "L4_drivers"),
     "IFlash":              ("Drivers",   "L4_drivers"),
+
+    # Scheduler:: provides (encoder task exposes IEncoder)
+    "IEncoder":            ("Scheduler", "F_platform/tasks"),
+
+    # Board:: (L5) provides (encoder sampler is L5 DMA hardware)
+    "IEncoderSampler":     ("Board",     "L5_board"),
 
     # Services:: (L3) provides
     "IMotorControlService":        ("Services",  "L3_services"),

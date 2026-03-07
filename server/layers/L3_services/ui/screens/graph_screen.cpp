@@ -122,7 +122,7 @@ uint16_t GraphScreen::channelColor() const
     return VALUE_COLOR;
 }
 
-void GraphScreen::renderHeader(Harness::ICanvas& lcd)
+void GraphScreen::renderHeader(Drivers::ICanvas& lcd)
 {
     char buf[30];
 
@@ -136,7 +136,7 @@ void GraphScreen::renderHeader(Harness::ICanvas& lcd)
     lcd.drawString(120, HEADER_Y, buf, VALUE_COLOR, BG_COLOR, TEXT_SCALE);
 }
 
-void GraphScreen::renderGraph(Harness::ICanvas& lcd)
+void GraphScreen::renderGraph(Drivers::ICanvas& lcd)
 {
     uint16_t displaySamples = (m_count < GRAPH_W) ? m_count : GRAPH_W;
 
@@ -262,7 +262,7 @@ void GraphScreen::renderGraph(Harness::ICanvas& lcd)
                    "0s", AXIS_COLOR, BG_COLOR, TEXT_SCALE);
 }
 
-void GraphScreen::render(Harness::ICanvas& lcd)
+void GraphScreen::render(Drivers::ICanvas& lcd)
 {
     // On first frame after activation, clear entire screen once
     if (m_needsRedraw) {

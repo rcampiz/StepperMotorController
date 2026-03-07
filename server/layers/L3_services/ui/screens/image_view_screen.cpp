@@ -17,7 +17,7 @@ void ImageViewScreen::onActivate()
     m_drawn = false;
 }
 
-void ImageViewScreen::render(Harness::ICanvas& lcd)
+void ImageViewScreen::render(Drivers::ICanvas& lcd)
 {
     if (m_drawn) return;
     m_drawn = true;
@@ -28,7 +28,7 @@ void ImageViewScreen::render(Harness::ICanvas& lcd)
     constexpr uint32_t CHUNK_SIZE = 512;
 
     // Start full-screen streaming
-    lcd.streamBitmapStart(0, 0, Harness::Canvas::WIDTH, Harness::Canvas::HEIGHT);
+    lcd.streamBitmapStart(0, 0, Drivers::Canvas::WIDTH, Drivers::Canvas::HEIGHT);
 
     // Read first chunk synchronously
     if (!svc.readSlotChunk(m_slot, 0, s_buf[0], CHUNK_SIZE)) {

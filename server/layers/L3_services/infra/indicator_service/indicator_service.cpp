@@ -60,7 +60,7 @@ namespace Services {
 // Static global instance
 IndicatorService g_indicatorService;
 
-void IndicatorService::init(Harness::ICanvas* lcd) {
+void IndicatorService::init(Drivers::ICanvas* lcd) {
     m_lcd = lcd;
 
     // TE sync hardware init (DWT cycle counter + EXTI0 on PA0) — L5
@@ -347,8 +347,8 @@ void IndicatorService::clearPreviousBbox() {
     uint16_t w = m_prevBboxW;
     uint16_t h = m_prevBboxH;
 
-    if (x + w > Harness::Canvas::WIDTH)  w = Harness::Canvas::WIDTH - x;
-    if (y + h > Harness::Canvas::HEIGHT) h = Harness::Canvas::HEIGHT - y;
+    if (x + w > Drivers::Canvas::WIDTH)  w = Drivers::Canvas::WIDTH - x;
+    if (y + h > Drivers::Canvas::HEIGHT) h = Drivers::Canvas::HEIGHT - y;
 
     m_lcd->fillRect(x, y, w, h, BG_COLOR);
 }
@@ -387,11 +387,11 @@ void IndicatorService::storeBbox() {
         m_prevBboxH = static_cast<uint16_t>(m_prevBboxH + m_prevBboxY);
         m_prevBboxY = 0;
     }
-    if (m_prevBboxX + m_prevBboxW > Harness::Canvas::WIDTH) {
-        m_prevBboxW = static_cast<uint16_t>(Harness::Canvas::WIDTH - m_prevBboxX);
+    if (m_prevBboxX + m_prevBboxW > Drivers::Canvas::WIDTH) {
+        m_prevBboxW = static_cast<uint16_t>(Drivers::Canvas::WIDTH - m_prevBboxX);
     }
-    if (m_prevBboxY + m_prevBboxH > Harness::Canvas::HEIGHT) {
-        m_prevBboxH = static_cast<uint16_t>(Harness::Canvas::HEIGHT - m_prevBboxY);
+    if (m_prevBboxY + m_prevBboxH > Drivers::Canvas::HEIGHT) {
+        m_prevBboxH = static_cast<uint16_t>(Drivers::Canvas::HEIGHT - m_prevBboxY);
     }
 }
 

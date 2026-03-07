@@ -20,12 +20,12 @@ class IMotorControlService {
 public:
     virtual ~IMotorControlService() = default;
 
-    virtual void processCommand(const MotorCommand& cmd, IMotorDriver& driver) = 0;
-    virtual void periodicUpdate(IMotorDriver& driver) = 0;
-    virtual void applyConfig(IMotorDriver& driver) = 0;
-    virtual bool setStepModeSafe(IMotorDriver& driver, uint8_t mode, uint8_t& readback) = 0;
-    virtual void reinit(IMotorDriver& driver) = 0;
-    virtual void getDebugInfo(IMotorDriver& driver, MotorDebugParams& info) = 0;
+    virtual void processCommand(const MotorCommand& cmd, Drivers::IMotorDriver& driver) = 0;
+    virtual void periodicUpdate(Drivers::IMotorDriver& driver) = 0;
+    virtual void applyConfig(Drivers::IMotorDriver& driver) = 0;
+    virtual bool setStepModeSafe(Drivers::IMotorDriver& driver, uint8_t mode, uint8_t& readback) = 0;
+    virtual void reinit(Drivers::IMotorDriver& driver) = 0;
+    virtual void getDebugInfo(Drivers::IMotorDriver& driver, MotorDebugParams& info) = 0;
 };
 
 } // namespace Harness

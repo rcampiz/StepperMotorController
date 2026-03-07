@@ -3,7 +3,7 @@
  * @brief Stateless graphics primitives for LCD rendering
  *
  * Provides filled triangle (scanline), circle outline (midpoint/Bresenham),
- * and filled circle. All functions take Harness::ICanvas& as first parameter.
+ * and filled circle. All functions take Drivers::ICanvas& as first parameter.
  *
  * No RTOS. No global state. Pure utility library.
  * Dependency direction: graphics -> drivers (allowed).
@@ -35,7 +35,7 @@ inline void swap16(int16_t& a, int16_t& b) {
  *
  * Handles degenerate triangles (collinear points) gracefully.
  */
-inline void fillTriangle(Harness::ICanvas& lcd,
+inline void fillTriangle(Drivers::ICanvas& lcd,
     int16_t x0, int16_t y0,
     int16_t x1, int16_t y1,
     int16_t x2, int16_t y2,
@@ -55,8 +55,8 @@ inline void fillTriangle(Harness::ICanvas& lcd,
         if (x2 > maxX) maxX = x2;
         // Clip to screen
         if (minX < 0) minX = 0;
-        if (maxX >= Harness::Canvas::WIDTH) maxX = static_cast<int16_t>(Harness::Canvas::WIDTH - 1);
-        if (minX <= maxX && y0 >= 0 && y0 < Harness::Canvas::HEIGHT) {
+        if (maxX >= Drivers::Canvas::WIDTH) maxX = static_cast<int16_t>(Drivers::Canvas::WIDTH - 1);
+        if (minX <= maxX && y0 >= 0 && y0 < Drivers::Canvas::HEIGHT) {
             lcd.fillRect(static_cast<uint16_t>(minX), static_cast<uint16_t>(y0),
                          static_cast<uint16_t>(maxX - minX + 1), 1, color);
         }
@@ -71,7 +71,7 @@ inline void fillTriangle(Harness::ICanvas& lcd,
 
     for (int16_t y = y0; y <= y2; y++) {
         if (y < 0) continue;
-        if (y >= Harness::Canvas::HEIGHT) break;
+        if (y >= Drivers::Canvas::HEIGHT) break;
 
         int16_t xa, xb;
 
@@ -102,7 +102,7 @@ inline void fillTriangle(Harness::ICanvas& lcd,
 
         // Clip to screen
         if (xa < 0) xa = 0;
-        if (xb >= Harness::Canvas::WIDTH) xb = static_cast<int16_t>(Harness::Canvas::WIDTH - 1);
+        if (xb >= Drivers::Canvas::WIDTH) xb = static_cast<int16_t>(Drivers::Canvas::WIDTH - 1);
         if (xa > xb) continue;
 
         lcd.fillRect(static_cast<uint16_t>(xa), static_cast<uint16_t>(y),
@@ -115,7 +115,7 @@ inline void fillTriangle(Harness::ICanvas& lcd,
  *
  * Draws a 1px circle outline. For thicker outlines, call with r and r-1.
  */
-inline void drawCircleOutline(Harness::ICanvas& lcd,
+inline void drawCircleOutline(Drivers::ICanvas& lcd,
     int16_t cx, int16_t cy, int16_t r,
     uint16_t color)
 {
@@ -151,7 +151,7 @@ inline void drawCircleOutline(Harness::ICanvas& lcd,
  *
  * Uses fillRect for each horizontal scanline pair (efficient bulk writes).
  */
-inline void fillCircle(Harness::ICanvas& lcd,
+inline void fillCircle(Drivers::ICanvas& lcd,
     int16_t cx, int16_t cy, int16_t r,
     uint16_t color)
 {
@@ -176,11 +176,11 @@ inline void fillCircle(Harness::ICanvas& lcd,
             auto spanX = static_cast<int16_t>(cx - x);
             auto spanW = static_cast<uint16_t>(2 * x + 1);
 
-            if (cy + y >= 0 && cy + y < Harness::Canvas::HEIGHT && spanX < Harness::Canvas::WIDTH) {
+            if (cy + y >= 0 && cy + y < Drivers::Canvas::HEIGHT && spanX < Drivers::Canvas::WIDTH) {
                 uint16_t sx = (spanX < 0) ? 0 : static_cast<uint16_t>(spanX);
                 lcd.fillRect(sx, static_cast<uint16_t>(cy + y), spanW, 1, color);
             }
-            if (cy - y >= 0 && cy - y < Harness::Canvas::HEIGHT && spanX < Harness::Canvas::WIDTH) {
+            if (cy - y >= 0 && cy - y < Drivers::Canvas::HEIGHT && spanX < Drivers::Canvas::WIDTH) {
                 uint16_t sx = (spanX < 0) ? 0 : static_cast<uint16_t>(spanX);
                 lcd.fillRect(sx, static_cast<uint16_t>(cy - y), spanW, 1, color);
             }
@@ -195,11 +195,11 @@ inline void fillCircle(Harness::ICanvas& lcd,
             auto spanX = static_cast<int16_t>(cx - y);
             auto spanW = static_cast<uint16_t>(2 * y + 1);
 
-            if (cy + x >= 0 && cy + x < Harness::Canvas::HEIGHT && spanX < Harness::Canvas::WIDTH) {
+            if (cy + x >= 0 && cy + x < Drivers::Canvas::HEIGHT && spanX < Drivers::Canvas::WIDTH) {
                 uint16_t sx = (spanX < 0) ? 0 : static_cast<uint16_t>(spanX);
                 lcd.fillRect(sx, static_cast<uint16_t>(cy + x), spanW, 1, color);
             }
-            if (cy - x >= 0 && cy - x < Harness::Canvas::HEIGHT && spanX < Harness::Canvas::WIDTH) {
+            if (cy - x >= 0 && cy - x < Drivers::Canvas::HEIGHT && spanX < Drivers::Canvas::WIDTH) {
                 uint16_t sx = (spanX < 0) ? 0 : static_cast<uint16_t>(spanX);
                 lcd.fillRect(sx, static_cast<uint16_t>(cy - x), spanW, 1, color);
             }
@@ -236,7 +236,7 @@ inline int16_t isqrt16(int32_t n) {
  * Total pixel count = pi * (outerR^2 - innerR^2), much less than
  * two full fillCircle calls.
  */
-inline void fillRing(Harness::ICanvas& lcd,
+inline void fillRing(Drivers::ICanvas& lcd,
     int16_t cx, int16_t cy, int16_t outerR, int16_t innerR,
     uint16_t color)
 {
@@ -249,7 +249,7 @@ inline void fillRing(Harness::ICanvas& lcd,
     for (int16_t dy = -outerR; dy <= outerR; dy++) {
         auto screenY = static_cast<int16_t>(cy + dy);
         if (screenY < 0) continue;
-        if (screenY >= Harness::Canvas::HEIGHT) break;
+        if (screenY >= Drivers::Canvas::HEIGHT) break;
 
         auto dy2 = static_cast<int32_t>(dy) * dy;
         int16_t outerX = isqrt16(outerR2 - dy2);
@@ -262,7 +262,7 @@ inline void fillRing(Harness::ICanvas& lcd,
             auto lStart = static_cast<int16_t>(cx - outerX);
             int16_t lEnd   = static_cast<int16_t>(cx - innerX - 1);
             if (lStart < 0) lStart = 0;
-            if (lEnd >= Harness::Canvas::WIDTH) lEnd = static_cast<int16_t>(Harness::Canvas::WIDTH - 1);
+            if (lEnd >= Drivers::Canvas::WIDTH) lEnd = static_cast<int16_t>(Drivers::Canvas::WIDTH - 1);
             if (lStart <= lEnd) {
                 lcd.fillRect(static_cast<uint16_t>(lStart), static_cast<uint16_t>(screenY),
                              static_cast<uint16_t>(lEnd - lStart + 1), 1, color);
@@ -272,7 +272,7 @@ inline void fillRing(Harness::ICanvas& lcd,
             auto rStart = static_cast<int16_t>(cx + innerX + 1);
             int16_t rEnd   = static_cast<int16_t>(cx + outerX);
             if (rStart < 0) rStart = 0;
-            if (rEnd >= Harness::Canvas::WIDTH) rEnd = static_cast<int16_t>(Harness::Canvas::WIDTH - 1);
+            if (rEnd >= Drivers::Canvas::WIDTH) rEnd = static_cast<int16_t>(Drivers::Canvas::WIDTH - 1);
             if (rStart <= rEnd) {
                 lcd.fillRect(static_cast<uint16_t>(rStart), static_cast<uint16_t>(screenY),
                              static_cast<uint16_t>(rEnd - rStart + 1), 1, color);
@@ -282,7 +282,7 @@ inline void fillRing(Harness::ICanvas& lcd,
             auto spanStart = static_cast<int16_t>(cx - outerX);
             int16_t spanEnd   = static_cast<int16_t>(cx + outerX);
             if (spanStart < 0) spanStart = 0;
-            if (spanEnd >= Harness::Canvas::WIDTH) spanEnd = static_cast<int16_t>(Harness::Canvas::WIDTH - 1);
+            if (spanEnd >= Drivers::Canvas::WIDTH) spanEnd = static_cast<int16_t>(Drivers::Canvas::WIDTH - 1);
             if (spanStart <= spanEnd) {
                 lcd.fillRect(static_cast<uint16_t>(spanStart), static_cast<uint16_t>(screenY),
                              static_cast<uint16_t>(spanEnd - spanStart + 1), 1, color);

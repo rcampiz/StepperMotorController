@@ -13,7 +13,7 @@ void BootColorScreen::onActivate()
     m_drawn = false;
 }
 
-void BootColorScreen::render(Harness::ICanvas& lcd)
+void BootColorScreen::render(Drivers::ICanvas& lcd)
 {
     if (!m_drawn) {
         lcd.drawTestPattern();

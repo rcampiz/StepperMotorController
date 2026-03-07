@@ -45,7 +45,7 @@ using Harness::MotorDebugParams;
  * @param scheduler  Scheduler for suspend/resume (injected, no Platform::resources)
  * @return true on success
  */
-bool MotorTask_Init(Harness::IMotorDriver& driver,
+bool MotorTask_Init(Drivers::IMotorDriver& driver,
                     Harness::IQueue<Harness::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
                     Harness::IClock& clock,
                     Harness::IMotorControlService& controller,

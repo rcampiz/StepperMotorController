@@ -10,7 +10,7 @@
 
 namespace Harness {
 
-bool initMotorTask(IMotorDriver& driver,
+bool initMotorTask(Drivers::IMotorDriver& driver,
                    IQueue<MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
                    IClock& clock,
                    IMotorControlService& controller,
