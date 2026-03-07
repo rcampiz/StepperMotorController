@@ -49,7 +49,7 @@ public:
                 uint8_t af,
                 Board::SPIMode mode,
                 Board::SPIPrescaler prescaler,
-                Harness::ILock& lock)
+                Platform::ILock& lock)
         : m_spi(spi), m_mode(mode), m_prescaler(prescaler), m_lock(lock)
     {
         initGPIO(gpioPort, sckPin, gpioPort, misoPin, gpioPort, mosiPin, af);
@@ -78,7 +78,7 @@ public:
                 uint8_t af,
                 Board::SPIMode mode,
                 Board::SPIPrescaler prescaler,
-                Harness::ILock& lock)
+                Platform::ILock& lock)
         : m_spi(spi), m_mode(mode), m_prescaler(prescaler), m_lock(lock)
     {
         initGPIO(sckPort, sckPin, misoPort, misoPin, mosiPort, mosiPin, af);
@@ -253,7 +253,7 @@ private:
     SPI_TypeDef* m_spi;
     Board::SPIMode m_mode;
     Board::SPIPrescaler m_prescaler;
-    Harness::ILock& m_lock;
+    Platform::ILock& m_lock;
     bool m_asyncReadActive = false;
 
     /**

@@ -11,7 +11,7 @@
 
 namespace Platform {
 
-class FreeRTOSCriticalSection : public Harness::ICriticalSection {
+class FreeRTOSCriticalSection : public Platform::ICriticalSection {
 public:
     void enter() override { taskENTER_CRITICAL(); }
     void exit() override { taskEXIT_CRITICAL(); }

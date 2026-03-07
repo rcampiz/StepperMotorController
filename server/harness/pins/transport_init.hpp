@@ -10,7 +10,8 @@
 
 #include <stdint.h>
 
-namespace Harness { class ITransport; class IClock; class IByteChannel; }
+namespace Platform { class IClock; }
+namespace Harness { class ITransport; class IByteChannel; }
 
 namespace Transport {
 
@@ -36,6 +37,6 @@ struct TransportResult {
  * @return true on success
  */
 bool initTransport(TransportResult& out, TransportType type,
-                   Harness::IByteChannel& channel, Harness::IClock& clock);
+                   Harness::IByteChannel& channel, Platform::IClock& clock);
 
 } // namespace Transport

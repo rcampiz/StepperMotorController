@@ -29,7 +29,7 @@ public:
      * @param defaultMode Initial mode (default: LOCAL)
      * @return true on success
      */
-    bool init(Harness::ILock& lock, UIMode defaultMode = UIMode::LOCAL);
+    bool init(Platform::ILock& lock, UIMode defaultMode = UIMode::LOCAL);
 
     /**
      * @brief Get current UI mode
@@ -69,7 +69,7 @@ public:
 private:
     UIMode m_mode = UIMode::LOCAL;
     JoyEventCallback m_joyCallback = nullptr;
-    Harness::ILock* m_lock = nullptr;
+    Platform::ILock* m_lock = nullptr;
 };
 
 // Global UI mode manager instance

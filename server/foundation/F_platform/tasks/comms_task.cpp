@@ -59,7 +59,7 @@ static void publishTelemetry();
 // Context from composition root
 static Harness::ITransport* s_transport = nullptr;
 static Harness::ICommandProcessor* s_parser = nullptr;
-static Harness::IClock* s_clock = nullptr;
+static Platform::IClock* s_clock = nullptr;
 static Harness::IMotorEventReceiver* s_eventReceiver = nullptr;
 static Harness::IEmergencyStop* s_emergencyStop = nullptr;
 
@@ -78,7 +78,7 @@ static uint32_t s_eventSeq = 0;  // monotonic wire sequence number
 
 bool CommsTask_Init(Harness::ITransport& transport,
                     Harness::ICommandProcessor& parser,
-                    Harness::IClock& clock,
+                    Platform::IClock& clock,
                     Harness::IMotorEventReceiver& eventReceiver,
                     Harness::IEmergencyStop& emergencyStop)
 {

@@ -21,7 +21,7 @@
 namespace Transport {
 
 bool initTransport(TransportResult& out, TransportType type,
-                   Harness::IByteChannel& channel, Harness::IClock& clock)
+                   Harness::IByteChannel& channel, Platform::IClock& clock)
 {
     Harness::ITransport* transport = nullptr;
 

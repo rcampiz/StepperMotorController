@@ -28,8 +28,8 @@
 namespace Services {
 
 bool initCommsSubsystem(const CommsServiceDeps& deps,
-                        Harness::IClock& clock,
-                        Harness::IScheduler& scheduler)
+                        Platform::IClock& clock,
+                        Platform::IScheduler& scheduler)
 {
     // 1. L3 dispatch init
     DispatchDeps dispDeps;

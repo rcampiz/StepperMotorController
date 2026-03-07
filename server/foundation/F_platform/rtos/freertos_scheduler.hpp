@@ -1,6 +1,6 @@
 /**
  * @file freertos_scheduler.hpp
- * @brief FreeRTOS implementation of Harness::IScheduler
+ * @brief FreeRTOS implementation of Platform::IScheduler
  *
  * Wraps xTaskCreate, vTaskStartScheduler, vTaskSuspend, vTaskResume.
  */
@@ -12,12 +12,12 @@
 
 namespace Platform {
 
-class FreeRTOSScheduler : public Harness::IScheduler {
+class FreeRTOSScheduler : public Platform::IScheduler {
 public:
-    Harness::TaskHandle createTask(const Harness::TaskDescriptor& desc) override;
+    Platform::TaskHandle createTask(const Platform::TaskDescriptor& desc) override;
     [[noreturn]] void start() override;
-    void suspendTask(Harness::TaskHandle h) override;
-    void resumeTask(Harness::TaskHandle h) override;
+    void suspendTask(Platform::TaskHandle h) override;
+    void resumeTask(Platform::TaskHandle h) override;
 };
 
 } // namespace Platform

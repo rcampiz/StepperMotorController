@@ -80,7 +80,7 @@ public:
    * @brief Initialize the command queue service
    * @return true on success
    */
-  bool init(Harness::ILock& lock, Harness::IClock& clock, IMotorCommandSink& sink);
+  bool init(Platform::ILock& lock, Platform::IClock& clock, IMotorCommandSink& sink);
 
   /**
    * @brief Get current controller state
@@ -187,8 +187,8 @@ private:
   ControllerState m_state;
 
   // Platform abstractions
-  Harness::ILock* m_lock;
-  Harness::IClock* m_clock;
+  Platform::ILock* m_lock;
+  Platform::IClock* m_clock;
   IMotorCommandSink* m_sink;
 
   // Helper to flush pending commands to motor task

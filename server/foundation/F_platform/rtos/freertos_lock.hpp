@@ -15,7 +15,7 @@
 
 namespace Platform {
 
-class FreeRTOSMutex : public Harness::ILock {
+class FreeRTOSMutex : public Platform::ILock {
 public:
     FreeRTOSMutex() : m_sem(nullptr) {
         m_sem = xSemaphoreCreateMutex();

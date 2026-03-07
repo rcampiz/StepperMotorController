@@ -11,7 +11,8 @@
 
 #include "harness/pins/dispatch_interfaces.hpp"
 
-namespace Harness { class ITransport; class IClock; class IDebugCommands;
+namespace Platform { class IClock; }
+namespace Harness { class ITransport; class IDebugCommands;
                     class IByteChannel; class ICommandProcessor; }
 
 namespace Protocol {
@@ -35,6 +36,6 @@ bool initCommsProtocol(CommsProtocol& out,
                        const Harness::DispatchInterfaces& dispatches,
                        Harness::IDebugCommands* debugCommands,
                        Harness::IByteChannel& channel,
-                       Harness::IClock& clock);
+                       Platform::IClock& clock);
 
 } // namespace Protocol

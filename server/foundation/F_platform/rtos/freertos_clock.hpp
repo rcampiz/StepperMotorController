@@ -16,7 +16,7 @@
 
 namespace Platform {
 
-class FreeRTOSClock : public Harness::IClock {
+class FreeRTOSClock : public Platform::IClock {
 public:
     uint32_t getTickMs() const override {
         return xTaskGetTickCount() * portTICK_PERIOD_MS;

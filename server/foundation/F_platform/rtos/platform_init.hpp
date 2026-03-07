@@ -19,12 +19,6 @@
 
 namespace Platform {
 
-using Harness::IClock;
-using Harness::ILock;
-using Harness::IQueue;
-using Harness::ITaskStats;
-using Harness::IScheduler;
-
 struct Resources {
     ILock*  spi1Lock;
     ILock*  spi2Lock;

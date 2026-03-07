@@ -16,7 +16,7 @@
 namespace Platform {
 
 template<typename T, size_t Depth>
-class FreeRTOSQueue : public Harness::IQueue<T, Depth> {
+class FreeRTOSQueue : public Platform::IQueue<T, Depth> {
 public:
     FreeRTOSQueue() : m_handle(nullptr) {
         m_handle = xQueueCreate(Depth, sizeof(T));

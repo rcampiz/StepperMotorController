@@ -62,7 +62,7 @@ public:
    *
    * @return true on success
    */
-  bool init(Harness::ILock& lock);
+  bool init(Platform::ILock& lock);
 
   /**
    * @brief Get current control mode
@@ -111,7 +111,7 @@ public:
 private:
   ControlMode m_currentMode;
   EncoderStatus m_encoderStatus;
-  Harness::ILock* m_lock;
+  Platform::ILock* m_lock;
 };
 
 // Global instance

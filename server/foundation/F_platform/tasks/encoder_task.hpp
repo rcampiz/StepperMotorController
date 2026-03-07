@@ -19,9 +19,9 @@
 
 namespace Board { class ITimerCounter; class IEncoderSampler; }
 namespace Drivers { class IEncoderHardware; }
-namespace Harness { class IClock; class IEncoder; class IEncoderFilterControl;
-                    class IEncoderProcessing; class IEncoderStatusSink;
-                    class ICriticalSection; }
+namespace Platform { class IClock; class ICriticalSection; }
+namespace Harness { class IEncoder; class IEncoderFilterControl;
+                    class IEncoderProcessing; class IEncoderStatusSink; }
 
 namespace Scheduler {
 
@@ -75,8 +75,8 @@ struct EncoderState {
 bool EncoderTask_Init(Drivers::IEncoderHardware& encoder,
                       Board::ITimerCounter& timer,
                       Board::IEncoderSampler& sampler,
-                      Harness::ICriticalSection& critSection,
-                      Harness::IClock& clock,
+                      Platform::ICriticalSection& critSection,
+                      Platform::IClock& clock,
                       Harness::IEncoderProcessing& processor,
                       Harness::IEncoderStatusSink& statusSink,
                       uint8_t measWindowMs,

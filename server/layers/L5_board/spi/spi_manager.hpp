@@ -85,7 +85,7 @@ public:
      * @param spi2Lock Lock for SPI2 bus arbitration (NOR Flash)
      * @return true if successful
      */
-    bool init(Harness::ILock& spi1Lock, Harness::ILock& spi2Lock) {
+    bool init(Platform::ILock& spi1Lock, Platform::ILock& spi2Lock) {
         // SPI1: Hardware SPI peripheral on PA5 (SCK), PA6 (MISO), PA7 (MOSI)
         // Prescaler 4 = /32 → 84 MHz / 32 = 2.625 MHz
         // Safe for both ST7789 LCD (max ~62 MHz) and powerSTEP01 (max 5 MHz)

@@ -13,12 +13,12 @@
 
 #include <stdint.h>
 
+namespace Platform { class IClock; class IScheduler; }
+
 namespace Harness {
 class ITransport;
-class IClock;
 class IMotorEventReceiver;
 class IEmergencyStop;
-class IScheduler;
 class ICommandProcessor;
 } // namespace Harness
 
@@ -48,10 +48,10 @@ struct CommsTaskResult {
  */
 bool initCommsTask(ITransport& transport,
                    ICommandProcessor& parser,
-                   IClock& clock,
+                   Platform::IClock& clock,
                    IMotorEventReceiver& eventReceiver,
                    IEmergencyStop& emergencyStop,
-                   IScheduler& scheduler,
+                   Platform::IScheduler& scheduler,
                    CommsTaskResult& result);
 
 } // namespace Harness

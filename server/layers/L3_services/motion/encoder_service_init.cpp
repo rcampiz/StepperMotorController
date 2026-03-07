@@ -20,8 +20,8 @@
 
 namespace Services {
 
-bool initEncoderSubsystem(Harness::IClock& clock,
-                          Harness::IScheduler& scheduler,
+bool initEncoderSubsystem(Platform::IClock& clock,
+                          Platform::IScheduler& scheduler,
                           EncoderSubsystemResult& result)
 {
     // Step 1: L4 driver init (through harness → L4 → L5)

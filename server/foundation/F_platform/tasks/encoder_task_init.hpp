@@ -15,14 +15,14 @@
 
 namespace Drivers { struct EncoderDriverHandle; }
 
+namespace Platform { class IClock; class IScheduler; }
+
 namespace Harness {
 
-class IClock;
 class IEncoder;
 class IEncoderFilterControl;
 class IEncoderProcessing;
 class IEncoderStatusSink;
-class IScheduler;
 
 /**
  * @brief Result of encoder task initialization
@@ -49,12 +49,12 @@ struct EncoderTaskResult {
  * @return true if task created successfully
  */
 bool initEncoderTask(Drivers::EncoderDriverHandle& driverHandle,
-                     IClock& clock,
+                     Platform::IClock& clock,
                      IEncoderProcessing& processor,
                      IEncoderStatusSink& statusSink,
                      uint8_t measWindowMs,
                      uint16_t sampleRateHz,
-                     IScheduler& scheduler,
+                     Platform::IScheduler& scheduler,
                      EncoderTaskResult& result);
 
 } // namespace Harness

@@ -11,7 +11,7 @@
 #include "harness/pins/iqueue.hpp"
 #include "harness/pins/async_event.hpp"
 
-namespace Harness { class ILock; }
+namespace Platform { class ILock; }
 
 namespace Services {
 
@@ -24,7 +24,7 @@ namespace Services {
  * @param eventQueue      Async event queue
  * @return true on success
  */
-bool initSystemServices(Harness::ILock& controlModeLock,
-                        Harness::IQueue<AsyncEvent, 8>& eventQueue);
+bool initSystemServices(Platform::ILock& controlModeLock,
+                        Platform::IQueue<AsyncEvent, 8>& eventQueue);
 
 } // namespace Services

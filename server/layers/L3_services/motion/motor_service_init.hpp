@@ -11,11 +11,10 @@
 
 #include "harness/pins/motor_task_init.hpp"
 
+namespace Platform { class IClock; class IScheduler; class ILock; }
+
 namespace Harness {
 class IMotorTaskControl;
-class IClock;
-class IScheduler;
-class ILock;
 } // namespace Harness
 
 namespace Services {
@@ -38,10 +37,10 @@ struct MotorSubsystemResult {
  * @return true on success
  */
 bool initMotorSubsystem(
-    Harness::IQueue<Harness::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& commandQueue,
-    Harness::IClock& clock,
-    Harness::IScheduler& scheduler,
-    Harness::ILock& commandQueueLock,
+    Platform::IQueue<Harness::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& commandQueue,
+    Platform::IClock& clock,
+    Platform::IScheduler& scheduler,
+    Platform::ILock& commandQueueLock,
     MotorSubsystemResult& result);
 
 } // namespace Services

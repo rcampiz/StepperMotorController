@@ -8,11 +8,10 @@
 
 #pragma once
 
+namespace Platform { class IClock; class IScheduler; }
 namespace Harness {
-class IClock;
 class IEncoder;
 class IEncoderFilterControl;
-class IScheduler;
 } // namespace Harness
 
 namespace Services {
@@ -34,8 +33,8 @@ struct EncoderSubsystemResult {
  * @param result    Output: availability flag + encoder interfaces
  * @return true on success (encoder may still be unavailable — check result)
  */
-bool initEncoderSubsystem(Harness::IClock& clock,
-                          Harness::IScheduler& scheduler,
+bool initEncoderSubsystem(Platform::IClock& clock,
+                          Platform::IScheduler& scheduler,
                           EncoderSubsystemResult& result);
 
 } // namespace Services

@@ -11,10 +11,10 @@
 namespace Harness {
 
 bool initMotorTask(Drivers::IMotorDriver& driver,
-                   IQueue<MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
-                   IClock& clock,
+                   Platform::IQueue<MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
+                   Platform::IClock& clock,
                    IMotorControlService& controller,
-                   IScheduler& scheduler,
+                   Platform::IScheduler& scheduler,
                    MotorTaskResult& result)
 {
     if (!Scheduler::MotorTask_Init(driver, cmdQueue, clock, controller, scheduler)) {

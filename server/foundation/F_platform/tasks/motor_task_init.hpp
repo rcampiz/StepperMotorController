@@ -14,11 +14,11 @@
 
 namespace Drivers { class IMotorDriver; }
 
+namespace Platform { class IClock; class IScheduler; }
+
 namespace Harness {
-class IClock;
 class IMotorControlService;
 class IMotorTaskControl;
-class IScheduler;
 
 constexpr size_t MOTOR_CMD_QUEUE_DEPTH = 8;
 
@@ -44,10 +44,10 @@ struct MotorTaskResult {
  * @return true on success
  */
 bool initMotorTask(Drivers::IMotorDriver& driver,
-                   IQueue<MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
-                   IClock& clock,
+                   Platform::IQueue<MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
+                   Platform::IClock& clock,
                    IMotorControlService& controller,
-                   IScheduler& scheduler,
+                   Platform::IScheduler& scheduler,
                    MotorTaskResult& result);
 
 } // namespace Harness

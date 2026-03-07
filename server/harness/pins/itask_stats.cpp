@@ -1,6 +1,6 @@
 #include "harness/pins/itask_stats.hpp"
 
-namespace Harness {
+namespace Platform {
 
 static ITaskStats* s_taskStatsProvider = nullptr;
 
@@ -12,4 +12,4 @@ ITaskStats* taskStatsProvider() {
     return s_taskStatsProvider;
 }
 
-} // namespace Harness
+} // namespace Platform

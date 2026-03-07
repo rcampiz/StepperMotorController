@@ -9,10 +9,9 @@
 
 #pragma once
 
+namespace Platform { class IClock; class IScheduler; }
 namespace Harness {
-class IClock;
 class IRemoteDisplay;
-class IScheduler;
 } // namespace Harness
 
 namespace Services {
@@ -33,8 +32,8 @@ struct DisplaySubsystemResult {
  * @param result    Output: remote display interface + flash availability
  * @return true on success
  */
-bool initDisplaySubsystem(Harness::IClock& clock,
-                          Harness::IScheduler& scheduler,
+bool initDisplaySubsystem(Platform::IClock& clock,
+                          Platform::IScheduler& scheduler,
                           DisplaySubsystemResult& result);
 
 } // namespace Services

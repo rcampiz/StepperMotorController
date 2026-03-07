@@ -21,10 +21,10 @@ public:
     using EventSeqFn = uint32_t(*)();
 
     SystemDispatch() = default;
-    SystemDispatch(Harness::IClock* clock, EventSeqFn eventSeqFn)
+    SystemDispatch(Platform::IClock* clock, EventSeqFn eventSeqFn)
         : m_clock(clock), m_eventSeqFn(eventSeqFn) {}
 
-    void setClock(Harness::IClock* c) { m_clock = c; }
+    void setClock(Platform::IClock* c) { m_clock = c; }
     void setEventSeqFn(EventSeqFn fn) { m_eventSeqFn = fn; }
 
     uint32_t getTickUs() override;
@@ -40,7 +40,7 @@ public:
     uint32_t getLastEventSeq() override;
 
 private:
-    Harness::IClock* m_clock = nullptr;
+    Platform::IClock* m_clock = nullptr;
     EventSeqFn m_eventSeqFn = nullptr;
 };
 

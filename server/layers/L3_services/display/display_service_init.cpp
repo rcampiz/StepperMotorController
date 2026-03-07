@@ -21,8 +21,8 @@
 
 namespace Services {
 
-bool initDisplaySubsystem(Harness::IClock& clock,
-                          Harness::IScheduler& scheduler,
+bool initDisplaySubsystem(Platform::IClock& clock,
+                          Platform::IScheduler& scheduler,
                           DisplaySubsystemResult& result)
 {
     // Step 1: L4 driver init (through harness → L4 → L5)

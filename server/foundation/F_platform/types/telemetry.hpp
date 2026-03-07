@@ -17,7 +17,7 @@ namespace Protocol {
 
 class TelemetryManager : public Harness::ITelemetry {
 public:
-    bool init(Harness::ILock& lock, Harness::IClock& clock);
+    bool init(Platform::ILock& lock, Platform::IClock& clock);
 
     void updateMotor(const MotorTelemetry& data) override;
     void updateEncoder(const EncoderTelemetry& data) override;
@@ -27,8 +27,8 @@ public:
 
 private:
     TelemetrySnapshot m_data;
-    Harness::ILock* m_lock;
-    Harness::IClock* m_clock;
+    Platform::ILock* m_lock;
+    Platform::IClock* m_clock;
 };
 
 extern TelemetryManager g_telemetry;

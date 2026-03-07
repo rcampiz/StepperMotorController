@@ -15,9 +15,9 @@
 
 namespace Harness {
 
-class TracedLock : public Harness::ILock {
+class TracedLock : public Platform::ILock {
 public:
-    explicit TracedLock(Harness::ILock& real) : m_real(real) {}
+    explicit TracedLock(Platform::ILock& real) : m_real(real) {}
 
     void acquire() override {
         Harness::ITrace::log(Harness::ITrace::L5_F_LOCK, "[L5>F]", "lock.acquire");
@@ -30,7 +30,7 @@ public:
     }
 
 private:
-    Harness::ILock& m_real;
+    Platform::ILock& m_real;
 };
 
 } // namespace Harness

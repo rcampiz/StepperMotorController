@@ -54,10 +54,10 @@ namespace Harness {
 
 bool initCommsTask(ITransport& transport,
                    ICommandProcessor& parser,
-                   IClock& clock,
+                   Platform::IClock& clock,
                    IMotorEventReceiver& eventReceiver,
                    IEmergencyStop& emergencyStop,
-                   IScheduler& scheduler,
+                   Platform::IScheduler& scheduler,
                    CommsTaskResult& result)
 {
     // Task init

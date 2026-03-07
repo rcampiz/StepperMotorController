@@ -12,12 +12,12 @@
 #include "harness/pins/dispatch_interfaces.hpp"
 #include <stdint.h>
 
+namespace Platform { class IClock; }
 namespace Harness {
 class IEncoder;
 class IEncoderFilterControl;
 class IMotorTaskControl;
 class IRemoteDisplay;
-class IClock;
 } // namespace Harness
 
 namespace Services {
@@ -27,7 +27,7 @@ struct DispatchDeps {
     Harness::IEncoderFilterControl* encFilter = nullptr;
     Harness::IMotorTaskControl*     motorCtrl = nullptr;
     Harness::IRemoteDisplay*        remoteDisplay = nullptr;
-    Harness::IClock*                clock = nullptr;
+    Platform::IClock*                clock = nullptr;
 };
 
 /**

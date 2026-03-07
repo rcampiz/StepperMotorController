@@ -21,7 +21,7 @@ bool initCommsProtocol(CommsProtocol& out,
                        const Harness::DispatchInterfaces& dispatches,
                        Harness::IDebugCommands* debugCommands,
                        Harness::IByteChannel& channel,
-                       Harness::IClock& clock)
+                       Platform::IClock& clock)
 {
     // L1 transport init (cascade to L1 through harness)
     Transport::TransportResult transportResult;

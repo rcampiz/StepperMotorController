@@ -16,12 +16,12 @@ namespace Harness {
 static Platform::FreeRTOSCriticalSection s_critSection;
 
 bool initEncoderTask(Drivers::EncoderDriverHandle& driverHandle,
-                     IClock& clock,
+                     Platform::IClock& clock,
                      IEncoderProcessing& processor,
                      IEncoderStatusSink& statusSink,
                      uint8_t measWindowMs,
                      uint16_t sampleRateHz,
-                     IScheduler& scheduler,
+                     Platform::IScheduler& scheduler,
                      EncoderTaskResult& result)
 {
     // Task init (opens opaque handle — upcasts L4 concrete types to interfaces)

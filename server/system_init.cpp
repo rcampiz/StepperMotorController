@@ -103,7 +103,7 @@ void initServices() {
   const auto &r = s_platform;
 
   // Task stats — wire platform's ITaskStats into harness accessor
-  Harness::setTaskStatsProvider(r.taskStats);
+  Platform::setTaskStatsProvider(r.taskStats);
 
   // System snapshot — tap-populated telemetry aggregator
   static SystemSnapshot s_snapshot;

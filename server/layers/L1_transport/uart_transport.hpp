@@ -26,7 +26,7 @@ public:
      * @param channel  Byte channel (IByteChannel implementation)
      * @param clock    Platform clock for delays and timeouts
      */
-    UartTransport(Harness::IByteChannel& channel, Harness::IClock& clock);
+    UartTransport(Harness::IByteChannel& channel, Platform::IClock& clock);
 
     bool init() override;
     bool available() override;
@@ -40,7 +40,7 @@ public:
 
 private:
     Harness::IByteChannel& m_channel;
-    Harness::IClock* m_clock;
+    Platform::IClock* m_clock;
     uint32_t m_baudRate;
 };
 

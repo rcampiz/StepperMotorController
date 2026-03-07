@@ -12,8 +12,8 @@
 
 namespace Services {
 
-bool initSystemServices(Harness::ILock& controlModeLock,
-                        Harness::IQueue<AsyncEvent, 8>& eventQueue)
+bool initSystemServices(Platform::ILock& controlModeLock,
+                        Platform::IQueue<AsyncEvent, 8>& eventQueue)
 {
     // Control mode init
     if (!motion.control.mode.init(controlModeLock)) {

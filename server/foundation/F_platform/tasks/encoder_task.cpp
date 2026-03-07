@@ -41,8 +41,8 @@ namespace Scheduler {
 static Drivers::IEncoderHardware* s_encoder = nullptr;
 static Board::ITimerCounter* s_timer = nullptr;
 static Board::IEncoderSampler* s_sampler = nullptr;
-static Harness::ICriticalSection* s_critSection = nullptr;
-static Harness::IClock* s_clock = nullptr;
+static Platform::ICriticalSection* s_critSection = nullptr;
+static Platform::IClock* s_clock = nullptr;
 static Harness::IEncoderProcessing* s_processor = nullptr;
 static Harness::IEncoderStatusSink* s_statusSink = nullptr;
 
@@ -65,8 +65,8 @@ static uint8_t s_measWindowMs = 40;
 bool EncoderTask_Init(Drivers::IEncoderHardware& encoder,
                       Board::ITimerCounter& timer,
                       Board::IEncoderSampler& sampler,
-                      Harness::ICriticalSection& critSection,
-                      Harness::IClock& clock,
+                      Platform::ICriticalSection& critSection,
+                      Platform::IClock& clock,
                       Harness::IEncoderProcessing& processor,
                       Harness::IEncoderStatusSink& statusSink,
                       uint8_t measWindowMs,

@@ -32,7 +32,7 @@
 class MotorCommandSinkImpl : public Harness::IMotorCommandSink {
 public:
     explicit MotorCommandSinkImpl(
-        Harness::IQueue<Harness::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& queue)
+        Platform::IQueue<Harness::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& queue)
         : m_queue(queue) {}
 
     bool sendCommand(const Harness::MotorCommand& cmd, uint32_t timeoutMs = 0) override {
@@ -40,7 +40,7 @@ public:
     }
 
 private:
-    Harness::IQueue<Harness::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& m_queue;
+    Platform::IQueue<Harness::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& m_queue;
 };
 
 // --- Global pin (L3 init owns wiring) ---
@@ -49,10 +49,10 @@ Harness::IMotorCommandSink* Harness::g_motorCommandSink = nullptr;
 namespace Services {
 
 bool initMotorSubsystem(
-    Harness::IQueue<Harness::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& commandQueue,
-    Harness::IClock& clock,
-    Harness::IScheduler& scheduler,
-    Harness::ILock& commandQueueLock,
+    Platform::IQueue<Harness::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& commandQueue,
+    Platform::IClock& clock,
+    Platform::IScheduler& scheduler,
+    Platform::ILock& commandQueueLock,
     MotorSubsystemResult& result)
 {
     // L4 driver (through harness → L4 → L5)

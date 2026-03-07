@@ -5,11 +5,11 @@
 
 #pragma once
 
+namespace Platform { class ILock; }
+
 namespace Harness {
 
-class ILock;
-
 /// Initialize the board SPI manager with bus arbitration locks
-bool initSPIManager(ILock& spi1Lock, ILock& spi2Lock);
+bool initSPIManager(Platform::ILock& spi1Lock, Platform::ILock& spi2Lock);
 
 } // namespace Harness

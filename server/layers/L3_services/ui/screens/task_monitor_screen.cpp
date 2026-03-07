@@ -139,9 +139,9 @@ void TaskMonitorScreen::onActivate()
     m_scrollOffset = 0;
     m_activeLaneCount = 0;
 
-    Harness::ITaskStats* stats = Harness::taskStatsProvider();
+    Platform::ITaskStats* stats = Platform::taskStatsProvider();
     if (stats != nullptr) {
-        Harness::TaskStatsSnapshot snap;
+        Platform::TaskStatsSnapshot snap;
         stats->getSnapshot(snap);
         m_lastTaskCount = snap.count;
     }
@@ -171,14 +171,14 @@ void TaskMonitorScreen::renderStats(Drivers::ICanvas& lcd)
         m_titleDrawn = true;
     }
 
-    Harness::ITaskStats* stats = Harness::taskStatsProvider();
+    Platform::ITaskStats* stats = Platform::taskStatsProvider();
     if (stats == nullptr) {
         lcd.blitTextLine(MARGIN, MARGIN, LINE_W, 8,
                          "No task stats", WHITE, BG_COLOR);
         return;
     }
 
-    Harness::TaskStatsSnapshot snap;
+    Platform::TaskStatsSnapshot snap;
     stats->getSnapshot(snap);
     m_lastTaskCount = snap.count;
 
@@ -199,7 +199,7 @@ void TaskMonitorScreen::renderStats(Drivers::ICanvas& lcd)
 
     // Task rows
     for (uint8_t i = 0; i < snap.count && i < 8; i++) {
-        const Harness::TaskStat& t = snap.tasks[i];
+        const Platform::TaskStat& t = snap.tasks[i];
 
         char name[9];
         strncpy(name, t.name, 8);

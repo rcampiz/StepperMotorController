@@ -27,7 +27,7 @@ public:
     /**
      * @brief Initialize with an injected queue. Call once before scheduler start.
      */
-    void init(Harness::IQueue<AsyncEvent, 8>& queue);
+    void init(Platform::IQueue<AsyncEvent, 8>& queue);
 
     /**
      * @brief Set the event enable mask. Also triggers snapshot-on-enable.
@@ -69,7 +69,7 @@ public:
 private:
     static constexpr uint8_t QUEUE_DEPTH = 8;
 
-    Harness::IQueue<AsyncEvent, 8>* m_queue       = nullptr;
+    Platform::IQueue<AsyncEvent, 8>* m_queue       = nullptr;
     uint8_t  m_enableMask   = 0;
     uint32_t m_sentCount    = 0;
     uint32_t m_lostCritical = 0;

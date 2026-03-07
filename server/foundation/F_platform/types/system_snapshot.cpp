@@ -8,7 +8,7 @@
 #include "harness/pins/imotor_driver.hpp"
 #include <string.h>
 
-bool SystemSnapshot::init(Harness::ILock& lock, Harness::IClock& clock) {
+bool SystemSnapshot::init(Platform::ILock& lock, Platform::IClock& clock) {
     m_lock = &lock;
     m_clock = &clock;
 

@@ -28,7 +28,7 @@ static uint8_t mapState(eTaskState s)
 
 namespace Platform {
 
-void FreeRTOSTaskStats::getSnapshot(Harness::TaskStatsSnapshot& out)
+void FreeRTOSTaskStats::getSnapshot(Platform::TaskStatsSnapshot& out)
 {
     TaskStatus_t status[MAX_TASKS];
     configRUN_TIME_COUNTER_TYPE totalRunTime = 0;
@@ -43,7 +43,7 @@ void FreeRTOSTaskStats::getSnapshot(Harness::TaskStatsSnapshot& out)
     out.totalCpuCycles = totalRunTime;
 
     for (UBaseType_t i = 0; i < count; i++) {
-        Harness::TaskStat& ts = out.tasks[i];
+        Platform::TaskStat& ts = out.tasks[i];
 
         // Copy name (safely)
         strncpy(ts.name, status[i].pcTaskName, sizeof(ts.name) - 1);

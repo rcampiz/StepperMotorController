@@ -14,10 +14,10 @@ namespace Harness {
 
 bool initDisplayTask(Drivers::ICanvas& lcd,
                      Drivers::IJoystick* joystick,
-                     IClock& clock,
+                     Platform::IClock& clock,
                      IFlashImageAccess& flashImages,
                      IIndicatorRenderer& indicator,
-                     IScheduler& scheduler,
+                     Platform::IScheduler& scheduler,
                      DisplayTaskResult& result)
 {
     // Task init

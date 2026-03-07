@@ -17,14 +17,14 @@
 
 namespace Platform {
 
-class FreeRTOSTaskStats : public Harness::ITaskStats {
+class FreeRTOSTaskStats : public Platform::ITaskStats {
 public:
-    void getSnapshot(Harness::TaskStatsSnapshot& out) override;
+    void getSnapshot(Platform::TaskStatsSnapshot& out) override;
     uint8_t getCurrentTaskIndex() override;
     uint32_t getFreeHeapBytes() override;
 
 private:
-    static constexpr uint8_t MAX_TASKS = Harness::TaskStatsSnapshot::MAX_TASKS;
+    static constexpr uint8_t MAX_TASKS = Platform::TaskStatsSnapshot::MAX_TASKS;
 
     // Previous snapshot for delta-based CPU% computation
     uint32_t m_prevRunTime[MAX_TASKS] = {};

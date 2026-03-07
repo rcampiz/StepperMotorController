@@ -19,19 +19,19 @@ namespace Scheduler {
 
 // Injected dependencies (set by MotorTask_Init)
 static Drivers::IMotorDriver* s_driver = nullptr;
-static Harness::IQueue<Harness::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>* s_cmdQueue = nullptr;
-static Harness::IClock* s_clock = nullptr;
+static Platform::IQueue<Harness::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>* s_cmdQueue = nullptr;
+static Platform::IClock* s_clock = nullptr;
 static Harness::IMotorControlService* s_controller = nullptr;
-static Harness::IScheduler* s_scheduler = nullptr;
+static Platform::IScheduler* s_scheduler = nullptr;
 
 // Task handle for suspend/resume (opaque, managed by IScheduler)
-Harness::TaskHandle g_motorTaskHandle = nullptr;
+Platform::TaskHandle g_motorTaskHandle = nullptr;
 
 bool MotorTask_Init(Drivers::IMotorDriver& driver,
-                    Harness::IQueue<Harness::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
-                    Harness::IClock& clock,
+                    Platform::IQueue<Harness::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
+                    Platform::IClock& clock,
                     Harness::IMotorControlService& controller,
-                    Harness::IScheduler& scheduler)
+                    Platform::IScheduler& scheduler)
 {
     s_driver = &driver;
     s_cmdQueue = &cmdQueue;
@@ -80,7 +80,7 @@ void vMotorTask(void* pvParameters)
             // Populate system telemetry
             Protocol::SystemTelemetry sys = {};
             sys.uptimeTicks = now;
-            Harness::ITaskStats* stats = Harness::taskStatsProvider();
+            Platform::ITaskStats* stats = Platform::taskStatsProvider();
             sys.freeHeap = (stats != nullptr) ? stats->getFreeHeapBytes() : 0;
             sys.cpuLoad = 0;
             Harness::snapshotWriter().writeSystem(sys);

@@ -84,7 +84,7 @@ public:
    * @param flash Reference to initialized flash driver
    * @return true if valid config loaded, false if defaults applied
    */
-  bool init(Drivers::IFlash &flash, Harness::ILock& lock);
+  bool init(Drivers::IFlash &flash, Platform::ILock& lock);
 
   /**
    * @brief Check if configuration is valid
@@ -135,7 +135,7 @@ public:
 private:
   DeviceConfig m_config;
   Drivers::IFlash *m_flash;
-  Harness::ILock* m_lock;
+  Platform::ILock* m_lock;
   bool m_valid;
 
   // CRC32 calculation (polynomial 0xEDB88320)

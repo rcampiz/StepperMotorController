@@ -8,13 +8,12 @@
 
 #pragma once
 
+namespace Platform { class IClock; class IScheduler; }
 namespace Harness {
-class IClock;
 class IEncoder;
 class IEncoderFilterControl;
 class IMotorTaskControl;
 class IRemoteDisplay;
-class IScheduler;
 } // namespace Harness
 
 namespace Services {
@@ -38,7 +37,7 @@ struct CommsServiceDeps {
  * @return true on success
  */
 bool initCommsSubsystem(const CommsServiceDeps& deps,
-                        Harness::IClock& clock,
-                        Harness::IScheduler& scheduler);
+                        Platform::IClock& clock,
+                        Platform::IScheduler& scheduler);
 
 } // namespace Services

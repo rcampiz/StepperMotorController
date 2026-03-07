@@ -55,10 +55,10 @@ static UI::ArchScreen s_archScreen;
 // Injected dependencies (set by DisplayTask_Init)
 static Drivers::ICanvas* s_lcd = nullptr;
 static Drivers::IJoystick* s_joystick = nullptr;
-static Harness::IClock* s_clock = nullptr;
+static Platform::IClock* s_clock = nullptr;
 static Harness::IFlashImageAccess* s_flashImages = nullptr;
 static Harness::IIndicatorRenderer* s_indicator = nullptr;
-static Harness::IScheduler* s_scheduler = nullptr;
+static Platform::IScheduler* s_scheduler = nullptr;
 
 // Forward declaration
 static void populateImageMenu();
@@ -163,10 +163,10 @@ static constexpr uint8_t HOLD_DELAY_POLLS = 8;   // 400ms before repeat starts
 static constexpr uint8_t HOLD_REPEAT_POLLS = 2;  // 100ms between repeats
 
 bool DisplayTask_Init(Drivers::ICanvas& lcd, Drivers::IJoystick* joystick,
-                      Harness::IClock& clock,
+                      Platform::IClock& clock,
                       Harness::IFlashImageAccess& flashImages,
                       Harness::IIndicatorRenderer& indicator,
-                      Harness::IScheduler& scheduler)
+                      Platform::IScheduler& scheduler)
 {
     s_lcd = &lcd;
     s_joystick = joystick;
@@ -381,7 +381,7 @@ bool DisplayTask_IsStreaming()
 }
 
 // Task handle for suspend/resume (opaque, managed by IScheduler)
-Harness::TaskHandle g_displayTaskHandle = nullptr;
+Platform::TaskHandle g_displayTaskHandle = nullptr;
 
 void DisplayTask_Suspend()
 {

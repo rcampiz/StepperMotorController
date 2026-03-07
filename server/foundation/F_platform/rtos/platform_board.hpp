@@ -24,17 +24,17 @@ namespace Harness {
  * @brief Platform resources — abstract interface pointers to RTOS primitives
  */
 struct PlatformResources {
-    ILock*  spi1Lock;
-    ILock*  spi2Lock;
-    ILock*  controlModeLock;
-    ILock*  commandQueueLock;
-    ILock*  uiModeLock;
-    ILock*  telemetryLock;
-    IClock* clock;
-    IQueue<AsyncEvent, 8>* eventQueue;
-    ITaskStats* taskStats;
-    IScheduler* scheduler;
-    IQueue<MotorCommand, MOTOR_CMD_QUEUE_DEPTH>* motorCmdQueue;
+    Platform::ILock*  spi1Lock;
+    Platform::ILock*  spi2Lock;
+    Platform::ILock*  controlModeLock;
+    Platform::ILock*  commandQueueLock;
+    Platform::ILock*  uiModeLock;
+    Platform::ILock*  telemetryLock;
+    Platform::IClock* clock;
+    Platform::IQueue<AsyncEvent, 8>* eventQueue;
+    Platform::ITaskStats* taskStats;
+    Platform::IScheduler* scheduler;
+    Platform::IQueue<MotorCommand, MOTOR_CMD_QUEUE_DEPTH>* motorCmdQueue;
 };
 
 /**

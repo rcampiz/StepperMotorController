@@ -11,7 +11,7 @@ namespace Protocol {
 // Global instance
 TelemetryManager g_telemetry;
 
-bool TelemetryManager::init(Harness::ILock& lock, Harness::IClock& clock) {
+bool TelemetryManager::init(Platform::ILock& lock, Platform::IClock& clock) {
   m_lock = &lock;
   m_clock = &clock;
 

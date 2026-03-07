@@ -18,7 +18,8 @@
 
 // Forward declarations
 namespace Drivers { class ICanvas; class IJoystick; }
-namespace Harness { class IClock; class IRemoteDisplay;
+namespace Platform { class IClock; }
+namespace Harness { class IRemoteDisplay;
                     class IFlashImageAccess; class IIndicatorRenderer; }
 
 namespace Scheduler {
@@ -54,10 +55,10 @@ enum class DisplayPage : uint8_t {
  * @return true on success
  */
 bool DisplayTask_Init(Drivers::ICanvas& lcd, Drivers::IJoystick* joystick,
-                      Harness::IClock& clock,
+                      Platform::IClock& clock,
                       Harness::IFlashImageAccess& flashImages,
                       Harness::IIndicatorRenderer& indicator,
-                      Harness::IScheduler& scheduler);
+                      Platform::IScheduler& scheduler);
 
 /**
  * @brief Display task entry point
@@ -193,7 +194,7 @@ bool DisplayTask_IsStreaming();
 /**
  * @brief Display task handle (for suspend/resume)
  */
-extern Harness::TaskHandle g_displayTaskHandle;
+extern Platform::TaskHandle g_displayTaskHandle;
 
 /**
  * @brief Suspend display task

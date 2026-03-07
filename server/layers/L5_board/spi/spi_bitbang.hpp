@@ -89,7 +89,7 @@ public:
     SPIBitBang(GPIO& sck, GPIO& miso, GPIO& mosi,
                Mode mode,
                uint32_t clockHz,
-               Harness::ILock& lock)
+               Platform::ILock& lock)
         : m_sck(sck), m_miso(miso), m_mosi(mosi),
           m_mode(mode), m_lock(lock), m_halfPeriodCycles(0)
     {
@@ -263,7 +263,7 @@ private:
     GPIO& m_miso;
     GPIO& m_mosi;
     Mode m_mode;
-    Harness::ILock& m_lock;
+    Platform::ILock& m_lock;
     uint32_t m_halfPeriodCycles;
 
     /**

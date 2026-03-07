@@ -46,10 +46,10 @@ using Harness::MotorDebugParams;
  * @return true on success
  */
 bool MotorTask_Init(Drivers::IMotorDriver& driver,
-                    Harness::IQueue<Harness::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
-                    Harness::IClock& clock,
+                    Platform::IQueue<Harness::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
+                    Platform::IClock& clock,
                     Harness::IMotorControlService& controller,
-                    Harness::IScheduler& scheduler);
+                    Platform::IScheduler& scheduler);
 
 /**
  * @brief Motor task entry point
@@ -129,7 +129,7 @@ bool MotorTask_ApplyConfig();
 bool MotorTask_SetStepModeSafe(uint8_t mode, uint8_t& readback);
 
 // Task handle (for suspend/resume via IScheduler)
-extern Harness::TaskHandle g_motorTaskHandle;
+extern Platform::TaskHandle g_motorTaskHandle;
 
 /**
  * @brief Get IMotorTaskControl interface implemented by this task

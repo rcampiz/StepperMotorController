@@ -16,7 +16,7 @@
 
 class SystemSnapshot : public Harness::ITelemetry, public Harness::ISnapshotWriter {
 public:
-    bool init(Harness::ILock& lock, Harness::IClock& clock);
+    bool init(Platform::ILock& lock, Platform::IClock& clock);
 
     // ITelemetry (read) — converts motor raw on the fly
     Protocol::TelemetrySnapshot getSnapshot() override;
@@ -40,6 +40,6 @@ private:
     Protocol::SystemTelemetry m_system = {};
 
     uint32_t m_timestamp = 0;
-    Harness::ILock* m_lock = nullptr;
-    Harness::IClock* m_clock = nullptr;
+    Platform::ILock* m_lock = nullptr;
+    Platform::IClock* m_clock = nullptr;
 };

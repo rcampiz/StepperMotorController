@@ -1,6 +1,6 @@
 /**
  * @file freertos_scheduler.cpp
- * @brief FreeRTOS implementation of Harness::IScheduler
+ * @brief FreeRTOS implementation of Platform::IScheduler
  */
 
 #include "F_platform/rtos/freertos_scheduler.hpp"
@@ -15,7 +15,7 @@
 
 namespace Platform {
 
-Harness::TaskHandle FreeRTOSScheduler::createTask(const Harness::TaskDescriptor& desc)
+Platform::TaskHandle FreeRTOSScheduler::createTask(const Platform::TaskDescriptor& desc)
 {
     TaskHandle_t handle = nullptr;
     BaseType_t result = xTaskCreate(
@@ -31,7 +31,7 @@ Harness::TaskHandle FreeRTOSScheduler::createTask(const Harness::TaskDescriptor&
         EarlyDebug::println(desc.name);
         return nullptr;
     }
-    return static_cast<Harness::TaskHandle>(handle);
+    return static_cast<Platform::TaskHandle>(handle);
 }
 
 void FreeRTOSScheduler::start()
@@ -50,14 +50,14 @@ void FreeRTOSScheduler::start()
     while (1) {}
 }
 
-void FreeRTOSScheduler::suspendTask(Harness::TaskHandle h)
+void FreeRTOSScheduler::suspendTask(Platform::TaskHandle h)
 {
     if (h != nullptr) {
         vTaskSuspend(static_cast<TaskHandle_t>(h));
     }
 }
 
-void FreeRTOSScheduler::resumeTask(Harness::TaskHandle h)
+void FreeRTOSScheduler::resumeTask(Platform::TaskHandle h)
 {
     if (h != nullptr) {
         vTaskResume(static_cast<TaskHandle_t>(h));

@@ -14,11 +14,11 @@ class ICanvas;
 class IJoystick;
 }
 
+namespace Platform { class IClock; class IScheduler; }
+
 namespace Harness {
 
-class IClock;
 class IRemoteDisplay;
-class IScheduler;
 class IFlashImageAccess;
 class IIndicatorRenderer;
 
@@ -43,10 +43,10 @@ struct DisplayTaskResult {
  */
 bool initDisplayTask(Drivers::ICanvas& lcd,
                      Drivers::IJoystick* joystick,
-                     IClock& clock,
+                     Platform::IClock& clock,
                      IFlashImageAccess& flashImages,
                      IIndicatorRenderer& indicator,
-                     IScheduler& scheduler,
+                     Platform::IScheduler& scheduler,
                      DisplayTaskResult& result);
 
 } // namespace Harness

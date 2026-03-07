@@ -12,7 +12,8 @@
 
 #include <stdint.h>
 
-namespace Harness { class ITransport; class IClock;
+namespace Platform { class IClock; }
+namespace Harness { class ITransport;
                     class IMotorEventReceiver; class IEmergencyStop;
                     class IDispatchStats; class ICommandProcessor; }
 
@@ -37,7 +38,7 @@ constexpr uint32_t TELEMETRY_PERIOD_MS = 100; // Telemetry publish rate
  */
 bool CommsTask_Init(Harness::ITransport& transport,
                     Harness::ICommandProcessor& parser,
-                    Harness::IClock& clock,
+                    Platform::IClock& clock,
                     Harness::IMotorEventReceiver& eventReceiver,
                     Harness::IEmergencyStop& emergencyStop);
 
