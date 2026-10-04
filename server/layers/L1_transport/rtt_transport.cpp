@@ -11,7 +11,7 @@
 
 namespace Transport {
 
-RttTransport::RttTransport(Harness::IByteChannel& channel) : m_channel(channel) {}
+RttTransport::RttTransport(Transport::IByteChannel& channel) : m_channel(channel) {}
 
 bool RttTransport::init() {
     return m_channel.init();

@@ -9,23 +9,22 @@
 #pragma once
 
 namespace Platform { class IClock; class IScheduler; }
-namespace Harness {
+
+namespace Services {
+
 class IEncoder;
 class IEncoderFilterControl;
 class IMotorTaskControl;
 class IRemoteDisplay;
-} // namespace Harness
-
-namespace Services {
 
 /**
  * @brief Dependencies for comms subsystem init (from earlier subsystem inits)
  */
 struct CommsServiceDeps {
-    Harness::IEncoder* encoder = nullptr;
-    Harness::IEncoderFilterControl* encFilter = nullptr;
-    Harness::IMotorTaskControl* motorCtrl = nullptr;
-    Harness::IRemoteDisplay* remoteDisplay = nullptr;
+    Services::IEncoder* encoder = nullptr;
+    Services::IEncoderFilterControl* encFilter = nullptr;
+    Services::IMotorTaskControl* motorCtrl = nullptr;
+    Services::IRemoteDisplay* remoteDisplay = nullptr;
 };
 
 /**

@@ -14,7 +14,7 @@
  */
 
 #include "ui/screens/task_monitor_screen.hpp"
-#include "harness/pins/icanvas.hpp"
+#include "L3_services/boundary/icanvas.hpp"
 #include "harness/pins/itask_stats.hpp"
 #include "harness/pins/itelemetry.hpp"
 #include "L3_services/infra/trace/trace.hpp"
@@ -31,7 +31,7 @@ static constexpr uint16_t WHITE = 0xFFFF;
 static constexpr uint16_t BG_COLOR = 0x0000;
 static constexpr uint16_t PAUSE_COLOR = 0xFFE0;  // Yellow
 static constexpr uint16_t DIM_GRAY = 0x4208;
-static constexpr uint16_t LINE_W = Drivers::Canvas::WIDTH - (2 * MARGIN);
+static constexpr uint16_t LINE_W = Services::Canvas::WIDTH - (2 * MARGIN);
 
 // State character: R=Running, r=Ready, B=Blocked, S=Suspended, D=Deleted
 static char stateChar(uint8_t state) {
@@ -147,7 +147,7 @@ void TaskMonitorScreen::onActivate()
     }
 }
 
-void TaskMonitorScreen::render(Drivers::ICanvas& lcd)
+void TaskMonitorScreen::render(Services::ICanvas& lcd)
 {
     if (!m_titleDrawn) {
         lcd.fillScreen(BG_COLOR);
@@ -165,7 +165,7 @@ void TaskMonitorScreen::render(Drivers::ICanvas& lcd)
 // STATS mode — task table
 // =============================================================================
 
-void TaskMonitorScreen::renderStats(Drivers::ICanvas& lcd)
+void TaskMonitorScreen::renderStats(Services::ICanvas& lcd)
 {
     if (!m_titleDrawn) {
         m_titleDrawn = true;
@@ -233,7 +233,7 @@ void TaskMonitorScreen::renderStats(Drivers::ICanvas& lcd)
     y += 4;
 
     // System info
-    Protocol::TelemetrySnapshot telem = Harness::telemetry().getSnapshot();
+    Protocol::TelemetrySnapshot telem = Scheduler::telemetry().getSnapshot();
     uint32_t secs = telem.system.uptimeTicks / 1000;
     uint32_t mins = secs / 60;
     secs %= 60;
@@ -257,7 +257,7 @@ void TaskMonitorScreen::renderStats(Drivers::ICanvas& lcd)
 // TIMELINE mode — trace-based task activity graph
 // =============================================================================
 
-void TaskMonitorScreen::renderTimeline(Drivers::ICanvas& lcd)
+void TaskMonitorScreen::renderTimeline(Services::ICanvas& lcd)
 {
     if (!m_titleDrawn) {
         m_titleDrawn = true;
@@ -289,9 +289,9 @@ void TaskMonitorScreen::renderTimeline(Drivers::ICanvas& lcd)
     // Layout constants
     static constexpr uint16_t LANES_Y = MARGIN + TITLE_H + 4;
     static constexpr uint16_t FOOTER_SPACE = 22;
-    uint16_t availH = Drivers::Canvas::HEIGHT - LANES_Y - FOOTER_SPACE;
+    uint16_t availH = Services::Canvas::HEIGHT - LANES_Y - FOOTER_SPACE;
     uint16_t timelineX = 38;
-    uint16_t timelineRight = Drivers::Canvas::WIDTH - MARGIN;
+    uint16_t timelineRight = Services::Canvas::WIDTH - MARGIN;
     uint16_t timelineW = timelineRight - timelineX;
 
     // --- Always show all task lanes (even without trace activity) ---
@@ -377,7 +377,7 @@ void TaskMonitorScreen::renderTimeline(Drivers::ICanvas& lcd)
 
     // --- Compute lane layout & draw lanes ---
     // Clear label column (prevents stale text when active tasks change)
-    lcd.fillRect(MARGIN, LANES_Y, timelineX - MARGIN, Drivers::Canvas::HEIGHT - LANES_Y, BG_COLOR);
+    lcd.fillRect(MARGIN, LANES_Y, timelineX - MARGIN, Services::Canvas::HEIGHT - LANES_Y, BG_COLOR);
 
     // Mapping arrays for plotting phase
     int8_t taskToLane[6];
@@ -496,8 +496,8 @@ void TaskMonitorScreen::renderTimeline(Drivers::ICanvas& lcd)
     }
 
     // Clear timeline area below lanes to screen bottom
-    if (lanesBottom < Drivers::Canvas::HEIGHT) {
-        lcd.fillRect(timelineX, lanesBottom, timelineW, Drivers::Canvas::HEIGHT - lanesBottom, BG_COLOR);
+    if (lanesBottom < Services::Canvas::HEIGHT) {
+        lcd.fillRect(timelineX, lanesBottom, timelineW, Services::Canvas::HEIGHT - lanesBottom, BG_COLOR);
     }
 
     // =================================================================
@@ -590,7 +590,7 @@ void TaskMonitorScreen::renderTimeline(Drivers::ICanvas& lcd)
 
         // Footer
         {
-            uint16_t footerY = Drivers::Canvas::HEIGHT - FOOTER_SPACE;
+            uint16_t footerY = Services::Canvas::HEIGHT - FOOTER_SPACE;
             char axisBuf[40];
             size_t endIdx = startIdx + visibleEntries;
             if (endIdx > count) endIdx = count;
@@ -685,7 +685,7 @@ void TaskMonitorScreen::renderTimeline(Drivers::ICanvas& lcd)
 
         // Footer
         {
-            uint16_t footerY = Drivers::Canvas::HEIGHT - FOOTER_SPACE;
+            uint16_t footerY = Services::Canvas::HEIGHT - FOOTER_SPACE;
             char axisBuf[40];
             uint32_t startMs = windowStart / 1000;
             uint32_t endMs = windowEnd / 1000;
@@ -846,7 +846,7 @@ InputResult TaskMonitorScreen::handleTimelineInput(JoyDirection dir)
 // LEGEND mode — color key for services, tasks, and tick markers
 // =============================================================================
 
-void TaskMonitorScreen::renderLegend(Drivers::ICanvas& lcd)
+void TaskMonitorScreen::renderLegend(Services::ICanvas& lcd)
 {
     if (!m_needsRedraw) return;
 
@@ -946,7 +946,7 @@ void TaskMonitorScreen::renderLegend(Drivers::ICanvas& lcd)
                      "Zoom: auto=entries, 1-128ms=time", DIM_GRAY, BG_COLOR);
 
     // Footer
-    lcd.blitTextLine(MARGIN, Drivers::Canvas::HEIGHT - 10, LINE_W, 8,
+    lcd.blitTextLine(MARGIN, Services::Canvas::HEIGHT - 10, LINE_W, 8,
                      "L:back to timeline", LABEL_COLOR, BG_COLOR);
 }
 

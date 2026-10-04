@@ -7,7 +7,7 @@
  */
 
 #pragma once
-#include "harness/pins/iqueue.hpp"
+#include "L3_services/boundary/iqueue.hpp"
 #include "harness/pins/imotor_event_receiver.hpp"
 #include "harness/pins/async_event.hpp"
 #include <stdint.h>
@@ -22,12 +22,12 @@ struct MotorEventStats {
     uint8_t  queueDepth;
 };
 
-class MotorEventManager : public Harness::IMotorEventReceiver {
+class MotorEventManager : public Services::IMotorEventReceiver {
 public:
     /**
      * @brief Initialize with an injected queue. Call once before scheduler start.
      */
-    void init(Platform::IQueue<AsyncEvent, 8>& queue);
+    void init(Services::IQueue<AsyncEvent, 8>& queue);
 
     /**
      * @brief Set the event enable mask. Also triggers snapshot-on-enable.
@@ -69,7 +69,7 @@ public:
 private:
     static constexpr uint8_t QUEUE_DEPTH = 8;
 
-    Platform::IQueue<AsyncEvent, 8>* m_queue       = nullptr;
+    Services::IQueue<AsyncEvent, 8>* m_queue       = nullptr;
     uint8_t  m_enableMask   = 0;
     uint32_t m_sentCount    = 0;
     uint32_t m_lostCritical = 0;

@@ -19,7 +19,7 @@
 #define COMMAND_PARSER_HPP
 
 #include "harness/pins/itransport.hpp"
-#include "harness/pins/icommand_dispatcher.hpp"
+#include "L2_protocol/boundary/icommand_dispatcher.hpp"
 #include "harness/pins/idebug_commands.hpp"
 #include "harness/pins/dispatch_result.hpp"
 #include "harness/pins/icommand_processor.hpp"
@@ -30,8 +30,8 @@ namespace Protocol {
 // Import types moved to Harness:: that are used throughout CommandParser
 using Harness::ServiceStatus;
 using Harness::statusToString;
-using Harness::ICommandDispatcher;
-using Harness::IDebugCommands;
+using Protocol::ICommandDispatcher;
+using Scheduler::IDebugCommands;
 
 // Maximum command line length
 constexpr size_t CMD_BUFFER_SIZE = 128;
@@ -105,13 +105,13 @@ struct DispatchStats {
 /**
  * @brief Command parser and dispatcher
  */
-class CommandParser : public Harness::ICommandProcessor {
+class CommandParser : public Protocol::ICommandProcessor {
 public:
   /**
    * @brief Construct parser with transport
    * @param transport Transport interface for I/O
    */
-  explicit CommandParser(Harness::ITransport &transport,
+  explicit CommandParser(Transport::ITransport &transport,
                         ICommandDispatcher &dispatcher);
 
   /**
@@ -181,11 +181,11 @@ public:
   void checkBaudRevert() override;
 
   /// Format and send an async event (ICommandProcessor)
-  void formatEvent(Harness::ITransport& transport, const AsyncEvent& evt,
+  void formatEvent(Transport::ITransport& transport, const AsyncEvent& evt,
                    uint32_t seq, uint32_t ts_ms) override;
 
   /// Get dispatch statistics (ICommandProcessor)
-  void getDispatchStats(Harness::DispatchStats& out) const override;
+  void getDispatchStats(Scheduler::DispatchStats& out) const override;
 
   /**
    * @brief Set response format
@@ -198,7 +198,7 @@ public:
   void setDebugCommands(IDebugCommands* dbg) { m_debugCommands = dbg; }
 
 private:
-  Harness::ITransport &m_transport;
+  Transport::ITransport &m_transport;
   ICommandDispatcher &m_dispatcher;
   IDebugCommands *m_debugCommands = nullptr;
   char m_buffer[CMD_BUFFER_SIZE];

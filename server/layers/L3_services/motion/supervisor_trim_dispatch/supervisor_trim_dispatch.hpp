@@ -9,7 +9,7 @@
 
 namespace Services {
 
-class SupervisorTrimDispatch : public Harness::ISupervisorTrimDispatcher {
+class SupervisorTrimDispatch : public Services::ISupervisorTrimDispatcher {
 public:
     FollowThresholds getFollowThresholds() override;
     void setFollowThresholds(const FollowThresholds& t) override;
@@ -28,7 +28,7 @@ public:
     void sysIdAbort() override;
     uint8_t sysIdGetPhase() override;
     uint16_t sysIdGetSampleCount() override;
-    const Harness::SysIdSampleData* sysIdGetSamples(uint16_t& count) override;
+    const Services::SysIdSampleData* sysIdGetSamples(uint16_t& count) override;
 };
 
 } // namespace Services

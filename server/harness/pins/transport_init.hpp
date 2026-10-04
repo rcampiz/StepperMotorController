@@ -11,7 +11,7 @@
 #include <stdint.h>
 
 namespace Platform { class IClock; }
-namespace Harness { class ITransport; class IByteChannel; }
+namespace Transport { class ITransport; class IByteChannel; }
 
 namespace Transport {
 
@@ -24,7 +24,7 @@ enum class TransportType : uint8_t {
 };
 
 struct TransportResult {
-    Harness::ITransport* transport = nullptr;
+    Transport::ITransport* transport = nullptr;
 };
 
 /**
@@ -37,6 +37,6 @@ struct TransportResult {
  * @return true on success
  */
 bool initTransport(TransportResult& out, TransportType type,
-                   Harness::IByteChannel& channel, Platform::IClock& clock);
+                   Transport::IByteChannel& channel, Platform::IClock& clock);
 
 } // namespace Transport

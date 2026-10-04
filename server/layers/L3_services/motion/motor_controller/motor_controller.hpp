@@ -12,22 +12,18 @@
 #pragma once
 
 #include "harness/pins/imotor_control_service.hpp"
-#include "harness/pins/itelemetry.hpp"
+#include "L3_services/boundary/imotor_command_sink.hpp"
 #include "L3_services/motion/speed_trim_controller/speed_trim_controller.hpp"
 #include <stdint.h>
 
 namespace Services {
 
-// Harness pin types used extensively in this module
-using Drivers::IMotorDriver;
-using Drivers::MotorStatus;
-using Harness::IMotorCommandSink;
-using Harness::MotorCmdType;
-using Harness::MotorCommand;
+// Consumer port types used extensively in this module
+using Services::MotorCmdType;
+using Services::MotorCommand;
 using Harness::MotorDebugParams;
-namespace MotorReg = Drivers::MotorReg;
 
-class MotorController : public Harness::IMotorControlService {
+class MotorController : public Services::IMotorControlService {
 public:
     // ── Static unit conversions (pure math) ──
 

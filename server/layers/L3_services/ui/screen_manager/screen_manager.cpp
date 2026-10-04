@@ -4,11 +4,11 @@
  */
 
 #include "ui/screen_manager/screen_manager.hpp"
-#include "harness/pins/icanvas.hpp"
+#include "L3_services/boundary/icanvas.hpp"
 
 namespace UI {
 
-void ScreenManager::init(IScreen* rootScreen, Drivers::ICanvas* lcd)
+void ScreenManager::init(IScreen* rootScreen, Services::ICanvas* lcd)
 {
     m_lcd = lcd;
     m_depth = 0;
@@ -85,7 +85,7 @@ void ScreenManager::render()
 
     // Clear screen on transitions or when screen requests it
     if (m_needsClear || screen->needsFullRedraw()) {
-        m_lcd->fillScreen(Drivers::Canvas::BLACK);
+        m_lcd->fillScreen(Services::Canvas::BLACK);
         m_needsClear = false;
         screen->clearRedrawFlag();
     }

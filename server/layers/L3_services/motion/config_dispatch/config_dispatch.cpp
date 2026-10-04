@@ -103,7 +103,7 @@ uint16_t ConfigDispatch::configGetEncoderPPR() {
     return motion.encoder.config.getEncoderPPR();
 }
 
-Harness::IMotorConfigDispatcher::MotorConfigSnapshot ConfigDispatch::getMotorConfig() {
+Services::IMotorConfigDispatcher::MotorConfigSnapshot ConfigDispatch::getMotorConfig() {
     const auto& cfg = motion.stepper.config.getConfig();
     MotorConfigSnapshot snap = {};
     snap.kvalHold = cfg.kvalHold;

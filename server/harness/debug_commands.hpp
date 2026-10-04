@@ -11,49 +11,49 @@
 
 #include "harness/pins/idebug_commands.hpp"
 
-class DebugCommandHandler : public Harness::IDebugCommands {
+class DebugCommandHandler : public Scheduler::IDebugCommands {
 public:
     bool dispatch(const char* cmd, const char* const* args,
-                  uint8_t argCount, Harness::ITransport& transport) override;
+                  uint8_t argCount, Transport::ITransport& transport) override;
 
     int formatSpi2Diag(char* buf, size_t bufSize) override;
 
 private:
     // SPI/GPIO debug commands
-    void cmdSpiDebug(Harness::ITransport& t);
-    void cmdSpiModeTest(Harness::ITransport& t);
-    void cmdCsLow(Harness::ITransport& t);
-    void cmdCsHigh(Harness::ITransport& t);
-    void cmdMisoPulldown(Harness::ITransport& t);
-    void cmdMisoNopull(Harness::ITransport& t);
-    void cmdStbyRelease(Harness::ITransport& t);
-    void cmdStbyHold(Harness::ITransport& t);
-    void cmdGpioState(Harness::ITransport& t);
-    void cmdPa6Hiz(Harness::ITransport& t);
-    void cmdPa6Restore(Harness::ITransport& t);
-    void cmdSpiStop(Harness::ITransport& t);
-    void cmdSpiStart(Harness::ITransport& t);
-    void cmdGpioDump(Harness::ITransport& t);
-    void cmdSpiFloatTest(Harness::ITransport& t);
-    void cmdSpiBitbang(Harness::ITransport& t);
-    void cmdSpiBitbangM3(Harness::ITransport& t);
-    void cmdSpiEchoTest(Harness::ITransport& t);
-    void cmdSpiCsToggle(Harness::ITransport& t);
+    void cmdSpiDebug(Transport::ITransport& t);
+    void cmdSpiModeTest(Transport::ITransport& t);
+    void cmdCsLow(Transport::ITransport& t);
+    void cmdCsHigh(Transport::ITransport& t);
+    void cmdMisoPulldown(Transport::ITransport& t);
+    void cmdMisoNopull(Transport::ITransport& t);
+    void cmdStbyRelease(Transport::ITransport& t);
+    void cmdStbyHold(Transport::ITransport& t);
+    void cmdGpioState(Transport::ITransport& t);
+    void cmdPa6Hiz(Transport::ITransport& t);
+    void cmdPa6Restore(Transport::ITransport& t);
+    void cmdSpiStop(Transport::ITransport& t);
+    void cmdSpiStart(Transport::ITransport& t);
+    void cmdGpioDump(Transport::ITransport& t);
+    void cmdSpiFloatTest(Transport::ITransport& t);
+    void cmdSpiBitbang(Transport::ITransport& t);
+    void cmdSpiBitbangM3(Transport::ITransport& t);
+    void cmdSpiEchoTest(Transport::ITransport& t);
+    void cmdSpiCsToggle(Transport::ITransport& t);
 
     // powerSTEP01 bringup commands
-    void cmdPs01Diag(Harness::ITransport& t);
-    void cmdPs01FixClk(Harness::ITransport& t);
-    void cmdPs01Safe(Harness::ITransport& t);
-    void cmdPs01Reset(Harness::ITransport& t);
-    void cmdPs01Run(const char* const* args, uint8_t argCount, Harness::ITransport& t);
-    void cmdPs01Stop(Harness::ITransport& t);
+    void cmdPs01Diag(Transport::ITransport& t);
+    void cmdPs01FixClk(Transport::ITransport& t);
+    void cmdPs01Safe(Transport::ITransport& t);
+    void cmdPs01Reset(Transport::ITransport& t);
+    void cmdPs01Run(const char* const* args, uint8_t argCount, Transport::ITransport& t);
+    void cmdPs01Stop(Transport::ITransport& t);
 
     // LCD/motor isolation
-    void cmdLcdDisable(Harness::ITransport& t);
-    void cmdMosiTest(Harness::ITransport& t);
-    void cmdSpiLoopback(Harness::ITransport& t);
+    void cmdLcdDisable(Transport::ITransport& t);
+    void cmdMosiTest(Transport::ITransport& t);
+    void cmdSpiLoopback(Transport::ITransport& t);
 
     // SCPI debug queries
-    void cmdMotorDebug(Harness::ITransport& t);
-    void cmdEncDebug(Harness::ITransport& t);
+    void cmdMotorDebug(Transport::ITransport& t);
+    void cmdEncDebug(Transport::ITransport& t);
 };

@@ -18,19 +18,19 @@
 
 #pragma once
 
-#include "harness/pins/ilock.hpp"
-#include "harness/pins/iclock.hpp"
-#include "harness/pins/imotor_command_sink.hpp"
+#include "L3_services/boundary/ilock.hpp"
+#include "L3_services/boundary/iclock.hpp"
+#include "L3_services/boundary/imotor_command_sink.hpp"
 #include "harness/pins/iemergency_stop.hpp"
 #include <stddef.h>
 #include <stdint.h>
 
 namespace Services {
 
-// Harness pin types used in this module
-using Harness::IMotorCommandSink;
-using Harness::MotorCmdType;
-using Harness::MotorCommand;
+// Consumer port types used in this module
+using Services::IMotorCommandSink;
+using Services::MotorCmdType;
+using Services::MotorCommand;
 
 // Maximum commands in the pending queue
 constexpr size_t CMD_QUEUE_MAX_DEPTH = 8;
@@ -74,13 +74,13 @@ const char *resultToString(QueueResult result);
  *
  * Singleton that manages the ARM/START synchronization protocol.
  */
-class CommandQueue : public Harness::IEmergencyStop {
+class CommandQueue : public Scheduler::IEmergencyStop {
 public:
   /**
    * @brief Initialize the command queue service
    * @return true on success
    */
-  bool init(Platform::ILock& lock, Platform::IClock& clock, IMotorCommandSink& sink);
+  bool init(Services::ILock& lock, Services::IClock& clock, IMotorCommandSink& sink);
 
   /**
    * @brief Get current controller state
@@ -187,8 +187,8 @@ private:
   ControllerState m_state;
 
   // Platform abstractions
-  Platform::ILock* m_lock;
-  Platform::IClock* m_clock;
+  Services::ILock* m_lock;
+  Services::IClock* m_clock;
   IMotorCommandSink* m_sink;
 
   // Helper to flush pending commands to motor task

@@ -17,11 +17,8 @@
 #include "harness/pins/velocity_quality.hpp"
 #include <stdint.h>
 
-namespace Board { class ITimerCounter; class IEncoderSampler; }
-namespace Drivers { class IEncoderHardware; }
-namespace Platform { class IClock; class ICriticalSection; }
-namespace Harness { class IEncoder; class IEncoderFilterControl;
-                    class IEncoderProcessing; class IEncoderStatusSink; }
+namespace Platform { class IClock; }
+namespace Scheduler { class ICriticalSection; class IEncoderHardware; class ITimerCounter; class IEncoderSampler; class IEncoder; class IEncoderFilterControl; class IEncoderProcessing; class IEncoderStatusSink; }
 
 namespace Scheduler {
 
@@ -72,13 +69,13 @@ struct EncoderState {
  * @param sampleRateHz  DMA sample rate in Hz (0 = default 1000)
  * @return true on success, false if hardware not available
  */
-bool EncoderTask_Init(Drivers::IEncoderHardware& encoder,
-                      Board::ITimerCounter& timer,
-                      Board::IEncoderSampler& sampler,
-                      Platform::ICriticalSection& critSection,
+bool EncoderTask_Init(Scheduler::IEncoderHardware& encoder,
+                      Scheduler::ITimerCounter& timer,
+                      Scheduler::IEncoderSampler& sampler,
+                      Scheduler::ICriticalSection& critSection,
                       Platform::IClock& clock,
-                      Harness::IEncoderProcessing& processor,
-                      Harness::IEncoderStatusSink& statusSink,
+                      Scheduler::IEncoderProcessing& processor,
+                      Scheduler::IEncoderStatusSink& statusSink,
                       uint8_t measWindowMs,
                       uint16_t sampleRateHz);
 
@@ -157,13 +154,13 @@ void EncoderTask_IndexISR();
  * @brief Get IEncoder interface implemented by this task
  * @return Pointer to static IEncoder instance (valid after init)
  */
-Harness::IEncoder* EncoderTask_GetEncoderInterface();
+Scheduler::IEncoder* EncoderTask_GetEncoderInterface();
 
 /**
  * @brief Get IEncoderFilterControl interface implemented by this task
  * @return Pointer to static IEncoderFilterControl instance (valid after init)
  */
-Harness::IEncoderFilterControl* EncoderTask_GetFilterInterface();
+Scheduler::IEncoderFilterControl* EncoderTask_GetFilterInterface();
 
 } // namespace Scheduler
 

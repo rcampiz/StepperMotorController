@@ -75,7 +75,7 @@ private:
     uint8_t m_buffer[SIZE];
 };
 
-class UartHardware : public Harness::IByteChannel {
+class UartHardware : public Transport::IByteChannel {
 public:
     /**
      * @brief Construct hardware UART on specified peripheral and pins

@@ -20,7 +20,7 @@ namespace UI {
 class GraphScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::STATUS; }
-    void render(Drivers::ICanvas& lcd) override;
+    void render(Services::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
     bool needsFullRedraw() const override { return m_needsRedraw; }
@@ -62,8 +62,8 @@ private:
     uint16_t channelColor() const;
     const char* channelUnit() const;
     void computeRange(int32_t& outMin, int32_t& outMax) const;
-    void renderGraph(Drivers::ICanvas& lcd);
-    void renderHeader(Drivers::ICanvas& lcd);
+    void renderGraph(Services::ICanvas& lcd);
+    void renderHeader(Services::ICanvas& lcd);
 };
 
 } // namespace UI

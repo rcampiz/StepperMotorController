@@ -9,7 +9,7 @@
 
 namespace Services {
 
-class TraceDispatch : public Harness::ITraceDispatcher {
+class TraceDispatch : public Services::ITraceDispatcher {
 public:
     uint32_t traceGetCount() override;
     bool traceGetEntry(uint32_t index, TraceEntryData& out) override;

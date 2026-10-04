@@ -316,6 +316,8 @@ if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile system_dispatch.cpp & exit 
 echo [22/25] Compiling L2 protocol init sources...
 arm-none-eabi-g++ -c %CXXFLAGS% server/harness/debug_commands.cpp -o build/debug_commands.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile debug_commands.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% server/harness/harness_wiring_map.cpp -o build/harness_wiring_map.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile harness_wiring_map.cpp & exit /b 1)
 arm-none-eabi-g++ -c %CXXFLAGS% server/layers/L2_protocol/init/comms_protocol_init.cpp -o build/comms_protocol_init.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile comms_protocol_init.cpp & exit /b 1)
 arm-none-eabi-g++ -c %CXXFLAGS% server/layers/L3_services/dispatch/dispatch_init.cpp -o build/dispatch_init.o
@@ -342,6 +344,8 @@ arm-none-eabi-g++ -c %CXXFLAGS% server/foundation/F_platform/tasks/display_task_
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile display_task_init.cpp & exit /b 1)
 arm-none-eabi-g++ -c %CXXFLAGS% server/foundation/F_platform/tasks/comms_task_init.cpp -o build/comms_task_init.o
 if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile comms_task_init.cpp & exit /b 1)
+arm-none-eabi-g++ -c %CXXFLAGS% server/foundation/F_platform/tasks/boundary/itask_stats.cpp -o build/scheduler_itask_stats.o
+if %ERRORLEVEL% NEQ 0 (echo ERROR: Failed to compile boundary/itask_stats.cpp & exit /b 1)
 
 echo [25/33] Assembling startup_stm32f401xe.s...
 arm-none-eabi-gcc -c %ASFLAGS% server/foundation/F_platform/startup/startup_stm32f401xe.s -o build/startup_stm32f401xe.o
@@ -360,8 +364,8 @@ set "OBJS=%OBJS% build/boot_color_screen.o build/device_info_screen.o build/enco
 set "OBJS=%OBJS% build/spi_manager.o build/uart_hardware.o build/spi_init.o build/exti_handlers.o build/microsecond_timer.o build/te_sync.o build/internal_flash.o build/interface_trace.o build/itelemetry.o build/isnapshot_writer.o build/iui_mode.o build/idispatch_stats.o build/itask_stats.o build/itrace_context.o build/imicrosecond_clock.o build/exti_callbacks.o build/async_event_types.o build/motor_board.o build/display_board.o build/encoder_board.o build/clock_board.o build/comms_board.o build/encoder_driver.o build/motor_driver_init.o build/display_driver_init.o build/encoder_driver_init.o build/byte_channel_init.o build/encoder_sampler.o build/transport_init.o"
 set "OBJS=%OBJS% build/service_dispatcher.o build/motion_dispatch.o build/config_dispatch.o build/control_mode_dispatch.o build/supervisor_trim_dispatch.o build/encoder_dispatch.o build/motor_driver_dispatch.o"
 set "OBJS=%OBJS% build/safety_dispatch.o build/queue_dispatch.o build/display_dispatch.o build/flash_dispatch.o build/trace_dispatch.o build/system_dispatch.o"
-set "OBJS=%OBJS% build/debug_commands.o build/comms_protocol_init.o build/dispatch_init.o"
-set "OBJS=%OBJS% build/motor_service_init.o build/motor_task_init.o build/encoder_service_init.o build/encoder_task_init.o build/display_service_init.o build/display_task_init.o build/comms_service_init.o build/comms_task_init.o build/system_service_init.o"
+set "OBJS=%OBJS% build/debug_commands.o build/harness_wiring_map.o build/comms_protocol_init.o build/dispatch_init.o"
+set "OBJS=%OBJS% build/motor_service_init.o build/motor_task_init.o build/encoder_service_init.o build/encoder_task_init.o build/display_service_init.o build/display_task_init.o build/comms_service_init.o build/comms_task_init.o build/system_service_init.o build/scheduler_itask_stats.o"
 set "OBJS=%OBJS% build/startup_stm32f401xe.o"
 
 echo Linking...

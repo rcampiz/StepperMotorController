@@ -12,7 +12,7 @@
 
 namespace Services {
 
-class MotionDispatch : public Harness::IMotionDispatcher {
+class MotionDispatch : public Services::IMotionDispatcher {
 public:
     Harness::ServiceStatus motionRun(uint32_t stepsPerSec, bool forward) override;
     Harness::ServiceStatus motionMove(int32_t steps, uint32_t maxSpeedSps) override;

@@ -9,7 +9,7 @@
 #ifndef SCREEN_HPP
 #define SCREEN_HPP
 
-#include "harness/pins/icanvas.hpp"
+#include "L3_services/boundary/icanvas.hpp"
 #include "harness/pins/ui_types.hpp"
 #include "ui/ui_types.hpp"
 #include <stdint.h>
@@ -51,7 +51,7 @@ public:
      * its current state. May be called frequently, so should be
      * efficient and avoid unnecessary redraws.
      */
-    virtual void render(Drivers::ICanvas& lcd) = 0;
+    virtual void render(Services::ICanvas& lcd) = 0;
 
     /**
      * @brief Handle joystick input

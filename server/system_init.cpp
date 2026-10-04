@@ -108,12 +108,12 @@ void initServices() {
   // System snapshot — tap-populated telemetry aggregator
   static SystemSnapshot s_snapshot;
   s_snapshot.init(*r.telemetryLock, *r.clock);
-  Harness::setTelemetryProvider(&s_snapshot);
-  Harness::setSnapshotWriter(&s_snapshot);
+  Scheduler::setTelemetryProvider(&s_snapshot);
+  Scheduler::setSnapshotWriter(&s_snapshot);
 
   // UI mode init — composition root owns the concrete type
   UI::g_uiMode.init(*r.uiModeLock);
-  Harness::setUIModeProvider(&UI::g_uiMode);
+  Scheduler::setUIModeProvider(&UI::g_uiMode);
 
   initOrHalt("L3 Services", Services::initSystemServices(
                                 *r.controlModeLock, *r.eventQueue));
@@ -169,7 +169,7 @@ void initTasks() {
     while (true) {
     }
   }
-  Harness::setDispatchStatsProvider(
+  Scheduler::setDispatchStatsProvider(
       Scheduler::CommsTask_GetDispatchStatsInterface());
   Harness::debugPrintln("OK");
 }

@@ -15,6 +15,19 @@
 // Task init through harness
 #include "harness/pins/motor_task_init.hpp"
 
+// Harness adapt functions (forward declarations to avoid harness_wiring_map.hpp conflicts)
+namespace Drivers { class IMotorDriver; }
+namespace Services { class IMotorDriver; class IMotorTaskControl; class IMotorCommandSink; }
+namespace Scheduler { class IMotorTaskControl; class IMotorCommandSink; }
+namespace Services { class IClock; class ILock; }
+namespace Harness {
+    Services::IMotorDriver& adaptMotorDriver(Drivers::IMotorDriver& raw);
+    Services::IMotorTaskControl& adaptMotorTaskControl(Scheduler::IMotorTaskControl& raw);
+    Services::IMotorCommandSink& adaptMotorCommandSink(Scheduler::IMotorCommandSink& raw);
+    Services::IClock& adaptClock(Platform::IClock& raw);
+    Services::ILock& adaptLock(Platform::ILock& raw);
+}
+
 // L3 internal
 #include "L3_services/motion/motion.hpp"
 #include "L3_services/dispatch/command_queue/command_queue.hpp"
@@ -29,62 +42,65 @@
 
 // --- MotorCommandSinkImpl adapter (only uses harness interfaces) ---
 
-class MotorCommandSinkImpl : public Harness::IMotorCommandSink {
+class MotorCommandSinkImpl : public Scheduler::IMotorCommandSink {
 public:
     explicit MotorCommandSinkImpl(
-        Platform::IQueue<Harness::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& queue)
+        Platform::IQueue<Scheduler::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& queue)
         : m_queue(queue) {}
 
-    bool sendCommand(const Harness::MotorCommand& cmd, uint32_t timeoutMs = 0) override {
+    bool sendCommand(const Scheduler::MotorCommand& cmd, uint32_t timeoutMs = 0) override {
         return m_queue.send(cmd, timeoutMs);
     }
 
 private:
-    Platform::IQueue<Harness::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& m_queue;
+    Platform::IQueue<Scheduler::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& m_queue;
 };
 
 // --- Global pin (L3 init owns wiring) ---
-Harness::IMotorCommandSink* Harness::g_motorCommandSink = nullptr;
+Scheduler::IMotorCommandSink* Scheduler::g_motorCommandSink = nullptr;
 
 namespace Services {
 
 bool initMotorSubsystem(
-    Platform::IQueue<Harness::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& commandQueue,
+    Platform::IQueue<Scheduler::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& commandQueue,
     Platform::IClock& clock,
     Platform::IScheduler& scheduler,
     Platform::ILock& commandQueueLock,
     MotorSubsystemResult& result)
 {
     // L4 driver (through harness → L4 → L5)
-    Drivers::IMotorDriver* driver = nullptr;
-    if (!Drivers::initMotorDriver(driver)) {
+    Drivers::IMotorDriver* rawDriver = nullptr;
+    if (!Drivers::initMotorDriver(rawDriver)) {
         return false;
     }
+    // Adapt provider type to consumer port
+    Services::IMotorDriver& driver = Harness::adaptMotorDriver(*rawDriver);
 
     // L3 config
     motion.configStore.init();
 
     // Task (through harness → F_platform)
     Harness::MotorTaskResult taskResult;
-    if (!Harness::initMotorTask(*driver, commandQueue,
+    if (!Harness::initMotorTask(driver, commandQueue,
                                  clock, motion.stepper.controller,
                                  scheduler, taskResult)) {
         return false;
     }
-    result.motorCtrl = taskResult.motorCtrl;
+    result.motorCtrl = &Harness::adaptMotorTaskControl(*taskResult.motorCtrl);
 
     // Adapter (harness interfaces only)
     static MotorCommandSinkImpl motorSink(commandQueue);
 #ifdef ENABLE_INTERFACE_TRACE
     static Harness::TracedMotorCommandSink tracedSink(motorSink);
-    Harness::g_motorCommandSink = &tracedSink;
+    Scheduler::g_motorCommandSink = &tracedSink;
 #else
-    Harness::g_motorCommandSink = &motorSink;
+    Scheduler::g_motorCommandSink = &motorSink;
 #endif
 
-    // L3 command queue
-    g_commandQueue.init(commandQueueLock, clock,
-                        *Harness::g_motorCommandSink);
+    // L3 command queue (adapt Platform:: → Services:: consumer ports)
+    g_commandQueue.init(Harness::adaptLock(commandQueueLock),
+                        Harness::adaptClock(clock),
+                        Harness::adaptMotorCommandSink(*Scheduler::g_motorCommandSink));
 
     return true;
 }

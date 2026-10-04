@@ -7,17 +7,19 @@
 
 #include "F_platform/tasks/motor_task_init.hpp"
 #include "F_platform/tasks/motor_task.hpp"
+#include "harness/harness_wiring_map.hpp"
 
 namespace Harness {
 
-bool initMotorTask(Drivers::IMotorDriver& driver,
-                   Platform::IQueue<MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
+bool initMotorTask(Services::IMotorDriver& driver,
+                   Platform::IQueue<Scheduler::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
                    Platform::IClock& clock,
-                   IMotorControlService& controller,
+                   Services::IMotorControlService& controller,
                    Platform::IScheduler& scheduler,
                    MotorTaskResult& result)
 {
-    if (!Scheduler::MotorTask_Init(driver, cmdQueue, clock, controller, scheduler)) {
+    auto& controllerPort = Harness::adaptMotorControlService(controller);
+    if (!Scheduler::MotorTask_Init(driver, cmdQueue, clock, controllerPort, scheduler)) {
         return false;
     }
 

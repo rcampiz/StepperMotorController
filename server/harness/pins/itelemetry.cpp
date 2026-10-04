@@ -3,9 +3,9 @@
  * @brief Telemetry global accessor wiring
  */
 
-#include "harness/pins/itelemetry.hpp"
+#include "F_platform/tasks/boundary/itelemetry.hpp"
 
-namespace Harness {
+namespace Scheduler {
 
 static ITelemetry* s_telemetryProvider = nullptr;
 
@@ -17,4 +17,4 @@ ITelemetry& telemetry() {
     return *s_telemetryProvider;
 }
 
-} // namespace Harness
+} // namespace Scheduler

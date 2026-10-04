@@ -10,17 +10,16 @@
 #pragma once
 
 namespace Platform { class IClock; class IScheduler; }
-namespace Harness {
-class IRemoteDisplay;
-} // namespace Harness
 
 namespace Services {
+
+class IRemoteDisplay;
 
 /**
  * @brief Result of display subsystem initialization
  */
 struct DisplaySubsystemResult {
-    Harness::IRemoteDisplay* remoteDisplay = nullptr;  ///< Remote display interface
+    Services::IRemoteDisplay* remoteDisplay = nullptr;  ///< Remote display interface
     bool flashAvailable = false;                        ///< NOR flash detected
 };
 

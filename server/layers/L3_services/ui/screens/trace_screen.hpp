@@ -43,7 +43,7 @@ namespace UI {
 class TraceScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::TERMINAL; }
-    void render(Drivers::ICanvas& lcd) override;
+    void render(Services::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
 
@@ -54,10 +54,10 @@ public:
 private:
     enum class Mode : uint8_t { TRACE, LEGEND, GRAPH, SERVICE };
 
-    void renderTrace(Drivers::ICanvas& lcd);
-    void renderLegend(Drivers::ICanvas& lcd);
-    void renderGraph(Drivers::ICanvas& lcd);
-    void renderService(Drivers::ICanvas& lcd);
+    void renderTrace(Services::ICanvas& lcd);
+    void renderLegend(Services::ICanvas& lcd);
+    void renderGraph(Services::ICanvas& lcd);
+    void renderService(Services::ICanvas& lcd);
     InputResult handleTraceInput(JoyDirection dir);
     InputResult handleLegendInput(JoyDirection dir);
     InputResult handleGraphInput(JoyDirection dir);

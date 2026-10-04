@@ -19,6 +19,17 @@
 // Task init through harness
 #include "harness/pins/display_task_init.hpp"
 
+// Harness adapt functions (forward declarations to avoid harness_wiring_map.hpp conflicts)
+namespace Drivers { class ICanvas; class IJoystick; class IFlash; }
+namespace Scheduler { class IRemoteDisplay; }
+namespace Services { class ICanvas; class IJoystick; class IFlash; class IRemoteDisplay; }
+namespace Harness {
+    Services::ICanvas&   adaptCanvas(Drivers::ICanvas& raw);
+    Services::IJoystick& adaptJoystick(Drivers::IJoystick& raw);
+    Services::IFlash&    adaptFlash(Drivers::IFlash& raw);
+    Services::IRemoteDisplay& adaptRemoteDisplay(Scheduler::IRemoteDisplay& raw);
+}
+
 namespace Services {
 
 bool initDisplaySubsystem(Platform::IClock& clock,
@@ -31,24 +42,33 @@ bool initDisplaySubsystem(Platform::IClock& clock,
         return false;
     }
 
-    // Step 2: L3 service init (flash image + indicator)
-    if (driverHandle->norFlash != nullptr) {
-        if (g_flashImageService.init(driverHandle->norFlash)) {
+    // Step 2: Adapt provider types to consumer ports
+    Services::ICanvas& lcd = Harness::adaptCanvas(*driverHandle->lcd);
+    Services::IJoystick* joystick = (driverHandle->joystick != nullptr)
+        ? &Harness::adaptJoystick(*driverHandle->joystick)
+        : nullptr;
+    Services::IFlash* flash = (driverHandle->norFlash != nullptr)
+        ? &Harness::adaptFlash(*driverHandle->norFlash)
+        : nullptr;
+
+    // Step 3: L3 service init (flash image + indicator)
+    if (flash != nullptr) {
+        if (g_flashImageService.init(flash)) {
             result.flashAvailable = true;
         }
     }
 
-    g_indicatorService.init(driverHandle->lcd);
+    g_indicatorService.init(&lcd);
 
-    // Step 3: Task init (through harness → F_platform)
+    // Step 4: Task init (through harness → F_platform)
     Harness::DisplayTaskResult taskResult;
-    if (!Harness::initDisplayTask(*driverHandle->lcd, driverHandle->joystick,
+    if (!Harness::initDisplayTask(lcd, joystick,
                                    clock, g_flashImageService, g_indicatorService,
                                    scheduler, taskResult)) {
         return false;
     }
 
-    result.remoteDisplay = taskResult.remoteDisplay;
+    result.remoteDisplay = &Harness::adaptRemoteDisplay(*taskResult.remoteDisplay);
     return true;
 }
 

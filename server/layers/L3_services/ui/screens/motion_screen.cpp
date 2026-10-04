@@ -4,7 +4,7 @@
  */
 
 #include "ui/screens/motion_screen.hpp"
-#include "harness/pins/icanvas.hpp"
+#include "L3_services/boundary/icanvas.hpp"
 #include "L3_services/motion/motion_service/motion_service.hpp"
 #include "harness/pins/itelemetry.hpp"
 #include <stdio.h>
@@ -47,15 +47,15 @@ bool MotionScreen::isFieldEnabled(uint8_t field, bool faulted, bool hiZ) const
     return !faulted;
 }
 
-void MotionScreen::renderStatus(Drivers::ICanvas& lcd)
+void MotionScreen::renderStatus(Services::ICanvas& lcd)
 {
-    Protocol::TelemetrySnapshot telem = Harness::telemetry().getSnapshot();
+    Protocol::TelemetrySnapshot telem = Scheduler::telemetry().getSnapshot();
     char buf[32];
     uint16_t y = STATUS_Y;
 
     lcd.drawString(MARGIN, y, "Motion", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
     y += LINE_H + 2;
-    lcd.drawHLine(MARGIN, y, Drivers::Canvas::WIDTH - 2 * MARGIN, LABEL_COLOR);
+    lcd.drawHLine(MARGIN, y, Services::Canvas::WIDTH - 2 * MARGIN, LABEL_COLOR);
     y += 4;
 
     // Position
@@ -84,13 +84,13 @@ void MotionScreen::renderStatus(Drivers::ICanvas& lcd)
     lcd.drawString(180, y, state, stateColor, BG_COLOR, TEXT_SCALE);
 }
 
-void MotionScreen::renderField(Drivers::ICanvas& lcd, uint8_t field, uint16_t y,
+void MotionScreen::renderField(Services::ICanvas& lcd, uint8_t field, uint16_t y,
                                 bool selected, bool faulted, bool hiZ)
 {
     bool enabled = isFieldEnabled(field, faulted, hiZ);
     uint16_t fg = enabled ? VALUE_COLOR : DISABLED_COLOR;
     uint16_t bg = selected ? SEL_BG : BG_COLOR;
-    uint16_t itemW = Drivers::Canvas::WIDTH - 2 * MARGIN;
+    uint16_t itemW = Services::Canvas::WIDTH - 2 * MARGIN;
     char buf[32];
 
     lcd.fillRect(MARGIN, y, itemW, FIELD_H - 2, bg);
@@ -125,7 +125,7 @@ void MotionScreen::renderField(Drivers::ICanvas& lcd, uint8_t field, uint16_t y,
             break;
 
         case FIELD_ENABLE: {
-            Protocol::TelemetrySnapshot t = Harness::telemetry().getSnapshot();
+            Protocol::TelemetrySnapshot t = Scheduler::telemetry().getSnapshot();
             if (t.motor.hiZ) {
                 lcd.drawString(MARGIN + FIELD_PAD, y + FIELD_PAD, "Enable Motor", fg, bg, TEXT_SCALE);
             } else {
@@ -136,9 +136,9 @@ void MotionScreen::renderField(Drivers::ICanvas& lcd, uint8_t field, uint16_t y,
     }
 }
 
-void MotionScreen::render(Drivers::ICanvas& lcd)
+void MotionScreen::render(Services::ICanvas& lcd)
 {
-    Protocol::TelemetrySnapshot telem = Harness::telemetry().getSnapshot();
+    Protocol::TelemetrySnapshot telem = Scheduler::telemetry().getSnapshot();
     bool faulted = telem.motor.stalled;
     bool hiZ = telem.motor.hiZ;
 
@@ -157,7 +157,7 @@ InputResult MotionScreen::handleInput(JoyDirection dir, bool pressed)
         return InputResult::HANDLED;
     }
 
-    Protocol::TelemetrySnapshot telem = Harness::telemetry().getSnapshot();
+    Protocol::TelemetrySnapshot telem = Scheduler::telemetry().getSnapshot();
     bool faulted = telem.motor.stalled;
     bool hiZ = telem.motor.hiZ;
 

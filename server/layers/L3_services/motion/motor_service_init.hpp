@@ -13,17 +13,15 @@
 
 namespace Platform { class IClock; class IScheduler; class ILock; }
 
-namespace Harness {
-class IMotorTaskControl;
-} // namespace Harness
-
 namespace Services {
+
+class IMotorTaskControl;
 
 /**
  * @brief Result of motor subsystem initialization
  */
 struct MotorSubsystemResult {
-    Harness::IMotorTaskControl* motorCtrl = nullptr;  ///< Motor task control interface
+    Services::IMotorTaskControl* motorCtrl = nullptr;  ///< Motor task control interface
 };
 
 /**
@@ -37,7 +35,7 @@ struct MotorSubsystemResult {
  * @return true on success
  */
 bool initMotorSubsystem(
-    Platform::IQueue<Harness::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& commandQueue,
+    Platform::IQueue<Scheduler::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& commandQueue,
     Platform::IClock& clock,
     Platform::IScheduler& scheduler,
     Platform::ILock& commandQueueLock,

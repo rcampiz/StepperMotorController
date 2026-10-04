@@ -25,6 +25,10 @@
 // Debug commands (harness — CMSIS code stays in harness)
 #include "harness/debug_commands.hpp"
 
+// Adapt Platform:: → Services:: at wiring boundary
+namespace Services { class IClock; }
+namespace Harness { Services::IClock& adaptClock(Platform::IClock& raw); }
+
 namespace Services {
 
 bool initCommsSubsystem(const CommsServiceDeps& deps,
@@ -37,7 +41,7 @@ bool initCommsSubsystem(const CommsServiceDeps& deps,
     dispDeps.encFilter     = deps.encFilter;
     dispDeps.motorCtrl     = deps.motorCtrl;
     dispDeps.remoteDisplay = deps.remoteDisplay;
-    dispDeps.clock         = &clock;
+    dispDeps.clock         = &Harness::adaptClock(clock);
 
     Harness::DispatchInterfaces dispatches;
     if (!initDispatches(dispatches, dispDeps)) {

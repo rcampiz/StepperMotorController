@@ -16,9 +16,9 @@ namespace Harness {
 namespace ITrace {
 
 static uint16_t s_enableMask = ALL;
-static ITraceSink* s_sink = nullptr;
+static Services::ITraceSink* s_sink = nullptr;
 
-void setSink(ITraceSink* sink) {
+void setSink(Services::ITraceSink* sink) {
     s_sink = sink;
 }
 

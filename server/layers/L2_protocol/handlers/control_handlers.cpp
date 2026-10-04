@@ -173,7 +173,7 @@ void CommandParser::cmdTrimQuery() {
   auto tc = m_dispatcher.getTrimConfig();
   uint8_t maxPct = (tc.kd100 > 0 && tc.kd100 <= 50) ? static_cast<uint8_t>(tc.kd100) : 8;
 
-  TelemetrySnapshot snap = Harness::telemetry().getSnapshot();
+  TelemetrySnapshot snap = Scheduler::telemetry().getSnapshot();
   bool active = snap.control.tracking;
   bool frozen = snap.control.trimFrozen != 0;
 

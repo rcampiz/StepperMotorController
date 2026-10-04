@@ -9,25 +9,25 @@
 
 #pragma once
 
-#include "harness/pins/icommand_dispatcher.hpp"
+#include "L2_protocol/boundary/icommand_dispatcher.hpp"
 
 namespace Protocol {
 
-class ServiceDispatcher : public Harness::ICommandDispatcher {
+class ServiceDispatcher : public Protocol::ICommandDispatcher {
 public:
     // Dependency injection — 12 sub-interface setters
-    void setMotion(Harness::IMotionDispatcher* d)                { m_motion = d; }
-    void setConfig(Harness::IMotorConfigDispatcher* d)           { m_config = d; }
-    void setSafety(Harness::ISafetyDispatcher* d)                { m_safety = d; }
-    void setQueue(Harness::IQueueDispatcher* d)                  { m_queue = d; }
-    void setControlMode(Harness::IControlModeDispatcher* d)      { m_ctrlMode = d; }
-    void setSupervisorTrim(Harness::ISupervisorTrimDispatcher* d){ m_supTrim = d; }
-    void setEncoder(Harness::IEncoderDispatcher* d)              { m_encoder = d; }
-    void setMotorDriver(Harness::IMotorDriverDispatcher* d)      { m_motorDrv = d; }
-    void setDisplay(Harness::IDisplayDispatcher* d)              { m_display = d; }
-    void setFlash(Harness::IFlashImageDispatcher* d)             { m_flash = d; }
-    void setSystem(Harness::ISystemDispatcher* d)                { m_system = d; }
-    void setTrace(Harness::ITraceDispatcher* d)                  { m_trace = d; }
+    void setMotion(Protocol::IMotionDispatcher* d)                { m_motion = d; }
+    void setConfig(Protocol::IMotorConfigDispatcher* d)           { m_config = d; }
+    void setSafety(Protocol::ISafetyDispatcher* d)                { m_safety = d; }
+    void setQueue(Protocol::IQueueDispatcher* d)                  { m_queue = d; }
+    void setControlMode(Protocol::IControlModeDispatcher* d)      { m_ctrlMode = d; }
+    void setSupervisorTrim(Protocol::ISupervisorTrimDispatcher* d){ m_supTrim = d; }
+    void setEncoder(Protocol::IEncoderDispatcher* d)              { m_encoder = d; }
+    void setMotorDriver(Protocol::IMotorDriverDispatcher* d)      { m_motorDrv = d; }
+    void setDisplay(Protocol::IDisplayDispatcher* d)              { m_display = d; }
+    void setFlash(Protocol::IFlashImageDispatcher* d)             { m_flash = d; }
+    void setSystem(Protocol::ISystemDispatcher* d)                { m_system = d; }
+    void setTrace(Protocol::ITraceDispatcher* d)                  { m_trace = d; }
 
     // IMotionDispatcher
     Harness::ServiceStatus motionRun(uint32_t stepsPerSec, bool forward) override;
@@ -108,7 +108,7 @@ public:
     void sysIdAbort() override;
     uint8_t sysIdGetPhase() override;
     uint16_t sysIdGetSampleCount() override;
-    const Harness::SysIdSampleData* sysIdGetSamples(uint16_t& count) override;
+    const Protocol::SysIdSampleData* sysIdGetSamples(uint16_t& count) override;
 
     // IEncoderDispatcher
     bool isEncoderAvailable() override;
@@ -184,18 +184,18 @@ public:
     void traceRecordExit(const char* tag, uint32_t arg0 = 0) override;
 
 private:
-    Harness::IMotionDispatcher*         m_motion = nullptr;
-    Harness::IMotorConfigDispatcher*    m_config = nullptr;
-    Harness::ISafetyDispatcher*         m_safety = nullptr;
-    Harness::IQueueDispatcher*          m_queue = nullptr;
-    Harness::IControlModeDispatcher*    m_ctrlMode = nullptr;
-    Harness::ISupervisorTrimDispatcher* m_supTrim = nullptr;
-    Harness::IEncoderDispatcher*        m_encoder = nullptr;
-    Harness::IMotorDriverDispatcher*    m_motorDrv = nullptr;
-    Harness::IDisplayDispatcher*        m_display = nullptr;
-    Harness::IFlashImageDispatcher*     m_flash = nullptr;
-    Harness::ISystemDispatcher*         m_system = nullptr;
-    Harness::ITraceDispatcher*          m_trace = nullptr;
+    Protocol::IMotionDispatcher*         m_motion = nullptr;
+    Protocol::IMotorConfigDispatcher*    m_config = nullptr;
+    Protocol::ISafetyDispatcher*         m_safety = nullptr;
+    Protocol::IQueueDispatcher*          m_queue = nullptr;
+    Protocol::IControlModeDispatcher*    m_ctrlMode = nullptr;
+    Protocol::ISupervisorTrimDispatcher* m_supTrim = nullptr;
+    Protocol::IEncoderDispatcher*        m_encoder = nullptr;
+    Protocol::IMotorDriverDispatcher*    m_motorDrv = nullptr;
+    Protocol::IDisplayDispatcher*        m_display = nullptr;
+    Protocol::IFlashImageDispatcher*     m_flash = nullptr;
+    Protocol::ISystemDispatcher*         m_system = nullptr;
+    Protocol::ITraceDispatcher*          m_trace = nullptr;
 };
 
 } // namespace Protocol

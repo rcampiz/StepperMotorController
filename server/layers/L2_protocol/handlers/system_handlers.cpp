@@ -72,7 +72,7 @@ void CommandParser::cmdGetStatus() {
   const char *encStatusStr = encoderStatusToString(m_dispatcher.getEncoderStatus());
 
   // Get actual position and velocity from motor telemetry
-  TelemetrySnapshot snap = Harness::telemetry().getSnapshot();
+  TelemetrySnapshot snap = Scheduler::telemetry().getSnapshot();
 
   if (m_format == ResponseFormat::JSON) {
     // Parse status register for direction and error flags
@@ -345,7 +345,7 @@ void CommandParser::cmdEventEnable(const ParsedCommand &cmd) {
   }
 
   // Read current motor status for snapshot-on-enable
-  Protocol::TelemetrySnapshot snap = Harness::telemetry().getSnapshot();
+  Protocol::TelemetrySnapshot snap = Scheduler::telemetry().getSnapshot();
   uint16_t currentStatus = snap.motor.statusReg;
 
   m_dispatcher.enableEvents(mask, currentStatus);
@@ -442,7 +442,7 @@ void CommandParser::cmdTraceDump() {
   snprintf(buf, sizeof(buf), "TRACE: %u entries", static_cast<unsigned>(count));
   m_transport.println(buf);
 
-  Harness::ICommandDispatcher::TraceEntryData e;
+  Protocol::ICommandDispatcher::TraceEntryData e;
   for (uint32_t i = 0; i < count; i++) {
     if (!m_dispatcher.traceGetEntry(i, e))
       break;

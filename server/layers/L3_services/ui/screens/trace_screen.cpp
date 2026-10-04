@@ -23,7 +23,7 @@
  */
 
 #include "ui/screens/trace_screen.hpp"
-#include "harness/pins/icanvas.hpp"
+#include "L3_services/boundary/icanvas.hpp"
 #include "L3_services/infra/trace/trace.hpp"
 #include <stdio.h>
 #include <string.h>
@@ -164,7 +164,7 @@ void TraceScreen::onActivate()
     m_lastLaneCount = 0;
 }
 
-void TraceScreen::render(Drivers::ICanvas& lcd)
+void TraceScreen::render(Services::ICanvas& lcd)
 {
     // Clear screen on mode switch (prevents previous mode's content bleeding through)
     if (!m_titleDrawn) {
@@ -184,7 +184,7 @@ void TraceScreen::render(Drivers::ICanvas& lcd)
 // TRACE mode — scrollable text list
 // =============================================================================
 
-void TraceScreen::renderTrace(Drivers::ICanvas& lcd)
+void TraceScreen::renderTrace(Services::ICanvas& lcd)
 {
     size_t total = Trace::getTotal();
     size_t count = Trace::getCount();
@@ -197,7 +197,7 @@ void TraceScreen::renderTrace(Drivers::ICanvas& lcd)
     bool redrawLines = false;
 
     if (!m_titleDrawn) {
-        lcd.drawHLine(MARGIN, MARGIN + TITLE_H, Drivers::Canvas::WIDTH - 2 * MARGIN, LABEL_COLOR);
+        lcd.drawHLine(MARGIN, MARGIN + TITLE_H, Services::Canvas::WIDTH - 2 * MARGIN, LABEL_COLOR);
         m_titleDrawn = true;
         redrawTitle = true;
         redrawLines = true;
@@ -219,7 +219,7 @@ void TraceScreen::renderTrace(Drivers::ICanvas& lcd)
     if (!redrawTitle && !redrawLines) return;
 
     // --- Title bar ---
-    static constexpr uint16_t TITLE_W = Drivers::Canvas::WIDTH - 2 * MARGIN;
+    static constexpr uint16_t TITLE_W = Services::Canvas::WIDTH - 2 * MARGIN;
     if (redrawTitle) {
         const char* filterName = getFilterName(m_filterMask);
         char title[36];
@@ -259,7 +259,7 @@ void TraceScreen::renderTrace(Drivers::ICanvas& lcd)
 
     // --- Trace lines (filtered) ---
     uint16_t y = MARGIN + TITLE_H + 4;
-    static constexpr uint16_t LINE_W = Drivers::Canvas::WIDTH - (2 * MARGIN);
+    static constexpr uint16_t LINE_W = Services::Canvas::WIDTH - (2 * MARGIN);
 
     size_t skipMatches = 0;
     if (m_matchCount > VISIBLE_LINES) {
@@ -386,12 +386,12 @@ void TraceScreen::renderTrace(Drivers::ICanvas& lcd)
 // LEGEND mode — color key + filter toggles
 // =============================================================================
 
-void TraceScreen::renderLegend(Drivers::ICanvas& lcd)
+void TraceScreen::renderLegend(Services::ICanvas& lcd)
 {
     if (!m_needsRedraw) return;
     m_titleDrawn = true;
 
-    static constexpr uint16_t LINE_W = Drivers::Canvas::WIDTH - (2 * MARGIN);
+    static constexpr uint16_t LINE_W = Services::Canvas::WIDTH - (2 * MARGIN);
     uint16_t y = MARGIN;
 
     // Title
@@ -456,7 +456,7 @@ void TraceScreen::renderLegend(Drivers::ICanvas& lcd)
                      " CTR:toggle  R:graph", LABEL_COLOR, BG_COLOR);
     y += LINE_HEIGHT;
 
-    while (y + LINE_HEIGHT <= Drivers::Canvas::HEIGHT) {
+    while (y + LINE_HEIGHT <= Services::Canvas::HEIGHT) {
         lcd.blitTextLine(MARGIN, y, LINE_W, LINE_HEIGHT, "", WHITE, BG_COLOR);
         y += LINE_HEIGHT;
     }
@@ -467,8 +467,8 @@ void TraceScreen::renderLegend(Drivers::ICanvas& lcd)
 // =============================================================================
 
 // Draw a compact layer color key: " L1 L2 L3 L4 L5 F" (each in its color)
-static void drawLayerKey(Drivers::ICanvas& lcd, uint16_t y) {
-    static constexpr uint16_t LINE_W = Drivers::Canvas::WIDTH - (2 * MARGIN);
+static void drawLayerKey(Services::ICanvas& lcd, uint16_t y) {
+    static constexpr uint16_t LINE_W = Services::Canvas::WIDTH - (2 * MARGIN);
     // Clear the line first
     lcd.blitTextLine(MARGIN, y, LINE_W, 8, "", WHITE, BG_COLOR);
     // Draw each label at calculated x positions (scale 1 = 6px/char)
@@ -553,7 +553,7 @@ static uint16_t boundaryColor(uint16_t boundary) {
     }
 }
 
-void TraceScreen::renderGraph(Drivers::ICanvas& lcd)
+void TraceScreen::renderGraph(Services::ICanvas& lcd)
 {
     size_t total = Trace::getTotal();
     size_t count = Trace::getCount();
@@ -563,17 +563,17 @@ void TraceScreen::renderGraph(Drivers::ICanvas& lcd)
     }
 
     // --- Layout (adaptive height for 8 boundary lanes) ---
-    static constexpr uint16_t LINE_W = Drivers::Canvas::WIDTH - (2 * MARGIN);
+    static constexpr uint16_t LINE_W = Services::Canvas::WIDTH - (2 * MARGIN);
     static constexpr uint16_t LANES_Y = MARGIN + TITLE_H + 4;
     static constexpr uint16_t FOOTER_SPACE_G = 34;
-    uint16_t availH = Drivers::Canvas::HEIGHT - LANES_Y - FOOTER_SPACE_G;
+    uint16_t availH = Services::Canvas::HEIGHT - LANES_Y - FOOTER_SPACE_G;
     uint16_t laneH = availH / GRAPH_LANES;
     if (laneH > 40) laneH = 40;
     if (laneH < 16) laneH = 16;
     static constexpr uint16_t LANE_BAR_INSET = 1;
     uint16_t laneBarH = laneH - (2 * LANE_BAR_INSET);
 
-    uint16_t timelineRight = Drivers::Canvas::WIDTH - MARGIN;
+    uint16_t timelineRight = Services::Canvas::WIDTH - MARGIN;
     uint16_t timelineW = timelineRight - TIMELINE_X;
 
     // Determine what to redraw
@@ -747,7 +747,7 @@ static constexpr uint8_t SERVICE_TABLE_SIZE =
     sizeof(SERVICE_LANES_TABLE) / sizeof(SERVICE_LANES_TABLE[0]);
 
 
-void TraceScreen::renderService(Drivers::ICanvas& lcd)
+void TraceScreen::renderService(Services::ICanvas& lcd)
 {
     size_t total = Trace::getTotal();
     size_t count = Trace::getCount();
@@ -756,7 +756,7 @@ void TraceScreen::renderService(Drivers::ICanvas& lcd)
         m_lastTotal = total;
     }
 
-    static constexpr uint16_t LINE_W = Drivers::Canvas::WIDTH - (2 * MARGIN);
+    static constexpr uint16_t LINE_W = Services::Canvas::WIDTH - (2 * MARGIN);
 
     bool redrawTitle = false;
     bool redrawGraph = false;
@@ -810,12 +810,12 @@ void TraceScreen::renderService(Drivers::ICanvas& lcd)
     // --- Adaptive lane height based on active service count ---
     static constexpr uint16_t LANES_Y = MARGIN + TITLE_H + 4;
     static constexpr uint16_t FOOTER_SPACE = 32;
-    uint16_t availH = Drivers::Canvas::HEIGHT - LANES_Y - FOOTER_SPACE;
+    uint16_t availH = Services::Canvas::HEIGHT - LANES_Y - FOOTER_SPACE;
     uint16_t laneH = availH / laneCount;
     if (laneH > 40) { laneH = 40; }
     if (laneH < 20) { laneH = 20; }
 
-    uint16_t timelineRight = Drivers::Canvas::WIDTH - MARGIN;
+    uint16_t timelineRight = Services::Canvas::WIDTH - MARGIN;
     uint16_t timelineW = timelineRight - TIMELINE_X;
     static constexpr uint16_t LANE_BAR_INSET = 1;
     uint16_t laneBarH = laneH - (2 * LANE_BAR_INSET);
@@ -826,7 +826,7 @@ void TraceScreen::renderService(Drivers::ICanvas& lcd)
     if (labelsNeeded) {
         m_lastLaneCount = laneCount;
         // Clear label column area
-        lcd.fillRect(MARGIN, LANES_Y, TIMELINE_X - MARGIN, Drivers::Canvas::HEIGHT - LANES_Y, BG_COLOR);
+        lcd.fillRect(MARGIN, LANES_Y, TIMELINE_X - MARGIN, Services::Canvas::HEIGHT - LANES_Y, BG_COLOR);
     }
 
     for (uint8_t i = 0; i < laneCount; i++) {
@@ -892,7 +892,7 @@ void TraceScreen::renderService(Drivers::ICanvas& lcd)
 
     // --- Footer at fixed bottom position ---
     {
-        uint16_t footerY = Drivers::Canvas::HEIGHT - FOOTER_SPACE;
+        uint16_t footerY = Services::Canvas::HEIGHT - FOOTER_SPACE;
         char axisBuf[40];
         size_t endIdx = startIdx + visibleEntries;
         if (endIdx > count) { endIdx = count; }

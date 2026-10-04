@@ -15,12 +15,10 @@
 
 namespace Platform { class IClock; class IScheduler; }
 
-namespace Harness {
-class ITransport;
-class IMotorEventReceiver;
-class IEmergencyStop;
-class ICommandProcessor;
-} // namespace Harness
+namespace Transport { class ITransport; }
+namespace Services { class IMotorEventReceiver; }
+namespace Scheduler { class IEmergencyStop; }
+namespace Protocol { class ICommandProcessor; }
 
 namespace Harness {
 
@@ -46,11 +44,11 @@ struct CommsTaskResult {
  * @param result        Output: comms interfaces (populated on success)
  * @return true on success
  */
-bool initCommsTask(ITransport& transport,
-                   ICommandProcessor& parser,
+bool initCommsTask(Transport::ITransport& transport,
+                   Protocol::ICommandProcessor& parser,
                    Platform::IClock& clock,
-                   IMotorEventReceiver& eventReceiver,
-                   IEmergencyStop& emergencyStop,
+                   Services::IMotorEventReceiver& eventReceiver,
+                   Scheduler::IEmergencyStop& emergencyStop,
                    Platform::IScheduler& scheduler,
                    CommsTaskResult& result);
 

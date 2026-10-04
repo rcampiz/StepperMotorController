@@ -7,7 +7,7 @@
  */
 
 #include "ui/screens/arch_screen.hpp"
-#include "harness/pins/icanvas.hpp"
+#include "L3_services/boundary/icanvas.hpp"
 #include "L3_services/infra/trace/trace.hpp"
 #include "harness/trace/interface_trace.hpp"
 #include <stdio.h>
@@ -18,7 +18,7 @@ namespace UI {
 static constexpr uint16_t MARGIN = 4;
 static constexpr uint16_t TITLE_H = 16;
 static constexpr uint16_t LINE_H = 12;
-static constexpr uint16_t LINE_W = Drivers::Canvas::WIDTH - (2 * MARGIN);
+static constexpr uint16_t LINE_W = Services::Canvas::WIDTH - (2 * MARGIN);
 static constexpr uint16_t WHITE   = 0xFFFF;
 static constexpr uint16_t BG      = 0x0000;
 static constexpr uint16_t CYAN    = 0x07FF;
@@ -95,7 +95,7 @@ void ArchScreen::onActivate()
     memset(m_cellCounts, 0, sizeof(m_cellCounts));
 }
 
-void ArchScreen::render(Drivers::ICanvas& lcd)
+void ArchScreen::render(Services::ICanvas& lcd)
 {
     if (!m_titleDrawn) {
         lcd.fillScreen(BG);
@@ -115,7 +115,7 @@ void ArchScreen::render(Drivers::ICanvas& lcd)
 // DIAGRAM mode — static architecture overview
 // =============================================================================
 
-void ArchScreen::renderDiagram(Drivers::ICanvas& lcd)
+void ArchScreen::renderDiagram(Services::ICanvas& lcd)
 {
     if (!m_needsRedraw) return;
 
@@ -161,7 +161,7 @@ void ArchScreen::renderDiagram(Drivers::ICanvas& lcd)
 
         // Draw arrow between L1-L5 layers (not after L5 or F)
         if (i < 4) {
-            uint16_t arrowX = Drivers::Canvas::WIDTH / 2;
+            uint16_t arrowX = Services::Canvas::WIDTH / 2;
             uint16_t midY = y + ARROW_H / 2;
             lcd.fillRect(arrowX, y, 1, ARROW_H, DIM);
             // Small arrowhead
@@ -173,7 +173,7 @@ void ArchScreen::renderDiagram(Drivers::ICanvas& lcd)
     }
 
     // Footer
-    lcd.blitTextLine(MARGIN, Drivers::Canvas::HEIGHT - 10, LINE_W, 8,
+    lcd.blitTextLine(MARGIN, Services::Canvas::HEIGHT - 10, LINE_W, 8,
                      "L:back  R:matrix", CYAN, BG);
 }
 
@@ -181,7 +181,7 @@ void ArchScreen::renderDiagram(Drivers::ICanvas& lcd)
 // MATRIX mode — live layers x tasks heatmap
 // =============================================================================
 
-void ArchScreen::renderMatrix(Drivers::ICanvas& lcd)
+void ArchScreen::renderMatrix(Services::ICanvas& lcd)
 {
     size_t total = Trace::getTotal();
     size_t count = Trace::getCount();
@@ -308,7 +308,7 @@ void ArchScreen::renderMatrix(Drivers::ICanvas& lcd)
     y += LINE_H;
 
     // Footer
-    lcd.blitTextLine(MARGIN, Drivers::Canvas::HEIGHT - 10, LINE_W, 8,
+    lcd.blitTextLine(MARGIN, Services::Canvas::HEIGHT - 10, LINE_W, 8,
                      "CTR:pause L:diag R:flow",
                      m_paused ? PAUSE_COLOR : CYAN, BG);
 }
@@ -317,7 +317,7 @@ void ArchScreen::renderMatrix(Drivers::ICanvas& lcd)
 // FLOW mode — SCPI command lifecycle
 // =============================================================================
 
-void ArchScreen::renderFlow(Drivers::ICanvas& lcd)
+void ArchScreen::renderFlow(Services::ICanvas& lcd)
 {
     size_t total = Trace::getTotal();
     size_t count = Trace::getCount();
@@ -587,7 +587,7 @@ void ArchScreen::renderFlow(Drivers::ICanvas& lcd)
     }
 
     // Footer
-    lcd.blitTextLine(MARGIN, Drivers::Canvas::HEIGHT - 10, LINE_W, 8,
+    lcd.blitTextLine(MARGIN, Services::Canvas::HEIGHT - 10, LINE_W, 8,
                      "L:matrix  R:tasks  Handoff=yellow",
                      m_paused ? PAUSE_COLOR : CYAN, BG);
 }
@@ -675,7 +675,7 @@ InputResult ArchScreen::handleFlowInput(JoyDirection dir)
 // Task name table (indexed by m_selectedTask)
 static constexpr const char* TASK_NAMES[] = { "Motor", "Encoder", "Comms", "Display", "Timer" };
 
-void ArchScreen::renderTasks(Drivers::ICanvas& lcd)
+void ArchScreen::renderTasks(Services::ICanvas& lcd)
 {
     size_t total = Trace::getTotal();
     size_t count = Trace::getCount();
@@ -880,7 +880,7 @@ void ArchScreen::renderTasks(Drivers::ICanvas& lcd)
     }
 
     // Footer
-    lcd.blitTextLine(MARGIN, Drivers::Canvas::HEIGHT - 10, LINE_W, 8,
+    lcd.blitTextLine(MARGIN, Services::Canvas::HEIGHT - 10, LINE_W, 8,
                      "L:flow R:diag UD:task CTR:pause",
                      m_paused ? PAUSE_COLOR : CYAN, BG);
 }

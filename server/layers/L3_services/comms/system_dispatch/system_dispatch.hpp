@@ -11,20 +11,20 @@
 #pragma once
 
 #include "harness/pins/isystem_dispatcher.hpp"
-#include "harness/pins/iclock.hpp"
+#include "L3_services/boundary/iclock.hpp"
 #include <stdint.h>
 
 namespace Services {
 
-class SystemDispatch : public Harness::ISystemDispatcher {
+class SystemDispatch : public Services::ISystemDispatcher {
 public:
     using EventSeqFn = uint32_t(*)();
 
     SystemDispatch() = default;
-    SystemDispatch(Platform::IClock* clock, EventSeqFn eventSeqFn)
+    SystemDispatch(Services::IClock* clock, EventSeqFn eventSeqFn)
         : m_clock(clock), m_eventSeqFn(eventSeqFn) {}
 
-    void setClock(Platform::IClock* c) { m_clock = c; }
+    void setClock(Services::IClock* c) { m_clock = c; }
     void setEventSeqFn(EventSeqFn fn) { m_eventSeqFn = fn; }
 
     uint32_t getTickUs() override;
@@ -40,7 +40,7 @@ public:
     uint32_t getLastEventSeq() override;
 
 private:
-    Platform::IClock* m_clock = nullptr;
+    Services::IClock* m_clock = nullptr;
     EventSeqFn m_eventSeqFn = nullptr;
 };
 

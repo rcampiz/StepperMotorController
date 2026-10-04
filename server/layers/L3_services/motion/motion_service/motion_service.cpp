@@ -11,9 +11,9 @@
 namespace Services::Motion {
 
 // Harness pin types used in this module
-using Harness::MotorCmdType;
-using Harness::MotorCommand;
-using Harness::g_motorCommandSink;
+using Scheduler::MotorCmdType;
+using Scheduler::MotorCommand;
+using Scheduler::g_motorCommandSink;
 
 const char *resultToString(Result r) {
     switch (r) {

@@ -26,11 +26,8 @@
 #include "L3_services/comms/comms.hpp"
 #include "L3_services/display/display.hpp"
 
-// Tracing (conditional)
+// Tracing
 #include "harness/trace/interface_trace.hpp"
-#ifdef ENABLE_INTERFACE_TRACE
-#include "harness/taps/traced_encoder.hpp"
-#endif
 
 // ── File-scope L3 dispatch instances (group members) ────────────────
 
@@ -62,12 +59,7 @@ bool initDispatches(Harness::DispatchInterfaces& out, const DispatchDeps& deps)
     static EncoderDispatch encoderDisp;
     static MotorDriverDispatch motorDrvDisp;
 
-#ifdef ENABLE_INTERFACE_TRACE
-    static Harness::TracedEncoder tracedEncoder(*deps.encoder);
-    encoderDisp.setEncoder(&tracedEncoder);
-#else
     encoderDisp.setEncoder(deps.encoder);
-#endif
     encoderDisp.setEncFilter(deps.encFilter);
     motorDrvDisp.setMotorCtrl(deps.motorCtrl);
 

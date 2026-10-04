@@ -22,7 +22,7 @@ void CommandParser::cmdDrvStepMode(const ParsedCommand &cmd) {
   }
 
   // Check motor is not busy
-  Protocol::TelemetrySnapshot snap = Harness::telemetry().getSnapshot();
+  Protocol::TelemetrySnapshot snap = Scheduler::telemetry().getSnapshot();
   if (snap.motor.busy) {
     if (m_format == ResponseFormat::JSON) {
       respondJsonErr("DRV:STEP_MODE", "MOTOR_BUSY",

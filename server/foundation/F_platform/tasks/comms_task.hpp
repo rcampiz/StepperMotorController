@@ -13,9 +13,10 @@
 #include <stdint.h>
 
 namespace Platform { class IClock; }
-namespace Harness { class ITransport;
-                    class IMotorEventReceiver; class IEmergencyStop;
-                    class IDispatchStats; class ICommandProcessor; }
+namespace Transport { class ITransport; }
+namespace Scheduler { class IMotorEventReceiver; }
+namespace Scheduler { class IEmergencyStop; class IDispatchStats; }
+namespace Protocol { class ICommandProcessor; }
 
 namespace Scheduler {
 
@@ -36,11 +37,11 @@ constexpr uint32_t TELEMETRY_PERIOD_MS = 100; // Telemetry publish rate
  * @param clock      System clock (for delays and tick timing)
  * @return true on success
  */
-bool CommsTask_Init(Harness::ITransport& transport,
-                    Harness::ICommandProcessor& parser,
+bool CommsTask_Init(Transport::ITransport& transport,
+                    Protocol::ICommandProcessor& parser,
                     Platform::IClock& clock,
-                    Harness::IMotorEventReceiver& eventReceiver,
-                    Harness::IEmergencyStop& emergencyStop);
+                    Scheduler::IMotorEventReceiver& eventReceiver,
+                    Scheduler::IEmergencyStop& emergencyStop);
 
 /**
  * @brief Comms task entry point
@@ -136,7 +137,7 @@ void CommsTask_GetDispatchStats(CommsDispatchStats& out);
  * @brief Get IDispatchStats interface for L3 consumption
  * @return Pointer to static IDispatchStats adapter (valid after init)
  */
-Harness::IDispatchStats* CommsTask_GetDispatchStatsInterface();
+Scheduler::IDispatchStats* CommsTask_GetDispatchStatsInterface();
 
 } // namespace Scheduler
 

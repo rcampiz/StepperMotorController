@@ -20,7 +20,7 @@ namespace Protocol::EventCodec {
  *
  * Output: !FAULT status=0x1234 detail=OCD\r\n
  */
-void formatAscii(Harness::ITransport& transport, const AsyncEvent& evt, uint32_t seq);
+void formatAscii(Transport::ITransport& transport, const AsyncEvent& evt, uint32_t seq);
 
 /**
  * @brief Format an event as JSON and write to transport
@@ -31,7 +31,7 @@ void formatAscii(Harness::ITransport& transport, const AsyncEvent& evt, uint32_t
  *
  * Output: {"kind":"event","type":"FAULT","seq":1,"ts_ms":12345,"data":{"status":4660,"detail":"OCD"}}\r\n
  */
-void formatJson(Harness::ITransport& transport, const AsyncEvent& evt, uint32_t seq, uint32_t ts_ms);
+void formatJson(Transport::ITransport& transport, const AsyncEvent& evt, uint32_t seq, uint32_t ts_ms);
 
 /**
  * @brief Build the detail string for a fault event

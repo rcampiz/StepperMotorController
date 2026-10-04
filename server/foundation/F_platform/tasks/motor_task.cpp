@@ -9,28 +9,29 @@
 
 #include "F_platform/tasks/motor_task.hpp"
 #include "harness/pins/imotor_task_control.hpp"
-#include "harness/pins/imotor_control_service.hpp"
+#include "F_platform/tasks/boundary/imotor_control_service.hpp"
+#include "harness/harness_template.hpp"
 #include "harness/pins/isnapshot_writer.hpp"
-#include "harness/pins/itask_stats.hpp"
+#include "F_platform/tasks/boundary/itask_stats.hpp"
 #include <stdint.h>
 #include "harness/pins/itrace_context.hpp"
 
 namespace Scheduler {
 
 // Injected dependencies (set by MotorTask_Init)
-static Drivers::IMotorDriver* s_driver = nullptr;
-static Platform::IQueue<Harness::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>* s_cmdQueue = nullptr;
+static Services::IMotorDriver* s_driver = nullptr;
+static Platform::IQueue<Scheduler::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>* s_cmdQueue = nullptr;
 static Platform::IClock* s_clock = nullptr;
-static Harness::IMotorControlService* s_controller = nullptr;
+static Scheduler::IMotorControlService* s_controller = nullptr;
 static Platform::IScheduler* s_scheduler = nullptr;
 
 // Task handle for suspend/resume (opaque, managed by IScheduler)
 Platform::TaskHandle g_motorTaskHandle = nullptr;
 
-bool MotorTask_Init(Drivers::IMotorDriver& driver,
-                    Platform::IQueue<Harness::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
+bool MotorTask_Init(Services::IMotorDriver& driver,
+                    Platform::IQueue<Scheduler::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
                     Platform::IClock& clock,
-                    Harness::IMotorControlService& controller,
+                    Scheduler::IMotorControlService& controller,
                     Platform::IScheduler& scheduler)
 {
     s_driver = &driver;
@@ -80,10 +81,10 @@ void vMotorTask(void* pvParameters)
             // Populate system telemetry
             Protocol::SystemTelemetry sys = {};
             sys.uptimeTicks = now;
-            Platform::ITaskStats* stats = Platform::taskStatsProvider();
+            Scheduler::ITaskStats* stats = Scheduler::taskStatsProvider();
             sys.freeHeap = (stats != nullptr) ? stats->getFreeHeapBytes() : 0;
             sys.cpuLoad = 0;
-            Harness::snapshotWriter().writeSystem(sys);
+            Scheduler::snapshotWriter().writeSystem(sys);
         }
     }
 }
@@ -164,7 +165,7 @@ void MotorTask_Reinit()
 // Harness interface implementation (eliminates wiring adapter)
 // ============================================================================
 
-class MotorTaskAccess : public Harness::IMotorTaskControl {
+class MotorTaskAccess : public Scheduler::IMotorTaskControl {
 public:
     void reinit() override { MotorTask_Reinit(); }
     bool applyConfig() override { return MotorTask_ApplyConfig(); }
@@ -181,6 +182,6 @@ public:
 
 static MotorTaskAccess s_motorAccess;
 
-Harness::IMotorTaskControl* MotorTask_GetControlInterface() { return &s_motorAccess; }
+Scheduler::IMotorTaskControl* MotorTask_GetControlInterface() { return &s_motorAccess; }
 
 } // namespace Scheduler

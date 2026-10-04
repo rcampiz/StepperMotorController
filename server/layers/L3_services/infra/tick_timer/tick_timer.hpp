@@ -18,7 +18,7 @@
 
 #include <stdint.h>
 
-namespace Board { class IMicrosecondClock; }
+namespace Scheduler { class IMicrosecondClock; }
 
 namespace Services {
 
@@ -80,6 +80,6 @@ inline bool TickTimer_IsExpired(uint32_t startTick, uint32_t timeoutUs) {
 void TickTimer_DelayUs(uint32_t delayUs);
 
 /** @brief Get IMicrosecondClock adapter (valid after TickTimer_Init) */
-Board::IMicrosecondClock* TickTimer_GetMicrosecondClock();
+Scheduler::IMicrosecondClock* TickTimer_GetMicrosecondClock();
 
 } // namespace Services

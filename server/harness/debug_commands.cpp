@@ -21,7 +21,7 @@
 // ============================================================================
 
 bool DebugCommandHandler::dispatch(const char* cmd, const char* const* args,
-                                   uint8_t argCount, Harness::ITransport& transport) {
+                                   uint8_t argCount, Transport::ITransport& transport) {
     if (strcmp(cmd, "SPI_DEBUG") == 0) { cmdSpiDebug(transport); return true; }
     if (strcmp(cmd, "SPI_MODE_TEST") == 0) { cmdSpiModeTest(transport); return true; }
     if (strcmp(cmd, "CS_LOW") == 0) { cmdCsLow(transport); return true; }
@@ -91,7 +91,7 @@ int DebugCommandHandler::formatSpi2Diag(char* buf, size_t bufSize) {
 // SPI/GPIO debug commands
 // ============================================================================
 
-void DebugCommandHandler::cmdSpiDebug(Harness::ITransport& t) {
+void DebugCommandHandler::cmdSpiDebug(Transport::ITransport& t) {
     char buf[128];
     snprintf(buf, sizeof(buf),
              "SPI1_CR1=%08X SR=%04X MODER=%08X AFR0=%08X PC_ODR=%04X",
@@ -100,7 +100,7 @@ void DebugCommandHandler::cmdSpiDebug(Harness::ITransport& t) {
     t.println(buf);
 }
 
-void DebugCommandHandler::cmdSpiModeTest(Harness::ITransport& t) {
+void DebugCommandHandler::cmdSpiModeTest(Transport::ITransport& t) {
     char buf[256];
     t.println("Testing SPI modes on motor CS (PB6/D10)...");
 
@@ -156,43 +156,43 @@ void DebugCommandHandler::cmdSpiModeTest(Harness::ITransport& t) {
     t.println("Done. Mode 3 restored.");
 }
 
-void DebugCommandHandler::cmdCsLow(Harness::ITransport& t) {
+void DebugCommandHandler::cmdCsLow(Transport::ITransport& t) {
     GPIOB->BSRR = (1UL << (6 + 16));
     t.println("PB6 (CS/D10) forced LOW. Measure voltage now.");
     t.println("Send CS_HIGH to release.");
 }
 
-void DebugCommandHandler::cmdCsHigh(Harness::ITransport& t) {
+void DebugCommandHandler::cmdCsHigh(Transport::ITransport& t) {
     GPIOB->BSRR = (1UL << 6);
     t.println("PB6 (CS/D10) released HIGH.");
 }
 
-void DebugCommandHandler::cmdMisoPulldown(Harness::ITransport& t) {
+void DebugCommandHandler::cmdMisoPulldown(Transport::ITransport& t) {
     GPIOA->PUPDR &= ~(0x3UL << 12);
     GPIOA->PUPDR |= (0x2UL << 12);
     t.println("PA6 (MISO) pull-down ENABLED.");
 }
 
-void DebugCommandHandler::cmdMisoNopull(Harness::ITransport& t) {
+void DebugCommandHandler::cmdMisoNopull(Transport::ITransport& t) {
     GPIOA->PUPDR &= ~(0x3UL << 12);
     t.println("PA6 (MISO) pull DISABLED.");
 }
 
-void DebugCommandHandler::cmdStbyRelease(Harness::ITransport& t) {
+void DebugCommandHandler::cmdStbyRelease(Transport::ITransport& t) {
     GPIOA->MODER &= ~(0x3UL << 18);
     GPIOA->MODER |= (0x1UL << 18);
     GPIOA->BSRR = (1UL << 9);
     t.println("PA9 (STBY_RST) set HIGH - powerSTEP01 should be active.");
 }
 
-void DebugCommandHandler::cmdStbyHold(Harness::ITransport& t) {
+void DebugCommandHandler::cmdStbyHold(Transport::ITransport& t) {
     GPIOA->MODER &= ~(0x3UL << 18);
     GPIOA->MODER |= (0x1UL << 18);
     GPIOA->BSRR = (1UL << (9 + 16));
     t.println("PA9 (STBY_RST) set LOW - powerSTEP01 in standby/reset.");
 }
 
-void DebugCommandHandler::cmdGpioState(Harness::ITransport& t) {
+void DebugCommandHandler::cmdGpioState(Transport::ITransport& t) {
     char buf[256];
     uint32_t pa_idr = GPIOA->IDR;
     uint32_t pb_idr = GPIOB->IDR;
@@ -207,7 +207,7 @@ void DebugCommandHandler::cmdGpioState(Harness::ITransport& t) {
     t.println(buf);
 }
 
-void DebugCommandHandler::cmdPa6Hiz(Harness::ITransport& t) {
+void DebugCommandHandler::cmdPa6Hiz(Transport::ITransport& t) {
     char buf[128];
     GPIOA->MODER &= ~(0x3UL << 12);
     GPIOA->PUPDR &= ~(0x3UL << 12);
@@ -218,7 +218,7 @@ void DebugCommandHandler::cmdPa6Hiz(Harness::ITransport& t) {
     t.println("Send PA6_RESTORE to restore SPI config.");
 }
 
-void DebugCommandHandler::cmdPa6Restore(Harness::ITransport& t) {
+void DebugCommandHandler::cmdPa6Restore(Transport::ITransport& t) {
     GPIOA->MODER &= ~(0x3UL << 12);
     GPIOA->MODER |= (0x2UL << 12);
     GPIOA->PUPDR &= ~(0x3UL << 12);
@@ -226,7 +226,7 @@ void DebugCommandHandler::cmdPa6Restore(Harness::ITransport& t) {
     t.println("PA6 restored to SPI1 MISO with pull-down.");
 }
 
-void DebugCommandHandler::cmdSpiStop(Harness::ITransport& t) {
+void DebugCommandHandler::cmdSpiStop(Transport::ITransport& t) {
     char buf[80];
     Scheduler::MotorTask_Suspend();
     t.println("Motor task suspended.");
@@ -245,7 +245,7 @@ void DebugCommandHandler::cmdSpiStop(Harness::ITransport& t) {
     t.println("Measure pins. Send SPI_START to restore.");
 }
 
-void DebugCommandHandler::cmdSpiStart(Harness::ITransport& t) {
+void DebugCommandHandler::cmdSpiStart(Transport::ITransport& t) {
     char buf[128];
     GPIOA->MODER &= ~(0x3UL << 10);
     GPIOA->MODER |= (0x2UL << 10);
@@ -272,7 +272,7 @@ void DebugCommandHandler::cmdSpiStart(Harness::ITransport& t) {
     t.println("Motor task resumed.");
 }
 
-void DebugCommandHandler::cmdGpioDump(Harness::ITransport& t) {
+void DebugCommandHandler::cmdGpioDump(Transport::ITransport& t) {
     char buf[128];
     t.println("=== GPIOA Registers ===");
     snprintf(buf, sizeof(buf), "MODER=%08lX  (PA6 bits 13:12 = %lu)",
@@ -302,7 +302,7 @@ void DebugCommandHandler::cmdGpioDump(Harness::ITransport& t) {
     t.println("PA6 PUPDR: 00=none, 01=up, 10=down");
 }
 
-void DebugCommandHandler::cmdSpiFloatTest(Harness::ITransport& t) {
+void DebugCommandHandler::cmdSpiFloatTest(Transport::ITransport& t) {
     char buf[128];
     t.println("Testing SPI pins as floating inputs...");
 
@@ -353,7 +353,7 @@ void DebugCommandHandler::cmdSpiFloatTest(Harness::ITransport& t) {
 // Bit-bang SPI tests
 // ============================================================================
 
-void DebugCommandHandler::cmdSpiBitbang(Harness::ITransport& t) {
+void DebugCommandHandler::cmdSpiBitbang(Transport::ITransport& t) {
     char buf[128];
     t.println("Bit-bang SPI test (bypasses SPI peripheral)...");
 
@@ -438,7 +438,7 @@ void DebugCommandHandler::cmdSpiBitbang(Harness::ITransport& t) {
     t.println("Done. SPI restored.");
 }
 
-void DebugCommandHandler::cmdSpiBitbangM3(Harness::ITransport& t) {
+void DebugCommandHandler::cmdSpiBitbangM3(Transport::ITransport& t) {
     char buf[128];
     t.println("Bit-bang SPI Mode 3 test (CPOL=1, CPHA=1)...");
 
@@ -520,7 +520,7 @@ void DebugCommandHandler::cmdSpiBitbangM3(Harness::ITransport& t) {
     t.println("Done. SPI restored.");
 }
 
-void DebugCommandHandler::cmdSpiEchoTest(Harness::ITransport& t) {
+void DebugCommandHandler::cmdSpiEchoTest(Transport::ITransport& t) {
     char buf[128];
     t.println("SPI Echo/Coupling Test...");
     t.println("Sending various patterns to detect MOSI->MISO coupling");
@@ -584,7 +584,7 @@ void DebugCommandHandler::cmdSpiEchoTest(Harness::ITransport& t) {
     t.println("Done.");
 }
 
-void DebugCommandHandler::cmdSpiCsToggle(Harness::ITransport& t) {
+void DebugCommandHandler::cmdSpiCsToggle(Transport::ITransport& t) {
     char buf[128];
     t.println("SPI with CS toggle per byte (powerSTEP01 requirement)...");
     t.println("CS must go HIGH for >=625ns between each byte!");
@@ -718,7 +718,7 @@ static void ps01ExitBitBang(uint32_t saved_moder) {
     SPI1->CR1 |= SPI_CR1_SPE;
 }
 
-void DebugCommandHandler::cmdPs01Diag(Harness::ITransport& t) {
+void DebugCommandHandler::cmdPs01Diag(Transport::ITransport& t) {
     char buf[128];
     t.println("powerSTEP01 Diagnostic Registers:");
 
@@ -773,7 +773,7 @@ void DebugCommandHandler::cmdPs01Diag(Harness::ITransport& t) {
     t.println("Done.");
 }
 
-void DebugCommandHandler::cmdPs01FixClk(Harness::ITransport& t) {
+void DebugCommandHandler::cmdPs01FixClk(Transport::ITransport& t) {
     char buf[128];
     t.println("Fixing powerSTEP01 clock config (internal 16MHz)...");
 
@@ -815,7 +815,7 @@ void DebugCommandHandler::cmdPs01FixClk(Harness::ITransport& t) {
     t.println("Done. Try MOVE command now.");
 }
 
-void DebugCommandHandler::cmdPs01Safe(Harness::ITransport& t) {
+void DebugCommandHandler::cmdPs01Safe(Transport::ITransport& t) {
     char buf[128];
     t.println("Configuring safe settings (raise thresholds)...");
 
@@ -867,7 +867,7 @@ void DebugCommandHandler::cmdPs01Safe(Harness::ITransport& t) {
     t.println("Done. Try MOVE now.");
 }
 
-void DebugCommandHandler::cmdPs01Reset(Harness::ITransport& t) {
+void DebugCommandHandler::cmdPs01Reset(Transport::ITransport& t) {
     char buf[128];
     t.println("Resetting powerSTEP01 and clearing faults...");
 
@@ -949,7 +949,7 @@ void DebugCommandHandler::cmdPs01Reset(Harness::ITransport& t) {
 }
 
 void DebugCommandHandler::cmdPs01Run(const char* const* args, uint8_t argCount,
-                                     Harness::ITransport& t) {
+                                     Transport::ITransport& t) {
     char buf[128];
     uint8_t kval = 0x40;
     uint32_t speed = 0x5000;
@@ -1021,7 +1021,7 @@ void DebugCommandHandler::cmdPs01Run(const char* const* args, uint8_t argCount,
     t.println("Use PS01_STOP to stop motor.");
 }
 
-void DebugCommandHandler::cmdPs01Stop(Harness::ITransport& t) {
+void DebugCommandHandler::cmdPs01Stop(Transport::ITransport& t) {
     t.println("Stopping motor (SoftStop)...");
 
     uint32_t saved = ps01EnterBitBang();
@@ -1045,7 +1045,7 @@ void DebugCommandHandler::cmdPs01Stop(Harness::ITransport& t) {
 // LCD/motor isolation and MOSI tests
 // ============================================================================
 
-void DebugCommandHandler::cmdLcdDisable(Harness::ITransport& t) {
+void DebugCommandHandler::cmdLcdDisable(Transport::ITransport& t) {
     char buf[128];
     t.println("Disabling LCD and display task...");
 
@@ -1080,7 +1080,7 @@ void DebugCommandHandler::cmdLcdDisable(Harness::ITransport& t) {
     t.println("Motor commands (MOVE, RUN, etc.) should now work.");
 }
 
-void DebugCommandHandler::cmdMosiTest(Harness::ITransport& t) {
+void DebugCommandHandler::cmdMosiTest(Transport::ITransport& t) {
     char buf[128];
     t.println("MOSI (PA7) toggle test...");
     t.println("Connect scope to PA7 or jumper PA7->PA6 for loopback.");
@@ -1129,7 +1129,7 @@ void DebugCommandHandler::cmdMosiTest(Harness::ITransport& t) {
     t.println("Done. SPI restored.");
 }
 
-void DebugCommandHandler::cmdSpiLoopback(Harness::ITransport& t) {
+void DebugCommandHandler::cmdSpiLoopback(Transport::ITransport& t) {
     char buf[128];
     t.println("SPI LOOPBACK TEST");
     t.println("Requires: Jumper wire from PA7 (MOSI) to PA6 (MISO)");
@@ -1192,7 +1192,7 @@ void DebugCommandHandler::cmdSpiLoopback(Harness::ITransport& t) {
 // SCPI debug queries
 // ============================================================================
 
-void DebugCommandHandler::cmdMotorDebug(Harness::ITransport& t) {
+void DebugCommandHandler::cmdMotorDebug(Transport::ITransport& t) {
     Scheduler::MotorDebugParams info;
     if (!Scheduler::MotorTask_GetDebugInfo(info)) {
       t.println("ERROR Motor not initialized");
@@ -1248,7 +1248,7 @@ void DebugCommandHandler::cmdMotorDebug(Harness::ITransport& t) {
     t.println(buf);
 }
 
-void DebugCommandHandler::cmdEncDebug(Harness::ITransport& t) {
+void DebugCommandHandler::cmdEncDebug(Transport::ITransport& t) {
     char buf[256];
     snprintf(buf, sizeof(buf),
              "TIM4: CNT=%04X CR1=%04X SMCR=%04X CCMR1=%04X CCER=%04X ARR=%04X "

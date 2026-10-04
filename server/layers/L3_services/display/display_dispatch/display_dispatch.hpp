@@ -9,17 +9,17 @@
 #pragma once
 
 #include "harness/pins/idisplay_dispatcher.hpp"
-#include "harness/pins/iremote_display.hpp"
+#include "L3_services/boundary/iremote_display.hpp"
 
 namespace Services {
 
-class DisplayDispatch : public Harness::IDisplayDispatcher {
+class DisplayDispatch : public Services::IDisplayDispatcher {
 public:
     DisplayDispatch() = default;
-    explicit DisplayDispatch(Harness::IRemoteDisplay* remote)
+    explicit DisplayDispatch(Services::IRemoteDisplay* remote)
         : m_remoteDisplay(remote) {}
 
-    void setRemoteDisplay(Harness::IRemoteDisplay* r) { m_remoteDisplay = r; }
+    void setRemoteDisplay(Services::IRemoteDisplay* r) { m_remoteDisplay = r; }
 
     bool displayIsRemoteMode() override;
     uint8_t displayGetMode() override;
@@ -39,7 +39,7 @@ public:
     void displayStreamEnd() override;
 
 private:
-    Harness::IRemoteDisplay* m_remoteDisplay = nullptr;
+    Services::IRemoteDisplay* m_remoteDisplay = nullptr;
 };
 
 } // namespace Services

@@ -3,9 +3,9 @@
  * @brief Snapshot writer global accessor wiring
  */
 
-#include "harness/pins/isnapshot_writer.hpp"
+#include "F_platform/tasks/boundary/isnapshot_writer.hpp"
 
-namespace Harness {
+namespace Scheduler {
 
 static ISnapshotWriter* s_snapshotWriter = nullptr;
 
@@ -17,4 +17,4 @@ ISnapshotWriter& snapshotWriter() {
     return *s_snapshotWriter;
 }
 
-} // namespace Harness
+} // namespace Scheduler

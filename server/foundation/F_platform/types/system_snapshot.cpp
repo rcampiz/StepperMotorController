@@ -67,7 +67,7 @@ void SystemSnapshot::writeMotorParam(uint8_t reg, uint32_t value) {
     m_lock->release();
 }
 
-void SystemSnapshot::writeEncoder(const Harness::EncoderTelemetryData& data) {
+void SystemSnapshot::writeEncoder(const Scheduler::EncoderTelemetryData& data) {
     m_lock->acquire();
     m_encoder.count = data.count;
     m_encoder.velocity = data.velocity;

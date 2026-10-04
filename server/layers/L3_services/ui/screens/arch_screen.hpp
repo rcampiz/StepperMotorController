@@ -44,7 +44,7 @@ namespace UI {
 class ArchScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::STATUS; }
-    void render(Drivers::ICanvas& lcd) override;
+    void render(Services::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
 
@@ -54,10 +54,10 @@ public:
 private:
     enum class Mode : uint8_t { DIAGRAM, MATRIX, FLOW, TASKS };
 
-    void renderDiagram(Drivers::ICanvas& lcd);
-    void renderMatrix(Drivers::ICanvas& lcd);
-    void renderFlow(Drivers::ICanvas& lcd);
-    void renderTasks(Drivers::ICanvas& lcd);
+    void renderDiagram(Services::ICanvas& lcd);
+    void renderMatrix(Services::ICanvas& lcd);
+    void renderFlow(Services::ICanvas& lcd);
+    void renderTasks(Services::ICanvas& lcd);
     InputResult handleDiagramInput(JoyDirection dir);
     InputResult handleMatrixInput(JoyDirection dir);
     InputResult handleFlowInput(JoyDirection dir);

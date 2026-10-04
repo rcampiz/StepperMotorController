@@ -25,7 +25,7 @@ namespace UI {
 class MotionScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::MENU; }
-    void render(Drivers::ICanvas& lcd) override;
+    void render(Services::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
     bool needsFullRedraw() const override { return m_needsRedraw; }
@@ -55,9 +55,9 @@ private:
     static constexpr uint32_t SPEED_STEP = 50;
 
     bool isFieldEnabled(uint8_t field, bool faulted, bool hiZ) const;
-    void renderField(Drivers::ICanvas& lcd, uint8_t field, uint16_t y, bool selected,
+    void renderField(Services::ICanvas& lcd, uint8_t field, uint16_t y, bool selected,
                      bool faulted, bool hiZ);
-    void renderStatus(Drivers::ICanvas& lcd);
+    void renderStatus(Services::ICanvas& lcd);
 };
 
 } // namespace UI

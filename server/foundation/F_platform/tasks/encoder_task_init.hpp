@@ -17,19 +17,17 @@ namespace Drivers { struct EncoderDriverHandle; }
 
 namespace Platform { class IClock; class IScheduler; }
 
-namespace Harness {
+namespace Scheduler { class IEncoder; class IEncoderFilterControl; }
+namespace Services { class IEncoderProcessing; class IEncoderStatusSink; }
 
-class IEncoder;
-class IEncoderFilterControl;
-class IEncoderProcessing;
-class IEncoderStatusSink;
+namespace Harness {
 
 /**
  * @brief Result of encoder task initialization
  */
 struct EncoderTaskResult {
-    IEncoder* encoder = nullptr;                ///< Encoder data access (valid after init)
-    IEncoderFilterControl* filterControl = nullptr; ///< Filter control (valid after init)
+    Scheduler::IEncoder* encoder = nullptr;                ///< Encoder data access (valid after init)
+    Scheduler::IEncoderFilterControl* filterControl = nullptr; ///< Filter control (valid after init)
 };
 
 /**
@@ -50,8 +48,8 @@ struct EncoderTaskResult {
  */
 bool initEncoderTask(Drivers::EncoderDriverHandle& driverHandle,
                      Platform::IClock& clock,
-                     IEncoderProcessing& processor,
-                     IEncoderStatusSink& statusSink,
+                     Services::IEncoderProcessing& processor,
+                     Services::IEncoderStatusSink& statusSink,
                      uint8_t measWindowMs,
                      uint16_t sampleRateHz,
                      Platform::IScheduler& scheduler,

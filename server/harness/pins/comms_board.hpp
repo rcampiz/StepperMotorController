@@ -8,12 +8,12 @@
 
 #pragma once
 
-namespace Harness { class IByteChannel; }
+namespace Transport { class IByteChannel; }
 
 namespace Harness {
 
 struct CommsBoardHw {
-    IByteChannel* channel = nullptr;
+    Transport::IByteChannel* channel = nullptr;
 };
 
 /**

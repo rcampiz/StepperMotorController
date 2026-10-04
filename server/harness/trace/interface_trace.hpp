@@ -15,9 +15,9 @@
 
 #include <stdint.h>
 
-namespace Harness {
+namespace Services { class ITraceSink; }
 
-class ITraceSink;
+namespace Harness {
 
 namespace ITrace {
 
@@ -27,7 +27,7 @@ namespace ITrace {
  * The sink receives recordIface() calls to store entries in the ring buffer.
  * If no sink is set, RTT output still works but no ring buffer recording occurs.
  */
-void setSink(ITraceSink* sink);
+void setSink(Services::ITraceSink* sink);
 
 // Per-boundary enable bits (16-bit to support >8 boundaries)
 enum Boundary : uint16_t {

@@ -9,7 +9,7 @@
 
 namespace Services {
 
-class FlashDispatch : public Harness::IFlashImageDispatcher {
+class FlashDispatch : public Services::IFlashImageDispatcher {
 public:
     bool flashIsAvailable() override;
     FlashInfo flashGetInfo() override;

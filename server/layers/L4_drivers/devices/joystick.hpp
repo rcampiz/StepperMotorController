@@ -9,7 +9,7 @@
 #ifndef JOYSTICK_HPP
 #define JOYSTICK_HPP
 
-#include "harness/pins/igpio.hpp"
+#include "L4_drivers/boundary/igpio.hpp"
 #include "harness/pins/ijoystick.hpp"
 
 namespace Drivers {
@@ -40,7 +40,7 @@ public:
      *
      * All pins must be configured as inputs with pull-up before construction.
      */
-    Joystick(Board::IGPIO& left, Board::IGPIO& right, Board::IGPIO& up, Board::IGPIO& down, Board::IGPIO& center)
+    Joystick(Drivers::IGPIO& left, Drivers::IGPIO& right, Drivers::IGPIO& up, Drivers::IGPIO& down, Drivers::IGPIO& center)
         : m_left(left), m_right(right), m_up(up), m_down(down), m_center(center) {}
 
     State read() const {
@@ -106,11 +106,11 @@ public:
     }
 
 private:
-    Board::IGPIO& m_left;
-    Board::IGPIO& m_right;
-    Board::IGPIO& m_up;
-    Board::IGPIO& m_down;
-    Board::IGPIO& m_center;
+    Drivers::IGPIO& m_left;
+    Drivers::IGPIO& m_right;
+    Drivers::IGPIO& m_up;
+    Drivers::IGPIO& m_down;
+    Drivers::IGPIO& m_center;
 };
 
 } // namespace Drivers

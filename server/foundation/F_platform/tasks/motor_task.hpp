@@ -14,10 +14,10 @@
 #include "harness/pins/ischeduler.hpp"
 #include "harness/pins/iqueue.hpp"
 #include "harness/pins/iclock.hpp"
-#include "harness/pins/imotor_driver.hpp"
+#include "L3_services/boundary/imotor_driver.hpp"
 #include <stdint.h>
 
-namespace Harness { class IMotorTaskControl; class IMotorControlService; }
+namespace Scheduler { class IMotorTaskControl; class IMotorControlService; }
 
 namespace Scheduler {
 
@@ -27,8 +27,8 @@ constexpr uint32_t MOTOR_TASK_PRIORITY = 4;
 constexpr size_t MOTOR_CMD_QUEUE_DEPTH = 8;
 
 // Types moved to Harness namespace — aliases for backward compatibility
-using Harness::MotorCmdType;
-using Harness::MotorCommand;
+using Scheduler::MotorCmdType;
+using Scheduler::MotorCommand;
 using Harness::MotorDebugParams;
 
 /**
@@ -45,10 +45,10 @@ using Harness::MotorDebugParams;
  * @param scheduler  Scheduler for suspend/resume (injected, no Platform::resources)
  * @return true on success
  */
-bool MotorTask_Init(Drivers::IMotorDriver& driver,
-                    Platform::IQueue<Harness::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
+bool MotorTask_Init(Services::IMotorDriver& driver,
+                    Platform::IQueue<Scheduler::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
                     Platform::IClock& clock,
-                    Harness::IMotorControlService& controller,
+                    Scheduler::IMotorControlService& controller,
                     Platform::IScheduler& scheduler);
 
 /**
@@ -135,7 +135,7 @@ extern Platform::TaskHandle g_motorTaskHandle;
  * @brief Get IMotorTaskControl interface implemented by this task
  * @return Pointer to static IMotorTaskControl instance (valid after init)
  */
-Harness::IMotorTaskControl* MotorTask_GetControlInterface();
+Scheduler::IMotorTaskControl* MotorTask_GetControlInterface();
 
 } // namespace Scheduler
 

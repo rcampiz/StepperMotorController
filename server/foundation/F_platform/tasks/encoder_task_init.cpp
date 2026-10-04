@@ -8,6 +8,7 @@
 #include "F_platform/tasks/encoder_task_init.hpp"
 #include "harness/pins/ischeduler.hpp"
 #include "harness/pins/encoder_driver_init.hpp"
+#include "harness/harness_wiring_map.hpp"
 #include "F_platform/rtos/freertos_critical_section.hpp"
 #include "F_platform/tasks/encoder_task.hpp"
 
@@ -17,17 +18,23 @@ static Platform::FreeRTOSCriticalSection s_critSection;
 
 bool initEncoderTask(Drivers::EncoderDriverHandle& driverHandle,
                      Platform::IClock& clock,
-                     IEncoderProcessing& processor,
-                     IEncoderStatusSink& statusSink,
+                     Services::IEncoderProcessing& processor,
+                     Services::IEncoderStatusSink& statusSink,
                      uint8_t measWindowMs,
                      uint16_t sampleRateHz,
                      Platform::IScheduler& scheduler,
                      EncoderTaskResult& result)
 {
-    // Task init (opens opaque handle — upcasts L4 concrete types to interfaces)
-    if (!Scheduler::EncoderTask_Init(*driverHandle.encoder, *driverHandle.timer,
-                                      *driverHandle.sampler, s_critSection,
-                                      clock, processor, statusSink,
+    // Task init — adapt provider types to consumer ports
+    auto& encoderPort = Harness::adaptEncoderHardware(*driverHandle.encoder);
+    auto& timerPort = Harness::adaptTimerCounter(*driverHandle.timer);
+    auto& samplerPort = Harness::adaptEncoderSampler(*driverHandle.sampler);
+    auto& processorPort = Harness::adaptEncoderProcessing(processor);
+    auto& statusSinkPort = Harness::adaptEncoderStatusSink(statusSink);
+    auto& critPort = Harness::adaptCriticalSection(s_critSection);
+    if (!Scheduler::EncoderTask_Init(encoderPort, timerPort,
+                                      samplerPort, critPort,
+                                      clock, processorPort, statusSinkPort,
                                       measWindowMs, sampleRateHz)) {
         return false;
     }

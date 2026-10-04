@@ -22,50 +22,50 @@ static Harness::ServiceStatus mapQueueResult(QueueResult r) {
 }
 
 Harness::ServiceStatus QueueDispatch::queueCommand(uint8_t cmdType, int32_t p1, int32_t p2) {
-    Harness::MotorCommand cmd = {};
-    cmd.type = static_cast<Harness::MotorCmdType>(cmdType);
+    MotorCommand cmd = {};
+    cmd.type = static_cast<MotorCmdType>(cmdType);
     cmd.param1 = p1;
     cmd.param2 = p2;
     return mapQueueResult(g_commandQueue.queueCommand(cmd));
 }
 
 Harness::ServiceStatus QueueDispatch::queueMove(int32_t signedSteps) {
-    Harness::MotorCommand cmd = {};
-    cmd.type = Harness::MotorCmdType::Move;
+    MotorCommand cmd = {};
+    cmd.type = MotorCmdType::Move;
     cmd.param1 = signedSteps;
     return mapQueueResult(g_commandQueue.queueCommand(cmd));
 }
 
 Harness::ServiceStatus QueueDispatch::queueGoTo(int32_t position) {
-    Harness::MotorCommand cmd = {};
-    cmd.type = Harness::MotorCmdType::GoTo;
+    MotorCommand cmd = {};
+    cmd.type = MotorCmdType::GoTo;
     cmd.param1 = position;
     return mapQueueResult(g_commandQueue.queueCommand(cmd));
 }
 
 Harness::ServiceStatus QueueDispatch::queueRun(uint32_t speedRaw, int32_t direction) {
-    Harness::MotorCommand cmd = {};
-    cmd.type = Harness::MotorCmdType::Run;
+    MotorCommand cmd = {};
+    cmd.type = MotorCmdType::Run;
     cmd.param1 = static_cast<int32_t>(speedRaw);
     cmd.param2 = direction;
     return mapQueueResult(g_commandQueue.queueCommand(cmd));
 }
 
 Harness::ServiceStatus QueueDispatch::queueStop(bool hard) {
-    Harness::MotorCommand cmd = {};
-    cmd.type = hard ? Harness::MotorCmdType::HardStop : Harness::MotorCmdType::SoftStop;
+    MotorCommand cmd = {};
+    cmd.type = hard ? MotorCmdType::HardStop : MotorCmdType::SoftStop;
     return mapQueueResult(g_commandQueue.queueCommand(cmd));
 }
 
 Harness::ServiceStatus QueueDispatch::queueHome() {
-    Harness::MotorCommand cmd = {};
-    cmd.type = Harness::MotorCmdType::GoHome;
+    MotorCommand cmd = {};
+    cmd.type = MotorCmdType::GoHome;
     return mapQueueResult(g_commandQueue.queueCommand(cmd));
 }
 
 Harness::ServiceStatus QueueDispatch::queueZero() {
-    Harness::MotorCommand cmd = {};
-    cmd.type = Harness::MotorCmdType::ResetPos;
+    MotorCommand cmd = {};
+    cmd.type = MotorCmdType::ResetPos;
     return mapQueueResult(g_commandQueue.queueCommand(cmd));
 }
 

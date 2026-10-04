@@ -8,6 +8,7 @@
 #include "F_platform/tasks/comms_task_init.hpp"
 #include "harness/pins/ischeduler.hpp"
 #include "harness/pins/isafety_actions.hpp"
+#include "harness/harness_wiring_map.hpp"
 #include "F_platform/tasks/comms_task.hpp"
 #include "F_platform/tasks/motor_task.hpp"
 
@@ -17,7 +18,7 @@
 
 // --- SafetyActionsImpl adapter (bridges harness ISafetyActions ↔ Scheduler:: task functions) ---
 
-class SafetyActionsImpl : public Harness::ISafetyActions {
+class SafetyActionsImpl : public Scheduler::ISafetyActions {
 public:
     uint16_t getMotorStatusReg() override {
         Scheduler::MotorDebugParams info;
@@ -48,21 +49,24 @@ public:
 };
 
 // --- Global pin (composition root owns) ---
-Harness::ISafetyActions* Harness::g_safetyActions = nullptr;
+Scheduler::ISafetyActions* Scheduler::g_safetyActions = nullptr;
 
 namespace Harness {
 
-bool initCommsTask(ITransport& transport,
-                   ICommandProcessor& parser,
+bool initCommsTask(Transport::ITransport& transport,
+                   Protocol::ICommandProcessor& parser,
                    Platform::IClock& clock,
-                   IMotorEventReceiver& eventReceiver,
-                   IEmergencyStop& emergencyStop,
+                   Services::IMotorEventReceiver& eventReceiver,
+                   Scheduler::IEmergencyStop& emergencyStop,
                    Platform::IScheduler& scheduler,
                    CommsTaskResult& result)
 {
+    // Adapt provider types to consumer ports
+    auto& eventReceiverPort = Harness::adaptMotorEventReceiver(eventReceiver);
+
     // Task init
     if (!Scheduler::CommsTask_Init(transport, parser, clock,
-                                    eventReceiver, emergencyStop)) {
+                                    eventReceiverPort, emergencyStop)) {
         return false;
     }
 
@@ -70,9 +74,9 @@ bool initCommsTask(ITransport& transport,
     static SafetyActionsImpl safetyActions;
 #ifdef ENABLE_INTERFACE_TRACE
     static Harness::TracedSafetyActions tracedSafety(safetyActions);
-    Harness::g_safetyActions = &tracedSafety;
+    Scheduler::g_safetyActions = &tracedSafety;
 #else
-    Harness::g_safetyActions = &safetyActions;
+    Scheduler::g_safetyActions = &safetyActions;
 #endif
 
     // Joystick callback

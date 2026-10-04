@@ -8,7 +8,7 @@
  */
 
 #include "ui/screens/graph_screen.hpp"
-#include "harness/pins/icanvas.hpp"
+#include "L3_services/boundary/icanvas.hpp"
 #include "harness/pins/itelemetry.hpp"
 #include <stdio.h>
 #include <string.h>
@@ -122,7 +122,7 @@ uint16_t GraphScreen::channelColor() const
     return VALUE_COLOR;
 }
 
-void GraphScreen::renderHeader(Drivers::ICanvas& lcd)
+void GraphScreen::renderHeader(Services::ICanvas& lcd)
 {
     char buf[30];
 
@@ -136,7 +136,7 @@ void GraphScreen::renderHeader(Drivers::ICanvas& lcd)
     lcd.drawString(120, HEADER_Y, buf, VALUE_COLOR, BG_COLOR, TEXT_SCALE);
 }
 
-void GraphScreen::renderGraph(Drivers::ICanvas& lcd)
+void GraphScreen::renderGraph(Services::ICanvas& lcd)
 {
     uint16_t displaySamples = (m_count < GRAPH_W) ? m_count : GRAPH_W;
 
@@ -262,7 +262,7 @@ void GraphScreen::renderGraph(Drivers::ICanvas& lcd)
                    "0s", AXIS_COLOR, BG_COLOR, TEXT_SCALE);
 }
 
-void GraphScreen::render(Drivers::ICanvas& lcd)
+void GraphScreen::render(Services::ICanvas& lcd)
 {
     // On first frame after activation, clear entire screen once
     if (m_needsRedraw) {
@@ -270,7 +270,7 @@ void GraphScreen::render(Drivers::ICanvas& lcd)
     }
 
     // Sample current data
-    Protocol::TelemetrySnapshot telem = Harness::telemetry().getSnapshot();
+    Protocol::TelemetrySnapshot telem = Scheduler::telemetry().getSnapshot();
 
     int32_t value = 0;
     switch (m_channel) {

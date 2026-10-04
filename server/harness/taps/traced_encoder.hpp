@@ -15,12 +15,12 @@
 
 namespace Harness {
 
-class TracedEncoder : public Harness::IEncoder {
+class TracedEncoder : public Scheduler::IEncoder {
 public:
-    explicit TracedEncoder(Harness::IEncoder& real) : m_real(real) {}
+    explicit TracedEncoder(Scheduler::IEncoder& real) : m_real(real) {}
 
-    Harness::EncoderSnapshot getState() override {
-        Harness::EncoderSnapshot snap = m_real.getState();
+    Scheduler::EncoderSnapshot getState() override {
+        Scheduler::EncoderSnapshot snap = m_real.getState();
         Harness::ITrace::logResult(Harness::ITrace::L3_L4_ENCODER, "[L3<L4]", "enc.getState",
                           static_cast<uint32_t>(snap.velocity));
         return snap;
@@ -48,7 +48,7 @@ public:
     }
 
 private:
-    Harness::IEncoder& m_real;
+    Scheduler::IEncoder& m_real;
 };
 
 } // namespace Harness

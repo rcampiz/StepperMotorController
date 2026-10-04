@@ -126,7 +126,7 @@ void initTraceSink();
  *
  * Single static instance created in system_init and passed to Harness::ITrace::setSink().
  */
-class TraceSinkAdapter : public Harness::ITraceSink {
+class TraceSinkAdapter : public Services::ITraceSink {
 public:
     void recordIface(uint16_t boundary, const char* label,
                      const char* method, uint32_t result,

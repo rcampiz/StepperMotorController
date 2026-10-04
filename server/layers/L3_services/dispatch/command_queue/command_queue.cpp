@@ -38,7 +38,7 @@ const char* resultToString(QueueResult result)
     }
 }
 
-bool CommandQueue::init(Platform::ILock& lock, Platform::IClock& clock, IMotorCommandSink& sink)
+bool CommandQueue::init(Services::ILock& lock, Services::IClock& clock, IMotorCommandSink& sink)
 {
     m_lock = &lock;
     m_clock = &clock;

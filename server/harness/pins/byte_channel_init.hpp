@@ -11,7 +11,7 @@
 
 #include <stdint.h>
 
-namespace Harness { class IByteChannel; }
+namespace Transport { class IByteChannel; }
 
 namespace Drivers {
 
@@ -21,7 +21,7 @@ enum class ChannelType : uint8_t {
 };
 
 struct ByteChannelResult {
-    Harness::IByteChannel* channel = nullptr;
+    Transport::IByteChannel* channel = nullptr;
 };
 
 /**

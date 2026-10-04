@@ -9,19 +9,19 @@
 #pragma once
 
 #include "harness/pins/iencoder_dispatcher.hpp"
-#include "harness/pins/iencoder.hpp"
-#include "harness/pins/iencoder_filter_control.hpp"
+#include "L3_services/boundary/iencoder.hpp"
+#include "L3_services/boundary/iencoder_filter_control.hpp"
 
 namespace Services {
 
-class EncoderDispatch : public Harness::IEncoderDispatcher {
+class EncoderDispatch : public Services::IEncoderDispatcher {
 public:
     EncoderDispatch() = default;
-    EncoderDispatch(Harness::IEncoder* enc, Harness::IEncoderFilterControl* filt)
+    EncoderDispatch(Services::IEncoder* enc, Services::IEncoderFilterControl* filt)
         : m_encoder(enc), m_encFilter(filt) {}
 
-    void setEncoder(Harness::IEncoder* e) { m_encoder = e; }
-    void setEncFilter(Harness::IEncoderFilterControl* f) { m_encFilter = f; }
+    void setEncoder(Services::IEncoder* e) { m_encoder = e; }
+    void setEncFilter(Services::IEncoderFilterControl* f) { m_encFilter = f; }
 
     bool isEncoderAvailable() override;
     EncoderSnapshot getEncoderSnapshot() override;
@@ -36,8 +36,8 @@ public:
                                  uint8_t rateDiv) override;
 
 private:
-    Harness::IEncoder* m_encoder = nullptr;
-    Harness::IEncoderFilterControl* m_encFilter = nullptr;
+    Services::IEncoder* m_encoder = nullptr;
+    Services::IEncoderFilterControl* m_encFilter = nullptr;
 };
 
 } // namespace Services

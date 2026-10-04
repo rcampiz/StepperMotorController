@@ -16,13 +16,13 @@
 
 namespace Transport {
 
-class RttTransport : public Harness::ITransport {
+class RttTransport : public Transport::ITransport {
 public:
     /**
      * @brief Construct RTT transport
      * @param channel  Byte channel (IByteChannel implementation)
      */
-    explicit RttTransport(Harness::IByteChannel& channel);
+    explicit RttTransport(Transport::IByteChannel& channel);
 
     bool init() override;
     bool available() override;
@@ -34,7 +34,7 @@ public:
     void flush() override;
 
 private:
-    Harness::IByteChannel& m_channel;
+    Transport::IByteChannel& m_channel;
 };
 
 } // namespace Transport

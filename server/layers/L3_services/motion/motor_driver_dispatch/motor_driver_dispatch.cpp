@@ -8,7 +8,7 @@
 
 namespace Services {
 
-Harness::IMotorDriverDispatcher::FaultEnableFlags MotorDriverDispatch::getFaultEnable() {
+Services::IMotorDriverDispatcher::FaultEnableFlags MotorDriverDispatch::getFaultEnable() {
     const auto& fe = motion.stepper.config.getFaultEnable();
     return {fe.ocd != 0, fe.thermalSD != 0, fe.thermalWarn != 0,
             fe.uvlo != 0, fe.stallA != 0, fe.stallB != 0, fe.cmdErr != 0};

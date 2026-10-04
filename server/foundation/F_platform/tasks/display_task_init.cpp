@@ -8,21 +8,26 @@
 
 #include "F_platform/tasks/display_task_init.hpp"
 #include "harness/pins/ischeduler.hpp"
+#include "harness/harness_wiring_map.hpp"
 #include "F_platform/tasks/display_task.hpp"
 
 namespace Harness {
 
-bool initDisplayTask(Drivers::ICanvas& lcd,
-                     Drivers::IJoystick* joystick,
+bool initDisplayTask(Services::ICanvas& lcd,
+                     Services::IJoystick* joystick,
                      Platform::IClock& clock,
-                     IFlashImageAccess& flashImages,
-                     IIndicatorRenderer& indicator,
+                     Services::IFlashImageAccess& flashImages,
+                     Services::IIndicatorRenderer& indicator,
                      Platform::IScheduler& scheduler,
                      DisplayTaskResult& result)
 {
+    // Adapt provider types to consumer ports
+    auto& flashImagesPort = Harness::adaptFlashImageAccess(flashImages);
+    auto& indicatorPort = Harness::adaptIndicatorRenderer(indicator);
+
     // Task init
     if (!Scheduler::DisplayTask_Init(lcd, joystick, clock,
-                                      flashImages, indicator, scheduler)) {
+                                      flashImagesPort, indicatorPort, scheduler)) {
         return false;
     }
 

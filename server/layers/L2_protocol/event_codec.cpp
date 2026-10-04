@@ -50,7 +50,7 @@ void stallDetail(uint16_t statusReg, char* buf, size_t bufSize) {
     }
 }
 
-void formatAscii(Harness::ITransport& transport, const AsyncEvent& evt, uint32_t seq) {
+void formatAscii(Transport::ITransport& transport, const AsyncEvent& evt, uint32_t seq) {
     (void)seq;  // ASCII mode doesn't include seq (deferred to v1.1)
 
     char line[128];
@@ -88,7 +88,7 @@ void formatAscii(Harness::ITransport& transport, const AsyncEvent& evt, uint32_t
     transport.println(line);
 }
 
-void formatJson(Harness::ITransport& transport, const AsyncEvent& evt, uint32_t seq, uint32_t ts_ms) {
+void formatJson(Transport::ITransport& transport, const AsyncEvent& evt, uint32_t seq, uint32_t ts_ms) {
     char buf[256];
     char detail[16];
     const char* typeName = eventTypeToString(evt.type);

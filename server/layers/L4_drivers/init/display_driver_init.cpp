@@ -5,6 +5,8 @@
 
 #include "harness/pins/display_driver_init.hpp"
 #include "harness/pins/display_board.hpp"
+#include "harness/adapters/spi_adapter.hpp"
+#include "harness/adapters/gpio_adapter.hpp"
 #include "L4_drivers/devices/lcd_st7789.hpp"
 #include "L4_drivers/devices/joystick.hpp"
 #include "L4_drivers/devices/flash_nor.hpp"
@@ -15,27 +17,39 @@ static DisplayDriverHandle s_displayHandle;
 
 bool initDisplayDrivers(DisplayDriverHandle*& handle)
 {
-    // LCD — SPI1 + GPIO
+    // LCD — SPI1 + GPIO (adapt Board:: to Drivers::)
     Harness::LCDPins lcdPins;
     if (!Harness::initLCDBoard(lcdPins)) {
         return false;
     }
-    static LCD lcd(*lcdPins.spi, *lcdPins.cs, *lcdPins.dc, *lcdPins.nreset, *lcdPins.te);
+    static Harness::SPIAdapter lcdSpiAdapter(*lcdPins.spi);
+    static Harness::GPIOAdapter lcdCsAdapter(*lcdPins.cs);
+    static Harness::GPIOAdapter lcdDcAdapter(*lcdPins.dc);
+    static Harness::GPIOAdapter lcdNresetAdapter(*lcdPins.nreset);
+    static Harness::GPIOAdapter lcdTeAdapter(*lcdPins.te);
+    static LCD lcd(lcdSpiAdapter, lcdCsAdapter, lcdDcAdapter, lcdNresetAdapter, lcdTeAdapter);
     lcd.init();
     s_displayHandle.lcd = &lcd;
 
-    // Joystick — 5 GPIO
+    // Joystick — 5 GPIO (adapt Board:: to Drivers::)
     Harness::JoystickPins joyPins;
     if (!Harness::initJoystickBoard(joyPins)) {
         return false;
     }
-    static Joystick joystick(*joyPins.left, *joyPins.right, *joyPins.up, *joyPins.down, *joyPins.center);
+    static Harness::GPIOAdapter joyLeftAdapter(*joyPins.left);
+    static Harness::GPIOAdapter joyRightAdapter(*joyPins.right);
+    static Harness::GPIOAdapter joyUpAdapter(*joyPins.up);
+    static Harness::GPIOAdapter joyDownAdapter(*joyPins.down);
+    static Harness::GPIOAdapter joyCenterAdapter(*joyPins.center);
+    static Joystick joystick(joyLeftAdapter, joyRightAdapter, joyUpAdapter, joyDownAdapter, joyCenterAdapter);
     s_displayHandle.joystick = &joystick;
 
-    // NOR Flash — SPI2 + CS (best-effort probe)
+    // NOR Flash — SPI2 + CS (best-effort probe, adapt Board:: to Drivers::)
     Harness::FlashPins flashPins;
     if (Harness::initFlashBoard(flashPins)) {
-        static SPIFlash norFlash(*flashPins.spi, *flashPins.cs);
+        static Harness::SPIAdapter flashSpiAdapter(*flashPins.spi);
+        static Harness::GPIOAdapter flashCsAdapter(*flashPins.cs);
+        static SPIFlash norFlash(flashSpiAdapter, flashCsAdapter);
         norFlash.init();
 
         auto jedec = norFlash.readJEDEC();

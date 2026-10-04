@@ -12,13 +12,12 @@
 #include "harness/pins/iqueue.hpp"
 #include "harness/pins/imotor_command_sink.hpp"
 
-namespace Drivers { class IMotorDriver; }
-
 namespace Platform { class IClock; class IScheduler; }
 
+namespace Services { class IMotorDriver; class IMotorControlService; }
+namespace Scheduler { class IMotorTaskControl; }
+
 namespace Harness {
-class IMotorControlService;
-class IMotorTaskControl;
 
 constexpr size_t MOTOR_CMD_QUEUE_DEPTH = 8;
 
@@ -26,7 +25,7 @@ constexpr size_t MOTOR_CMD_QUEUE_DEPTH = 8;
  * @brief Result of motor task initialization
  */
 struct MotorTaskResult {
-    IMotorTaskControl* motorCtrl = nullptr;  ///< Motor task control interface
+    Scheduler::IMotorTaskControl* motorCtrl = nullptr;  ///< Motor task control interface
 };
 
 /**
@@ -43,10 +42,10 @@ struct MotorTaskResult {
  * @param result Output: motor task interfaces (populated on success)
  * @return true on success
  */
-bool initMotorTask(Drivers::IMotorDriver& driver,
-                   Platform::IQueue<MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
+bool initMotorTask(Services::IMotorDriver& driver,
+                   Platform::IQueue<Scheduler::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
                    Platform::IClock& clock,
-                   IMotorControlService& controller,
+                   Services::IMotorControlService& controller,
                    Platform::IScheduler& scheduler,
                    MotorTaskResult& result);
 

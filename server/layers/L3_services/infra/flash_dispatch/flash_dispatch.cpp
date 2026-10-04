@@ -12,7 +12,7 @@ bool FlashDispatch::flashIsAvailable() {
     return g_flashImageService.isAvailable();
 }
 
-Harness::IFlashImageDispatcher::FlashInfo FlashDispatch::flashGetInfo() {
+Services::IFlashImageDispatcher::FlashInfo FlashDispatch::flashGetInfo() {
     auto info = g_flashImageService.getInfo();
     return {info.manufacturer, info.memoryType, info.capacityCode,
             info.capacityBytes, info.maxSlots};

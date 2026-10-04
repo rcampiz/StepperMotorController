@@ -19,10 +19,9 @@
 #define FLASH_IMAGE_SERVICE_HPP
 
 #include "harness/pins/iflash_image_access.hpp"
+#include "L3_services/boundary/iflash.hpp"
 #include <stdint.h>
 #include <stddef.h>
-
-namespace Drivers { class IFlash; }
 
 namespace Services {
 
@@ -43,7 +42,7 @@ struct FlashImageInfo {
 };
 
 // ── Service class ───────────────────────────────────────────────────
-class FlashImageService : public Harness::IFlashImageAccess {
+class FlashImageService : public Services::IFlashImageAccess {
 public:
     FlashImageService() = default;
 
@@ -56,7 +55,7 @@ public:
      * @param flash  Pointer to an initialised SPIFlash driver (not owned).
      * @return true if flash detected and usable.
      */
-    bool init(Drivers::IFlash* flash);
+    bool init(Services::IFlash* flash);
 
     /** @brief Is the service ready? */
     bool isAvailable() const override { return m_flash != nullptr && m_maxSlots > 0; }
@@ -131,7 +130,7 @@ public:
     }
 
 private:
-    Drivers::IFlash* m_flash       = nullptr;
+    Services::IFlash* m_flash       = nullptr;
     uint32_t  m_maxSlots    = 0;
     uint32_t  m_capacityBytes = 0;
 };

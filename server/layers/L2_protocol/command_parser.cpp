@@ -18,7 +18,7 @@ namespace Protocol {
 // complete lines, tokenizes them into command + arguments, and routes them to
 // the correct handler via SCPI-style two-level dispatch (e.g. "MOT:RUN 1000").
 // Responses are sent back over the same transport in ASCII or JSON format.
-CommandParser::CommandParser(Harness::ITransport &transport,
+CommandParser::CommandParser(Transport::ITransport &transport,
                              ICommandDispatcher &dispatcher)
     : m_transport(transport), m_dispatcher(dispatcher),
       m_bufIndex(0),                    // start with empty input buffer
@@ -575,7 +575,7 @@ void CommandParser::respondStatus(ServiceStatus r, const char *okMsg) {
 
 // --- ICommandProcessor interface ---
 
-void CommandParser::formatEvent(Harness::ITransport &transport,
+void CommandParser::formatEvent(Transport::ITransport &transport,
                                 const AsyncEvent &evt, uint32_t seq,
                                 uint32_t ts_ms) {
   if (m_format == ResponseFormat::JSON) {
@@ -585,7 +585,7 @@ void CommandParser::formatEvent(Harness::ITransport &transport,
   }
 }
 
-void CommandParser::getDispatchStats(Harness::DispatchStats &out) const {
+void CommandParser::getDispatchStats(Scheduler::DispatchStats &out) const {
   out.totalCommands = m_dispatchStats.totalCommands;
   out.unknownCommands = m_dispatchStats.unknownCommands;
   out.parseErrors = m_dispatchStats.parseErrors;

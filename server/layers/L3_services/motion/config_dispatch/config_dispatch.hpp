@@ -12,7 +12,7 @@
 
 namespace Services {
 
-class ConfigDispatch : public Harness::IMotorConfigDispatcher {
+class ConfigDispatch : public Services::IMotorConfigDispatcher {
 public:
     Harness::ServiceStatus configSetAccelPhysical(uint32_t stepsPerS2) override;
     Harness::ServiceStatus configSetDecelPhysical(uint32_t stepsPerS2) override;

@@ -6,10 +6,10 @@
 #include "F_platform/tasks/display_task.hpp"
 #include "harness/pins/iclock.hpp"
 #include "harness/pins/iremote_display.hpp"
-#include "harness/pins/icanvas.hpp"
-#include "harness/pins/ijoystick.hpp"
-#include "harness/pins/iflash_image_access.hpp"
-#include "harness/pins/iindicator_renderer.hpp"
+#include "L3_services/boundary/icanvas.hpp"
+#include "L3_services/boundary/ijoystick.hpp"
+#include "F_platform/tasks/boundary/iflash_image_access.hpp"
+#include "F_platform/tasks/boundary/iindicator_renderer.hpp"
 #include "F_platform/ui/ui_mode.hpp"
 #include "ui/screen_manager/screen_manager.hpp"
 #include "ui/menu_screen/menu_screen.hpp"
@@ -53,11 +53,11 @@ static UI::DispatcherScreen s_dispatcherScreen;
 static UI::ArchScreen s_archScreen;
 
 // Injected dependencies (set by DisplayTask_Init)
-static Drivers::ICanvas* s_lcd = nullptr;
-static Drivers::IJoystick* s_joystick = nullptr;
+static Services::ICanvas* s_lcd = nullptr;
+static Services::IJoystick* s_joystick = nullptr;
 static Platform::IClock* s_clock = nullptr;
-static Harness::IFlashImageAccess* s_flashImages = nullptr;
-static Harness::IIndicatorRenderer* s_indicator = nullptr;
+static Scheduler::IFlashImageAccess* s_flashImages = nullptr;
+static Scheduler::IIndicatorRenderer* s_indicator = nullptr;
 static Platform::IScheduler* s_scheduler = nullptr;
 
 // Forward declaration
@@ -162,10 +162,10 @@ static uint8_t s_holdCount = 0;
 static constexpr uint8_t HOLD_DELAY_POLLS = 8;   // 400ms before repeat starts
 static constexpr uint8_t HOLD_REPEAT_POLLS = 2;  // 100ms between repeats
 
-bool DisplayTask_Init(Drivers::ICanvas& lcd, Drivers::IJoystick* joystick,
+bool DisplayTask_Init(Services::ICanvas& lcd, Services::IJoystick* joystick,
                       Platform::IClock& clock,
-                      Harness::IFlashImageAccess& flashImages,
-                      Harness::IIndicatorRenderer& indicator,
+                      Scheduler::IFlashImageAccess& flashImages,
+                      Scheduler::IIndicatorRenderer& indicator,
                       Platform::IScheduler& scheduler)
 {
     s_lcd = &lcd;
@@ -344,7 +344,7 @@ void DisplayTask_RemoteIndicator(uint16_t angle_deg, int8_t rotation_dir,
     s_indicator->draw({angle_deg, rotation_dir, has_translation});
 }
 
-Drivers::ICanvas* DisplayTask_GetLCD()
+Services::ICanvas* DisplayTask_GetLCD()
 {
     return s_lcd;
 }
@@ -397,7 +397,7 @@ void DisplayTask_Resume()
 // Harness interface implementation (eliminates wiring adapter)
 // ============================================================================
 
-class RemoteDisplayAccess : public Harness::IRemoteDisplay {
+class RemoteDisplayAccess : public Scheduler::IRemoteDisplay {
 public:
     void clear(uint16_t color) override {
         DisplayTask_RemoteClear(color);
@@ -434,6 +434,6 @@ public:
 
 static RemoteDisplayAccess s_remoteAccess;
 
-Harness::IRemoteDisplay* DisplayTask_GetRemoteInterface() { return &s_remoteAccess; }
+Scheduler::IRemoteDisplay* DisplayTask_GetRemoteInterface() { return &s_remoteAccess; }
 
 } // namespace Scheduler

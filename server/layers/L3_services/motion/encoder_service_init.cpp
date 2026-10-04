@@ -15,6 +15,14 @@
 // Task init through harness
 #include "harness/pins/encoder_task_init.hpp"
 
+// Harness adapt functions (forward declarations)
+namespace Scheduler { class IEncoder; class IEncoderFilterControl; }
+namespace Services { class IEncoder; class IEncoderFilterControl; }
+namespace Harness {
+    Services::IEncoder& adaptEncoder(Scheduler::IEncoder& raw);
+    Services::IEncoderFilterControl& adaptEncoderFilterControl(Scheduler::IEncoderFilterControl& raw);
+}
+
 // L3 internal
 #include "L3_services/motion/motion.hpp"
 
@@ -50,8 +58,8 @@ bool initEncoderSubsystem(Platform::IClock& clock,
         taskResult);
 
     if (result.encoderAvailable) {
-        result.encoder = taskResult.encoder;
-        result.filterControl = taskResult.filterControl;
+        result.encoder = &Harness::adaptEncoder(*taskResult.encoder);
+        result.filterControl = &Harness::adaptEncoderFilterControl(*taskResult.filterControl);
     }
 
     return true;  // Always succeeds — encoder is optional hardware

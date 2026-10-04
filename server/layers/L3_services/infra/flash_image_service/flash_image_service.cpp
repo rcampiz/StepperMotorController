@@ -4,7 +4,7 @@
  */
 
 #include "L3_services/infra/flash_image_service/flash_image_service.hpp"
-#include "harness/pins/iflash.hpp"
+#include "L3_services/boundary/iflash.hpp"
 #include "harness/trace/interface_trace.hpp"
 
 namespace Services {
@@ -12,7 +12,7 @@ namespace Services {
 // Global instance
 FlashImageService g_flashImageService;
 
-bool FlashImageService::init(Drivers::IFlash* flash) {
+bool FlashImageService::init(Services::IFlash* flash) {
     if (flash == nullptr) {
         return false;
     }

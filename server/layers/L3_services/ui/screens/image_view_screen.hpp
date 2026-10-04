@@ -18,7 +18,7 @@ namespace UI {
 class ImageViewScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::IMAGE; }
-    void render(Drivers::ICanvas& lcd) override;
+    void render(Services::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
 

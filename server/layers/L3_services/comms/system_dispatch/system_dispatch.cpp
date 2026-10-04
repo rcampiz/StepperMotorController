@@ -52,7 +52,7 @@ void SystemDispatch::disableEvents() {
     motion.stepper.event.disable();
 }
 
-Harness::ISystemDispatcher::EventStats SystemDispatch::getEventStats() {
+Services::ISystemDispatcher::EventStats SystemDispatch::getEventStats() {
     MotorEventStats st = motion.stepper.event.getStats();
     return {st.sent, st.lostCritical, st.lostInfo, st.enableMask, st.queueDepth};
 }

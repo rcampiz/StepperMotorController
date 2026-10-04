@@ -9,24 +9,18 @@
 
 #pragma once
 
-namespace Drivers {
-class ICanvas;
-class IJoystick;
-}
-
 namespace Platform { class IClock; class IScheduler; }
 
-namespace Harness {
+namespace Scheduler { class IRemoteDisplay; }
+namespace Services { class ICanvas; class IJoystick; class IFlashImageAccess; class IIndicatorRenderer; }
 
-class IRemoteDisplay;
-class IFlashImageAccess;
-class IIndicatorRenderer;
+namespace Harness {
 
 /**
  * @brief Result of display task initialization
  */
 struct DisplayTaskResult {
-    IRemoteDisplay* remoteDisplay = nullptr;  ///< Remote display interface (valid after init)
+    Scheduler::IRemoteDisplay* remoteDisplay = nullptr;  ///< Remote display interface (valid after init)
 };
 
 /**
@@ -41,11 +35,11 @@ struct DisplayTaskResult {
  * @param result        Output: remote display interface
  * @return true on success
  */
-bool initDisplayTask(Drivers::ICanvas& lcd,
-                     Drivers::IJoystick* joystick,
+bool initDisplayTask(Services::ICanvas& lcd,
+                     Services::IJoystick* joystick,
                      Platform::IClock& clock,
-                     IFlashImageAccess& flashImages,
-                     IIndicatorRenderer& indicator,
+                     Services::IFlashImageAccess& flashImages,
+                     Services::IIndicatorRenderer& indicator,
                      Platform::IScheduler& scheduler,
                      DisplayTaskResult& result);
 

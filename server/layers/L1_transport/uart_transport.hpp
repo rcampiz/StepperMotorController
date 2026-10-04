@@ -19,14 +19,14 @@
 
 namespace Transport {
 
-class UartTransport : public Harness::ITransport {
+class UartTransport : public Transport::ITransport {
 public:
     /**
      * @brief Construct UART transport
      * @param channel  Byte channel (IByteChannel implementation)
      * @param clock    Platform clock for delays and timeouts
      */
-    UartTransport(Harness::IByteChannel& channel, Platform::IClock& clock);
+    UartTransport(Transport::IByteChannel& channel, Platform::IClock& clock);
 
     bool init() override;
     bool available() override;
@@ -39,7 +39,7 @@ public:
     bool setBaudRate(uint32_t baudRate) override;
 
 private:
-    Harness::IByteChannel& m_channel;
+    Transport::IByteChannel& m_channel;
     Platform::IClock* m_clock;
     uint32_t m_baudRate;
 };

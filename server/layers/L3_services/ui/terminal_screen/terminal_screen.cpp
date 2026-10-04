@@ -4,7 +4,7 @@
  */
 
 #include "ui/terminal_screen/terminal_screen.hpp"
-#include "harness/pins/icanvas.hpp"
+#include "L3_services/boundary/icanvas.hpp"
 #include <string.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -134,7 +134,7 @@ const char* TerminalScreen::getLine(uint8_t logicalIndex) const
     return m_lines[actualIndex];
 }
 
-void TerminalScreen::render(Drivers::ICanvas& lcd)
+void TerminalScreen::render(Services::ICanvas& lcd)
 {
     uint16_t y = MARGIN_TOP;
 
@@ -144,7 +144,7 @@ void TerminalScreen::render(Drivers::ICanvas& lcd)
         y += TITLE_HEIGHT;
 
         // Draw separator
-        lcd.drawHLine(MARGIN_LEFT, y, Drivers::Canvas::WIDTH - 2 * MARGIN_LEFT, COLOR_TITLE);
+        lcd.drawHLine(MARGIN_LEFT, y, Services::Canvas::WIDTH - 2 * MARGIN_LEFT, COLOR_TITLE);
         y += 4;
     }
 
@@ -171,14 +171,14 @@ void TerminalScreen::render(Drivers::ICanvas& lcd)
         }
 
         // Clear line area and draw text
-        lcd.fillRect(MARGIN_LEFT, y, Drivers::Canvas::WIDTH - 2 * MARGIN_LEFT, LINE_HEIGHT, COLOR_BG);
+        lcd.fillRect(MARGIN_LEFT, y, Services::Canvas::WIDTH - 2 * MARGIN_LEFT, LINE_HEIGHT, COLOR_BG);
         lcd.drawString(MARGIN_LEFT, y, text, COLOR_TEXT, COLOR_BG);
         y += LINE_HEIGHT;
     }
 
     // Draw scroll indicator if not at bottom
     if (m_scrollOffset > 0) {
-        lcd.fillRect(Drivers::Canvas::WIDTH - 8, Drivers::Canvas::HEIGHT - 8, 4, 4, COLOR_SCROLL_IND);
+        lcd.fillRect(Services::Canvas::WIDTH - 8, Services::Canvas::HEIGHT - 8, 4, 4, COLOR_SCROLL_IND);
     }
 }
 

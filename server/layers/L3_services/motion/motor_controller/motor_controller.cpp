@@ -11,6 +11,7 @@
 #include "L3_services/infra/trace/trace.hpp"
 #include "harness/pins/async_event.hpp"
 #include "harness/pins/isnapshot_writer.hpp"
+#include "harness/pins/itelemetry.hpp"
 #include <limits.h>
 
 namespace Services {
@@ -263,7 +264,7 @@ void MotorController::periodicUpdate(IMotorDriver& driver)
     // (writeMotorStatus + writeMotorParam on each getStatus/getParam call above)
 
     // Shared sensor data for control loop
-    Protocol::TelemetrySnapshot snap = Harness::telemetry().getSnapshot();
+    Protocol::TelemetrySnapshot snap = Scheduler::telemetry().getSnapshot();
     uint32_t ustepsPerRev = motion.stepper.config.getMicrostepsPerRev();
     uint16_t encPPR = motion.encoder.config.getEncoderPPR();
     uint16_t fpr = motion.stepper.config.getFullStepsPerRev();
@@ -395,7 +396,7 @@ void MotorController::periodicUpdate(IMotorDriver& driver)
         ctrl.trimFrozen      = m_lastTrimResult.frozen ? 1 : 0;
         ctrl.velQuality      = snap.encoder.velocityQuality;
 
-        Harness::snapshotWriter().writeControl(ctrl);
+        Scheduler::snapshotWriter().writeControl(ctrl);
     }
 
     // ── Edge detection for async events ──

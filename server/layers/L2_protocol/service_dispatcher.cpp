@@ -120,7 +120,7 @@ uint16_t ServiceDispatcher::configGetEncoderPPR() {
     return m_config->configGetEncoderPPR();
 }
 
-Harness::IMotorConfigDispatcher::MotorConfigSnapshot ServiceDispatcher::getMotorConfig() {
+Protocol::IMotorConfigDispatcher::MotorConfigSnapshot ServiceDispatcher::getMotorConfig() {
     return m_config->getMotorConfig();
 }
 
@@ -146,7 +146,7 @@ void ServiceDispatcher::safetyHeartbeatReceived(uint32_t seq) {
     m_safety->safetyHeartbeatReceived(seq);
 }
 
-Harness::ISafetyDispatcher::HeartbeatStatus ServiceDispatcher::safetyGetHeartbeatStatus() {
+Protocol::ISafetyDispatcher::HeartbeatStatus ServiceDispatcher::safetyGetHeartbeatStatus() {
     return m_safety->safetyGetHeartbeatStatus();
 }
 
@@ -220,7 +220,7 @@ Harness::ServiceStatus ServiceDispatcher::setControlMode(uint8_t mode) {
 
 // ── ISupervisorTrimDispatcher ───────────────────────────────────────
 
-Harness::ISupervisorTrimDispatcher::FollowThresholds ServiceDispatcher::getFollowThresholds() {
+Protocol::ISupervisorTrimDispatcher::FollowThresholds ServiceDispatcher::getFollowThresholds() {
     return m_supTrim->getFollowThresholds();
 }
 
@@ -236,11 +236,11 @@ bool ServiceDispatcher::supervisorClearFault() {
     return m_supTrim->supervisorClearFault();
 }
 
-Harness::ISupervisorTrimDispatcher::SupervisorTelemetry ServiceDispatcher::getSupervisorTelemetry() {
+Protocol::ISupervisorTrimDispatcher::SupervisorTelemetry ServiceDispatcher::getSupervisorTelemetry() {
     return m_supTrim->getSupervisorTelemetry();
 }
 
-Harness::ISupervisorTrimDispatcher::TrimConfig ServiceDispatcher::getTrimConfig() {
+Protocol::ISupervisorTrimDispatcher::TrimConfig ServiceDispatcher::getTrimConfig() {
     return m_supTrim->getTrimConfig();
 }
 
@@ -282,7 +282,7 @@ uint16_t ServiceDispatcher::sysIdGetSampleCount() {
     return m_supTrim->sysIdGetSampleCount();
 }
 
-const Harness::SysIdSampleData* ServiceDispatcher::sysIdGetSamples(uint16_t& count) {
+const Protocol::SysIdSampleData* ServiceDispatcher::sysIdGetSamples(uint16_t& count) {
     return m_supTrim->sysIdGetSamples(count);
 }
 
@@ -292,7 +292,7 @@ bool ServiceDispatcher::isEncoderAvailable() {
     return m_encoder->isEncoderAvailable();
 }
 
-Harness::IEncoderDispatcher::EncoderSnapshot ServiceDispatcher::getEncoderSnapshot() {
+Protocol::IEncoderDispatcher::EncoderSnapshot ServiceDispatcher::getEncoderSnapshot() {
     return m_encoder->getEncoderSnapshot();
 }
 
@@ -328,7 +328,7 @@ void ServiceDispatcher::configSetEncFilterFull(uint8_t flags, uint8_t emaAlpha,
 
 // ── IMotorDriverDispatcher ──────────────────────────────────────────
 
-Harness::IMotorDriverDispatcher::FaultEnableFlags ServiceDispatcher::getFaultEnable() {
+Protocol::IMotorDriverDispatcher::FaultEnableFlags ServiceDispatcher::getFaultEnable() {
     return m_motorDrv->getFaultEnable();
 }
 
@@ -409,7 +409,7 @@ bool ServiceDispatcher::flashIsAvailable() {
     return m_flash->flashIsAvailable();
 }
 
-Harness::IFlashImageDispatcher::FlashInfo ServiceDispatcher::flashGetInfo() {
+Protocol::IFlashImageDispatcher::FlashInfo ServiceDispatcher::flashGetInfo() {
     return m_flash->flashGetInfo();
 }
 
@@ -486,7 +486,7 @@ void ServiceDispatcher::disableEvents() {
     m_system->disableEvents();
 }
 
-Harness::ISystemDispatcher::EventStats ServiceDispatcher::getEventStats() {
+Protocol::ISystemDispatcher::EventStats ServiceDispatcher::getEventStats() {
     return m_system->getEventStats();
 }
 

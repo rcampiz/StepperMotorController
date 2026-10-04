@@ -36,7 +36,7 @@ void SafetyDispatch::safetyHeartbeatReceived(uint32_t seq) {
     Safety::heartbeatReceived(seq);
 }
 
-Harness::ISafetyDispatcher::HeartbeatStatus SafetyDispatch::safetyGetHeartbeatStatus() {
+Services::ISafetyDispatcher::HeartbeatStatus SafetyDispatch::safetyGetHeartbeatStatus() {
     Safety::HeartbeatStatus hb;
     Safety::getHeartbeatStatus(hb);
     return {hb.enabled, hb.timeoutMs, hb.lastSeq, hb.remainingMs, hb.timedOut};

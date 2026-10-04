@@ -21,9 +21,9 @@
 namespace Transport {
 
 bool initTransport(TransportResult& out, TransportType type,
-                   Harness::IByteChannel& channel, Platform::IClock& clock)
+                   Transport::IByteChannel& channel, Platform::IClock& clock)
 {
-    Harness::ITransport* transport = nullptr;
+    Transport::ITransport* transport = nullptr;
 
     switch (type) {
     case TransportType::VCP_UART: {

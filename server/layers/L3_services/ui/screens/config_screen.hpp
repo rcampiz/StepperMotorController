@@ -20,7 +20,7 @@ namespace UI {
 class ConfigScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::MENU; }
-    void render(Drivers::ICanvas& lcd) override;
+    void render(Services::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
     bool needsFullRedraw() const override { return m_needsRedraw; }
@@ -42,7 +42,7 @@ private:
     bool m_needsRedraw = true;
     bool m_saved = false;  // Show "Saved!" feedback briefly
 
-    void renderField(Drivers::ICanvas& lcd, uint8_t field, uint16_t y, bool selected);
+    void renderField(Services::ICanvas& lcd, uint8_t field, uint16_t y, bool selected);
     void adjustField(uint8_t field, int8_t delta);
 };
 

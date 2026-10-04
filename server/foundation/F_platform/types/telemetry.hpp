@@ -15,7 +15,7 @@
 
 namespace Protocol {
 
-class TelemetryManager : public Harness::ITelemetry {
+class TelemetryManager : public Scheduler::ITelemetry {
 public:
     bool init(Platform::ILock& lock, Platform::IClock& clock);
 

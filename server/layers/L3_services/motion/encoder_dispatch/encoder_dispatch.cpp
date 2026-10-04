@@ -4,7 +4,7 @@
  */
 
 #include "encoder_dispatch.hpp"
-#include "harness/pins/iencoder.hpp"
+#include "L3_services/boundary/iencoder.hpp"
 #include "L3_services/motion/motion.hpp"
 
 namespace Services {
@@ -13,11 +13,11 @@ bool EncoderDispatch::isEncoderAvailable() {
     return m_encoder != nullptr && m_encoder->isAvailable();
 }
 
-Harness::IEncoderDispatcher::EncoderSnapshot EncoderDispatch::getEncoderSnapshot() {
+Services::IEncoderDispatcher::EncoderSnapshot EncoderDispatch::getEncoderSnapshot() {
     if (m_encoder == nullptr) {
         return {0, 0, false, 0, 0, 0};
     }
-    Harness::EncoderSnapshot st = m_encoder->getState();
+    Services::EncoderSnapshot st = m_encoder->getState();
     return {st.count, st.velocity, st.indexSeen,
             st.indexTick, st.revolutions, st.indexPeriodUs};
 }

@@ -9,20 +9,19 @@
 #pragma once
 
 namespace Platform { class IClock; class IScheduler; }
-namespace Harness {
-class IEncoder;
-class IEncoderFilterControl;
-} // namespace Harness
 
 namespace Services {
+
+class IEncoder;
+class IEncoderFilterControl;
 
 /**
  * @brief Result of encoder subsystem initialization
  */
 struct EncoderSubsystemResult {
     bool encoderAvailable = false;              ///< true if encoder hardware present
-    Harness::IEncoder* encoder = nullptr;       ///< Encoder data access
-    Harness::IEncoderFilterControl* filterControl = nullptr; ///< Filter control
+    Services::IEncoder* encoder = nullptr;       ///< Encoder data access
+    Services::IEncoderFilterControl* filterControl = nullptr; ///< Filter control
 };
 
 /**

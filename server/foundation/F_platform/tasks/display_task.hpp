@@ -17,10 +17,10 @@
 #include <stdint.h>
 
 // Forward declarations
-namespace Drivers { class ICanvas; class IJoystick; }
 namespace Platform { class IClock; }
-namespace Harness { class IRemoteDisplay;
-                    class IFlashImageAccess; class IIndicatorRenderer; }
+namespace Scheduler { class IRemoteDisplay; }
+namespace Services { class ICanvas; class IJoystick; }
+namespace Scheduler { class IFlashImageAccess; class IIndicatorRenderer; }
 
 namespace Scheduler {
 
@@ -54,10 +54,10 @@ enum class DisplayPage : uint8_t {
  * @param scheduler   Scheduler for suspend/resume (injected, no Platform::resources)
  * @return true on success
  */
-bool DisplayTask_Init(Drivers::ICanvas& lcd, Drivers::IJoystick* joystick,
+bool DisplayTask_Init(Services::ICanvas& lcd, Services::IJoystick* joystick,
                       Platform::IClock& clock,
-                      Harness::IFlashImageAccess& flashImages,
-                      Harness::IIndicatorRenderer& indicator,
+                      Scheduler::IFlashImageAccess& flashImages,
+                      Scheduler::IIndicatorRenderer& indicator,
                       Platform::IScheduler& scheduler);
 
 /**
@@ -145,7 +145,7 @@ void DisplayTask_RemoteIndicator(uint16_t angle_deg, int8_t rotation_dir,
  * @brief Get pointer to LCD driver (for advanced use)
  * @return Pointer to LCD instance, or nullptr if not initialized
  */
-Drivers::ICanvas* DisplayTask_GetLCD();
+Services::ICanvas* DisplayTask_GetLCD();
 
 // =============================================================================
 // Bitmap Streaming API (for binary transfer)
@@ -213,7 +213,7 @@ void DisplayTask_Resume();
  * @brief Get IRemoteDisplay interface implemented by this task
  * @return Pointer to static IRemoteDisplay instance (valid after init)
  */
-Harness::IRemoteDisplay* DisplayTask_GetRemoteInterface();
+Scheduler::IRemoteDisplay* DisplayTask_GetRemoteInterface();
 
 } // namespace Scheduler
 

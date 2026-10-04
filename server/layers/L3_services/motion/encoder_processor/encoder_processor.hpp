@@ -26,7 +26,7 @@ using Harness::ENC_FILT_BIQUAD;
 using Harness::ENC_FILT_NOTCH;
 using Harness::ENC_FILT_HOLT;
 
-class EncoderProcessor : public Harness::IEncoderProcessing {
+class EncoderProcessor : public Services::IEncoderProcessing {
 public:
     /**
      * @brief Process one raw 16-bit encoder count (position unwrapping).

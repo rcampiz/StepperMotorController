@@ -9,7 +9,7 @@
 
 namespace Services {
 
-class ControlModeDispatch : public Harness::IControlModeDispatcher {
+class ControlModeDispatch : public Services::IControlModeDispatcher {
 public:
     uint8_t getControlMode() override;
     uint8_t getEncoderStatus() override;

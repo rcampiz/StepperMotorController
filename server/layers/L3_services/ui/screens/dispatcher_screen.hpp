@@ -22,7 +22,7 @@ namespace UI {
 class DispatcherScreen : public IScreen {
 public:
     ScreenType getType() const override { return ScreenType::STATUS; }
-    void render(Drivers::ICanvas& lcd) override;
+    void render(Services::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
 
@@ -41,7 +41,7 @@ private:
     uint8_t m_historyHead = 0;
     uint8_t m_historyCount = 0;
 
-    void renderQueueBar(Drivers::ICanvas& lcd, uint16_t x, uint16_t y,
+    void renderQueueBar(Services::ICanvas& lcd, uint16_t x, uint16_t y,
                         uint16_t w, uint16_t h,
                         const uint8_t* history, uint8_t maxDepth);
 };

@@ -34,7 +34,7 @@ struct PlatformResources {
     Platform::IQueue<AsyncEvent, 8>* eventQueue;
     Platform::ITaskStats* taskStats;
     Platform::IScheduler* scheduler;
-    Platform::IQueue<MotorCommand, MOTOR_CMD_QUEUE_DEPTH>* motorCmdQueue;
+    Platform::IQueue<Scheduler::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>* motorCmdQueue;
 };
 
 /**

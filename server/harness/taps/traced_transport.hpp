@@ -15,9 +15,9 @@
 
 namespace Harness {
 
-class TracedTransport : public Harness::ITransport {
+class TracedTransport : public Transport::ITransport {
 public:
-    explicit TracedTransport(Harness::ITransport& real) : m_real(real) {}
+    explicit TracedTransport(Transport::ITransport& real) : m_real(real) {}
 
     bool init() override {
         Harness::ITrace::log(Harness::ITrace::L1_L2_TRANSPORT, "[L1>L2]", "init");
@@ -61,7 +61,7 @@ public:
     }
 
 private:
-    Harness::ITransport& m_real;
+    Transport::ITransport& m_real;
 };
 
 } // namespace Harness

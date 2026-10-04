@@ -4,7 +4,7 @@
  */
 
 #include "ui/menu_screen/menu_screen.hpp"
-#include "harness/pins/icanvas.hpp"
+#include "L3_services/boundary/icanvas.hpp"
 #include <string.h>
 
 namespace UI {
@@ -96,7 +96,7 @@ void MenuScreen::onActivate()
     m_dirty = true;
 }
 
-void MenuScreen::render(Drivers::ICanvas& lcd)
+void MenuScreen::render(Services::ICanvas& lcd)
 {
     // Skip render if nothing changed — menu is static between inputs
     if (!m_dirty) return;
@@ -110,7 +110,7 @@ void MenuScreen::render(Drivers::ICanvas& lcd)
         y += TITLE_HEIGHT;
 
         // Draw separator line
-        lcd.drawHLine(MARGIN_LEFT, y, Drivers::Canvas::WIDTH - 2 * MARGIN_LEFT, COLOR_TITLE);
+        lcd.drawHLine(MARGIN_LEFT, y, Services::Canvas::WIDTH - 2 * MARGIN_LEFT, COLOR_TITLE);
         y += 4;
     }
 
@@ -131,18 +131,18 @@ void MenuScreen::render(Drivers::ICanvas& lcd)
     // Draw scroll indicators if needed
     if (m_scrollOffset > 0) {
         // Up arrow indicator
-        lcd.drawString(Drivers::Canvas::WIDTH - 20, MARGIN_TOP + TITLE_HEIGHT + 4, "^", COLOR_TITLE, COLOR_BG, TEXT_SCALE);
+        lcd.drawString(Services::Canvas::WIDTH - 20, MARGIN_TOP + TITLE_HEIGHT + 4, "^", COLOR_TITLE, COLOR_BG, TEXT_SCALE);
     }
     if (m_scrollOffset + visibleCount < m_itemCount) {
         // Down arrow indicator
-        lcd.drawString(Drivers::Canvas::WIDTH - 20, Drivers::Canvas::HEIGHT - 20, "v", COLOR_TITLE, COLOR_BG, TEXT_SCALE);
+        lcd.drawString(Services::Canvas::WIDTH - 20, Services::Canvas::HEIGHT - 20, "v", COLOR_TITLE, COLOR_BG, TEXT_SCALE);
     }
 }
 
-void MenuScreen::renderItem(Drivers::ICanvas& lcd, uint8_t itemIndex, uint16_t y, bool selected)
+void MenuScreen::renderItem(Services::ICanvas& lcd, uint8_t itemIndex, uint16_t y, bool selected)
 {
     const MenuItem& item = m_items[itemIndex];
-    uint16_t itemWidth = Drivers::Canvas::WIDTH - 2 * MARGIN_LEFT;
+    uint16_t itemWidth = Services::Canvas::WIDTH - 2 * MARGIN_LEFT;
 
     uint16_t fg, bg;
     if (selected) {

@@ -4,7 +4,7 @@
  */
 
 #include "ui/screens/image_view_screen.hpp"
-#include "harness/pins/icanvas.hpp"
+#include "L3_services/boundary/icanvas.hpp"
 #include "L3_services/infra/flash_image_service/flash_image_service.hpp"
 
 namespace UI {
@@ -17,7 +17,7 @@ void ImageViewScreen::onActivate()
     m_drawn = false;
 }
 
-void ImageViewScreen::render(Drivers::ICanvas& lcd)
+void ImageViewScreen::render(Services::ICanvas& lcd)
 {
     if (m_drawn) return;
     m_drawn = true;
@@ -28,7 +28,7 @@ void ImageViewScreen::render(Drivers::ICanvas& lcd)
     constexpr uint32_t CHUNK_SIZE = 512;
 
     // Start full-screen streaming
-    lcd.streamBitmapStart(0, 0, Drivers::Canvas::WIDTH, Drivers::Canvas::HEIGHT);
+    lcd.streamBitmapStart(0, 0, Services::Canvas::WIDTH, Services::Canvas::HEIGHT);
 
     // Read first chunk synchronously
     if (!svc.readSlotChunk(m_slot, 0, s_buf[0], CHUNK_SIZE)) {

@@ -12,7 +12,7 @@
 #include "harness/pins/itransport.hpp"
 #include "harness/pins/itelemetry.hpp"
 #include "F_platform/types/async_event_types.hpp"
-#include "harness/pins/imotor_event_receiver.hpp"
+#include "F_platform/tasks/boundary/imotor_event_receiver.hpp"
 #include "harness/pins/iemergency_stop.hpp"
 #include "harness/pins/itrace_context.hpp"
 #include "F_platform/ui/ui_mode.hpp"
@@ -57,11 +57,11 @@ static void uintToStr(uint32_t val, char* buf) {
 static void publishTelemetry();
 
 // Context from composition root
-static Harness::ITransport* s_transport = nullptr;
-static Harness::ICommandProcessor* s_parser = nullptr;
+static Transport::ITransport* s_transport = nullptr;
+static Protocol::ICommandProcessor* s_parser = nullptr;
 static Platform::IClock* s_clock = nullptr;
-static Harness::IMotorEventReceiver* s_eventReceiver = nullptr;
-static Harness::IEmergencyStop* s_emergencyStop = nullptr;
+static Scheduler::IMotorEventReceiver* s_eventReceiver = nullptr;
+static Scheduler::IEmergencyStop* s_emergencyStop = nullptr;
 
 // Telemetry publishing state
 static bool s_telemetryEnabled = false;
@@ -76,11 +76,11 @@ static bool s_commsTimedOut = false;
 // Async event send state (accessed from CommsTask context only)
 static uint32_t s_eventSeq = 0;  // monotonic wire sequence number
 
-bool CommsTask_Init(Harness::ITransport& transport,
-                    Harness::ICommandProcessor& parser,
+bool CommsTask_Init(Transport::ITransport& transport,
+                    Protocol::ICommandProcessor& parser,
                     Platform::IClock& clock,
-                    Harness::IMotorEventReceiver& eventReceiver,
-                    Harness::IEmergencyStop& emergencyStop)
+                    Scheduler::IMotorEventReceiver& eventReceiver,
+                    Scheduler::IEmergencyStop& emergencyStop)
 {
     s_transport     = &transport;
     s_parser        = &parser;
@@ -173,7 +173,7 @@ static void publishTelemetry()
         return;
     }
 
-    Protocol::TelemetrySnapshot snap = Harness::telemetry().getSnapshot();
+    Protocol::TelemetrySnapshot snap = Scheduler::telemetry().getSnapshot();
 
     // Format and send telemetry line
     // Format: TELEM: pos=<pos> spd=<spd> enc=<enc> vel=<vel>
@@ -300,7 +300,7 @@ void CommsTask_GetDispatchStats(CommsDispatchStats& out)
         memset(&out, 0, sizeof(out));
         return;
     }
-    Harness::DispatchStats src = {};
+    Scheduler::DispatchStats src = {};
     s_parser->getDispatchStats(src);
     out.totalCommands = src.totalCommands;
     out.unknownCommands = src.unknownCommands;
@@ -310,9 +310,9 @@ void CommsTask_GetDispatchStats(CommsDispatchStats& out)
 }
 
 // IDispatchStats adapter — bridges Scheduler stats to Harness interface
-class CommsDispatchStatsAdapter : public Harness::IDispatchStats {
+class CommsDispatchStatsAdapter : public Scheduler::IDispatchStats {
 public:
-    void getStats(Harness::DispatchStats& out) override {
+    void getStats(Scheduler::DispatchStats& out) override {
         if (s_parser != nullptr) {
             s_parser->getDispatchStats(out);
         } else {
@@ -323,7 +323,7 @@ public:
 
 static CommsDispatchStatsAdapter s_dispatchStatsAdapter;
 
-Harness::IDispatchStats* CommsTask_GetDispatchStatsInterface()
+Scheduler::IDispatchStats* CommsTask_GetDispatchStatsInterface()
 {
     return &s_dispatchStatsAdapter;
 }

@@ -12,7 +12,7 @@
 namespace Services::Safety {
 
 // Harness pin types used in this module
-using Harness::g_safetyActions;
+using Scheduler::g_safetyActions;
 
 Result emergencyStop() {
     Trace::ServiceScope svc(Trace::SVC_SAFETY);

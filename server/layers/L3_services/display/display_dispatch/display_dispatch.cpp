@@ -9,18 +9,18 @@
 namespace Services {
 
 bool DisplayDispatch::displayIsRemoteMode() {
-    return Harness::uiMode().getMode() == UI::UIMode::REMOTE;
+    return Scheduler::uiMode().getMode() == UI::UIMode::REMOTE;
 }
 
 uint8_t DisplayDispatch::displayGetMode() {
-    return static_cast<uint8_t>(Harness::uiMode().getMode());
+    return static_cast<uint8_t>(Scheduler::uiMode().getMode());
 }
 
 Harness::ServiceStatus DisplayDispatch::displaySetMode(uint8_t mode) {
     if (mode > static_cast<uint8_t>(UI::UIMode::REMOTE)) {
         return Harness::ServiceStatus::InvalidParam;
     }
-    Harness::uiMode().setMode(static_cast<UI::UIMode>(mode));
+    Scheduler::uiMode().setMode(static_cast<UI::UIMode>(mode));
     return Harness::ServiceStatus::Ok;
 }
 

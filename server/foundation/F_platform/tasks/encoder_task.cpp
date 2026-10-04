@@ -21,15 +21,15 @@
  */
 
 #include "F_platform/tasks/encoder_task.hpp"
-#include "harness/pins/iencoder_hardware.hpp"
-#include "harness/pins/iencoder_sampler.hpp"
-#include "harness/pins/icritical_section.hpp"
-#include "harness/pins/itimer_counter.hpp"
+#include "F_platform/tasks/boundary/iencoder_hardware.hpp"
+#include "F_platform/tasks/boundary/iencoder_sampler.hpp"
+#include "F_platform/tasks/boundary/icritical_section.hpp"
+#include "F_platform/tasks/boundary/itimer_counter.hpp"
 #include "harness/pins/iclock.hpp"
 #include "harness/pins/iencoder.hpp"
 #include "harness/pins/iencoder_filter_control.hpp"
-#include "harness/pins/iencoder_processing.hpp"
-#include "harness/pins/iencoder_status_sink.hpp"
+#include "F_platform/tasks/boundary/iencoder_processing.hpp"
+#include "F_platform/tasks/boundary/iencoder_status_sink.hpp"
 #include "harness/pins/isnapshot_writer.hpp"
 #include "harness/pins/imicrosecond_clock.hpp"
 #include "harness/pins/itrace_context.hpp"
@@ -38,13 +38,13 @@
 namespace Scheduler {
 
 // Injected dependencies (set by EncoderTask_Init)
-static Drivers::IEncoderHardware* s_encoder = nullptr;
-static Board::ITimerCounter* s_timer = nullptr;
-static Board::IEncoderSampler* s_sampler = nullptr;
-static Platform::ICriticalSection* s_critSection = nullptr;
+static Scheduler::IEncoderHardware* s_encoder = nullptr;
+static Scheduler::ITimerCounter* s_timer = nullptr;
+static Scheduler::IEncoderSampler* s_sampler = nullptr;
+static Scheduler::ICriticalSection* s_critSection = nullptr;
 static Platform::IClock* s_clock = nullptr;
-static Harness::IEncoderProcessing* s_processor = nullptr;
-static Harness::IEncoderStatusSink* s_statusSink = nullptr;
+static Scheduler::IEncoderProcessing* s_processor = nullptr;
+static Scheduler::IEncoderStatusSink* s_statusSink = nullptr;
 
 // Encoder state (protected by critical section)
 static volatile EncoderState s_state = {};
@@ -62,13 +62,13 @@ static uint8_t s_measWindowMs = 40;
 // Encoder init
 // ============================================================================
 
-bool EncoderTask_Init(Drivers::IEncoderHardware& encoder,
-                      Board::ITimerCounter& timer,
-                      Board::IEncoderSampler& sampler,
-                      Platform::ICriticalSection& critSection,
+bool EncoderTask_Init(Scheduler::IEncoderHardware& encoder,
+                      Scheduler::ITimerCounter& timer,
+                      Scheduler::IEncoderSampler& sampler,
+                      Scheduler::ICriticalSection& critSection,
                       Platform::IClock& clock,
-                      Harness::IEncoderProcessing& processor,
-                      Harness::IEncoderStatusSink& statusSink,
+                      Scheduler::IEncoderProcessing& processor,
+                      Scheduler::IEncoderStatusSink& statusSink,
                       uint8_t measWindowMs,
                       uint16_t sampleRateHz)
 {
@@ -191,7 +191,7 @@ void vEncoderTask(void* pvParameters)
         s_critSection->exit();
 
         // --- Update telemetry via status sink ---
-        Harness::EncoderTelemetryData telem = {};
+        Scheduler::EncoderTelemetryData telem = {};
         telem.count = s_processor->getPosition();
         telem.velocity = filtered;
         telem.indexSeen = indexSeen;
@@ -202,7 +202,7 @@ void vEncoderTask(void* pvParameters)
         telem.filterFlags = s_processor->getFilterFlags();
         telem.measWindowMs = s_measWindowMs;
         telem.sampleRateHz = s_sampleRateHz;
-        Harness::snapshotWriter().writeEncoder(telem);
+        Scheduler::snapshotWriter().writeEncoder(telem);
 
         // Wait for next processing period
         s_clock->sleepUntilMs(lastWakeMs, ENCODER_SAMPLE_PERIOD_MS);
@@ -331,11 +331,11 @@ bool EncoderTask_IsAvailable()
 // Harness interface implementations (eliminate wiring adapters)
 // ============================================================================
 
-class EncoderAccess : public Harness::IEncoder {
+class EncoderAccess : public Scheduler::IEncoder {
 public:
-    Harness::EncoderSnapshot getState() override {
+    Scheduler::EncoderSnapshot getState() override {
         EncoderState st = EncoderTask_GetState();
-        Harness::EncoderSnapshot snap{};
+        Scheduler::EncoderSnapshot snap{};
         snap.count           = st.count;
         snap.velocity        = st.velocity;
         snap.indexSeen       = st.indexSeen;
@@ -351,12 +351,12 @@ public:
     bool isAvailable() override { return EncoderTask_IsAvailable(); }
 };
 
-class EncoderFilterAccess : public Harness::IEncoderFilterControl {
+class EncoderFilterAccess : public Scheduler::IEncoderFilterControl {
 public:
-    void getConfig(Harness::IEncoderDispatcher::EncFilterParams& out) override {
+    void getConfig(Services::IEncoderDispatcher::EncFilterParams& out) override {
         EncoderTask_GetFilterConfig(out);
     }
-    void setConfig(const Harness::IEncoderDispatcher::EncFilterParams& cfg) override {
+    void setConfig(const Services::IEncoderDispatcher::EncFilterParams& cfg) override {
         EncoderTask_SetFilterConfig(cfg);
     }
     void setLegacy(uint8_t type, uint8_t param) override {
@@ -367,7 +367,7 @@ public:
 static EncoderAccess s_encoderAccess;
 static EncoderFilterAccess s_filterAccess;
 
-Harness::IEncoder* EncoderTask_GetEncoderInterface() { return &s_encoderAccess; }
-Harness::IEncoderFilterControl* EncoderTask_GetFilterInterface() { return &s_filterAccess; }
+Scheduler::IEncoder* EncoderTask_GetEncoderInterface() { return &s_encoderAccess; }
+Scheduler::IEncoderFilterControl* EncoderTask_GetFilterInterface() { return &s_filterAccess; }
 
 } // namespace Scheduler

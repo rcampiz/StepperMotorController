@@ -26,7 +26,7 @@ public:
      * @param rootScreen The main menu (always at stack bottom)
      * @param lcd LCD driver for rendering
      */
-    void init(IScreen* rootScreen, Drivers::ICanvas* lcd);
+    void init(IScreen* rootScreen, Services::ICanvas* lcd);
 
     /**
      * @brief Push a screen onto the stack and activate it
@@ -79,7 +79,7 @@ public:
 private:
     IScreen* m_stack[SCREEN_STACK_MAX] = {};
     uint8_t m_depth = 0;
-    Drivers::ICanvas* m_lcd = nullptr;
+    Services::ICanvas* m_lcd = nullptr;
     bool m_needsClear = false;  ///< Next render should clear screen first
 };
 

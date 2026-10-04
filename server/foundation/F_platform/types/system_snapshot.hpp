@@ -14,7 +14,7 @@
 #include "harness/pins/ilock.hpp"
 #include "harness/pins/iclock.hpp"
 
-class SystemSnapshot : public Harness::ITelemetry, public Harness::ISnapshotWriter {
+class SystemSnapshot : public Scheduler::ITelemetry, public Scheduler::ISnapshotWriter {
 public:
     bool init(Platform::ILock& lock, Platform::IClock& clock);
 
@@ -24,7 +24,7 @@ public:
     // ISnapshotWriter (write) — taps and services call these
     void writeMotorStatus(uint16_t statusReg) override;
     void writeMotorParam(uint8_t reg, uint32_t value) override;
-    void writeEncoder(const Harness::EncoderTelemetryData& data) override;
+    void writeEncoder(const Scheduler::EncoderTelemetryData& data) override;
     void writeControl(const Protocol::ControlTelemetry& ctrl) override;
     void writeSystem(const Protocol::SystemTelemetry& sys) override;
 

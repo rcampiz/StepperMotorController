@@ -15,11 +15,11 @@
 
 namespace Harness {
 
-class TracedMotorCommandSink : public Harness::IMotorCommandSink {
+class TracedMotorCommandSink : public Scheduler::IMotorCommandSink {
 public:
-    explicit TracedMotorCommandSink(Harness::IMotorCommandSink& real) : m_real(real) {}
+    explicit TracedMotorCommandSink(Scheduler::IMotorCommandSink& real) : m_real(real) {}
 
-    bool sendCommand(const Harness::MotorCommand& cmd, uint32_t timeoutMs = 0) override {
+    bool sendCommand(const Scheduler::MotorCommand& cmd, uint32_t timeoutMs = 0) override {
         static const char* const names[] = {
             "Move", "GoTo", "Run", "SoftStop", "HardStop",
             "SoftHiZ", "HardHiZ", "GoHome", "GoMark", "ResetPos",
@@ -32,7 +32,7 @@ public:
     }
 
 private:
-    Harness::IMotorCommandSink& m_real;
+    Scheduler::IMotorCommandSink& m_real;
 };
 
 } // namespace Harness

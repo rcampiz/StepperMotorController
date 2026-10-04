@@ -21,7 +21,7 @@ namespace UI {
 /**
  * @brief UI Mode Manager - thread-safe mode control
  */
-class UIModeManager : public Harness::IUIModeProvider {
+class UIModeManager : public Scheduler::IUIModeProvider {
 public:
     /**
      * @brief Initialize the UI mode manager

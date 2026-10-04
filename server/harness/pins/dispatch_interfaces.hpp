@@ -9,8 +9,7 @@
 
 #pragma once
 
-namespace Harness {
-
+namespace Services {
 class IMotionDispatcher;
 class IMotorConfigDispatcher;
 class ISafetyDispatcher;
@@ -23,20 +22,23 @@ class IDisplayDispatcher;
 class IFlashImageDispatcher;
 class ISystemDispatcher;
 class ITraceDispatcher;
+} // namespace Services
+
+namespace Harness {
 
 struct DispatchInterfaces {
-    IMotionDispatcher*         motion = nullptr;
-    IMotorConfigDispatcher*    config = nullptr;
-    ISafetyDispatcher*         safety = nullptr;
-    IQueueDispatcher*          queue = nullptr;
-    IControlModeDispatcher*    controlMode = nullptr;
-    ISupervisorTrimDispatcher* supervisorTrim = nullptr;
-    IEncoderDispatcher*        encoder = nullptr;
-    IMotorDriverDispatcher*    motorDriver = nullptr;
-    IDisplayDispatcher*        display = nullptr;
-    IFlashImageDispatcher*     flash = nullptr;
-    ISystemDispatcher*         system = nullptr;
-    ITraceDispatcher*          trace = nullptr;
+    Services::IMotionDispatcher*         motion = nullptr;
+    Services::IMotorConfigDispatcher*    config = nullptr;
+    Services::ISafetyDispatcher*         safety = nullptr;
+    Services::IQueueDispatcher*          queue = nullptr;
+    Services::IControlModeDispatcher*    controlMode = nullptr;
+    Services::ISupervisorTrimDispatcher* supervisorTrim = nullptr;
+    Services::IEncoderDispatcher*        encoder = nullptr;
+    Services::IMotorDriverDispatcher*    motorDriver = nullptr;
+    Services::IDisplayDispatcher*        display = nullptr;
+    Services::IFlashImageDispatcher*     flash = nullptr;
+    Services::ISystemDispatcher*         system = nullptr;
+    Services::ITraceDispatcher*          trace = nullptr;
 };
 
 } // namespace Harness

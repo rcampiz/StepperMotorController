@@ -15,9 +15,9 @@
 
 namespace Harness {
 
-class TracedSafetyActions : public Harness::ISafetyActions {
+class TracedSafetyActions : public Scheduler::ISafetyActions {
 public:
-    explicit TracedSafetyActions(Harness::ISafetyActions& real) : m_real(real) {}
+    explicit TracedSafetyActions(Scheduler::ISafetyActions& real) : m_real(real) {}
 
     uint16_t getMotorStatusReg() override {
         uint16_t val = m_real.getMotorStatusReg();
@@ -48,7 +48,7 @@ public:
     }
 
 private:
-    Harness::ISafetyActions& m_real;
+    Scheduler::ISafetyActions& m_real;
 };
 
 } // namespace Harness

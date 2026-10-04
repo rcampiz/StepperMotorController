@@ -1,6 +1,6 @@
-#include "harness/pins/idispatch_stats.hpp"
+#include "F_platform/tasks/boundary/idispatch_stats.hpp"
 
-namespace Harness {
+namespace Scheduler {
 
 static IDispatchStats* s_dispatchStatsProvider = nullptr;
 
@@ -12,4 +12,4 @@ IDispatchStats& dispatchStats() {
     return *s_dispatchStatsProvider;
 }
 
-} // namespace Harness
+} // namespace Scheduler

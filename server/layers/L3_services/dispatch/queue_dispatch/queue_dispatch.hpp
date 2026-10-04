@@ -9,7 +9,7 @@
 
 namespace Services {
 
-class QueueDispatch : public Harness::IQueueDispatcher {
+class QueueDispatch : public Services::IQueueDispatcher {
 public:
     Harness::ServiceStatus queueCommand(uint8_t cmdType, int32_t p1, int32_t p2) override;
     Harness::ServiceStatus queueMove(int32_t signedSteps) override;

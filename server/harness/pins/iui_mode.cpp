@@ -1,6 +1,6 @@
-#include "harness/pins/iui_mode.hpp"
+#include "F_platform/tasks/boundary/iui_mode.hpp"
 
-namespace Harness {
+namespace Scheduler {
 
 static IUIModeProvider* s_uiModeProvider = nullptr;
 
@@ -12,4 +12,4 @@ IUIModeProvider& uiMode() {
     return *s_uiModeProvider;
 }
 
-} // namespace Harness
+} // namespace Scheduler

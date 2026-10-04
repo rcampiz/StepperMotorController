@@ -14,20 +14,20 @@
 #define INDICATOR_SERVICE_HPP
 
 #include "harness/pins/iindicator_renderer.hpp"
-#include "harness/pins/icanvas.hpp"
+#include "L3_services/boundary/icanvas.hpp"
 #include <stdint.h>
 
 namespace Services {
 
-class IndicatorService : public Harness::IIndicatorRenderer {
+class IndicatorService : public Services::IIndicatorRenderer {
 public:
-    using Params = Harness::IndicatorParams;
+    using Params = Services::IndicatorParams;
 
     /**
      * @brief Inject LCD reference. Called once from composition root.
      * @param lcd Pointer to initialized ICanvas instance (not owned).
      */
-    void init(Drivers::ICanvas* lcd);
+    void init(Services::ICanvas* lcd);
 
     /**
      * @brief Draw/update the motion indicator with partial screen update.
@@ -47,7 +47,7 @@ public:
     void clear();
 
 private:
-    Drivers::ICanvas* m_lcd = nullptr;
+    Services::ICanvas* m_lcd = nullptr;
 
     // Previous bounding box for partial screen clear
     int16_t  m_prevBboxX = 0;
@@ -73,8 +73,8 @@ private:
     int16_t  m_curMaxY = 0;
 
     // Indicator geometry constants
-    static constexpr int16_t SCREEN_CX = Drivers::Canvas::WIDTH / 2;
-    static constexpr int16_t SCREEN_CY = Drivers::Canvas::HEIGHT / 2;
+    static constexpr int16_t SCREEN_CX = Services::Canvas::WIDTH / 2;
+    static constexpr int16_t SCREEN_CY = Services::Canvas::HEIGHT / 2;
 
     // Arrow: sized to fit inside the circle ring
     static constexpr int16_t ARROW_HALF_LEN = 55;    // Half of total arrow length

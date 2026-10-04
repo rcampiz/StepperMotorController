@@ -8,7 +8,7 @@
 
 namespace Services {
 
-Harness::ISupervisorTrimDispatcher::FollowThresholds SupervisorTrimDispatch::getFollowThresholds() {
+Services::ISupervisorTrimDispatcher::FollowThresholds SupervisorTrimDispatch::getFollowThresholds() {
     return {
         motion.control.config.getFollowMoveError(),
         motion.control.config.getFollowMoveTimeMs(),
@@ -39,14 +39,14 @@ bool SupervisorTrimDispatch::supervisorClearFault() {
     return motion.control.supervisor.clearFault();
 }
 
-Harness::ISupervisorTrimDispatcher::SupervisorTelemetry SupervisorTrimDispatch::getSupervisorTelemetry() {
+Services::ISupervisorTrimDispatcher::SupervisorTelemetry SupervisorTrimDispatch::getSupervisorTelemetry() {
     Services::SupervisorTelemetry st = motion.control.supervisor.getTelemetry();
     return {static_cast<uint8_t>(st.state), static_cast<uint8_t>(st.tier),
             st.posError, st.velError, st.setpoint, st.pidOutput,
             st.retryCount, st.errorDurationMs};
 }
 
-Harness::ISupervisorTrimDispatcher::TrimConfig SupervisorTrimDispatch::getTrimConfig() {
+Services::ISupervisorTrimDispatcher::TrimConfig SupervisorTrimDispatch::getTrimConfig() {
     return {
         motion.control.config.getPidKp100(),
         motion.control.config.getPidKi100(),
@@ -112,9 +112,9 @@ uint16_t SupervisorTrimDispatch::sysIdGetSampleCount() {
     return motion.control.sysId.getSampleCount();
 }
 
-const Harness::SysIdSampleData* SupervisorTrimDispatch::sysIdGetSamples(uint16_t& count) {
+const Services::SysIdSampleData* SupervisorTrimDispatch::sysIdGetSamples(uint16_t& count) {
     count = motion.control.sysId.getSampleCount();
-    return reinterpret_cast<const Harness::SysIdSampleData*>(
+    return reinterpret_cast<const Services::SysIdSampleData*>(
         motion.control.sysId.getSamples());
 }
 

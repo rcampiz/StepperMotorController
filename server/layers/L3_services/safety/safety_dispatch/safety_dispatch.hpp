@@ -9,7 +9,7 @@
 
 namespace Services {
 
-class SafetyDispatch : public Harness::ISafetyDispatcher {
+class SafetyDispatch : public Services::ISafetyDispatcher {
 public:
     void safetyEstop() override;
     Harness::ServiceStatus safetyClearFault(char* activeFaults, uint32_t bufSize) override;

@@ -12,7 +12,7 @@
 
 namespace Transport {
 
-UartTransport::UartTransport(Harness::IByteChannel& channel, Platform::IClock& clock)
+UartTransport::UartTransport(Transport::IByteChannel& channel, Platform::IClock& clock)
     : m_channel(channel), m_clock(&clock), m_baudRate(0) {}
 
 bool UartTransport::init() {

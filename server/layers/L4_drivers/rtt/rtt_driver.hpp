@@ -17,7 +17,7 @@
 
 namespace Drivers {
 
-class RttDriver : public Harness::IByteChannel {
+class RttDriver : public Transport::IByteChannel {
 public:
     explicit RttDriver(unsigned channel) : m_channel(channel) {}
 

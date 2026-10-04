@@ -28,7 +28,7 @@ static Platform::FreeRTOSClock s_clock;
 static Platform::FreeRTOSQueue<AsyncEvent, 8> s_eventQueue;
 static Platform::FreeRTOSTaskStats s_taskStats;
 static Platform::FreeRTOSScheduler s_scheduler;
-static Platform::FreeRTOSQueue<Harness::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH> s_motorCmdQueue;
+static Platform::FreeRTOSQueue<Scheduler::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH> s_motorCmdQueue;
 
 static Platform::Resources s_resources;
 

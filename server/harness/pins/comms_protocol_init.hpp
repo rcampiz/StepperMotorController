@@ -12,14 +12,15 @@
 #include "harness/pins/dispatch_interfaces.hpp"
 
 namespace Platform { class IClock; }
-namespace Harness { class ITransport; class IDebugCommands;
-                    class IByteChannel; class ICommandProcessor; }
+namespace Transport { class ITransport; class IByteChannel; }
+namespace Scheduler { class IDebugCommands; }
+namespace Protocol { class ICommandProcessor; }
 
 namespace Protocol {
 
 struct CommsProtocol {
-    Harness::ICommandProcessor* parser = nullptr;
-    Harness::ITransport* transport = nullptr;  ///< From L1 cascade
+    Protocol::ICommandProcessor* parser = nullptr;
+    Transport::ITransport* transport = nullptr;  ///< From L1 cascade
 };
 
 /**
@@ -34,8 +35,8 @@ struct CommsProtocol {
  */
 bool initCommsProtocol(CommsProtocol& out,
                        const Harness::DispatchInterfaces& dispatches,
-                       Harness::IDebugCommands* debugCommands,
-                       Harness::IByteChannel& channel,
+                       Scheduler::IDebugCommands* debugCommands,
+                       Transport::IByteChannel& channel,
                        Platform::IClock& clock);
 
 } // namespace Protocol

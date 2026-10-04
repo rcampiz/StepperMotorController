@@ -9,7 +9,7 @@
  */
 
 #include "ui/screens/encoder_screen.hpp"
-#include "harness/pins/icanvas.hpp"
+#include "L3_services/boundary/icanvas.hpp"
 #include "harness/pins/itelemetry.hpp"
 #include "graphics/trig_lut/trig_lut.hpp"
 #include "graphics/primitives/primitives.hpp"
@@ -79,9 +79,9 @@ void EncoderScreen::i64toa(int64_t val, char* buf, int bufSize)
     buf[out] = '\0';
 }
 
-void EncoderScreen::render(Drivers::ICanvas& lcd)
+void EncoderScreen::render(Services::ICanvas& lcd)
 {
-    Protocol::TelemetrySnapshot telem = Harness::telemetry().getSnapshot();
+    Protocol::TelemetrySnapshot telem = Scheduler::telemetry().getSnapshot();
 
     renderNumerical(lcd, telem);
 
@@ -129,7 +129,7 @@ static void padRight(char* buf, int width)
     buf[width] = '\0';
 }
 
-void EncoderScreen::renderNumerical(Drivers::ICanvas& lcd, const Protocol::TelemetrySnapshot& telem)
+void EncoderScreen::renderNumerical(Services::ICanvas& lcd, const Protocol::TelemetrySnapshot& telem)
 {
     char buf[24];
     char tmp[20];
@@ -142,7 +142,7 @@ void EncoderScreen::renderNumerical(Drivers::ICanvas& lcd, const Protocol::Telem
     if (!m_labelsDrawn) {
         lcd.drawString(MARGIN, y, "Encoder", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
         y += LINE_H + 2;
-        lcd.drawHLine(MARGIN, y, Drivers::Canvas::WIDTH - 2 * MARGIN, LABEL_COLOR);
+        lcd.drawHLine(MARGIN, y, Services::Canvas::WIDTH - 2 * MARGIN, LABEL_COLOR);
         y += 6;
 
         lcd.drawString(MARGIN, y, "Cnt:", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
@@ -232,7 +232,7 @@ void EncoderScreen::renderNumerical(Drivers::ICanvas& lcd, const Protocol::Telem
     }
 }
 
-void EncoderScreen::renderDialStatic(Drivers::ICanvas& lcd)
+void EncoderScreen::renderDialStatic(Services::ICanvas& lcd)
 {
     // Draw dial ring outline
     Graphics::drawCircleOutline(lcd, DIAL_CX, DIAL_CY, DIAL_RADIUS, DIAL_RING_COLOR);
@@ -274,7 +274,7 @@ void EncoderScreen::renderDialStatic(Drivers::ICanvas& lcd)
     lcd.drawString(DIAL_CX - TICK_OUTER - 22, DIAL_CY - 4, "270", LABEL_COLOR, BG_COLOR);
 }
 
-void EncoderScreen::renderDialDot(Drivers::ICanvas& lcd, int16_t angleDeg)
+void EncoderScreen::renderDialDot(Services::ICanvas& lcd, int16_t angleDeg)
 {
     // Erase previous dot
     if (m_prevDotX >= 0 && m_prevDotY >= 0) {
