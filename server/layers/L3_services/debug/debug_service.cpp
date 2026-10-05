@@ -12,12 +12,12 @@ namespace Services {
 DebugService g_debugService;
 
 void DebugService::init(Drivers::IDebugAccess* access,
-                        Platform::IScheduler& scheduler,
-                        IMotorControlService& motorCtrl)
+                        IMotorTaskControl* motorCtrl,
+                        IDisplayControl* display)
 {
     m_access = access;
-    m_scheduler = &scheduler;
-    m_motorCtrl = &motorCtrl;
+    m_motorCtrl = motorCtrl;
+    m_display = display;
     m_unlocked = false;
 }
 
@@ -71,10 +71,9 @@ int DebugService::debugFormatSpi2Diag(char* buf, size_t bufSize)
 
 void DebugService::cmdSpiStop(const char* const* args, uint8_t argc, Harness::IResponseSink& out)
 {
-    const Harness::TaskHandles& h = Harness::taskHandles();
-    if (m_scheduler != nullptr && h.motor != nullptr) {
-        m_scheduler->suspendTask(h.motor);
-        out.writeLine("Motor task suspended.");
+    if (m_motorCtrl != nullptr) {
+        m_motorCtrl->setDebugPaused(true);     // Motor task stops touching the driver (flag, no suspend)
+        out.writeLine("Motor task paused.");
     }
     if (m_access != nullptr) m_access->rawCommand("SPI_STOP", args, argc, out);
 }
@@ -82,20 +81,18 @@ void DebugService::cmdSpiStop(const char* const* args, uint8_t argc, Harness::IR
 void DebugService::cmdSpiStart(const char* const* args, uint8_t argc, Harness::IResponseSink& out)
 {
     if (m_access != nullptr) m_access->rawCommand("SPI_START", args, argc, out);
-    const Harness::TaskHandles& h = Harness::taskHandles();
-    if (m_scheduler != nullptr && h.motor != nullptr) {
-        m_scheduler->resumeTask(h.motor);
+    if (m_motorCtrl != nullptr) {
+        m_motorCtrl->setDebugPaused(false);
         out.writeLine("Motor task resumed.");
     }
 }
 
 void DebugService::cmdLcdDisable(const char* const* args, uint8_t argc, Harness::IResponseSink& out)
 {
-    out.writeLine("Disabling LCD and display task...");
-    const Harness::TaskHandles& h = Harness::taskHandles();
-    if (m_scheduler != nullptr && h.display != nullptr) {
-        m_scheduler->suspendTask(h.display);
-        out.writeLine("Display task suspended.");
+    out.writeLine("Disabling LCD and display rendering...");
+    if (m_display != nullptr) {
+        m_display->setDisplayEnabled(false);    // Display task keeps looping; tick() returns at once
+        out.writeLine("Display rendering disabled.");
     }
     if (m_access != nullptr) m_access->rawCommand("LCD_DISABLE", args, argc, out);
     out.writeLine("Reinitializing motor driver...");

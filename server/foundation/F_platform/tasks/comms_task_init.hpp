@@ -7,11 +7,11 @@
 namespace Platform { class IClock; class IScheduler; class ITaskNotifier; }
 namespace Services { class ICommsService; }
 
-namespace Harness {
+namespace Scheduler {
 
 bool initCommsTask(Services::ICommsService& service,
                    Platform::IClock& clock,
                    Platform::IScheduler& scheduler,
                    Platform::ITaskNotifier* rxWake);
 
-} // namespace Harness
+} // namespace Scheduler

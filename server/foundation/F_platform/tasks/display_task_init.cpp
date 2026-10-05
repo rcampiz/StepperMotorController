@@ -7,7 +7,7 @@
 #include "F_platform/tasks/display_task.hpp"
 #include "F_platform/boundary/ischeduler.hpp"
 
-namespace Harness {
+namespace Scheduler {
 
 bool initDisplayTask(Services::IDisplayService& service,
                      Platform::IClock& clock,
@@ -23,4 +23,4 @@ bool initDisplayTask(Services::IDisplayService& service,
     return Scheduler::g_displayTaskHandle != nullptr;
 }
 
-} // namespace Harness
+} // namespace Scheduler

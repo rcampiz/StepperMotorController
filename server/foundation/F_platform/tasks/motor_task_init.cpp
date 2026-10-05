@@ -7,10 +7,10 @@
 #include "F_platform/tasks/motor_task.hpp"
 #include "F_platform/boundary/ischeduler.hpp"
 
-namespace Harness {
+namespace Scheduler {
 
 bool initMotorTask(Services::IMotorService& service,
-                   Platform::IQueue<Services::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
+                   Platform::IQueue<Services::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
                    Platform::IClock& clock,
                    Platform::IScheduler& scheduler)
 {
@@ -24,4 +24,4 @@ bool initMotorTask(Services::IMotorService& service,
     return Scheduler::g_motorTaskHandle != nullptr;
 }
 
-} // namespace Harness
+} // namespace Scheduler

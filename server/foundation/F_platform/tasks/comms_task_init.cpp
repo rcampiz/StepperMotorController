@@ -7,7 +7,7 @@
 #include "F_platform/tasks/comms_task.hpp"
 #include "F_platform/boundary/ischeduler.hpp"
 
-namespace Harness {
+namespace Scheduler {
 
 bool initCommsTask(Services::ICommsService& service,
                    Platform::IClock& clock,
@@ -24,4 +24,4 @@ bool initCommsTask(Services::ICommsService& service,
     return Scheduler::g_commsTaskHandle != nullptr;
 }
 
-} // namespace Harness
+} // namespace Scheduler

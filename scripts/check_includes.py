@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 check_includes.py -- enforce the layering rules (2026-10-04) on #include directives.
 
@@ -50,8 +50,7 @@ EXTERNAL_HW = ("X_vendor/", "X_middlewares/", "FreeRTOS", "task.h", "queue.h",
 ALLOWED = {
     "L1": ("L1_transport/", "harness/defs/harness_l1_l2.hpp", "harness/defs/harness_l5_l1_bytes.hpp"),
     "L2": ("L2_protocol/",  "harness/defs/harness_l1_l2.hpp", "harness/defs/harness_l2_l3.hpp"),
-    "L3": ("L3_services/",  "harness/defs/harness_l2_l3.hpp", "harness/defs/harness_l3_l4.hpp",
-           "harness/defs/harness_tasks_l3.hpp"),
+    "L3": ("L3_services/",  "harness/defs/harness_l2_l3.hpp", "harness/defs/harness_l3_l4.hpp"),
     "L4": ("L4_drivers/",   "harness/defs/harness_l3_l4.hpp", "harness/defs/harness_l4_l5.hpp"),
     "L5": ("L5_board/",     "harness/defs/harness_l4_l5.hpp", "harness/defs/harness_l5_l1_bytes.hpp",
            "harness/pins/exti_callbacks.hpp") + EXTERNAL_HW,

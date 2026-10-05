@@ -7,10 +7,10 @@
 namespace Platform { class IClock; class IScheduler; }
 namespace Services { class IEncoderService; }
 
-namespace Harness {
+namespace Scheduler {
 
 bool initEncoderTask(Services::IEncoderService& service,
                      Platform::IClock& clock,
                      Platform::IScheduler& scheduler);
 
-} // namespace Harness
+} // namespace Scheduler

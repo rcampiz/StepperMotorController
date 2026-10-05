@@ -7,7 +7,7 @@
 #include "F_platform/tasks/encoder_task.hpp"
 #include "F_platform/boundary/ischeduler.hpp"
 
-namespace Harness {
+namespace Scheduler {
 
 bool initEncoderTask(Services::IEncoderService& service,
                      Platform::IClock& clock,
@@ -23,4 +23,4 @@ bool initEncoderTask(Services::IEncoderService& service,
     return handle != nullptr;
 }
 
-} // namespace Harness
+} // namespace Scheduler

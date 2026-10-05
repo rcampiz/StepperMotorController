@@ -12,7 +12,6 @@
 #include "F_platform/boundary/iclock.hpp"
 #include "F_platform/boundary/ilock.hpp"
 #include "F_platform/boundary/iqueue.hpp"
-#include "F_platform/boundary/ischeduler.hpp"
 #include "harness/pins/async_event.hpp"
 #include <vector>
 #include <string>
@@ -23,6 +22,7 @@ struct FakeDriver : Drivers::IMotorDriver {
     bool hiZ = true;        // powerSTEP01 powers up in Hi-Z
     bool running = false;
     int hardHiZCalls = 0, runCalls = 0, setParams = 0;
+    uint32_t params[32] = {};
     void init() override { hiZ = true; running = false; }
     void run(bool, uint32_t) override { running = true; hiZ = false; ++runCalls; }
     void move(bool, uint32_t) override { running = true; hiZ = false; ++runCalls; }
@@ -34,8 +34,8 @@ struct FakeDriver : Drivers::IMotorDriver {
     void goHome() override { running = true; hiZ = false; ++runCalls; }
     void goMark() override { running = true; hiZ = false; ++runCalls; }
     void resetPos() override {}
-    uint32_t getParam(uint8_t) override { return 0; }
-    void setParam(uint8_t, uint32_t) override { ++setParams; }
+    uint32_t getParam(uint8_t reg) override { return (reg < 32) ? params[reg] : 0; }
+    void setParam(uint8_t reg, uint32_t v) override { ++setParams; if (reg < 32) params[reg] = v; }
     Drivers::MotorStatus getStatus() override {
         Drivers::MotorStatus s; s.raw = 0xFFFE;            // no faults, not busy (bit1 set)
         if (hiZ) s.raw |= 1u; else s.raw &= ~1u;
@@ -43,13 +43,6 @@ struct FakeDriver : Drivers::IMotorDriver {
     }
     bool isBusy() override { return false; }
     bool flagActive() override { return false; }
-};
-
-struct FakeScheduler : Platform::IScheduler {
-    Platform::TaskHandle createTask(const Platform::TaskDescriptor&) override { return nullptr; }
-    [[noreturn]] void start() override { for (;;) {} }
-    void suspendTask(Platform::TaskHandle) override {}
-    void resumeTask(Platform::TaskHandle) override {}
 };
 
 Services::MotorCommand cmd(Services::MotorCmdType t, int32_t p1 = 0, int32_t p2 = 0) {
@@ -60,7 +53,6 @@ struct Rig {
     FakeDriver drv;
     Platform::NullClock clock;
     Platform::NullLock lock;
-    FakeScheduler sched;
     Platform::NullQueue<Services::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH> q;
     Platform::NullQueue<AsyncEvent, 8> events;
     Services::MotorService& svc = Services::g_motorService;
@@ -71,7 +63,7 @@ struct Rig {
         Services::motion.stepper.event.init(events);
         Services::motion.stepper.controller.bind(drv, clock);
         svc.init(Services::motion.stepper.controller, Services::motion.stepper.controller,
-                 q, clock, sched, nullptr, Services::g_telemetryStore);
+                 q, clock, nullptr, Services::g_telemetryStore);
         // g_motorService is a process-wide singleton: start every test unlatched and idle
         svc.clearImmediateStop();
         motorTaskPass();
@@ -152,4 +144,34 @@ TEST(a_second_estop_after_clear_latches_again) {
     EXPECT_TRUE(r.drv.hiZ);
     r.svc.onCommand(cmd(Services::MotorCmdType::Run, 500, 1));
     EXPECT_TRUE(r.drv.hiZ);
+}
+
+TEST(step_mode_is_a_message_answered_by_the_motor_task) {
+    Rig r;
+    uint8_t rb = 0;
+    // Comms task side: queues SetStepMode; nobody drains the queue here, so it times out
+    EXPECT_FALSE(r.svc.setStepModeSafe(4, rb));
+    EXPECT_EQ(rb, 0xFF);
+    EXPECT_EQ(r.q.available(), 1u);
+
+    // Motor task side: executes the rewrite and publishes the readback
+    r.motorTaskPass();
+    EXPECT_EQ(r.q.available(), 0u);
+    uint8_t answered = 0;
+    EXPECT_TRUE(r.svc.lastStepModeResult(answered));
+    EXPECT_EQ(answered, 4);
+    EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0x07u, 4u);
+}
+
+TEST(debug_pause_stops_all_driver_traffic_until_resumed) {
+    Rig r;
+    r.svc.setDebugPaused(true);
+    const int hiZBefore = r.drv.hardHiZCalls, runBefore = r.drv.runCalls;
+    r.svc.onCommand(cmd(Services::MotorCmdType::Run, 500, 1));
+    r.svc.periodicUpdate();
+    EXPECT_EQ(r.drv.runCalls, runBefore);
+    EXPECT_EQ(r.drv.hardHiZCalls, hiZBefore);
+    r.svc.setDebugPaused(false);
+    r.svc.onCommand(cmd(Services::MotorCmdType::Run, 500, 1));
+    EXPECT_TRUE(r.drv.running);
 }

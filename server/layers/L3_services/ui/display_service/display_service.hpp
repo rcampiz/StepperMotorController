@@ -11,7 +11,8 @@
 #pragma once
 
 #include "harness/defs/harness_l3_l4.hpp"
-#include "harness/defs/harness_tasks_l3.hpp"
+#include "L3_services/boundary/idisplay_service.hpp"
+#include "L3_services/boundary/idisplay_control.hpp"
 #include "L3_services/boundary/iremote_display.hpp"
 #include "L3_services/boundary/iflash_image_access.hpp"
 #include "L3_services/boundary/iindicator_renderer.hpp"
@@ -35,7 +36,7 @@
 
 namespace Services {
 
-class DisplayService : public IDisplayService, public IRemoteDisplay {
+class DisplayService : public IDisplayService, public IDisplayControl, public IRemoteDisplay {
 public:
     DisplayService();
 
@@ -48,6 +49,10 @@ public:
 
     // IDisplayService (Display task)
     void tick() override;
+
+    // IDisplayControl (debug service, Comms task): flag read by tick(), no task suspend
+    void setDisplayEnabled(bool enabled) override { m_enabled = enabled; }
+    bool isDisplayEnabled() const override { return m_enabled; }
 
     // IRemoteDisplay (display dispatcher, Comms task)
     void clear(uint16_t color) override;
@@ -73,6 +78,7 @@ private:
     static bool onMainMenuSelect(uint8_t index);
     static DisplayService* s_self;   ///< menu callbacks are plain function pointers
 
+    volatile bool       m_enabled = true;   ///< LCD_DISABLE clears it from the Comms task
     Drivers::ICanvas*   m_lcd = nullptr;
     Drivers::IJoystick* m_joystick = nullptr;
     Platform::IClock*   m_clock = nullptr;

@@ -1,7 +1,8 @@
 /**
  * @file test_debug_service.cpp
- * @brief Step 6: the L3 DebugService gates bring-up commands behind DBG:UNLOCK, suspends tasks
- *        through Platform, and forwards register-level commands to Drivers::IDebugAccess.
+ * @brief The L3 DebugService gates bring-up commands behind DBG:UNLOCK, pauses the Motor and
+ *        Display tasks by flag (never by suspending them), and forwards register-level
+ *        commands to Drivers::IDebugAccess.
  */
 #include "minitest.hpp"
 #include "L3_services/debug/debug_service.hpp"
@@ -30,34 +31,28 @@ struct FakeAccess : Drivers::IDebugAccess {
     int formatSpi2Diag(char* buf, size_t n) override { return (n > 4) ? (std::strcpy(buf, "SPI2"), 4) : 0; }
 };
 
-struct FakeScheduler : Platform::IScheduler {
+struct FakeMotorCtrl : Services::IMotorTaskControl {
+    int reinits = 0; bool paused = false;
     std::vector<std::string> log;
-    Platform::TaskHandle createTask(const Platform::TaskDescriptor&) override { return nullptr; }
-    [[noreturn]] void start() override { for (;;) {} }
-    void suspendTask(Platform::TaskHandle h) override { log.push_back(std::string("suspend:") + static_cast<const char*>(h)); }
-    void resumeTask(Platform::TaskHandle h) override { log.push_back(std::string("resume:") + static_cast<const char*>(h)); }
+    void reinit() override { ++reinits; log.push_back("reinit"); }
+    bool applyConfig() override { return true; }
+    bool getDebugInfo(Harness::MotorDebugParams& info) override { info = Harness::MotorDebugParams{}; info.status = 0x0003; info.absPos = -5; return true; }
+    bool setStepModeSafe(uint8_t m, uint8_t& rb) override { rb = m; return true; }
+    void setDebugPaused(bool p) override { paused = p; log.push_back(p ? "pause" : "resume"); }
+    bool isDebugPaused() const override { return paused; }
 };
 
-struct FakeMotorCtrl : Services::IMotorControlService {
-    int reinits = 0;
-    void processCommand(const Services::MotorCommand&) override {}
-    void periodicUpdate() override {}
-    void applyConfig() override {}
-    bool setStepModeSafe(uint8_t, uint8_t&) override { return true; }
-    void reinit() override { ++reinits; }
-    void getDebugInfo(Harness::MotorDebugParams& info) override { info = Harness::MotorDebugParams{}; info.status = 0x0003; info.absPos = -5; }
+struct FakeDisplay : Services::IDisplayControl {
+    bool enabled = true;
+    void setDisplayEnabled(bool e) override { enabled = e; }
+    bool isDisplayEnabled() const override { return enabled; }
 };
 
 struct Rig {
-    FakeAccess access; FakeScheduler sched; FakeMotorCtrl motor; Sink sink;
+    FakeAccess access; FakeMotorCtrl motor; FakeDisplay display; Sink sink;
     Services::DebugService svc;
     const char* argv[1] = {nullptr};
-    Rig() {
-        static char motorName[] = "motor", displayName[] = "display";
-        Harness::TaskHandles h; h.motor = motorName; h.display = displayName;
-        Harness::setTaskHandles(h);
-        svc.init(&access, sched, motor);
-    }
+    Rig() { svc.init(&access, &motor, &display); }
 };
 
 } // namespace
@@ -86,21 +81,23 @@ TEST(unlock_forwards_raw_commands_to_l4) {
     EXPECT_FALSE(r.svc.debugIsUnlocked());
 }
 
-TEST(spi_stop_suspends_motor_task_before_touching_hardware) {
+TEST(spi_stop_pauses_the_motor_task_by_flag_before_touching_hardware) {
     Rig r; r.svc.debugUnlock();
     r.svc.debugDispatch("SPI_STOP", r.argv, 0, r.sink);
-    EXPECT_EQ(r.sched.log.size(), 1u);
-    EXPECT_STREQ(r.sched.log[0].c_str(), "suspend:motor");
+    EXPECT_TRUE(r.motor.paused);
+    EXPECT_STREQ(r.motor.log[0].c_str(), "pause");
     EXPECT_STREQ(r.access.executed.back().c_str(), "SPI_STOP");
     r.svc.debugDispatch("SPI_START", r.argv, 0, r.sink);
-    EXPECT_STREQ(r.sched.log.back().c_str(), "resume:motor");
+    EXPECT_FALSE(r.motor.paused);
+    EXPECT_STREQ(r.motor.log.back().c_str(), "resume");
 }
 
-TEST(lcd_disable_suspends_display_and_reinits_the_controller) {
+TEST(lcd_disable_disables_the_display_by_flag_and_reinits_the_motor) {
     Rig r; r.svc.debugUnlock();
     r.svc.debugDispatch("LCD_DISABLE", r.argv, 0, r.sink);
-    EXPECT_STREQ(r.sched.log[0].c_str(), "suspend:display");
+    EXPECT_FALSE(r.display.enabled);
     EXPECT_EQ(r.motor.reinits, 1);
+    EXPECT_STREQ(r.access.executed.back().c_str(), "LCD_DISABLE");
 }
 
 TEST(motor_debug_formats_controller_info) {

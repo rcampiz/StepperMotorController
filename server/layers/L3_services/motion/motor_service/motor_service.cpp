@@ -1,6 +1,6 @@
 /**
  * @file motor_service.cpp
- * @brief L3 MotorService implementation (Motor task body + ESTOP latch)
+ * @brief L3 MotorService implementation (Motor task body, ESTOP latch, step-mode message, debug pause)
  *
  * ESTOP contract (Comms task -> Motor task):
  *   immediateHardHiZ()   latches m_stopLatched, empties the motor queue, drives Hi-Z now.
@@ -8,6 +8,10 @@
  *   applyPendingTransitions()  runs the Motor-task side once per edge: onEmergencyStop()
  *                        idles sysid/trim/supervisor, inhibits the control loops and
  *                        re-asserts Hi-Z; clearEmergencyStop() re-enables them after CLEAR.
+ *
+ * Step mode (Comms task -> Motor task -> Comms task): setStepModeSafe() queues a SetStepMode
+ * command and waits (bounded) for the readback the Motor task publishes in an atomic slot.
+ * Debug pause (SPI_STOP/SPI_START): a flag; while set the Motor task does not touch the driver.
  *
  * All MotorController mutation stays on the Motor task. The Comms task only touches the
  * atomics, the queue and the driver's hardHiZ() (one SPI transaction under the SPI1 mutex).
@@ -26,7 +30,6 @@ void MotorService::init(IMotorControlService& controller,
                         MotorController& rawController,
                         CmdQueue& queue,
                         Platform::IClock& clock,
-                        Platform::IScheduler& scheduler,
                         Platform::ITaskStats* taskStats,
                         TelemetryStore& telemetry)
 {
@@ -34,7 +37,6 @@ void MotorService::init(IMotorControlService& controller,
     m_rawController = &rawController;
     m_queue = &queue;
     m_clock = &clock;
-    m_scheduler = &scheduler;
     m_taskStats = taskStats;
     m_telemetry = &telemetry;
     m_controller->applyConfig();
@@ -71,12 +73,30 @@ void MotorService::applyPendingTransitions()
     }
 }
 
+void MotorService::handleSetStepMode(uint8_t mode)
+{
+    uint8_t readback = 0xFF;
+    bool ok = false;
+    if (m_controller != nullptr && mode <= 7) {
+        ok = m_controller->setStepModeSafe(mode, readback);
+    }
+    m_stepModeResult.store(STEP_MODE_ANSWERED | (ok ? STEP_MODE_OK : 0u) | readback);
+}
+
 void MotorService::onCommand(const MotorCommand& cmd)
 {
     if (m_controller == nullptr) {
         return;
     }
     applyPendingTransitions();
+    if (m_debugPaused.load()) {
+        ++m_refused;                                   // SPI_STOP: no driver traffic at all
+        return;
+    }
+    if (cmd.type == MotorCmdType::SetStepMode) {
+        handleSetStepMode(static_cast<uint8_t>(cmd.param1));
+        return;
+    }
     if (m_stopLatched.load() && isMotionCommand(cmd.type)) {
         ++m_refused;
         return;
@@ -90,6 +110,9 @@ void MotorService::periodicUpdate()
         return;
     }
     applyPendingTransitions();
+    if (m_debugPaused.load()) {
+        return;                                        // SPI_STOP: no status polls
+    }
     m_controller->periodicUpdate();
 
     Protocol::SystemTelemetry sys = {};
@@ -147,17 +170,48 @@ bool MotorService::getDebugInfo(Harness::MotorDebugParams& out)
 
 bool MotorService::setStepModeSafe(uint8_t mode, uint8_t& readback)
 {
+    readback = 0xFF;
     if (m_controller == nullptr || mode > 7) {
-        readback = 0xFF;
         return false;
     }
-    // Keep the Motor task away from the driver while STEP_MODE is rewritten
-    const Harness::TaskHandles& h = Harness::taskHandles();
-    const bool suspend = (m_scheduler != nullptr && h.motor != nullptr);
-    if (suspend) m_scheduler->suspendTask(h.motor);
-    bool ok = m_controller->setStepModeSafe(mode, readback);
-    if (suspend) m_scheduler->resumeTask(h.motor);
-    return ok;
+    // Message to the Motor task: it owns the driver, so it rewrites STEP_MODE between its own
+    // operations. No suspend/resume.
+    m_stepModeResult.store(STEP_MODE_PENDING);
+    MotorCommand cmd = {};
+    cmd.type = MotorCmdType::SetStepMode;
+    cmd.param1 = mode;
+    if (!sendCommand(cmd, SEND_TIMEOUT_MS)) {
+        return false;
+    }
+    uint32_t waited = 0;
+    uint32_t result = m_stepModeResult.load();
+    while ((result & STEP_MODE_ANSWERED) == 0u && m_clock != nullptr && waited < STEP_MODE_WAIT_MS) {
+        m_clock->delayMs(STEP_MODE_POLL_MS);
+        waited += STEP_MODE_POLL_MS;
+        result = m_stepModeResult.load();
+    }
+    if ((result & STEP_MODE_ANSWERED) == 0u) {
+        return false;                                  // Motor task did not answer in time
+    }
+    readback = static_cast<uint8_t>(result & 0xFFu);
+    return (result & STEP_MODE_OK) != 0u;
+}
+
+bool MotorService::lastStepModeResult(uint8_t& readback) const
+{
+    const uint32_t result = m_stepModeResult.load();
+    readback = static_cast<uint8_t>(result & 0xFFu);
+    return (result & STEP_MODE_ANSWERED) != 0u && (result & STEP_MODE_OK) != 0u;
+}
+
+void MotorService::setDebugPaused(bool paused)
+{
+    m_debugPaused.store(paused);
+}
+
+bool MotorService::isDebugPaused() const
+{
+    return m_debugPaused.load();
 }
 
 // ---------------------------------------------------------------------------

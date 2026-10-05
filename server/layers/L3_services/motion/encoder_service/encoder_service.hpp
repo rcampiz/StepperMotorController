@@ -12,7 +12,7 @@
 #pragma once
 
 #include "harness/defs/harness_l3_l4.hpp"
-#include "harness/defs/harness_tasks_l3.hpp"
+#include "L3_services/boundary/iencoder_service.hpp"
 #include "L3_services/boundary/iencoder.hpp"
 #include "L3_services/boundary/iencoder_filter_control.hpp"
 #include "L3_services/boundary/iencoder_processing.hpp"

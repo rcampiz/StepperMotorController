@@ -1,43 +1,36 @@
 /**
  * @file comms_service_init.hpp
- * @brief Harness contract for L3 comms subsystem init
+ * @brief L3 init contract: dispatchers, L2/L1 cascade, DebugService, CommsService
  *
- * L3 orchestrates: dispatches → L2 protocol (cascades to L1) → task.
- * All Platform deps injected.
+ * Creates no task. The composition root hands commsService to the task sheet.
  */
-
 #pragma once
 
-namespace Platform { class IClock; class IScheduler; class ITaskNotifier; }
+namespace Platform { class IClock; }
 
 namespace Services {
 
+class ICommsService;
 class IEncoder;
 class IEncoderFilterControl;
 class IMotorTaskControl;
 class IRemoteDisplay;
+class IDisplayControl;
 
-/**
- * @brief Dependencies for comms subsystem init (from earlier subsystem inits)
- */
 struct CommsServiceDeps {
     Services::IEncoder* encoder = nullptr;
     Services::IEncoderFilterControl* encFilter = nullptr;
     Services::IMotorTaskControl* motorCtrl = nullptr;
     Services::IRemoteDisplay* remoteDisplay = nullptr;
+    Services::IDisplayControl* displayControl = nullptr;
 };
 
-/**
- * @brief Initialize comms subsystem — L3 drives the cascade
- *
- * @param deps      Dependencies from earlier subsystem inits
- * @param clock     System clock (injected from Platform)
- * @param scheduler Scheduler for RTOS task creation (injected from Platform)
- * @return true on success
- */
+struct CommsSubsystemResult {
+    Services::ICommsService* commsService = nullptr;   ///< Comms task entry (H_TASKS_L3)
+};
+
 bool initCommsSubsystem(const CommsServiceDeps& deps,
                         Platform::IClock& clock,
-                        Platform::IScheduler& scheduler,
-                        Platform::ITaskNotifier* rxWake);
+                        CommsSubsystemResult& result);
 
 } // namespace Services

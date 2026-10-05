@@ -199,6 +199,9 @@ void DisplayService::handleJoystick()
 
 void DisplayService::tick()
 {
+    if (!m_enabled) {
+        return;                 // LCD_DISABLE: no joystick polling, no rendering, no SPI1 traffic
+    }
     handleJoystick();
 
     if (m_lcd != nullptr && m_uiMode->getMode() == UI::UIMode::LOCAL) {

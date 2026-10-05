@@ -30,16 +30,16 @@ LAYERS = [
     ("L3", "Services", "server/layers/L3_services", "All business logic and safety, host-testable, no RTOS loops: Motor/Comms/Encoder/Display/Debug services, controllers, dispatchers, telemetry store, UI, trace."),
     ("L4", "Drivers", "server/layers/L4_drivers", "Device drivers over Board pin bundles: powerSTEP01, ST7789, NOR flash, joystick, quadrature encoder (+ index ISR), config store, debug access."),
     ("L5", "Board", "server/layers/L5_board", "Register/peripheral access: clocks, GPIO, SPI1/SPI2, USART2 + RTT byte channels, TIM4, TIM3+DMA sampler, EXTI, TE sync, internal flash, bring-up commands."),
-    ("TASKS", "Task sheet (Scheduler::)", "server/foundation/F_platform/tasks", "Four RTOS task loops that only wait, then call one L3 entry point; owns priorities, periods, stack sizes and task handles."),
+    ("TASKS", "Task sheet (Scheduler::)", "server/foundation/F_platform/tasks", "Four RTOS task loops that only wait, then call one L3 entry point; owns priorities, periods, stack sizes, task handles and the task-init contracts the composition root calls."),
     ("PLATFORM", "Platform (power net)", "server/foundation/F_platform", "RTOS-neutral primitives any sheet may use: clock, microsecond clock, locks, queues, scheduler, task stats, critical section, task notifier; FreeRTOS implementations, startup."),
     ("HARNESS", "Harness", "server/harness", "Harness definitions (defs/), connect() functions (the only place taps are applied), shared POD pins, traced taps, interface trace."),
-    ("SYSTEM", "Composition root", "server", "main.cpp + system_init.cpp: phase sequencing, Platform resources, task handle publication."),
+    ("SYSTEM", "Composition root", "server", "main.cpp + system_init.cpp: phase sequencing, Platform resources, RTOS task creation over the L3 services."),
 ]
 
 TASKS = [
     {"name": "Motor",   "priority": 4, "stack": 1024, "trigger": "event",    "period_ms": 50, "layer_affinity": ["TASKS", "L3"], "body": "queue receive (50 ms timeout) -> IMotorService::onCommand; every 50 ms -> IMotorService::periodicUpdate"},
     {"name": "Comms",   "priority": 3, "stack": 2048, "trigger": "event",    "period_ms": 10, "layer_affinity": ["TASKS", "L3"], "body": "ITaskNotifier wait (USART2 RX wake) with 10 ms fallback -> ICommsService::tick"},
-    {"name": "Encoder", "priority": 2, "stack": 128,  "trigger": "periodic", "period_ms": 10, "layer_affinity": ["TASKS", "L3"], "body": "sleepUntil 10 ms -> IEncoderService::sample (task not created without encoder hardware)"},
+    {"name": "Encoder", "priority": 2, "stack": 256,  "trigger": "periodic", "period_ms": 10, "layer_affinity": ["TASKS", "L3"], "body": "sleepUntil 10 ms -> IEncoderService::sample (task not created without encoder hardware)"},
     {"name": "Display", "priority": 1, "stack": 640,  "trigger": "periodic", "period_ms": 50, "layer_affinity": ["TASKS", "L3"], "body": "sleepUntil 50 ms -> IDisplayService::tick"},
 ]
 

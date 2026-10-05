@@ -16,13 +16,13 @@ Enforced by `scripts/check_includes.py --strict` and `scripts/check_harness_defs
 
 - **L1 Transport** — Byte-stream ingress/egress to the host (VCP UART / RTT); owns ITransport and the IByteChannel contract that L5 implements. (7 files)
 - **L2 Protocol** — SCPI parsing, validation, aliases, all host-facing formatting (responses, events, telemetry, joystick, banner); routes to the 13 L3 dispatchers. (19 files)
-- **L3 Services** — All business logic and safety, host-testable, no RTOS loops: Motor/Comms/Encoder/Display/Debug services, controllers, dispatchers, telemetry store, UI, trace. (173 files)
+- **L3 Services** — All business logic and safety, host-testable, no RTOS loops: Motor/Comms/Encoder/Display/Debug services, controllers, dispatchers, telemetry store, UI, trace. (174 files)
 - **L4 Drivers** — Device drivers over Board pin bundles: powerSTEP01, ST7789, NOR flash, joystick, quadrature encoder (+ index ISR), config store, debug access. (21 files)
 - **L5 Board** — Register/peripheral access: clocks, GPIO, SPI1/SPI2, USART2 + RTT byte channels, TIM4, TIM3+DMA sampler, EXTI, TE sync, internal flash, bring-up commands. (35 files)
-- **TASKS Task sheet (Scheduler::)** — Four RTOS task loops that only wait, then call one L3 entry point; owns priorities, periods, stack sizes and task handles. (16 files)
+- **TASKS Task sheet (Scheduler::)** — Four RTOS task loops that only wait, then call one L3 entry point; owns priorities, periods, stack sizes, task handles and the task-init contracts the composition root calls. (16 files)
 - **PLATFORM Platform (power net)** — RTOS-neutral primitives any sheet may use: clock, microsecond clock, locks, queues, scheduler, task stats, critical section, task notifier; FreeRTOS implementations, startup. (49 files)
-- **HARNESS Harness** — Harness definitions (defs/), connect() functions (the only place taps are applied), shared POD pins, traced taps, interface trace. (94 files)
-- **SYSTEM Composition root** — main.cpp + system_init.cpp: phase sequencing, Platform resources, task handle publication. (3 files)
+- **HARNESS Harness** — Harness definitions (defs/), connect() functions (the only place taps are applied), shared POD pins, traced taps, interface trace. (89 files)
+- **SYSTEM Composition root** — main.cpp + system_init.cpp: phase sequencing, Platform resources, RTOS task creation over the L3 services. (3 files)
 
 ## Harnesses
 
@@ -98,11 +98,10 @@ Enforced by `scripts/check_includes.py --strict` and `scripts/check_harness_defs
 
 | Signal | Provider | Flow | Timing | Context | Ownership |
 |---|---|---|---|---|---|
-| `Services::IMotorService` | Upper | Up | Sync | Task | MotorCommand by const ref for the call; L3 owns driver + controller |
-| `Services::ICommsService` | Upper | Up | Sync | Task | L3 owns parser ref, heartbeat, telemetry publish, event drain |
-| `Services::IEncoderService` | Upper | Up | Sync | Task | optional task; L3 owns processor, filters, DMA read index |
-| `Services::IDisplayService` | Upper | Up | Sync | Task | L3 owns ScreenManager, screens, joystick state, UI mode |
-| `Harness::TaskHandles` | Lower | Down | Sync | Task, PreScheduler | opaque; used only with Platform::IScheduler |
+| `Services::IMotorService` | Lower | Down | Sync | Task | MotorCommand by const ref for the call; L3 owns driver + controller; ESTOP latch + step-mode/debug-pause messages handled on the Motor task |
+| `Services::ICommsService` | Lower | Down | Sync | Task | L3 owns parser ref, heartbeat, telemetry publish, event drain |
+| `Services::IEncoderService` | Lower | Down | Sync | Task | optional task; L3 owns processor, filters, DMA read index |
+| `Services::IDisplayService` | Lower | Down | Sync | Task | L3 owns ScreenManager, screens, joystick state, UI mode; debug disable is a flag checked by tick() |
 
 ## Tasks
 
@@ -110,7 +109,7 @@ Enforced by `scripts/check_includes.py --strict` and `scripts/check_harness_defs
 |---|---|---|---|---|---|
 | Motor | 4 | 1024 | event | 50 | queue receive (50 ms timeout) -> IMotorService::onCommand; every 50 ms -> IMotorService::periodicUpdate |
 | Comms | 3 | 2048 | event | 10 | ITaskNotifier wait (USART2 RX wake) with 10 ms fallback -> ICommsService::tick |
-| Encoder | 2 | 128 | periodic | 10 | sleepUntil 10 ms -> IEncoderService::sample (task not created without encoder hardware) |
+| Encoder | 2 | 256 | periodic | 10 | sleepUntil 10 ms -> IEncoderService::sample (task not created without encoder hardware) |
 | Display | 1 | 640 | periodic | 50 | sleepUntil 50 ms -> IDisplayService::tick |
 
 ## Diagram
@@ -139,7 +138,7 @@ flowchart TB
   L3 -- "H_L3_L4: 7 signal(s)" --> L4
   L4 -- "H_L4_L5: 8 signal(s)" --> L5
   L5 -. "H_L5_L1: 1 signal(s) (documented exception)" .-> L1
-  TASKS -- "H_TASKS_L3: 5 signal(s)" --> L3
+  TASKS -- "H_TASKS_L3: 4 signal(s)" --> L3
   PLATFORM -- "power net (rule 4)" --> STACK
   PLATFORM -- "power net (rule 4)" --> TASKS
 ```

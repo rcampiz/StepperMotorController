@@ -57,6 +57,7 @@
         "server/layers/L3_services/boundary/icontrol_mode_dispatcher.hpp",
         "server/layers/L3_services/boundary/idebug_dispatcher.hpp",
         "server/layers/L3_services/boundary/idispatch_stats.hpp",
+        "server/layers/L3_services/boundary/idisplay_control.hpp",
         "server/layers/L3_services/boundary/idisplay_dispatcher.hpp",
         "server/layers/L3_services/boundary/idisplay_service.hpp",
         "server/layers/L3_services/boundary/iemergency_stop.hpp",
@@ -300,7 +301,7 @@
     {
       "id": "TASKS",
       "name": "Task sheet (Scheduler::)",
-      "responsibility": "Four RTOS task loops that only wait, then call one L3 entry point; owns priorities, periods, stack sizes and task handles.",
+      "responsibility": "Four RTOS task loops that only wait, then call one L3 entry point; owns priorities, periods, stack sizes, task handles and the task-init contracts the composition root calls.",
       "files": [
         "server/foundation/F_platform/tasks/comms_task.cpp",
         "server/foundation/F_platform/tasks/comms_task.hpp",
@@ -389,25 +390,21 @@
         "server/harness/defs/harness_l5_l1_bytes.hpp",
         "server/harness/defs/harness_signal.hpp",
         "server/harness/defs/harness_tasks_l3.hpp",
-        "server/harness/defs/task_handles.cpp",
         "server/harness/pins/async_event.cpp",
         "server/harness/pins/async_event.hpp",
         "server/harness/pins/clock_board.hpp",
         "server/harness/pins/comms_board.hpp",
         "server/harness/pins/comms_protocol_init.hpp",
-        "server/harness/pins/comms_task_init.hpp",
         "server/harness/pins/config_store_init.hpp",
         "server/harness/pins/crc32.hpp",
         "server/harness/pins/debug_access_init.hpp",
         "server/harness/pins/dispatch_result.hpp",
         "server/harness/pins/dispatch_stats.hpp",
         "server/harness/pins/display_driver_init.hpp",
-        "server/harness/pins/display_task_init.hpp",
         "server/harness/pins/early_debug_board.hpp",
         "server/harness/pins/encoder_driver_init.hpp",
         "server/harness/pins/encoder_filter_config.hpp",
         "server/harness/pins/encoder_status.hpp",
-        "server/harness/pins/encoder_task_init.hpp",
         "server/harness/pins/exti_callbacks.cpp",
         "server/harness/pins/exti_callbacks.hpp",
         "server/harness/pins/ibyte_channel.hpp",
@@ -459,7 +456,6 @@
         "server/harness/pins/motor_conversions.hpp",
         "server/harness/pins/motor_debug_params.hpp",
         "server/harness/pins/motor_driver_init.hpp",
-        "server/harness/pins/motor_task_init.hpp",
         "server/harness/pins/platform_board.hpp",
         "server/harness/pins/seq_snapshot.hpp",
         "server/harness/pins/spi_init.hpp",
@@ -480,7 +476,7 @@
     {
       "id": "SYSTEM",
       "name": "Composition root",
-      "responsibility": "main.cpp + system_init.cpp: phase sequencing, Platform resources, task handle publication.",
+      "responsibility": "main.cpp + system_init.cpp: phase sequencing, Platform resources, RTOS task creation over the L3 services.",
       "files": [
         "server/main.cpp",
         "server/system_init.cpp",
@@ -517,7 +513,7 @@
       {
         "name": "Encoder",
         "priority": 2,
-        "stack": 128,
+        "stack": 256,
         "trigger": "periodic",
         "period_ms": 10,
         "layer_affinity": [
@@ -643,8 +639,7 @@
         "Services::IMotorService",
         "Services::ICommsService",
         "Services::IEncoderService",
-        "Services::IDisplayService",
-        "Harness::TaskHandles"
+        "Services::IDisplayService"
       ],
       "status": "implemented",
       "defined_in": "server/harness/defs/harness_tasks_l3.hpp",
@@ -964,42 +959,12 @@
       "exception": true
     },
     {
-      "from": "Services",
-      "to": "Scheduler (tasks)",
+      "from": "Scheduler (tasks)",
+      "to": "Services",
       "via": "harness",
       "name": "Services::IMotorService",
-      "data": "MotorCommand by const ref for the call; L3 owns driver + controller",
-      "direction": "up",
-      "sync": "sync",
-      "is_violation": false
-    },
-    {
-      "from": "Services",
-      "to": "Scheduler (tasks)",
-      "via": "harness",
-      "name": "Services::ICommsService",
-      "data": "L3 owns parser ref, heartbeat, telemetry publish, event drain",
-      "direction": "up",
-      "sync": "sync",
-      "is_violation": false
-    },
-    {
-      "from": "Services",
-      "to": "Scheduler (tasks)",
-      "via": "harness",
-      "name": "Services::IEncoderService",
-      "data": "optional task; L3 owns processor, filters, DMA read index",
-      "direction": "up",
-      "sync": "sync",
-      "is_violation": false
-    },
-    {
-      "from": "Services",
-      "to": "Scheduler (tasks)",
-      "via": "harness",
-      "name": "Services::IDisplayService",
-      "data": "L3 owns ScreenManager, screens, joystick state, UI mode",
-      "direction": "up",
+      "data": "MotorCommand by const ref for the call; L3 owns driver + controller; ESTOP latch + step-mode/debug-pause messages handled on the Motor task",
+      "direction": "down",
       "sync": "sync",
       "is_violation": false
     },
@@ -1007,8 +972,28 @@
       "from": "Scheduler (tasks)",
       "to": "Services",
       "via": "harness",
-      "name": "Harness::TaskHandles",
-      "data": "opaque; used only with Platform::IScheduler",
+      "name": "Services::ICommsService",
+      "data": "L3 owns parser ref, heartbeat, telemetry publish, event drain",
+      "direction": "down",
+      "sync": "sync",
+      "is_violation": false
+    },
+    {
+      "from": "Scheduler (tasks)",
+      "to": "Services",
+      "via": "harness",
+      "name": "Services::IEncoderService",
+      "data": "optional task; L3 owns processor, filters, DMA read index",
+      "direction": "down",
+      "sync": "sync",
+      "is_violation": false
+    },
+    {
+      "from": "Scheduler (tasks)",
+      "to": "Services",
+      "via": "harness",
+      "name": "Services::IDisplayService",
+      "data": "L3 owns ScreenManager, screens, joystick state, UI mode; debug disable is a flag checked by tick()",
       "direction": "down",
       "sync": "sync",
       "is_violation": false

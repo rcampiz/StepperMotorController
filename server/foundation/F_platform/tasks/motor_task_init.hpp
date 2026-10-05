@@ -10,11 +10,11 @@
 namespace Platform { class IClock; class IScheduler; }
 namespace Services { class IMotorService; }
 
-namespace Harness {
+namespace Scheduler {
 
 bool initMotorTask(Services::IMotorService& service,
-                   Platform::IQueue<Services::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
+                   Platform::IQueue<Services::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& cmdQueue,
                    Platform::IClock& clock,
                    Platform::IScheduler& scheduler);
 
-} // namespace Harness
+} // namespace Scheduler

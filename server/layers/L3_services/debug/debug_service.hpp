@@ -1,27 +1,25 @@
 /**
  * @file debug_service.hpp
- * @brief L3 DebugService — bring-up commands behind DBG:UNLOCK (replaces harness DebugCommandHandler)
+ * @brief L3 DebugService — DBG:* bring-up commands behind DBG:UNLOCK (Comms task)
  *
- * Locked by default. Task-aware commands (SPI_STOP/SPI_START suspend the Motor task,
- * LCD_DISABLE suspends the Display task, MOTOR_DEBUG reads the controller) are handled
- * here with Platform primitives and the task handles from H_TASKS_L3; every register-level
- * command is forwarded to Drivers::IDebugAccess (H_L3_L4), whose implementation lives in L5.
+ * Task-aware commands no longer suspend tasks: SPI_STOP/SPI_START set the Motor task's
+ * debug-pause flag (IMotorTaskControl), LCD_DISABLE clears the Display task's enable flag
+ * (IDisplayControl). Register-level commands are forwarded to Drivers::IDebugAccess (H_L3_L4).
  */
 #pragma once
 
 #include "L3_services/boundary/idebug_dispatcher.hpp"
-#include "L3_services/boundary/imotor_control_service.hpp"
+#include "L3_services/boundary/imotor_task_control.hpp"
+#include "L3_services/boundary/idisplay_control.hpp"
 #include "harness/defs/harness_l3_l4.hpp"
-#include "harness/defs/harness_tasks_l3.hpp"
-#include "F_platform/boundary/ischeduler.hpp"
 
 namespace Services {
 
 class DebugService : public IDebugDispatcher {
 public:
     void init(Drivers::IDebugAccess* access,
-              Platform::IScheduler& scheduler,
-              IMotorControlService& motorCtrl);
+              IMotorTaskControl* motorCtrl,
+              IDisplayControl* display);
 
     // IDebugDispatcher
     Harness::ServiceStatus debugUnlock() override;
@@ -39,8 +37,8 @@ private:
     void cmdMotorDebug(Harness::IResponseSink& out);
 
     Drivers::IDebugAccess* m_access = nullptr;
-    Platform::IScheduler*  m_scheduler = nullptr;
-    IMotorControlService*  m_motorCtrl = nullptr;
+    IMotorTaskControl*     m_motorCtrl = nullptr;
+    IDisplayControl*       m_display = nullptr;
     bool m_unlocked = false;
 };
 

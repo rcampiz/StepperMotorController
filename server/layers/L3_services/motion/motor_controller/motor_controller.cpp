@@ -242,6 +242,10 @@ void MotorController::processCommand(const MotorCommand& cmd)
         case MotorCmdType::GetStatus:
             // Handled by periodicUpdate — nothing to do here
             break;
+
+        case MotorCmdType::SetStepMode:
+            // Intercepted by MotorService::onCommand (needs the readback slot); never reaches here
+            break;
     }
 }
 

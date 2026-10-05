@@ -63,8 +63,7 @@ smc_add_test(test_command_parser test_command_parser.cpp
 
 # --- Step 6: H_L2_L3 â€” DBG:UNLOCK gate, task suspend via Platform, raw commands via L4.
 smc_add_test(test_debug_service test_debug_service.cpp
-    ${SERVER}/layers/L3_services/debug/debug_service.cpp
-    ${SERVER}/harness/defs/task_handles.cpp)
+    ${SERVER}/layers/L3_services/debug/debug_service.cpp)
 
 # --- Step 4b: H_TASKS_L3 â€” the encoder sampling logic runs in L3 against fake hardware.
 smc_add_test(test_encoder_service test_encoder_service.cpp
@@ -94,7 +93,6 @@ smc_add_test(test_motor_service test_motor_service.cpp
     ${SERVER}/layers/L3_services/motion/motor_event_service/motor_event_service.cpp
     ${SERVER}/layers/L3_services/motion/encoder_processor/encoder_processor.cpp
     ${SERVER}/layers/L3_services/infra/telemetry_store/telemetry_store.cpp
-    ${SERVER}/harness/defs/task_handles.cpp
     ${SERVER}/harness/pins/async_event.cpp
     stubs/trace_stub.cpp)
 

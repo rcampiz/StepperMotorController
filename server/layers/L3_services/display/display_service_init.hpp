@@ -1,38 +1,26 @@
 /**
  * @file display_service_init.hpp
- * @brief Harness contract for L3 display subsystem init
+ * @brief L3 init contract: bind the LCD, joystick, flash images and the DisplayService
  *
- * L3 orchestrates: L4 driver init (through harness) →
- * task init (through harness, handles L3 services + RTOS).
- * All Platform deps injected.
+ * Creates no task. The composition root hands displayService to the task sheet.
  */
-
 #pragma once
 
-namespace Platform { class IClock; class IScheduler; }
+namespace Platform { class IClock; }
 
 namespace Services {
 
+class IDisplayService;
+class IDisplayControl;
 class IRemoteDisplay;
 
-/**
- * @brief Result of display subsystem initialization
- */
 struct DisplaySubsystemResult {
-    Services::IRemoteDisplay* remoteDisplay = nullptr;  ///< Remote display interface
-    bool flashAvailable = false;                        ///< NOR flash detected
+    Services::IDisplayService* displayService = nullptr;  ///< Display task entry (H_TASKS_L3)
+    Services::IDisplayControl* displayControl = nullptr;  ///< debug enable/disable (Comms task)
+    Services::IRemoteDisplay*  remoteDisplay = nullptr;   ///< Remote display interface
+    bool flashAvailable = false;                          ///< NOR flash detected
 };
 
-/**
- * @brief Initialize display subsystem — L3 drives the cascade
- *
- * @param clock     System clock (injected from Platform)
- * @param scheduler Scheduler for RTOS task creation (injected from Platform)
- * @param result    Output: remote display interface + flash availability
- * @return true on success
- */
-bool initDisplaySubsystem(Platform::IClock& clock,
-                          Platform::IScheduler& scheduler,
-                          DisplaySubsystemResult& result);
+bool initDisplaySubsystem(Platform::IClock& clock, DisplaySubsystemResult& result);
 
 } // namespace Services
