@@ -13,6 +13,13 @@
 // FreeRTOS — for configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
 
+// Index-pulse EXTI priority. Numerically >= configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY (5)
+// because the callback uses FromISR kernel calls. Kept at 5, above USART2 (6), so a UART burst
+// cannot delay the index timestamp.
+static constexpr uint32_t ENCODER_INDEX_IRQ_PRIORITY = 5;
+static_assert(ENCODER_INDEX_IRQ_PRIORITY >= configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY,
+              "index EXTI must not preempt the RTOS syscall threshold");
+
 using Board::GPIO;
 using Board::GPIOMode;
 using Board::GPIOPull;
@@ -39,8 +46,7 @@ bool Harness::initEncoderBoard(Harness::EncoderPins& pins)
     static GPIO encoderEZ(Pins::Encoder::EZ_PORT, Pins::Encoder::EZ_PIN);
     encoderEZ.setMode(GPIOMode::Input);
     encoderEZ.setPull(GPIOPull::PullUp);
-    encoderEZ.enableExti(ExtiEdge::Falling,
-                         configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY);
+    encoderEZ.enableExti(ExtiEdge::Falling, ENCODER_INDEX_IRQ_PRIORITY);
 
     // Create and initialize TIM4 encoder mode timer
     static TimerCounterTIM4 timerCounter;
