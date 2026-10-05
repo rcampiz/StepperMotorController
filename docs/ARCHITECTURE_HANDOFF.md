@@ -31,7 +31,7 @@ directory, external vendor code excluded.
 |---|---|---|---|---|
 | L1 | `server/layers/L1_transport/` | `Transport::` | 7 | `UartTransport`, `RttTransport` (both `: ITransport`); `boundary/itransport.hpp`, `boundary/ibyte_channel.hpp`; `init/transport_init.cpp` (connects the rule-3 byte channel) |
 | L2 | `server/layers/L2_protocol/` | `Protocol::` | 19 | `CommandParser : ICommandProcessor`, `ServiceDispatcher : ICommandDispatcher`, `event_codec`, 9 handler files, `init/comms_protocol_init.cpp` |
-| L3 | `server/layers/L3_services/` | `Services::` | 172 | 38 boundary interfaces, 16 `g_*` service singletons (see §7), motion/comms/config/dispatch/display/graphics/infra/ui/debug subtrees, 5 subsystem init files that create **no** tasks |
+| L3 | `server/layers/L3_services/` | `Services::` | 172 | 37 boundary interfaces, 16 `g_*` service singletons (see §7), motion/comms/config/dispatch/display/graphics/infra/ui/debug subtrees, 5 subsystem init files that create **no** tasks |
 | L4 | `server/layers/L4_drivers/` | `Drivers::` | 21 | `PowerSTEP01`, `LCD` (ST7789), `SPIFlash`, `Joystick`, `Encoder` (seqlock index snapshot), `InternalFlashConfigStore`, `DebugAccess`; 5 init files |
 | L5 | `server/layers/L5_board/` | `Board::` | 35 | `GPIO`, `LED`, `SPIHardware`, `SPIBitBang`, `UartHardware`, `RttChannel`, `TimerCounterTIM4`, `EncoderSampler`, `TearingSyncEXTI0`, `InternalFlashSTM32F401`, `BoardDebug`, `g_spiManager`; 6 init files; 3 ISR files |
 | TASKS | `server/foundation/F_platform/tasks/` | `Scheduler::` | 16 | 4 task bodies + 4 task-init contracts (`Scheduler::init*Task`, called by SYSTEM) + handles |
