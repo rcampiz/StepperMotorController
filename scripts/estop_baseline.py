@@ -10,7 +10,7 @@ Usage:
 
 Case a: idle, send SYST:ESTOP.
 Case b: MOT:RUN 300 1, wait 1 s, send SYST:ESTOP.
-Case c: UI:MODE REMOTE, UI:DISP:BITMAP 0 0 240 320, stream pixel bytes and inject "ESTOP\\n"
+Case c: UI:MODE REMOTE, UI:DISP:BITMAP 0 0 240 320, stream pixel bytes and inject "SYST:ESTOP\\n"
         after 8 KB (it is consumed as pixel data today), keep streaming to the end, then
         report when the firmware answered.
 Every case ends with SYST:FAULT:CLEAR and MOT:STOP so the next case starts clean.
@@ -55,7 +55,7 @@ def case_c(port, baud):
     print("--- (c) during a full-screen bitmap stream")
     send(port, "UI:MODE REMOTE")
     total = 240 * 320 * 2
-    port.write(b"DISP_BITMAP 0 0 240 320\n")
+    port.write(b"UI:DISP:BITMAP 0 0 240 320\n")
     port.flush()
     time.sleep(0.2)
     print("  firmware:", port.read(port.in_waiting or 1).decode(errors="replace").strip())
@@ -68,7 +68,7 @@ def case_c(port, baud):
         sent += len(chunk)
         if t_estop is None and sent >= 8192:
             t_estop = time.perf_counter()
-            port.write(b"ESTOP\n")               # becomes 6 pixel bytes today
+            port.write(b"SYST:ESTOP\n")          # becomes 11 pixel bytes today
             sent += 11
             print(f"  ESTOP injected at +{t_estop - t_start:.3f} s ({sent} bytes into the stream)")
     port.flush()
