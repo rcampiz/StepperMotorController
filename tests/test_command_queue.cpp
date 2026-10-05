@@ -22,8 +22,10 @@ struct FakeSink : Services::IMotorCommandSink {
 };
 
 struct FakeImmediate : Services::IImmediateStop {
-    int hiZ = 0;
-    void immediateHardHiZ() override { ++hiZ; }
+    int hiZ = 0, clears = 0; bool latched = false;
+    void immediateHardHiZ() override { ++hiZ; latched = true; }
+    void clearImmediateStop() override { ++clears; latched = false; }
+    bool isStopLatched() const override { return latched; }
 };
 
 struct Rig {
@@ -65,4 +67,15 @@ TEST(estop_stops_the_driver_immediately_even_with_a_full_motor_queue) {
     EXPECT_EQ(r.q.getQueueDepth(), 0u);
     EXPECT_EQ(r.q.getState(), Services::ControllerState::ESTOP);
     EXPECT_EQ(r.sink.timeouts.back(), 0u);      // the queued HardHiZ never waits
+}
+
+TEST(clear_after_estop_releases_the_latch_exactly_once) {
+    Rig r;
+    r.q.emergencyStop();
+    EXPECT_TRUE(r.immediate.latched);
+    EXPECT_EQ(r.q.clearFault(), Services::QueueResult::OK);
+    EXPECT_EQ(r.immediate.clears, 1);
+    EXPECT_FALSE(r.immediate.latched);
+    EXPECT_EQ(r.q.clearFault(), Services::QueueResult::INVALID_STATE);   // already IDLE
+    EXPECT_EQ(r.immediate.clears, 1);
 }

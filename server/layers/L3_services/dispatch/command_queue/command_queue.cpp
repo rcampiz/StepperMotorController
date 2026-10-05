@@ -246,6 +246,9 @@ QueueResult CommandQueue::clearFault()
     }
 
     m_lock->release();
+    if (result == QueueResult::OK && m_immediate != nullptr) {
+        m_immediate->clearImmediateStop();   // Motor task accepts motion again from its next pass
+    }
     return result;
 }
 

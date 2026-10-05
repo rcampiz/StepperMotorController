@@ -56,6 +56,12 @@ public:
     /// ESTOP path: force outputs to Hi-Z immediately (bypasses the command queue).
     void emergencyHiZ();
 
+    /// Motor-task side of ESTOP: idle sysid/trim/supervisor, inhibit the control loops, re-assert Hi-Z.
+    void onEmergencyStop();
+    /// Motor-task side of CLEAR: the control loops may drive the motor again.
+    void clearEmergencyStop();
+    bool motionInhibited() const { return m_motionInhibited; }
+
     void processCommand(const MotorCommand& cmd) override;
 
     // ── Periodic control loop (called every 50ms) ──
@@ -106,6 +112,7 @@ private:
     IMotorDriver* m_driver = nullptr;      ///< owned reference, bound at init (H_L3_L4)
     Platform::IClock* m_clock = nullptr;   ///< Platform power net
     bool m_prevBusy = false;
+    bool m_motionInhibited = false;        ///< between onEmergencyStop() and clearEmergencyStop() (Motor task only)
 
     // Internal helpers
     void applySpeedOverride(uint32_t rawMaxSpeed);

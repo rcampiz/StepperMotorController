@@ -280,7 +280,7 @@ void MotorController::periodicUpdate()
     // ── System identification (overrides normal control when active) ──
     Trace::setCurrentServiceId(Trace::SVC_SYSID);
     bool sysidActive = false;
-    {
+    if (!m_motionInhibited) {
         auto& sysid = motion.control.sysId;
         auto sysResult = sysid.tick(
             snap.encoder.velocity, followError, fpr, encPPR);
@@ -303,7 +303,7 @@ void MotorController::periodicUpdate()
 
     // ── Speed-trim controller (skipped during sysid) ──
     Trace::setCurrentServiceId(Trace::SVC_MOTION);
-    if (!sysidActive && motion.control.trim.isActive()) {
+    if (!m_motionInhibited && !sysidActive && motion.control.trim.isActive()) {
         SpeedTrimInput ti{};
         ti.encVelTps       = snap.encoder.velocity;
         ti.velQuality      = static_cast<VelocityQuality>(
@@ -323,7 +323,7 @@ void MotorController::periodicUpdate()
 
     // ── Following Error Supervisor (skipped during sysid) ──
     Trace::setCurrentServiceId(Trace::SVC_SAFETY);
-    if (!sysidActive) {
+    if (!m_motionInhibited && !sysidActive) {
         auto mode = motion.control.mode.getMode();
         auto& sup = motion.control.supervisor;
 
@@ -567,6 +567,24 @@ void MotorController::emergencyHiZ()
     if (m_driver != nullptr) {
         m_driver->hardHiZ();
     }
+}
+
+void MotorController::onEmergencyStop()
+{
+    // Motor task context. Every path that can re-issue run() from periodicUpdate goes idle.
+    motion.control.sysId.abort();
+    motion.control.trim.reset();
+    motion.control.supervisor.goIdle();
+    m_continuousRunActive = false;
+    m_motionInhibited = true;
+    if (m_driver != nullptr) {
+        m_driver->hardHiZ();   // re-assert: a command dequeued just before the latch may have raced the stop
+    }
+}
+
+void MotorController::clearEmergencyStop()
+{
+    m_motionInhibited = false;
 }
 
 } // namespace Services

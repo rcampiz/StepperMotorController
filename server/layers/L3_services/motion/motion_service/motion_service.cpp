@@ -26,6 +26,9 @@ const char *resultToString(Result r) {
 }
 
 static Result sendCmd(MotorCmdType type, int32_t p1 = 0, int32_t p2 = 0) {
+    if (MotorService::isMotionCommand(type) && g_motorService.isStopLatched()) {
+        return Result::FAULT;   // ESTOP latched: CLEAR first
+    }
     MotorCommand cmd = {};
     cmd.type = type;
     cmd.param1 = p1;

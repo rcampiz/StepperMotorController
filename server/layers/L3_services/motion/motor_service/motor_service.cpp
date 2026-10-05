@@ -1,6 +1,18 @@
 /**
  * @file motor_service.cpp
- * @brief L3 MotorService implementation (Motor task body moved from F_platform/tasks/motor_task.cpp)
+ * @brief L3 MotorService implementation (Motor task body + ESTOP latch)
+ *
+ * ESTOP contract (Comms task -> Motor task):
+ *   immediateHardHiZ()   latches m_stopLatched, empties the motor queue, drives Hi-Z now.
+ *   onCommand()          drops motion commands while latched (config/stop/status still pass).
+ *   applyPendingTransitions()  runs the Motor-task side once per edge: onEmergencyStop()
+ *                        idles sysid/trim/supervisor, inhibits the control loops and
+ *                        re-asserts Hi-Z; clearEmergencyStop() re-enables them after CLEAR.
+ *
+ * All MotorController mutation stays on the Motor task. The Comms task only touches the
+ * atomics, the queue and the driver's hardHiZ() (one SPI transaction under the SPI1 mutex).
+ * Residual window: a command the Motor task dequeued just before the latch can still reach
+ * the driver; the pending onEmergencyStop() re-asserts Hi-Z on the next pass (<= 50 ms).
  */
 
 #include "L3_services/motion/motor_service/motor_service.hpp"
@@ -28,15 +40,48 @@ void MotorService::init(IMotorControlService& controller,
     m_controller->applyConfig();
 }
 
+bool MotorService::isMotionCommand(MotorCmdType t)
+{
+    switch (t) {
+        case MotorCmdType::Move:
+        case MotorCmdType::GoTo:
+        case MotorCmdType::Run:
+        case MotorCmdType::GoHome:
+        case MotorCmdType::GoMark:
+            return true;
+        default:
+            return false;
+    }
+}
+
 // ---------------------------------------------------------------------------
 // IMotorService (Motor task context)
 // ---------------------------------------------------------------------------
 
+void MotorService::applyPendingTransitions()
+{
+    if (m_rawController == nullptr) {
+        return;
+    }
+    if (m_stopPending.exchange(false)) {
+        m_rawController->onEmergencyStop();
+    }
+    if (m_clearPending.exchange(false)) {
+        m_rawController->clearEmergencyStop();
+    }
+}
+
 void MotorService::onCommand(const MotorCommand& cmd)
 {
-    if (m_controller != nullptr) {
-        m_controller->processCommand(cmd);
+    if (m_controller == nullptr) {
+        return;
     }
+    applyPendingTransitions();
+    if (m_stopLatched.load() && isMotionCommand(cmd.type)) {
+        ++m_refused;
+        return;
+    }
+    m_controller->processCommand(cmd);
 }
 
 void MotorService::periodicUpdate()
@@ -44,6 +89,7 @@ void MotorService::periodicUpdate()
     if (m_controller == nullptr) {
         return;
     }
+    applyPendingTransitions();
     m_controller->periodicUpdate();
 
     Protocol::SystemTelemetry sys = {};
@@ -120,9 +166,28 @@ bool MotorService::setStepModeSafe(uint8_t mode, uint8_t& readback)
 
 void MotorService::immediateHardHiZ()
 {
+    // Order matters: latch first so a command dequeued from now on is refused, then empty
+    // the queue so nothing already queued runs after the stop, then stop the outputs.
+    m_stopLatched.store(true);
+    m_clearPending.store(false);
+    m_stopPending.store(true);
+    if (m_queue != nullptr) {
+        m_queue->reset();
+    }
     if (m_rawController != nullptr) {
         m_rawController->emergencyHiZ();
     }
+}
+
+void MotorService::clearImmediateStop()
+{
+    m_stopLatched.store(false);
+    m_clearPending.store(true);
+}
+
+bool MotorService::isStopLatched() const
+{
+    return m_stopLatched.load();
 }
 
 } // namespace Services

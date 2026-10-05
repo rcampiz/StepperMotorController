@@ -21,6 +21,7 @@
 #include "F_platform/boundary/iclock.hpp"
 #include "F_platform/boundary/ischeduler.hpp"
 #include "F_platform/boundary/itask_stats.hpp"
+#include <atomic>
 
 namespace Services {
 
@@ -59,6 +60,13 @@ public:
 
     // IImmediateStop (ESTOP path; Comms task context)
     void immediateHardHiZ() override;
+    void clearImmediateStop() override;
+    bool isStopLatched() const override;
+
+    /// Move/GoTo/Run/GoHome/GoMark: refused while the ESTOP latch is set.
+    static bool isMotionCommand(MotorCmdType t);
+    /// Motion commands dropped while latched (Motor task counter; tests/diagnostics).
+    uint32_t refusedWhileLatched() const { return m_refused; }
 
 private:
     IMotorControlService* m_controller = nullptr;
@@ -68,6 +76,14 @@ private:
     Platform::IScheduler* m_scheduler = nullptr;
     Platform::ITaskStats* m_taskStats = nullptr;
     TelemetryStore*       m_telemetry = nullptr;
+
+    // ESTOP latch: Comms task writes, Motor task reads (lock-free, word-sized)
+    std::atomic<bool>     m_stopLatched{false};   ///< set by immediateHardHiZ, cleared by clearImmediateStop
+    std::atomic<bool>     m_stopPending{false};   ///< Motor task must run MotorController::onEmergencyStop()
+    std::atomic<bool>     m_clearPending{false};  ///< Motor task must run MotorController::clearEmergencyStop()
+    uint32_t              m_refused = 0;          ///< motion commands dropped while latched (Motor task only)
+
+    void applyPendingTransitions();               ///< Motor task: run the pending stop/clear edge once
 };
 
 extern MotorService g_motorService;
