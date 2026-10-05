@@ -341,6 +341,13 @@ non-adjacent edge the checker accepts.
 without a harness, like VCC on a schematic. Consequence: L3 contains **no RTOS loops** and
 builds natively for host tests (`tests/`).
 
+### Rule 5: The composition root may see every sheet
+
+`server/main.cpp` and `server/system_init.cpp` are the wiring diagram, not a layer. They call the
+Platform, L5 and L3 init contracts and the task-init contracts (`Scheduler::init*Task`) directly,
+create the RTOS tasks over the L3 services, and connect the Platform SPI locks. No shims in L3
+front these calls, and no other sheet may do what the root does.
+
 ### Directory -> Namespace
 
 | Directory                              | Namespace    | Role |
@@ -390,13 +397,13 @@ raw interfaces straight through.
 |-------------|-------------|
 | L1          | `L1_transport/`, `harness_l1_l2.hpp`, `harness_l5_l1_bytes.hpp`, `harness/pins/`, `F_platform/boundary/` |
 | L2          | `L2_protocol/`, `harness_l1_l2.hpp`, `harness_l2_l3.hpp`, `harness/pins/`, `F_platform/boundary/` |
-| L3          | `L3_services/`, `harness_l2_l3.hpp`, `harness_l3_l4.hpp`, `harness_tasks_l3.hpp`, `harness/pins/`, `F_platform/boundary/` |
+| L3          | `L3_services/`, `harness_l2_l3.hpp`, `harness_l3_l4.hpp`, `harness/pins/`, `F_platform/boundary/` |
 | L4          | `L4_drivers/`, `harness_l3_l4.hpp`, `harness_l4_l5.hpp`, `harness/pins/`, `F_platform/boundary/` |
 | L5          | `L5_board/`, `harness_l4_l5.hpp`, `harness_l5_l1_bytes.hpp`, `harness/pins/`, `F_platform/boundary/`, CMSIS, middlewares |
 | Tasks       | `F_platform/`, `harness_tasks_l3.hpp`, `harness/pins/` |
 | Platform    | `F_platform/`, CMSIS, middlewares |
 | Harness     | everything (it is the wiring) |
-| System      | `harness/`, `F_platform/`, L3 init contracts |
+| System      | every sheet (rule 5) |
 
 Only `Board::` (and Platform for runtime support) may include CMSIS device headers.
 

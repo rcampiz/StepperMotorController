@@ -13,7 +13,7 @@ Rules (authoritative; see CODE_PHILOSOPHY.md and ARCHITECTURE.md):
 
 Everything else (shared PODs in harness/pins/, trace macros in harness/trace/,
 harness/defs/harness_signal.hpp, std headers) is allowed everywhere. The composition
-root (server/system_init.*, main.cpp) may include harness/, F_platform/, and
+root (server/system_init.*, main.cpp) may include every sheet, and
 L3_services/ init headers. harness/ itself may include anything.
 
 Usage:
@@ -56,7 +56,7 @@ ALLOWED = {
            "harness/pins/exti_callbacks.hpp") + EXTERNAL_HW,
     "TASKS":    ("F_platform/tasks/", "harness/defs/harness_tasks_l3.hpp"),
     "PLATFORM": ("F_platform/", "F_util/") + EXTERNAL_HW,
-    "SYSTEM":   ("harness/", "F_platform/", "L3_services/", "system_init"),
+    "SYSTEM":   ("",),   # composition root: may see every sheet (it wires them)
     "HARNESS":  ("",),   # everything
 }
 

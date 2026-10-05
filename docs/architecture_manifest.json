@@ -121,8 +121,6 @@
         "server/layers/L3_services/graphics/primitives/primitives.hpp",
         "server/layers/L3_services/graphics/trig_lut/trig_lut.hpp",
         "server/layers/L3_services/infra/infra.hpp",
-        "server/layers/L3_services/infra/board_init/board_init.cpp",
-        "server/layers/L3_services/infra/board_init/board_init.hpp",
         "server/layers/L3_services/infra/flash_dispatch/flash_dispatch.cpp",
         "server/layers/L3_services/infra/flash_dispatch/flash_dispatch.hpp",
         "server/layers/L3_services/infra/flash_image_service/flash_image_service.cpp",

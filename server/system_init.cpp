@@ -22,6 +22,7 @@
 #include "harness/pins/imicrosecond_clock.hpp"
 #include "harness/pins/itask_stats.hpp"
 #include "harness/pins/early_debug_board.hpp"
+#include "harness/pins/clock_board.hpp"
 #include "harness/pins/platform_board.hpp"
 #include "harness/pins/spi_init.hpp"
 #include "harness/taps/apply_taps.hpp"
@@ -30,7 +31,6 @@
 // L3 service inits
 #include "L3_services/comms/comms_service_init.hpp"
 #include "L3_services/display/display_service_init.hpp"
-#include "L3_services/infra/board_init/board_init.hpp"
 #include "L3_services/infra/tick_timer/tick_timer.hpp"
 #include "L3_services/infra/trace/trace.hpp"
 #include "L3_services/motion/encoder_service_init.hpp"
@@ -59,8 +59,9 @@ static void logOk(const char *name) {
 
 // Phase 1: Hardware — clocks, debug UART, microsecond clock, trace sink
 void initHardware() {
-  Services::initClockBoard();
-  Services::initDebugOutput();
+  // Composition root may see every sheet: call the L5 / Platform init contracts directly
+  Harness::initClockBoard();
+  Harness::initDebugOutput();
   Harness::debugPrintln("\n=== Early Debug ===");
   logOk("Clock config");
   Platform::IMicrosecondClock &usClock = Platform::initMicrosecondClockTIM5();

@@ -164,7 +164,8 @@ def document(harnesses, manifest):
            "1. **Tasks call services.** The task sheet (`F_platform/tasks`) only waits, then calls one L3 entry point. Tasks never touch L1, L2, L4 or L5.",
            "2. **Adjacent layers only.** L1 - L2 - L3 - L4 - L5, each through that boundary's harness. No skipping.",
            "3. **One exception:** L5 -> L1 host command bytes through `Transport::IByteChannel` (owned by L1).",
-           "4. **Platform is a power net.** `F_platform/boundary` primitives may be used by any sheet; L3 contains no RTOS loops and is host-testable.", "",
+           "4. **Platform is a power net.** `F_platform/boundary` primitives may be used by any sheet; L3 contains no RTOS loops and is host-testable.",
+           "5. **The composition root may see every sheet.** `server/main.cpp` + `system_init.cpp` call the Platform, L5 and L3 init contracts and the task-init contracts directly; no other sheet may.", "",
            "Enforced by `scripts/check_includes.py --strict` and `scripts/check_harness_defs.py --strict`.", "",
            "## Layers", ""]
     for l in manifest["layers"]:
