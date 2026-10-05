@@ -8,8 +8,7 @@
  */
 
 #include "L3_services/infra/indicator_service/indicator_service.hpp"
-#include "L3_services/boundary/icanvas.hpp"
-#include "harness/pins/ite_sync.hpp"
+#include "harness/defs/harness_l3_l4.hpp"
 #include "graphics/trig_lut/trig_lut.hpp"
 #include "graphics/primitives/primitives.hpp"
 
@@ -63,8 +62,6 @@ IndicatorService g_indicatorService;
 void IndicatorService::init(Services::ICanvas* lcd) {
     m_lcd = lcd;
 
-    // TE sync hardware init (DWT cycle counter + EXTI0 on PA0) — L5
-    Harness::initTearingEffectSync();
 }
 
 // ============================================================================
@@ -275,7 +272,7 @@ void IndicatorService::drawComposited(const Params& p) {
     static uint8_t scanline[2 * (2 * COMPOSITED_HALF_W + 1)];
 
     // Sync to V-blank to avoid tearing
-    Harness::waitForTearingEffect();
+    m_lcd->waitForVSync();
 
     m_lcd->streamBitmapStart(wx, wy, ww, wh);
 

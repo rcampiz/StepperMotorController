@@ -119,7 +119,7 @@ void initTraceSink();
 
 } // namespace Trace
 
-#include "harness/pins/itrace_sink.hpp"
+#include "L3_services/boundary/itrace_sink.hpp"
 
 /**
  * @brief Adapter: forwards ITraceSink calls to Trace::recordIface()

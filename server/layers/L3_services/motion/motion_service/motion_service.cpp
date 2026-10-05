@@ -5,15 +5,15 @@
 
 #include "L3_services/motion/motion_service/motion_service.hpp"
 #include "L3_services/config/config_service/config_service.hpp"
-#include "harness/pins/imotor_command_sink.hpp"
+#include "L3_services/motion/motor_service/motor_service.hpp"
 #include "L3_services/infra/trace/trace.hpp"
 
 namespace Services::Motion {
 
 // Harness pin types used in this module
-using Scheduler::MotorCmdType;
-using Scheduler::MotorCommand;
-using Scheduler::g_motorCommandSink;
+using Services::MotorCmdType;
+using Services::MotorCommand;
+static Services::IMotorCommandSink* const g_motorCommandSink = &Services::g_motorService;
 
 const char *resultToString(Result r) {
     switch (r) {

@@ -11,9 +11,10 @@
 
 #pragma once
 
-#include "harness/pins/imotor_control_service.hpp"
+#include "L3_services/boundary/imotor_control_service.hpp"
 #include "L3_services/boundary/imotor_command_sink.hpp"
 #include "L3_services/motion/speed_trim_controller/speed_trim_controller.hpp"
+#include "F_platform/boundary/iclock.hpp"
 #include <stdint.h>
 
 namespace Services {
@@ -49,7 +50,13 @@ public:
      * Handles motion commands (RUN/STOP/MOVE/GOTO), config commands,
      * and supervisor/trim orchestration for closed-loop modes.
      */
-    void processCommand(const MotorCommand& cmd, IMotorDriver& driver) override;
+    /// Bind the L4 driver (from H_L3_L4) and the Platform clock. Call once before any other method.
+    void bind(IMotorDriver& driver, Platform::IClock& clock);
+
+    /// ESTOP path: force outputs to Hi-Z immediately (bypasses the command queue).
+    void emergencyHiZ();
+
+    void processCommand(const MotorCommand& cmd) override;
 
     // ── Periodic control loop (called every 50ms) ──
 
@@ -59,12 +66,12 @@ public:
      * Reads motor status, runs sysid/trim/supervisor, posts events,
      * builds motor + control telemetry, detects fault/stall edges.
      */
-    void periodicUpdate(IMotorDriver& driver) override;
+    void periodicUpdate() override;
 
     // ── Config application ──
 
     /** @brief Apply MotorConfig to driver registers */
-    void applyConfig(IMotorDriver& driver) override;
+    void applyConfig() override;
 
     /**
      * @brief Write STEP_MODE with readback verify
@@ -72,15 +79,15 @@ public:
      * Caller must HiZ the driver + delay 5ms before calling this.
      * This method does the register write, readback, fault clear, and SoftStop.
      */
-    bool setStepModeSafe(IMotorDriver& driver, uint8_t mode, uint8_t& readback) override;
+    bool setStepModeSafe(uint8_t mode, uint8_t& readback) override;
 
     /** @brief Reinitialize driver hardware + reapply config */
-    void reinit(IMotorDriver& driver) override;
+    void reinit() override;
 
     // ── Debug ──
 
     /** @brief Read all powerSTEP01 registers into debug struct */
-    void getDebugInfo(IMotorDriver& driver, MotorDebugParams& info) override;
+    void getDebugInfo(MotorDebugParams& info) override;
 
 private:
     // Speed override state
@@ -96,12 +103,14 @@ private:
 
     // Edge detection state
     uint16_t m_prevStatusReg = 0xFFFF;
+    IMotorDriver* m_driver = nullptr;      ///< owned reference, bound at init (H_L3_L4)
+    Platform::IClock* m_clock = nullptr;   ///< Platform power net
     bool m_prevBusy = false;
 
     // Internal helpers
-    void applySpeedOverride(IMotorDriver& driver, uint32_t rawMaxSpeed);
-    void restoreSpeedIfOverridden(IMotorDriver& driver);
-    void handleRunCommand(const MotorCommand& cmd, IMotorDriver& driver);
+    void applySpeedOverride(uint32_t rawMaxSpeed);
+    void restoreSpeedIfOverridden();
+    void handleRunCommand(const MotorCommand& cmd);
 };
 
 extern MotorController g_motorController;

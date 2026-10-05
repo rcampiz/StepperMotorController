@@ -4,7 +4,6 @@
  */
 
 #include "L2_protocol/command_parser_internal.hpp"
-#include "harness/pins/itelemetry.hpp"
 
 namespace Protocol {
 
@@ -22,7 +21,8 @@ void CommandParser::cmdDrvStepMode(const ParsedCommand &cmd) {
   }
 
   // Check motor is not busy
-  Protocol::TelemetrySnapshot snap = Scheduler::telemetry().getSnapshot();
+  Protocol::TelemetrySnapshot snap;
+  m_dispatcher.getTelemetry(snap);
   if (snap.motor.busy) {
     if (m_format == ResponseFormat::JSON) {
       respondJsonErr("DRV:STEP_MODE", "MOTOR_BUSY",

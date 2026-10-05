@@ -1,82 +1,64 @@
 /**
  * @file comms_service_init.cpp
- * @brief Implements Services::initCommsSubsystem() — L3 drives init cascade
+ * @brief Implements Services::initCommsSubsystem() — L3 drives the comms init cascade
  *
- * Layer-clean: only includes L3 + harness.
- * All Platform deps injected as parameters.
+ * Builds the dispatcher bundle and the debug service, cascades to L2 (which cascades to
+ * L1), connects H_L2_L3, initialises CommsService and creates the Comms task through the
+ * task init contract (H_TASKS_L3).
  */
 
 #include "L3_services/comms/comms_service_init.hpp"
-
-// L4 byte channel init through harness (L3 → L4 → L5 cascade)
-#include "harness/pins/byte_channel_init.hpp"
-
-// L2 protocol init through harness (L3 → L2 → L1 cascade)
+#include "harness/defs/harness_l2_l3.hpp"
+#include "harness/defs/harness_l3_l4.hpp"
 #include "harness/pins/comms_protocol_init.hpp"
-
-// Task init through harness
 #include "harness/pins/comms_task_init.hpp"
-
-// L3 internal
 #include "L3_services/dispatch/dispatch_init.hpp"
+#include "L3_services/debug/debug_service.hpp"
+#include "L3_services/comms/comms_service/comms_service.hpp"
 #include "L3_services/motion/motion.hpp"
 #include "L3_services/dispatch/command_queue/command_queue.hpp"
-
-// Debug commands (harness — CMSIS code stays in harness)
-#include "harness/debug_commands.hpp"
-
-// Adapt Platform:: → Services:: at wiring boundary
-namespace Services { class IClock; }
-namespace Harness { Services::IClock& adaptClock(Platform::IClock& raw); }
+#include "L3_services/infra/telemetry_store/telemetry_store.hpp"
+#include "L3_services/ui/ui_mode/ui_mode.hpp"
 
 namespace Services {
 
 bool initCommsSubsystem(const CommsServiceDeps& deps,
                         Platform::IClock& clock,
-                        Platform::IScheduler& scheduler)
+                        Platform::IScheduler& scheduler,
+                        Platform::ITaskNotifier* rxWake)
 {
-    // 1. L3 dispatch init
+    // Debug service: raw access through H_L3_L4 (may be absent), task control via Platform
+    const Harness::L3L4Harness& l3l4 = Harness::connectL3L4(clock);
+    g_debugService.init(l3l4.debug, scheduler, motion.stepper.controller);
+
+    // Thirteen dispatchers (L3 side of H_L2_L3)
     DispatchDeps dispDeps;
     dispDeps.encoder       = deps.encoder;
     dispDeps.encFilter     = deps.encFilter;
     dispDeps.motorCtrl     = deps.motorCtrl;
     dispDeps.remoteDisplay = deps.remoteDisplay;
-    dispDeps.clock         = &Harness::adaptClock(clock);
-
-    Harness::DispatchInterfaces dispatches;
-    if (!initDispatches(dispatches, dispDeps)) {
+    dispDeps.clock         = &clock;
+    const Harness::L3Dispatchers* dispatchers = initDispatches(dispDeps);
+    if (dispatchers == nullptr) {
         return false;
     }
 
-    // 2. Debug commands (harness — CMSIS code stays in harness)
-    static DebugCommandHandler debugCommands;
-
-    // 3. L4 byte channel init (L3 → L4 → L5 cascade)
-    Drivers::ByteChannelResult chResult;
-    if (!Drivers::initByteChannel(chResult, Drivers::ChannelType::VCP_UART)) {
-        return false;
-    }
-
-    // 4. L2 protocol init (L3 → L2 → L1 cascade, passes byte channel down)
+    // L2 (which cascades to L1)
     Protocol::CommsProtocol protocol;
-    if (!Protocol::initCommsProtocol(protocol, dispatches, &debugCommands,
-                                     *chResult.channel, clock)) {
+    if (!Protocol::initCommsProtocol(protocol, *dispatchers, clock)) {
         return false;
     }
 
-    // 4. Comms task init (through harness → F_platform)
-    Harness::CommsTaskResult commsResult;
-    if (!Harness::initCommsTask(*protocol.transport, *protocol.parser,
-                                 clock,
-                                 motion.stepper.event, g_commandQueue,
-                                 scheduler, commsResult)) {
-        return false;
-    }
+    // H_L2_L3
+    const Harness::L2L3Harness& l2l3 = Harness::connectL2L3(*dispatchers, *protocol.parser);
 
-    // 5. Late-bind event seq function (comms task → system dispatch)
-    setDispatchEventSeqFn(commsResult.getEventSeqFn);
+    // Comms service (task body, safety actions, dispatch stats)
+    g_commsService.init(l2l3.processor, clock, motion.stepper.event, g_commandQueue,
+                        g_telemetryStore, &UI::g_uiMode, deps.motorCtrl);
+    setDispatchEventSeqFn(&CommsService::lastEventSeqStatic);
 
-    return true;
+    // Comms task (through harness -> F_platform)
+    return Harness::initCommsTask(g_commsService, clock, scheduler, rxWake);
 }
 
 } // namespace Services

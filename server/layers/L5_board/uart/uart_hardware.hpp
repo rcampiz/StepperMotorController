@@ -17,6 +17,7 @@
 #include <stddef.h>
 #include "X_vendor/CMSIS/stm32f401xe.h"
 #include "harness/pins/ibyte_channel.hpp"
+#include "F_platform/boundary/itask_notifier.hpp"
 
 namespace Board {
 
@@ -151,6 +152,9 @@ public:
         if ((m_usart->SR & USART_SR_RXNE) != 0) {
             auto byte = static_cast<uint8_t>(m_usart->DR);
             m_rxBuffer.push(byte);
+            if (m_wakeNotifier != nullptr) {
+                m_wakeNotifier->notifyFromISR(m_wakeTask);   // RTOS-safe: USART2 IRQ is at NVIC 6
+            }
         }
 
         // Clear overrun error if set
@@ -160,6 +164,12 @@ public:
     }
 
     static UartHardware* getInstance() { return s_instance; }
+
+    /// Route RX interrupts to a task notification (nullptr disables). Pre-scheduler or task context.
+    void setRxWake(Platform::ITaskNotifier* notifier, Platform::TaskHandle task) {
+        m_wakeTask = task;
+        m_wakeNotifier = notifier;
+    }
 
     // --- Debug accessors ---
 
@@ -177,6 +187,8 @@ private:
     uint32_t       m_baudRate;
     uint8_t        m_irqPriority;
     RingBuffer<256> m_rxBuffer;
+    Platform::ITaskNotifier* m_wakeNotifier = nullptr;   // optional ISR -> Comms task wake
+    Platform::TaskHandle     m_wakeTask = nullptr;
 
     static UartHardware* s_instance;
 

@@ -4,7 +4,7 @@
  */
 
 #include "ui/screen_manager/screen_manager.hpp"
-#include "L3_services/boundary/icanvas.hpp"
+#include "harness/defs/harness_l3_l4.hpp"
 
 namespace UI {
 

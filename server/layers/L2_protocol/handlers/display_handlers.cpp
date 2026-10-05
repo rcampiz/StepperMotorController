@@ -1047,9 +1047,7 @@ void CommandParser::cmdFlashTest() {
                    info.manufacturer, info.memoryType, info.capacityCode);
 
   // Step 0b+0c: SPI2 peripheral + pin diagnostics (via debug handler)
-  if (m_debugCommands) {
-    rpos += m_debugCommands->formatSpi2Diag(result + rpos, sizeof(result) - rpos);
-  }
+  rpos += m_dispatcher.debugFormatSpi2Diag(result + rpos, sizeof(result) - rpos);
 
   // Step 1: Read before erase (first 4 bytes)
   uint8_t before[4];

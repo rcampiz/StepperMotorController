@@ -149,6 +149,17 @@ See [docs/HOST_INTERFACE_AND_SYNC.md](docs/HOST_INTERFACE_AND_SYNC.md) for compl
 
 ### Prerequisites
 
+**One-command setup (Windows):** installs or verifies every tool below (ARM GCC, CMake, Ninja,
+a host g++ for unit tests, Python 3.12 + client requirements, OpenOCD) via `winget`, then
+prints a verification table. Safe to re-run.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\bringup.ps1
+. scripts\env.ps1    # make the tools visible in an already-open shell
+```
+
+Manual alternative:
+
 1. **ARM GCC Toolchain** (14.x recommended)
    - Download: https://developer.arm.com/downloads/-/gnu-rm
 
@@ -162,23 +173,28 @@ See [docs/HOST_INTERFACE_AND_SYNC.md](docs/HOST_INTERFACE_AND_SYNC.md) for compl
 
 ### Building
 
-**Option 1: Direct Build Script (Windows)**
+CMake is the authoritative build (presets in `CMakePresets.json`):
 
-```batch
-scripts\build_direct.bat
+```powershell
+. scripts\env.ps1                                  # once per shell
+cmake --preset firmware-debug                      # configure (ENABLE_INTERFACE_TRACE=ON)
+cmake --build --preset firmware-debug              # -> build/StepperMotorController.elf/.hex/.bin
+cmake --build --preset firmware-debug --target arch-check   # layer/harness rules + doc freshness
+cmake --build --preset firmware-debug --target flash        # OpenOCD + ST-LINK
 ```
 
-**Option 2: CMake**
+`firmware-release` is the -O2 preset without interface tracing.
+`scripts\build_direct.bat` and `scripts\build.ps1` are thin wrappers over the same presets.
 
-```bash
-# Configure (first time only)
-mkdir build && cd build
-cmake -G Ninja ..
+### Host unit tests
 
-# Build
-ninja
+The L3 services, L2 parser and L4 register logic compile natively (no RTOS, no HAL):
 
-# Output: build/StepperMotorController.elf
+```powershell
+cd tests
+cmake --preset host-tests
+cmake --build --preset host-tests
+ctest --preset host-tests
 ```
 
 ### Testing from Windows
@@ -212,14 +228,20 @@ ser.write(b'DISP_TEXT 10 10 FFFF 001F Hello\n')
 
 | Document | Description |
 |----------|-------------|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | **Layer/harness architecture, tasks, signal tables, Mermaid** (generated from `server/harness/defs/`) |
+| [docs/architecture_manifest.json](docs/architecture_manifest.json) | Machine-readable manifest of the same (generated) |
+| [CODE_PHILOSOPHY.md](CODE_PHILOSOPHY.md) | Design rules; section 14 is the enforced four-rule layer model |
 | [docs/HOST_INTERFACE_AND_SYNC.md](docs/HOST_INTERFACE_AND_SYNC.md) | **Synchronization protocol and command reference** |
-| [docs/DISPLAY_ARCHITECTURE.md](docs/DISPLAY_ARCHITECTURE.md) | **Dual-mode LCD UI framework** |
-| [docs/PROJECT_STRUCTURE.md](docs/PROJECT_STRUCTURE.md) | Directory layout and design rationale |
-| [docs/TASK_ARCHITECTURE.md](docs/TASK_ARCHITECTURE.md) | FreeRTOS task design and priorities |
-| [docs/COMMUNICATION_ARCHITECTURE.md](docs/COMMUNICATION_ARCHITECTURE.md) | Transport layer design |
 | [docs/PIN_ASSIGNMENTS.md](docs/PIN_ASSIGNMENTS.md) | Hardware pin mappings |
-| [docs/IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md) | Implementation notes and phase history |
 | [docs/SYSTEMVIEW_INTEGRATION.md](docs/SYSTEMVIEW_INTEGRATION.md) | SEGGER SystemView setup |
+| [docs/archive/](docs/archive/) | Pre-harness design notes (Core/Inc era, refactor plans, forum threads). Historical only |
+
+Regenerate the architecture docs after editing any `harness_*.hpp` table:
+
+```powershell
+python scripts\gen_architecture.py          # writes docs/ARCHITECTURE.md + architecture_manifest.json
+python scripts\gen_architecture.py --check  # CI: fail if stale
+```
 
 ## What's Next
 

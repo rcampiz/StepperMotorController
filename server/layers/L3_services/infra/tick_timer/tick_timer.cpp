@@ -1,30 +1,23 @@
 /**
  * @file tick_timer.cpp
- * @brief Microsecond tick timer service implementation
- *
- * Delegates TIM5 register access to L5 via Harness::initMicrosecondTimer().
- * This file provides the Services:: API; hardware lives in L5.
+ * @brief Microsecond tick timer service implementation (facade over Platform clock)
  */
 
 #include "L3_services/infra/tick_timer/tick_timer.hpp"
-#include "F_platform/tasks/boundary/imicrosecond_clock.hpp"
-#include "harness/pins/microsecond_timer_init.hpp"
-#include "harness/harness_wiring_map.hpp"
+#include "F_platform/boundary/imicrosecond_clock.hpp"
 
-// Stored pointer — consumer port type (adapted from Board:: provider)
-static Scheduler::IMicrosecondClock* s_usTimer = nullptr;
+static Platform::IMicrosecondClock* s_usClock = nullptr;
 
 namespace Services {
 
-void TickTimer_Init()
+void TickTimer_Init(Platform::IMicrosecondClock& clock)
 {
-    Board::IMicrosecondClock* raw = Harness::initMicrosecondTimer();
-    s_usTimer = &Harness::adaptMicrosecondClock(*raw);
+    s_usClock = &clock;
 }
 
 uint32_t TickTimer_GetTick()
 {
-    return s_usTimer->getTickUs();
+    return (s_usClock != nullptr) ? s_usClock->getTickUs() : 0;
 }
 
 void TickTimer_DelayUs(uint32_t delayUs)
@@ -36,7 +29,3 @@ void TickTimer_DelayUs(uint32_t delayUs)
 }
 
 } // namespace Services
-
-Scheduler::IMicrosecondClock* Services::TickTimer_GetMicrosecondClock() {
-    return s_usTimer;
-}

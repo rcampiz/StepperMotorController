@@ -14,7 +14,7 @@
 #define INDICATOR_SERVICE_HPP
 
 #include "harness/pins/iindicator_renderer.hpp"
-#include "L3_services/boundary/icanvas.hpp"
+#include "harness/defs/harness_l3_l4.hpp"
 #include <stdint.h>
 
 namespace Services {

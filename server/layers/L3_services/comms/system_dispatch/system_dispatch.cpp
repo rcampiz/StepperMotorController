@@ -4,6 +4,7 @@
  */
 
 #include "system_dispatch.hpp"
+#include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include "L3_services/infra/tick_timer/tick_timer.hpp"
 #include "L3_services/infra/timing_service/timing_service.hpp"
 #include "L3_services/config/device_config/device_config.hpp"
@@ -62,3 +63,8 @@ uint32_t SystemDispatch::getLastEventSeq() {
 }
 
 } // namespace Services
+
+void Services::SystemDispatch::getTelemetry(Protocol::TelemetrySnapshot& out)
+{
+    out = Services::g_telemetryStore.getSnapshot();   // step 7: harness reference instead of accessor
+}

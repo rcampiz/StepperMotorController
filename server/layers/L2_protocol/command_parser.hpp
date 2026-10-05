@@ -20,7 +20,6 @@
 
 #include "harness/pins/itransport.hpp"
 #include "L2_protocol/boundary/icommand_dispatcher.hpp"
-#include "harness/pins/idebug_commands.hpp"
 #include "harness/pins/dispatch_result.hpp"
 #include "harness/pins/icommand_processor.hpp"
 #include <stdint.h>
@@ -31,7 +30,6 @@ namespace Protocol {
 using Harness::ServiceStatus;
 using Harness::statusToString;
 using Protocol::ICommandDispatcher;
-using Scheduler::IDebugCommands;
 
 // Maximum command line length
 constexpr size_t CMD_BUFFER_SIZE = 128;
@@ -181,11 +179,13 @@ public:
   void checkBaudRevert() override;
 
   /// Format and send an async event (ICommandProcessor)
-  void formatEvent(Transport::ITransport& transport, const AsyncEvent& evt,
-                   uint32_t seq, uint32_t ts_ms) override;
+  void emitBanner() override;
+  void emitEvent(const AsyncEvent& evt, uint32_t seq, uint32_t ts_ms) override;
+  void emitTelemetry(const Protocol::TelemetrySnapshot& snap) override;
+  void emitJoystick(UI::JoyDirection dir, bool pressed) override;
 
   /// Get dispatch statistics (ICommandProcessor)
-  void getDispatchStats(Scheduler::DispatchStats& out) const override;
+  void getDispatchStats(Harness::DispatchStats& out) const override;
 
   /**
    * @brief Set response format
@@ -195,12 +195,20 @@ public:
   /**
    * @brief Set debug command handler for hardware debug commands
    */
-  void setDebugCommands(IDebugCommands* dbg) { m_debugCommands = dbg; }
 
 private:
+  /// Text sink handed to L3 for multi-line debug output (keeps the transport inside L2)
+  class TransportSink : public Harness::IResponseSink {
+  public:
+    explicit TransportSink(Transport::ITransport& t) : m_t(t) {}
+    void write(const char* s) override { m_t.print(s); }
+    void writeLine(const char* s) override { m_t.println(s); }
+  private:
+    Transport::ITransport& m_t;
+  };
   Transport::ITransport &m_transport;
+  TransportSink m_sink;
   ICommandDispatcher &m_dispatcher;
-  IDebugCommands *m_debugCommands = nullptr;
   char m_buffer[CMD_BUFFER_SIZE];
   size_t m_bufIndex;
   ResponseFormat m_format;       // Current response format (ASCII or JSON)

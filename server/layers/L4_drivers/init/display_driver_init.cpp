@@ -1,12 +1,10 @@
 /**
  * @file display_driver_init.cpp
- * @brief L4 init for display drivers
+ * @brief L4 init for LCD, joystick and NOR flash — pins from the L4<->L5 harness
  */
 
 #include "harness/pins/display_driver_init.hpp"
-#include "harness/pins/display_board.hpp"
-#include "harness/adapters/spi_adapter.hpp"
-#include "harness/adapters/gpio_adapter.hpp"
+#include "harness/defs/harness_l4_l5.hpp"
 #include "L4_drivers/devices/lcd_st7789.hpp"
 #include "L4_drivers/devices/joystick.hpp"
 #include "L4_drivers/devices/flash_nor.hpp"
@@ -17,41 +15,30 @@ static DisplayDriverHandle s_displayHandle;
 
 bool initDisplayDrivers(DisplayDriverHandle*& handle)
 {
-    // LCD — SPI1 + GPIO (adapt Board:: to Drivers::)
-    Harness::LCDPins lcdPins;
-    if (!Harness::initLCDBoard(lcdPins)) {
+    const Harness::L4L5Harness& h = Harness::connectL4L5();
+
+    // --- LCD (mandatory) ---
+    if (h.lcd == nullptr) {
         return false;
     }
-    static Harness::SPIAdapter lcdSpiAdapter(*lcdPins.spi);
-    static Harness::GPIOAdapter lcdCsAdapter(*lcdPins.cs);
-    static Harness::GPIOAdapter lcdDcAdapter(*lcdPins.dc);
-    static Harness::GPIOAdapter lcdNresetAdapter(*lcdPins.nreset);
-    static Harness::GPIOAdapter lcdTeAdapter(*lcdPins.te);
-    static LCD lcd(lcdSpiAdapter, lcdCsAdapter, lcdDcAdapter, lcdNresetAdapter, lcdTeAdapter);
+    const Harness::LCDPins& lp = *h.lcd;
+    static LCD lcd(*lp.spi, *lp.cs, *lp.dc, *lp.nreset, *lp.te, lp.teSync);
     lcd.init();
     s_displayHandle.lcd = &lcd;
 
-    // Joystick — 5 GPIO (adapt Board:: to Drivers::)
-    Harness::JoystickPins joyPins;
-    if (!Harness::initJoystickBoard(joyPins)) {
+    // --- Joystick (mandatory on GFX01M2) ---
+    if (h.joystick == nullptr) {
         return false;
     }
-    static Harness::GPIOAdapter joyLeftAdapter(*joyPins.left);
-    static Harness::GPIOAdapter joyRightAdapter(*joyPins.right);
-    static Harness::GPIOAdapter joyUpAdapter(*joyPins.up);
-    static Harness::GPIOAdapter joyDownAdapter(*joyPins.down);
-    static Harness::GPIOAdapter joyCenterAdapter(*joyPins.center);
-    static Joystick joystick(joyLeftAdapter, joyRightAdapter, joyUpAdapter, joyDownAdapter, joyCenterAdapter);
+    const Harness::JoystickPins& jp = *h.joystick;
+    static Joystick joystick(*jp.left, *jp.right, *jp.up, *jp.down, *jp.center);
     s_displayHandle.joystick = &joystick;
 
-    // NOR Flash — SPI2 + CS (best-effort probe, adapt Board:: to Drivers::)
-    Harness::FlashPins flashPins;
-    if (Harness::initFlashBoard(flashPins)) {
-        static Harness::SPIAdapter flashSpiAdapter(*flashPins.spi);
-        static Harness::GPIOAdapter flashCsAdapter(*flashPins.cs);
-        static SPIFlash norFlash(flashSpiAdapter, flashCsAdapter);
+    // --- NOR flash (optional: absent or unresponsive -> nullptr) ---
+    if (h.flash != nullptr) {
+        const Harness::FlashPins& fp = *h.flash;
+        static SPIFlash norFlash(*fp.spi, *fp.cs);
         norFlash.init();
-
         auto jedec = norFlash.readJEDEC();
         if (jedec.manufacturer != 0x00 && jedec.manufacturer != 0xFF) {
             s_displayHandle.norFlash = &norFlash;

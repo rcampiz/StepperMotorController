@@ -4,7 +4,7 @@
  */
 
 #include "ui/screens/image_view_screen.hpp"
-#include "L3_services/boundary/icanvas.hpp"
+#include "harness/defs/harness_l3_l4.hpp"
 #include "L3_services/infra/flash_image_service/flash_image_service.hpp"
 
 namespace UI {

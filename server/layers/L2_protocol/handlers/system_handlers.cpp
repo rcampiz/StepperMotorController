@@ -5,7 +5,6 @@
 
 #include "L2_protocol/command_parser_internal.hpp"
 #include "harness/pins/async_event.hpp"
-#include "harness/pins/itelemetry.hpp"
 
 namespace Protocol {
 
@@ -72,7 +71,8 @@ void CommandParser::cmdGetStatus() {
   const char *encStatusStr = encoderStatusToString(m_dispatcher.getEncoderStatus());
 
   // Get actual position and velocity from motor telemetry
-  TelemetrySnapshot snap = Scheduler::telemetry().getSnapshot();
+  TelemetrySnapshot snap;
+  m_dispatcher.getTelemetry(snap);
 
   if (m_format == ResponseFormat::JSON) {
     // Parse status register for direction and error flags
@@ -345,7 +345,8 @@ void CommandParser::cmdEventEnable(const ParsedCommand &cmd) {
   }
 
   // Read current motor status for snapshot-on-enable
-  Protocol::TelemetrySnapshot snap = Scheduler::telemetry().getSnapshot();
+  Protocol::TelemetrySnapshot snap;
+  m_dispatcher.getTelemetry(snap);
   uint16_t currentStatus = snap.motor.statusReg;
 
   m_dispatcher.enableEvents(mask, currentStatus);

@@ -4,9 +4,9 @@
  */
 
 #include "ui/screens/device_info_screen.hpp"
-#include "L3_services/boundary/icanvas.hpp"
+#include "harness/defs/harness_l3_l4.hpp"
 #include "L3_services/config/device_config/device_config.hpp"
-#include "harness/pins/itelemetry.hpp"
+#include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include <stdio.h>
 
 namespace UI {
@@ -60,7 +60,7 @@ void DeviceInfoScreen::render(Services::ICanvas& lcd)
     y += 6;
 
     // System info from telemetry
-    Protocol::TelemetrySnapshot telem = Scheduler::telemetry().getSnapshot();
+    Protocol::TelemetrySnapshot telem = Services::g_telemetryStore.getSnapshot();
 
     // Uptime
     lcd.drawString(MARGIN, y, "Uptime:", LABEL_COLOR, BG_COLOR, TEXT_SCALE);

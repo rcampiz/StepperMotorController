@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "L3_services/boundary/imotor_driver.hpp"
+#include "harness/defs/harness_l3_l4.hpp"
 #include "harness/pins/motor_debug_params.hpp"
 #include "L3_services/boundary/imotor_command_sink.hpp"
 
@@ -20,12 +20,12 @@ class IMotorControlService {
 public:
     virtual ~IMotorControlService() = default;
 
-    virtual void processCommand(const Services::MotorCommand& cmd, Services::IMotorDriver& driver) = 0;
-    virtual void periodicUpdate(Services::IMotorDriver& driver) = 0;
-    virtual void applyConfig(Services::IMotorDriver& driver) = 0;
-    virtual bool setStepModeSafe(Services::IMotorDriver& driver, uint8_t mode, uint8_t& readback) = 0;
-    virtual void reinit(Services::IMotorDriver& driver) = 0;
-    virtual void getDebugInfo(Services::IMotorDriver& driver, Harness::MotorDebugParams& info) = 0;
+    virtual void processCommand(const Services::MotorCommand& cmd) = 0;
+    virtual void periodicUpdate() = 0;
+    virtual void applyConfig() = 0;
+    virtual bool setStepModeSafe(uint8_t mode, uint8_t& readback) = 0;
+    virtual void reinit() = 0;
+    virtual void getDebugInfo(Harness::MotorDebugParams& info) = 0;
 };
 
 } // namespace Services

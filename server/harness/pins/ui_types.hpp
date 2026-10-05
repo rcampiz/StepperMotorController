@@ -34,4 +34,17 @@ struct JoyEvent {
 
 using JoyEventCallback = void(*)(const JoyEvent& event);
 
+/// Wire name of a joystick direction (shared by L2 formatting and L3 UI).
+inline const char* joyDirectionName(JoyDirection dir) {
+    switch (dir) {
+        case JoyDirection::NONE:   return "NONE";
+        case JoyDirection::LEFT:   return "LEFT";
+        case JoyDirection::RIGHT:  return "RIGHT";
+        case JoyDirection::UP:     return "UP";
+        case JoyDirection::DOWN:   return "DOWN";
+        case JoyDirection::CENTER: return "CENTER";
+        default:                   return "UNKNOWN";
+    }
+}
+
 } // namespace UI

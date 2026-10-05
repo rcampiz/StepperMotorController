@@ -10,8 +10,8 @@
 #include "L3_services/motion/motion.hpp"
 #include "L3_services/infra/trace/trace.hpp"
 #include "harness/pins/async_event.hpp"
-#include "harness/pins/isnapshot_writer.hpp"
-#include "harness/pins/itelemetry.hpp"
+#include "L3_services/infra/telemetry_store/telemetry_store.hpp"
+#include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include <limits.h>
 
 namespace Services {
@@ -56,17 +56,17 @@ int32_t MotorController::rawSpeedToSetpointTps(uint32_t rawSpeed, bool forward,
 // Speed override
 // ============================================================================
 
-void MotorController::applySpeedOverride(IMotorDriver& driver, uint32_t rawMaxSpeed)
+void MotorController::applySpeedOverride(uint32_t rawMaxSpeed)
 {
-    m_savedMaxSpeed = driver.getParam(MotorReg::MAX_SPEED);
-    driver.setParam(MotorReg::MAX_SPEED, rawMaxSpeed);
+    m_savedMaxSpeed = m_driver->getParam(MotorReg::MAX_SPEED);
+    m_driver->setParam(MotorReg::MAX_SPEED, rawMaxSpeed);
     m_speedOverrideActive = true;
 }
 
-void MotorController::restoreSpeedIfOverridden(IMotorDriver& driver)
+void MotorController::restoreSpeedIfOverridden()
 {
     if (m_speedOverrideActive) {
-        driver.setParam(MotorReg::MAX_SPEED, m_savedMaxSpeed);
+        m_driver->setParam(MotorReg::MAX_SPEED, m_savedMaxSpeed);
         m_speedOverrideActive = false;
     }
 }
@@ -75,14 +75,14 @@ void MotorController::restoreSpeedIfOverridden(IMotorDriver& driver)
 // Command processing
 // ============================================================================
 
-void MotorController::handleRunCommand(const MotorCommand& cmd, IMotorDriver& driver)
+void MotorController::handleRunCommand(const MotorCommand& cmd)
 {
     auto mode = motion.control.mode.getMode();
     auto rawSpeed = static_cast<uint32_t>(cmd.param1);
     bool fwd = (cmd.param2 != 0);
     m_lastRunForward = fwd;
     m_continuousRunActive = true;
-    driver.run(fwd, rawSpeed);
+    m_driver->run(fwd, rawSpeed);
 
     if (mode != ControlMode::OPEN_LOOP) {
         uint16_t encPPR = motion.encoder.config.getEncoderPPR();
@@ -131,7 +131,7 @@ void MotorController::handleRunCommand(const MotorCommand& cmd, IMotorDriver& dr
     }
 }
 
-void MotorController::processCommand(const MotorCommand& cmd, IMotorDriver& driver)
+void MotorController::processCommand(const MotorCommand& cmd)
 {
     // Set trace context based on command type
     switch (cmd.type) {
@@ -157,86 +157,86 @@ void MotorController::processCommand(const MotorCommand& cmd, IMotorDriver& driv
                 steps = static_cast<uint32_t>(-cmd.param1);
             }
             if (cmd.param2 != 0) {
-                applySpeedOverride(driver, static_cast<uint32_t>(cmd.param2));
+                applySpeedOverride(static_cast<uint32_t>(cmd.param2));
             }
             m_continuousRunActive = false;
-            driver.move(forward, steps);
+            m_driver->move(forward, steps);
             break;
         }
 
         case MotorCmdType::GoTo:
             if (cmd.param2 != 0) {
-                applySpeedOverride(driver, static_cast<uint32_t>(cmd.param2));
+                applySpeedOverride(static_cast<uint32_t>(cmd.param2));
             }
             m_continuousRunActive = false;
-            driver.goTo(cmd.param1);
+            m_driver->goTo(cmd.param1);
             break;
 
         case MotorCmdType::Run:
-            handleRunCommand(cmd, driver);
+            handleRunCommand(cmd);
             break;
 
         case MotorCmdType::SoftStop:
             m_continuousRunActive = false;
             motion.control.supervisor.goIdle();
             motion.control.trim.reset();
-            driver.softStop();
+            m_driver->softStop();
             break;
 
         case MotorCmdType::HardStop:
             m_continuousRunActive = false;
             motion.control.supervisor.goIdle();
             motion.control.trim.reset();
-            driver.hardStop();
-            restoreSpeedIfOverridden(driver);
+            m_driver->hardStop();
+            restoreSpeedIfOverridden();
             break;
 
         case MotorCmdType::SoftHiZ:
             m_continuousRunActive = false;
             motion.control.supervisor.goIdle();
             motion.control.trim.reset();
-            driver.softHiZ();
+            m_driver->softHiZ();
             break;
 
         case MotorCmdType::HardHiZ:
             m_continuousRunActive = false;
             motion.control.supervisor.goIdle();
             motion.control.trim.reset();
-            driver.hardHiZ();
-            restoreSpeedIfOverridden(driver);
+            m_driver->hardHiZ();
+            restoreSpeedIfOverridden();
             break;
 
         case MotorCmdType::GoHome:
             if (cmd.param2 != 0) {
-                applySpeedOverride(driver, static_cast<uint32_t>(cmd.param2));
+                applySpeedOverride(static_cast<uint32_t>(cmd.param2));
             }
             m_continuousRunActive = false;
-            driver.goHome();
+            m_driver->goHome();
             break;
 
         case MotorCmdType::GoMark:
             m_continuousRunActive = false;
-            driver.goMark();
+            m_driver->goMark();
             break;
 
         case MotorCmdType::ResetPos:
-            driver.resetPos();
+            m_driver->resetPos();
             break;
 
         case MotorCmdType::SetAccel:
-            driver.setParam(MotorReg::ACC, static_cast<uint32_t>(cmd.param1));
+            m_driver->setParam(MotorReg::ACC, static_cast<uint32_t>(cmd.param1));
             break;
 
         case MotorCmdType::SetDecel:
-            driver.setParam(MotorReg::DEC, static_cast<uint32_t>(cmd.param1));
+            m_driver->setParam(MotorReg::DEC, static_cast<uint32_t>(cmd.param1));
             break;
 
         case MotorCmdType::SetMaxSpeed:
-            driver.setParam(MotorReg::MAX_SPEED, static_cast<uint32_t>(cmd.param1));
+            m_driver->setParam(MotorReg::MAX_SPEED, static_cast<uint32_t>(cmd.param1));
             break;
 
         case MotorCmdType::SetMark:
-            driver.setParam(MotorReg::MARK, static_cast<uint32_t>(cmd.param1));
+            m_driver->setParam(MotorReg::MARK, static_cast<uint32_t>(cmd.param1));
             break;
 
         case MotorCmdType::GetStatus:
@@ -249,22 +249,26 @@ void MotorController::processCommand(const MotorCommand& cmd, IMotorDriver& driv
 // Periodic control loop
 // ============================================================================
 
-void MotorController::periodicUpdate(IMotorDriver& driver)
+void MotorController::periodicUpdate()
 {
     Trace::setCurrentServiceId(Trace::SVC_MOTION);
 
-    // Read motor status and position/speed
-    MotorStatus status = driver.getStatus();
-    uint32_t rawPos = driver.getParam(MotorReg::ABS_POS);
-    driver.getParam(MotorReg::SPEED);  // tap writes to snapshot
+    // Read motor status and position/speed, and publish them. The service owns
+    // the telemetry write; the harness tap (if any) is a pure observer.
+    MotorStatus status = m_driver->getStatus();
+    uint32_t rawPos = m_driver->getParam(MotorReg::ABS_POS);
+    uint32_t rawSpeed = m_driver->getParam(MotorReg::SPEED);
+    {
+        auto& writer = Services::g_telemetryStore;
+        writer.writeMotorStatus(status.raw);
+        writer.writeMotorParam(MotorReg::ABS_POS, rawPos);
+        writer.writeMotorParam(MotorReg::SPEED, rawSpeed);
+    }
 
     int32_t position = signExtendAbsPos(rawPos);
 
-    // Motor telemetry is now populated by TracedMotorDriver tap
-    // (writeMotorStatus + writeMotorParam on each getStatus/getParam call above)
-
     // Shared sensor data for control loop
-    Protocol::TelemetrySnapshot snap = Scheduler::telemetry().getSnapshot();
+    Protocol::TelemetrySnapshot snap = Services::g_telemetryStore.getSnapshot();
     uint32_t ustepsPerRev = motion.stepper.config.getMicrostepsPerRev();
     uint16_t encPPR = motion.encoder.config.getEncoderPPR();
     uint16_t fpr = motion.stepper.config.getFullStepsPerRev();
@@ -284,16 +288,16 @@ void MotorController::periodicUpdate(IMotorDriver& driver)
         if (sysResult.active) {
             sysidActive = true;
             if (sysResult.rawSpeed > 0) {
-                driver.run(sysResult.forward, sysResult.rawSpeed);
+                m_driver->run(sysResult.forward, sysResult.rawSpeed);
             } else {
-                driver.softStop();
+                m_driver->softStop();
             }
             if (motion.control.supervisor.getState() != SupervisorState::IDLE) {
                 motion.control.supervisor.goIdle();
             }
         }
         if (sysResult.justFinished) {
-            driver.softStop();
+            m_driver->softStop();
         }
     }
 
@@ -307,13 +311,13 @@ void MotorController::periodicUpdate(IMotorDriver& driver)
         ti.forward         = m_lastRunForward;
         ti.fullStepsPerRev = fpr;
         ti.encoderPPR      = encPPR;
-        ti.maxSpeedRaw     = driver.getParam(MotorReg::MAX_SPEED);
+        ti.maxSpeedRaw     = m_driver->getParam(MotorReg::MAX_SPEED);
         ti.dtSec           = 0.050f;
 
         SpeedTrimResult trimResult = motion.control.trim.update(ti);
         m_lastTrimResult = trimResult;
         if (trimResult.active) {
-            driver.run(m_lastRunForward, trimResult.finalSpeedRaw);
+            m_driver->run(m_lastRunForward, trimResult.finalSpeedRaw);
         }
     }
 
@@ -338,7 +342,7 @@ void MotorController::periodicUpdate(IMotorDriver& driver)
         si.baseSpeedRaw    = 0;
         si.motorBusy       = status.busy();
         si.forward         = m_lastRunForward;
-        si.maxSpeedRaw     = driver.getParam(MotorReg::MAX_SPEED);
+        si.maxSpeedRaw     = m_driver->getParam(MotorReg::MAX_SPEED);
         si.fullStepsPerRev = fpr;
         si.encoderPPR      = encPPR;
         si.dtSec           = 0.050f;
@@ -349,15 +353,15 @@ void MotorController::periodicUpdate(IMotorDriver& driver)
         // Apply action to driver
         switch (act.type) {
             case SupervisorAction::Type::SET_SPEED:
-                driver.run(act.direction, act.rawSpeed);
+                m_driver->run(act.direction, act.rawSpeed);
                 break;
             case SupervisorAction::Type::SOFT_STOP:
                 motion.control.trim.reset();
-                driver.softStop();
+                m_driver->softStop();
                 break;
             case SupervisorAction::Type::HARD_STOP:
                 motion.control.trim.reset();
-                driver.hardStop();
+                m_driver->hardStop();
                 break;
             default:
                 break;
@@ -396,7 +400,7 @@ void MotorController::periodicUpdate(IMotorDriver& driver)
         ctrl.trimFrozen      = m_lastTrimResult.frozen ? 1 : 0;
         ctrl.velQuality      = snap.encoder.velocityQuality;
 
-        Scheduler::snapshotWriter().writeControl(ctrl);
+        Services::g_telemetryStore.writeControl(ctrl);
     }
 
     // ── Edge detection for async events ──
@@ -429,7 +433,7 @@ void MotorController::periodicUpdate(IMotorDriver& driver)
 
     // Motion complete: busy → idle
     if (m_prevBusy && !curBusy) {
-        restoreSpeedIfOverridden(driver);
+        restoreSpeedIfOverridden();
         motion.stepper.event.post(EventType::MOTION_DONE, status.raw);
 
         // Transition supervisor to HOLDING only for finite moves
@@ -454,26 +458,26 @@ void MotorController::periodicUpdate(IMotorDriver& driver)
 // Config application
 // ============================================================================
 
-void MotorController::applyConfig(IMotorDriver& driver)
+void MotorController::applyConfig()
 {
     const auto& cfg = motion.stepper.config.getConfig();
 
     // KVAL values
-    driver.setParam(MotorReg::KVAL_HOLD, cfg.kvalHold);
-    driver.setParam(MotorReg::KVAL_RUN, cfg.kvalRun);
-    driver.setParam(MotorReg::KVAL_ACC, cfg.kvalAcc);
-    driver.setParam(MotorReg::KVAL_DEC, cfg.kvalDec);
+    m_driver->setParam(MotorReg::KVAL_HOLD, cfg.kvalHold);
+    m_driver->setParam(MotorReg::KVAL_RUN, cfg.kvalRun);
+    m_driver->setParam(MotorReg::KVAL_ACC, cfg.kvalAcc);
+    m_driver->setParam(MotorReg::KVAL_DEC, cfg.kvalDec);
 
     // Protection thresholds
-    driver.setParam(MotorReg::OCD_TH, cfg.ocdThreshold);
-    driver.setParam(MotorReg::STALL_TH, cfg.stallThreshold);
+    m_driver->setParam(MotorReg::OCD_TH, cfg.ocdThreshold);
+    m_driver->setParam(MotorReg::STALL_TH, cfg.stallThreshold);
 
     // Motion parameters
-    driver.setParam(MotorReg::ACC, cfg.acceleration);
-    driver.setParam(MotorReg::DEC, cfg.deceleration);
-    driver.setParam(MotorReg::MAX_SPEED, cfg.maxSpeed);
-    driver.setParam(MotorReg::MIN_SPEED, cfg.minSpeed);
-    driver.setParam(MotorReg::FS_SPD, cfg.fsSpeed);
+    m_driver->setParam(MotorReg::ACC, cfg.acceleration);
+    m_driver->setParam(MotorReg::DEC, cfg.deceleration);
+    m_driver->setParam(MotorReg::MAX_SPEED, cfg.maxSpeed);
+    m_driver->setParam(MotorReg::MIN_SPEED, cfg.minSpeed);
+    m_driver->setParam(MotorReg::FS_SPD, cfg.fsSpeed);
 
     // Build ALARM_EN register from fault enable flags
     uint8_t alarmEn = 0x00;
@@ -485,69 +489,84 @@ void MotorController::applyConfig(IMotorDriver& driver)
     if (cfg.faultEnable.stallA)      alarmEn |= (1 << 5);
     if (cfg.faultEnable.stallB)      alarmEn |= (1 << 6);
     if (cfg.faultEnable.cmdErr)      alarmEn |= (1 << 7);
-    driver.setParam(MotorReg::ALARM_EN, alarmEn);
+    m_driver->setParam(MotorReg::ALARM_EN, alarmEn);
 
     // Microstep mode (read-modify-write to preserve CM_VM and SYNC bits)
-    uint32_t stepMode = driver.getParam(MotorReg::STEP_MODE);
+    uint32_t stepMode = m_driver->getParam(MotorReg::STEP_MODE);
     stepMode = (stepMode & 0xF8) | (cfg.stepMode & 0x07);
-    driver.setParam(MotorReg::STEP_MODE, stepMode);
+    m_driver->setParam(MotorReg::STEP_MODE, stepMode);
 
     // Clear any latched fault bits from the register write sequence
-    driver.getStatus();
+    m_driver->getStatus();
 }
 
-bool MotorController::setStepModeSafe(IMotorDriver& driver, uint8_t mode,
+bool MotorController::setStepModeSafe(uint8_t mode,
                                        uint8_t& readback)
 {
-    // Caller has already done: driver.hardHiZ() + 5ms delay
+    // Disable outputs before touching STEP_MODE (the Motor task used to do this)
+    m_driver->hardHiZ();
+    m_clock->delayMs(5);
 
     // Read-modify-write STEP_MODE (preserve CM_VM and SYNC_SEL bits)
-    uint32_t reg = driver.getParam(MotorReg::STEP_MODE);
+    uint32_t reg = m_driver->getParam(MotorReg::STEP_MODE);
     reg = (reg & 0xF8) | (mode & 0x07);
-    driver.setParam(MotorReg::STEP_MODE, reg);
+    m_driver->setParam(MotorReg::STEP_MODE, reg);
 
     // Read back and verify
-    uint32_t verify = driver.getParam(MotorReg::STEP_MODE);
+    uint32_t verify = m_driver->getParam(MotorReg::STEP_MODE);
     readback = static_cast<uint8_t>(verify & 0x07);
 
     // Clear any latched fault bits
-    driver.getStatus();
+    m_driver->getStatus();
 
     // Re-enable motor (SoftStop holds position with configured KVAL_HOLD)
-    driver.softStop();
+    m_driver->softStop();
 
     return (readback == mode);
 }
 
-void MotorController::reinit(IMotorDriver& driver)
+void MotorController::reinit()
 {
-    driver.init();
-    applyConfig(driver);
+    m_driver->init();
+    applyConfig();
 }
 
 // ============================================================================
 // Debug
 // ============================================================================
 
-void MotorController::getDebugInfo(IMotorDriver& driver, MotorDebugParams& info)
+void MotorController::getDebugInfo(MotorDebugParams& info)
 {
-    info.status = driver.getStatus().raw;
-    info.kvalHold = static_cast<uint8_t>(driver.getParam(MotorReg::KVAL_HOLD));
-    info.kvalRun = static_cast<uint8_t>(driver.getParam(MotorReg::KVAL_RUN));
-    info.kvalAcc = static_cast<uint8_t>(driver.getParam(MotorReg::KVAL_ACC));
-    info.kvalDec = static_cast<uint8_t>(driver.getParam(MotorReg::KVAL_DEC));
-    info.accel = static_cast<uint16_t>(driver.getParam(MotorReg::ACC));
-    info.decel = static_cast<uint16_t>(driver.getParam(MotorReg::DEC));
-    info.maxSpeed = static_cast<uint16_t>(driver.getParam(MotorReg::MAX_SPEED));
+    info.status = m_driver->getStatus().raw;
+    info.kvalHold = static_cast<uint8_t>(m_driver->getParam(MotorReg::KVAL_HOLD));
+    info.kvalRun = static_cast<uint8_t>(m_driver->getParam(MotorReg::KVAL_RUN));
+    info.kvalAcc = static_cast<uint8_t>(m_driver->getParam(MotorReg::KVAL_ACC));
+    info.kvalDec = static_cast<uint8_t>(m_driver->getParam(MotorReg::KVAL_DEC));
+    info.accel = static_cast<uint16_t>(m_driver->getParam(MotorReg::ACC));
+    info.decel = static_cast<uint16_t>(m_driver->getParam(MotorReg::DEC));
+    info.maxSpeed = static_cast<uint16_t>(m_driver->getParam(MotorReg::MAX_SPEED));
 
-    info.absPos = signExtendAbsPos(driver.getParam(MotorReg::ABS_POS));
+    info.absPos = signExtendAbsPos(m_driver->getParam(MotorReg::ABS_POS));
 
-    info.ocdTh = static_cast<uint8_t>(driver.getParam(MotorReg::OCD_TH));
-    info.stallTh = static_cast<uint8_t>(driver.getParam(MotorReg::STALL_TH));
-    info.config = static_cast<uint16_t>(driver.getParam(MotorReg::CONFIG));
-    info.alarmEn = static_cast<uint8_t>(driver.getParam(MotorReg::ALARM_EN));
-    info.fsSpd = static_cast<uint16_t>(driver.getParam(MotorReg::FS_SPD));
-    info.stepMode = static_cast<uint8_t>(driver.getParam(MotorReg::STEP_MODE)) & 0x07;
+    info.ocdTh = static_cast<uint8_t>(m_driver->getParam(MotorReg::OCD_TH));
+    info.stallTh = static_cast<uint8_t>(m_driver->getParam(MotorReg::STALL_TH));
+    info.config = static_cast<uint16_t>(m_driver->getParam(MotorReg::CONFIG));
+    info.alarmEn = static_cast<uint8_t>(m_driver->getParam(MotorReg::ALARM_EN));
+    info.fsSpd = static_cast<uint16_t>(m_driver->getParam(MotorReg::FS_SPD));
+    info.stepMode = static_cast<uint8_t>(m_driver->getParam(MotorReg::STEP_MODE)) & 0x07;
+}
+
+void MotorController::bind(IMotorDriver& driver, Platform::IClock& clock)
+{
+    m_driver = &driver;
+    m_clock = &clock;
+}
+
+void MotorController::emergencyHiZ()
+{
+    if (m_driver != nullptr) {
+        m_driver->hardHiZ();
+    }
 }
 
 } // namespace Services

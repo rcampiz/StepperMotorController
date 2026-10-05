@@ -4,7 +4,6 @@
  */
 
 #include "L2_protocol/command_parser_internal.hpp"
-#include "harness/pins/itelemetry.hpp"
 
 namespace Protocol {
 
@@ -173,7 +172,8 @@ void CommandParser::cmdTrimQuery() {
   auto tc = m_dispatcher.getTrimConfig();
   uint8_t maxPct = (tc.kd100 > 0 && tc.kd100 <= 50) ? static_cast<uint8_t>(tc.kd100) : 8;
 
-  TelemetrySnapshot snap = Scheduler::telemetry().getSnapshot();
+  TelemetrySnapshot snap;
+  m_dispatcher.getTelemetry(snap);
   bool active = snap.control.tracking;
   bool frozen = snap.control.trimFrozen != 0;
 

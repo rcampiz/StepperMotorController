@@ -15,7 +15,7 @@
 #define ENCODER_SCREEN_HPP
 
 #include "ui/screen.hpp"
-#include "harness/pins/itelemetry.hpp"
+#include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include <stdint.h>
 
 namespace UI {

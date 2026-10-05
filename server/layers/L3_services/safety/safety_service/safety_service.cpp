@@ -6,13 +6,13 @@
 #include "L3_services/safety/safety_service/safety_service.hpp"
 #include "L3_services/dispatch/command_queue/command_queue.hpp"
 #include "L3_services/infra/trace/trace.hpp"
-#include "harness/pins/isafety_actions.hpp"
+#include "L3_services/comms/comms_service/comms_service.hpp"
 #include <stdio.h>
 
 namespace Services::Safety {
 
 // Harness pin types used in this module
-using Scheduler::g_safetyActions;
+static Services::ISafetyActions* const g_safetyActions = &Services::g_commsService;
 
 Result emergencyStop() {
     Trace::ServiceScope svc(Trace::SVC_SAFETY);

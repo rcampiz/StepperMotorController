@@ -6,7 +6,7 @@
  * Sector erase + 32-bit word programming.
  */
 
-#include "harness/pins/iinternal_flash.hpp"
+#include "L5_board/flash/internal_flash.hpp"
 #include "X_vendor/CMSIS/stm32f401xe.h"
 
 // FLASH_CR bits
@@ -46,7 +46,7 @@ static void flashClearErrors()
     FLASH->SR = FLASH_SR_EOP | FLASH_SR_SOP | FLASH_SR_ERRORS;
 }
 
-bool Harness::internalFlashEraseSector(uint8_t sector)
+bool Board::internalFlashEraseSector(uint8_t sector)
 {
     flashUnlock();
     flashWaitBusy();
@@ -67,7 +67,7 @@ bool Harness::internalFlashEraseSector(uint8_t sector)
     return true;
 }
 
-bool Harness::internalFlashWriteData(uint32_t addr, const uint8_t* data, size_t len)
+bool Board::internalFlashWriteData(uint32_t addr, const uint8_t* data, size_t len)
 {
     // Flash should already be unlocked from erase
 
@@ -98,3 +98,21 @@ bool Harness::internalFlashWriteData(uint32_t addr, const uint8_t* data, size_t 
 
     return true;
 }
+
+// ============================================================================
+// Board::IInternalFlash provider (harness_l4_l5.hpp)
+// ============================================================================
+#include "harness/defs/harness_l4_l5.hpp"
+
+namespace {
+class InternalFlashSTM32F401 : public Board::IInternalFlash {
+public:
+    bool eraseSector(uint8_t sector) override { return Board::internalFlashEraseSector(sector); }
+    bool writeData(uint32_t addr, const uint8_t* data, size_t len) override {
+        return Board::internalFlashWriteData(addr, data, len);
+    }
+};
+InternalFlashSTM32F401 s_internalFlash;
+} // namespace
+
+Board::IInternalFlash& Harness::internalFlash() { return s_internalFlash; }

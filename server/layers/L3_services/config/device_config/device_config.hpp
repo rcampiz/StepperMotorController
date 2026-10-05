@@ -13,8 +13,8 @@
 
 #pragma once
 
-#include "L3_services/boundary/ilock.hpp"
-#include "L3_services/boundary/iflash.hpp"
+#include "F_platform/boundary/ilock.hpp"
+#include "harness/defs/harness_l3_l4.hpp"
 #include <stdint.h>
 
 namespace Services {
@@ -84,7 +84,7 @@ public:
    * @param flash Reference to initialized flash driver
    * @return true if valid config loaded, false if defaults applied
    */
-  bool init(Services::IFlash &flash, Services::ILock& lock);
+  bool init(Services::IFlash &flash, Platform::ILock& lock);
 
   /**
    * @brief Check if configuration is valid
@@ -135,7 +135,7 @@ public:
 private:
   DeviceConfig m_config;
   Services::IFlash *m_flash;
-  Services::ILock* m_lock;
+  Platform::ILock* m_lock;
   bool m_valid;
 
   // CRC32 calculation (polynomial 0xEDB88320)

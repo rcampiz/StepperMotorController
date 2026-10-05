@@ -1,12 +1,6 @@
 /**
- * @file iencoder.hpp
- * @brief Consumer port — L3 side of the Scheduler::IEncoder harness connection
- *
- * This is what L3 services need from the encoder. The harness adapter
- * bridges Scheduler::IEncoder (tasks provider) to Services::IEncoder (this port).
- *
- * Structurally identical to Scheduler::IEncoder — the adapter is a
- * trivial forwarder. L3 code depends only on L3 types.
+ * @file boundary/iencoder.hpp
+ * @brief Position/velocity readout from the encoder service (L3-internal interface)
  */
 
 #pragma once

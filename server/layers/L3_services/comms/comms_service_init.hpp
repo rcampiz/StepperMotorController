@@ -8,7 +8,7 @@
 
 #pragma once
 
-namespace Platform { class IClock; class IScheduler; }
+namespace Platform { class IClock; class IScheduler; class ITaskNotifier; }
 
 namespace Services {
 
@@ -37,6 +37,7 @@ struct CommsServiceDeps {
  */
 bool initCommsSubsystem(const CommsServiceDeps& deps,
                         Platform::IClock& clock,
-                        Platform::IScheduler& scheduler);
+                        Platform::IScheduler& scheduler,
+                        Platform::ITaskNotifier* rxWake);
 
 } // namespace Services

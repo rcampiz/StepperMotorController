@@ -18,10 +18,11 @@
 
 #pragma once
 
-#include "L3_services/boundary/ilock.hpp"
-#include "L3_services/boundary/iclock.hpp"
 #include "L3_services/boundary/imotor_command_sink.hpp"
-#include "harness/pins/iemergency_stop.hpp"
+#include "L3_services/boundary/iemergency_stop.hpp"
+#include "L3_services/boundary/iimmediate_stop.hpp"
+#include "F_platform/boundary/ilock.hpp"
+#include "F_platform/boundary/iclock.hpp"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -56,7 +57,8 @@ enum class QueueResult : uint8_t {
   INVALID_STATE,   // Operation not allowed in current state
   INVALID_COMMAND, // Unrecognized command
   INVALID_PARAM,   // Bad parameter value
-  TIMEOUT_EXPIRED  // START_AT tick already passed
+  TIMEOUT_EXPIRED, // START_AT tick already passed
+  MOTOR_QUEUE_FULL // motor task queue full: remaining commands stay pending
 };
 
 /**
@@ -74,13 +76,15 @@ const char *resultToString(QueueResult result);
  *
  * Singleton that manages the ARM/START synchronization protocol.
  */
-class CommandQueue : public Scheduler::IEmergencyStop {
+class CommandQueue : public Services::IEmergencyStop {
 public:
+  static constexpr uint32_t FLUSH_SEND_TIMEOUT_MS = 50;   ///< bounded per-command send on START
   /**
    * @brief Initialize the command queue service
    * @return true on success
    */
-  bool init(Services::ILock& lock, Services::IClock& clock, IMotorCommandSink& sink);
+  bool init(Platform::ILock& lock, Platform::IClock& clock, IMotorCommandSink& sink,
+            IImmediateStop* immediateStop = nullptr);
 
   /**
    * @brief Get current controller state
@@ -187,12 +191,13 @@ private:
   ControllerState m_state;
 
   // Platform abstractions
-  Services::ILock* m_lock;
-  Services::IClock* m_clock;
+  Platform::ILock* m_lock;
+  Platform::IClock* m_clock;
   IMotorCommandSink* m_sink;
+  IImmediateStop* m_immediate = nullptr;
 
   // Helper to flush pending commands to motor task
-  void flushToMotorTask();
+  bool flushToMotorTask();
 };
 
 // Global instance

@@ -34,15 +34,18 @@ const char* resultToString(QueueResult result)
         case QueueResult::INVALID_COMMAND: return "Invalid command";
         case QueueResult::INVALID_PARAM:   return "Invalid parameter";
         case QueueResult::TIMEOUT_EXPIRED: return "Timeout expired";
+        case QueueResult::MOTOR_QUEUE_FULL: return "Motor queue full";
         default:                           return "Unknown error";
     }
 }
 
-bool CommandQueue::init(Services::ILock& lock, Services::IClock& clock, IMotorCommandSink& sink)
+bool CommandQueue::init(Platform::ILock& lock, Platform::IClock& clock, IMotorCommandSink& sink,
+                        IImmediateStop* immediateStop)
 {
     m_lock = &lock;
     m_clock = &clock;
     m_sink = &sink;
+    m_immediate = immediateStop;
 
     m_queueHead = 0;
     m_queueTail = 0;
@@ -107,8 +110,10 @@ QueueResult CommandQueue::start()
         result = QueueResult::INVALID_STATE;
     }
     else {
-        // Flush commands to motor task
-        flushToMotorTask();
+        // Flush commands to motor task (bounded: a full motor queue reports MOTOR_QUEUE_FULL)
+        if (!flushToMotorTask()) {
+            result = QueueResult::MOTOR_QUEUE_FULL;
+        }
         m_state = ControllerState::RUNNING;
     }
 
@@ -160,7 +165,9 @@ QueueResult CommandQueue::startAt(uint32_t targetTick)
         result = QueueResult::INVALID_STATE;
     }
     else {
-        flushToMotorTask();
+        if (!flushToMotorTask()) {
+            result = QueueResult::MOTOR_QUEUE_FULL;
+        }
         m_state = ControllerState::RUNNING;
     }
 
@@ -211,7 +218,11 @@ void CommandQueue::emergencyStop()
 
     m_lock->release();
 
-    // Send hard stop to motor (outside lock to avoid deadlock)
+    // Stop the motor NOW, bypassing the command queue (a full queue must never delay ESTOP)
+    if (m_immediate != nullptr) {
+        m_immediate->immediateHardHiZ();
+    }
+    // Also queue HardHiZ so the Motor task sees the stop in order (best effort, no wait)
     MotorCommand stopCmd = {};
     stopCmd.type = MotorCmdType::HardHiZ;
     m_sink->sendCommand(stopCmd, 0);
@@ -257,15 +268,19 @@ void CommandQueue::notifyFault(const char* reason)
     m_lock->release();
 }
 
-void CommandQueue::flushToMotorTask()
+bool CommandQueue::flushToMotorTask()
 {
-    // Called with lock held
+    // Called with lock held. Bounded send: never block the Comms task (and its heartbeat
+    // watchdog) forever. Unsent commands stay pending and the caller reports MOTOR_QUEUE_FULL.
     while (m_queueDepth > 0) {
         MotorCommand& cmd = m_pendingCmds[m_queueHead];
-        m_sink->sendCommand(cmd, UINT32_MAX);
+        if (!m_sink->sendCommand(cmd, FLUSH_SEND_TIMEOUT_MS)) {
+            return false;
+        }
         m_queueHead = (m_queueHead + 1) % CMD_QUEUE_MAX_DEPTH;
         m_queueDepth--;
     }
+    return true;
 }
 
 } // namespace Services

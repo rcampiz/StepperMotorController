@@ -1,9 +1,6 @@
 /**
- * @file boundary/iemergencystop.hpp
- * @brief Consumer port — Services side of the Scheduler::IEmergencyStop harness connection
- *
- * Structurally identical to Scheduler::IEmergencyStop.
- * The harness adapter bridges the provider to this consumer port.
+ * @file boundary/iemergency_stop.hpp
+ * @brief Emergency-stop trigger used by the Comms task path (L3-internal interface)
  */
 
 #pragma once

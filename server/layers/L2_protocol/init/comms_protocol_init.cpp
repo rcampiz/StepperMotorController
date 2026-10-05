@@ -2,15 +2,15 @@
  * @file comms_protocol_init.cpp
  * @brief Implements Protocol::initCommsProtocol() — L2 protocol wiring
  *
- * L2 cascades to L1: calls transport init through harness, then creates
- * ServiceDispatcher and CommandParser. Includes L2 + harness headers only.
+ * L2 cascades to L1 through the transport init contract, connects H_L1_L2, binds the
+ * ServiceDispatcher to the L3 dispatcher bundle (H_L2_L3) and builds the CommandParser.
+ * Includes L2 + harness headers only.
  */
 
 #include "harness/pins/comms_protocol_init.hpp"
-
-// L1 transport init through harness (L2 cascades to L1)
 #include "harness/pins/transport_init.hpp"
-#include "harness/harness_wiring_map.hpp"
+#include "harness/defs/harness_l1_l2.hpp"
+#include "harness/defs/harness_l2_l3.hpp"
 
 // L2 internal
 #include "L2_protocol/command_parser.hpp"
@@ -19,46 +19,26 @@
 namespace Protocol {
 
 bool initCommsProtocol(CommsProtocol& out,
-                       const Harness::DispatchInterfaces& dispatches,
-                       Scheduler::IDebugCommands* debugCommands,
-                       Transport::IByteChannel& channel,
+                       const Harness::L3Dispatchers& dispatches,
                        Platform::IClock& clock)
 {
-    // L1 transport init (cascade to L1 through harness)
+    // L1 transport init (cascade to L1 through the init contract)
     Transport::TransportResult transportResult;
-    if (!Transport::initTransport(transportResult, Transport::TransportType::VCP_UART,
-                                  channel, clock)) {
+    if (!Transport::initTransport(transportResult, Transport::TransportType::VCP_UART, clock)) {
         return false;
     }
 
-    // L2 forwarding dispatcher — wire all 12 sub-interfaces
-    // Adapt Services:: provider types to Protocol:: consumer ports
+    // H_L1_L2 (applies the transport trace tap once)
+    const Harness::L1L2Harness& l1l2 = Harness::connectL1L2(*transportResult.transport);
+
+    // L2 forwarding composite over the thirteen L3 dispatchers (H_L2_L3)
     static ServiceDispatcher dispatcher;
-    dispatcher.setMotion(&Harness::adaptMotionDispatcher(*dispatches.motion));
-    dispatcher.setConfig(&Harness::adaptMotorConfigDispatcher(*dispatches.config));
-    dispatcher.setSafety(&Harness::adaptSafetyDispatcher(*dispatches.safety));
-    dispatcher.setQueue(&Harness::adaptQueueDispatcher(*dispatches.queue));
-    dispatcher.setControlMode(&Harness::adaptControlModeDispatcher(*dispatches.controlMode));
-    dispatcher.setSupervisorTrim(&Harness::adaptSupervisorTrimDispatcher(*dispatches.supervisorTrim));
-    dispatcher.setEncoder(&Harness::adaptEncoderDispatcher(*dispatches.encoder));
-    dispatcher.setMotorDriver(&Harness::adaptMotorDriverDispatcher(*dispatches.motorDriver));
-    dispatcher.setDisplay(&Harness::adaptDisplayDispatcher(*dispatches.display));
-    dispatcher.setFlash(&Harness::adaptFlashImageDispatcher(*dispatches.flash));
-    dispatcher.setSystem(&Harness::adaptSystemDispatcher(*dispatches.system));
-    dispatcher.setTrace(&Harness::adaptTraceDispatcher(*dispatches.trace));
+    dispatcher.bind(dispatches);
 
     // Command parser (L2)
-    static CommandParser parser(*transportResult.transport, dispatcher);
+    static CommandParser parser(l1l2.transport, dispatcher);
 
-    // Debug command handler (optional)
-    if (debugCommands) {
-        parser.setDebugCommands(debugCommands);
-    }
-
-    // Populate output
     out.parser = &parser;
-    out.transport = transportResult.transport;
-
     return true;
 }
 

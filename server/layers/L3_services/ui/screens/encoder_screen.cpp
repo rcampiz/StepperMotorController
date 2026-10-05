@@ -9,8 +9,8 @@
  */
 
 #include "ui/screens/encoder_screen.hpp"
-#include "L3_services/boundary/icanvas.hpp"
-#include "harness/pins/itelemetry.hpp"
+#include "harness/defs/harness_l3_l4.hpp"
+#include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include "graphics/trig_lut/trig_lut.hpp"
 #include "graphics/primitives/primitives.hpp"
 #include <stdio.h>
@@ -81,7 +81,7 @@ void EncoderScreen::i64toa(int64_t val, char* buf, int bufSize)
 
 void EncoderScreen::render(Services::ICanvas& lcd)
 {
-    Protocol::TelemetrySnapshot telem = Scheduler::telemetry().getSnapshot();
+    Protocol::TelemetrySnapshot telem = Services::g_telemetryStore.getSnapshot();
 
     renderNumerical(lcd, telem);
 

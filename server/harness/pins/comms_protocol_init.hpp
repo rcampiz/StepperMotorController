@@ -1,42 +1,23 @@
 /**
  * @file comms_protocol_init.hpp
- * @brief L2 protocol init -- cascades to L1 transport
- *
- * L3 calls this with an already-constructed IByteChannel.
- * L2 passes it to L1 transport init, then creates ServiceDispatcher
- * and CommandParser.
+ * @brief Init contract: L2 builds the parser over the L3 dispatchers and the L1 transport
  */
-
 #pragma once
 
-#include "harness/pins/dispatch_interfaces.hpp"
-
 namespace Platform { class IClock; }
-namespace Transport { class ITransport; class IByteChannel; }
-namespace Scheduler { class IDebugCommands; }
 namespace Protocol { class ICommandProcessor; }
+namespace Harness { struct L3Dispatchers; }
 
 namespace Protocol {
 
 struct CommsProtocol {
     Protocol::ICommandProcessor* parser = nullptr;
-    Transport::ITransport* transport = nullptr;  ///< From L1 cascade
 };
 
-/**
- * @brief Initialize L2 protocol stack (cascades to L1 transport)
- *
- * @param out         Output struct with parser and transport
- * @param dispatches  12 sub-dispatcher interface pointers (from L3 init)
- * @param debugCommands Optional debug command handler (from harness)
- * @param channel     Byte channel (constructed by L4, passed from L3)
- * @param clock       Platform clock (injected from L3)
- * @return true on success
- */
+/// L2 cascades to L1 (initTransport), then builds the ServiceDispatcher
+/// bound to `dispatches` and the CommandParser over the harness-connected transport.
 bool initCommsProtocol(CommsProtocol& out,
-                       const Harness::DispatchInterfaces& dispatches,
-                       Scheduler::IDebugCommands* debugCommands,
-                       Transport::IByteChannel& channel,
+                       const Harness::L3Dispatchers& dispatches,
                        Platform::IClock& clock);
 
 } // namespace Protocol

@@ -48,7 +48,7 @@ WheelRole parseRole(const char *str) {
   return WheelRole::UNASSIGNED;
 }
 
-bool DeviceConfigManager::init(Services::IFlash &flash, Services::ILock& lock) {
+bool DeviceConfigManager::init(Services::IFlash &flash, Platform::ILock& lock) {
   m_flash = &flash;
   m_lock = &lock;
   m_valid = false;

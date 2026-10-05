@@ -3,8 +3,16 @@ REM Build and flash script with OpenOCD — shows output and saves to build/flas
 
 setlocal
 
-REM Add OpenOCD to PATH temporarily for this session
-set "PATH=F:\OpenOCD\xpack-openocd-0.12.0-7-win32-x64\xpack-openocd-0.12.0-7\bin;%PATH%"
+REM OpenOCD: use the one on PATH (installed by scripts\bringup.ps1); fall back to the legacy F: drive copy
+where openocd >nul 2>nul
+if %ERRORLEVEL% NEQ 0 (
+    if exist "F:\OpenOCD\xpack-openocd-0.12.0-7-win32-x64\xpack-openocd-0.12.0-7\bin\openocd.exe" (
+        set "PATH=F:\OpenOCD\xpack-openocd-0.12.0-7-win32-x64\xpack-openocd-0.12.0-7\bin;%PATH%"
+    ) else (
+        echo ERROR: openocd not found. Run: powershell -ExecutionPolicy Bypass -File scripts\bringup.ps1
+        exit /b 1
+    )
+)
 
 set "LOGFILE=%~dp0..\build\flash_log.txt"
 

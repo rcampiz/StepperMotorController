@@ -4,9 +4,9 @@
  */
 
 #include "ui/screens/motion_screen.hpp"
-#include "L3_services/boundary/icanvas.hpp"
+#include "harness/defs/harness_l3_l4.hpp"
 #include "L3_services/motion/motion_service/motion_service.hpp"
-#include "harness/pins/itelemetry.hpp"
+#include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include <stdio.h>
 
 namespace UI {
@@ -49,7 +49,7 @@ bool MotionScreen::isFieldEnabled(uint8_t field, bool faulted, bool hiZ) const
 
 void MotionScreen::renderStatus(Services::ICanvas& lcd)
 {
-    Protocol::TelemetrySnapshot telem = Scheduler::telemetry().getSnapshot();
+    Protocol::TelemetrySnapshot telem = Services::g_telemetryStore.getSnapshot();
     char buf[32];
     uint16_t y = STATUS_Y;
 
@@ -125,7 +125,7 @@ void MotionScreen::renderField(Services::ICanvas& lcd, uint8_t field, uint16_t y
             break;
 
         case FIELD_ENABLE: {
-            Protocol::TelemetrySnapshot t = Scheduler::telemetry().getSnapshot();
+            Protocol::TelemetrySnapshot t = Services::g_telemetryStore.getSnapshot();
             if (t.motor.hiZ) {
                 lcd.drawString(MARGIN + FIELD_PAD, y + FIELD_PAD, "Enable Motor", fg, bg, TEXT_SCALE);
             } else {
@@ -138,7 +138,7 @@ void MotionScreen::renderField(Services::ICanvas& lcd, uint8_t field, uint16_t y
 
 void MotionScreen::render(Services::ICanvas& lcd)
 {
-    Protocol::TelemetrySnapshot telem = Scheduler::telemetry().getSnapshot();
+    Protocol::TelemetrySnapshot telem = Services::g_telemetryStore.getSnapshot();
     bool faulted = telem.motor.stalled;
     bool hiZ = telem.motor.hiZ;
 
@@ -157,7 +157,7 @@ InputResult MotionScreen::handleInput(JoyDirection dir, bool pressed)
         return InputResult::HANDLED;
     }
 
-    Protocol::TelemetrySnapshot telem = Scheduler::telemetry().getSnapshot();
+    Protocol::TelemetrySnapshot telem = Services::g_telemetryStore.getSnapshot();
     bool faulted = telem.motor.stalled;
     bool hiZ = telem.motor.hiZ;
 

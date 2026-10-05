@@ -16,18 +16,8 @@ namespace Protocol {
 class ServiceDispatcher : public Protocol::ICommandDispatcher {
 public:
     // Dependency injection — 12 sub-interface setters
-    void setMotion(Protocol::IMotionDispatcher* d)                { m_motion = d; }
-    void setConfig(Protocol::IMotorConfigDispatcher* d)           { m_config = d; }
-    void setSafety(Protocol::ISafetyDispatcher* d)                { m_safety = d; }
-    void setQueue(Protocol::IQueueDispatcher* d)                  { m_queue = d; }
-    void setControlMode(Protocol::IControlModeDispatcher* d)      { m_ctrlMode = d; }
-    void setSupervisorTrim(Protocol::ISupervisorTrimDispatcher* d){ m_supTrim = d; }
-    void setEncoder(Protocol::IEncoderDispatcher* d)              { m_encoder = d; }
-    void setMotorDriver(Protocol::IMotorDriverDispatcher* d)      { m_motorDrv = d; }
-    void setDisplay(Protocol::IDisplayDispatcher* d)              { m_display = d; }
-    void setFlash(Protocol::IFlashImageDispatcher* d)             { m_flash = d; }
-    void setSystem(Protocol::ISystemDispatcher* d)                { m_system = d; }
-    void setTrace(Protocol::ITraceDispatcher* d)                  { m_trace = d; }
+    /// Bind to the L3 dispatcher bundle (H_L2_L3)
+    void bind(const Harness::L3Dispatchers& d);
 
     // IMotionDispatcher
     Harness::ServiceStatus motionRun(uint32_t stepsPerSec, bool forward) override;
@@ -108,7 +98,7 @@ public:
     void sysIdAbort() override;
     uint8_t sysIdGetPhase() override;
     uint16_t sysIdGetSampleCount() override;
-    const Protocol::SysIdSampleData* sysIdGetSamples(uint16_t& count) override;
+    const Services::SysIdSampleData* sysIdGetSamples(uint16_t& count) override;
 
     // IEncoderDispatcher
     bool isEncoderAvailable() override;
@@ -166,6 +156,7 @@ public:
     // ISystemDispatcher
     uint32_t getTickUs() override;
     uint32_t getTickMs() override;
+    void getTelemetry(Protocol::TelemetrySnapshot& out) override;
     void setTransportDelay(uint32_t ms) override;
     uint32_t getTransportDelay() override;
     void getDeviceInfo(uint16_t& deviceId, uint8_t& role) override;
@@ -182,20 +173,27 @@ public:
     void traceReset() override;
     void traceRecordEntry(const char* tag, uint32_t arg0 = 0) override;
     void traceRecordExit(const char* tag, uint32_t arg0 = 0) override;
+    Harness::ServiceStatus debugUnlock() override;
+    Harness::ServiceStatus debugLock() override;
+    bool debugIsUnlocked() const override;
+    bool debugDispatch(const char* cmd, const char* const* args, uint8_t argCount,
+                       Harness::IResponseSink& out) override;
+    int debugFormatSpi2Diag(char* buf, size_t bufSize) override;
 
 private:
-    Protocol::IMotionDispatcher*         m_motion = nullptr;
-    Protocol::IMotorConfigDispatcher*    m_config = nullptr;
-    Protocol::ISafetyDispatcher*         m_safety = nullptr;
-    Protocol::IQueueDispatcher*          m_queue = nullptr;
-    Protocol::IControlModeDispatcher*    m_ctrlMode = nullptr;
-    Protocol::ISupervisorTrimDispatcher* m_supTrim = nullptr;
-    Protocol::IEncoderDispatcher*        m_encoder = nullptr;
-    Protocol::IMotorDriverDispatcher*    m_motorDrv = nullptr;
-    Protocol::IDisplayDispatcher*        m_display = nullptr;
-    Protocol::IFlashImageDispatcher*     m_flash = nullptr;
-    Protocol::ISystemDispatcher*         m_system = nullptr;
-    Protocol::ITraceDispatcher*          m_trace = nullptr;
+    Services::IMotionDispatcher*         m_motion = nullptr;
+    Services::IMotorConfigDispatcher*    m_config = nullptr;
+    Services::ISafetyDispatcher*         m_safety = nullptr;
+    Services::IQueueDispatcher*          m_queue = nullptr;
+    Services::IControlModeDispatcher*    m_ctrlMode = nullptr;
+    Services::ISupervisorTrimDispatcher* m_supTrim = nullptr;
+    Services::IEncoderDispatcher*        m_encoder = nullptr;
+    Services::IMotorDriverDispatcher*    m_motorDrv = nullptr;
+    Services::IDisplayDispatcher*        m_display = nullptr;
+    Services::IFlashImageDispatcher*     m_flash = nullptr;
+    Services::ISystemDispatcher*         m_system = nullptr;
+    Services::ITraceDispatcher*          m_trace = nullptr;
+    Services::IDebugDispatcher*          m_debug = nullptr;
 };
 
 } // namespace Protocol

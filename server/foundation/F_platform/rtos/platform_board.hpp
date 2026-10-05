@@ -14,9 +14,11 @@
 #include "harness/pins/iqueue.hpp"
 #include "harness/pins/itask_stats.hpp"
 #include "harness/pins/ischeduler.hpp"
-#include "harness/pins/imotor_command_sink.hpp"
-#include "F_platform/tasks/motor_task_init.hpp"
-#include "F_platform/types/async_event_types.hpp"
+#include "harness/pins/motor_command.hpp"
+#include "harness/pins/async_event.hpp"
+#include "F_platform/boundary/imicrosecond_clock.hpp"
+#include "F_platform/boundary/icritical_section.hpp"
+#include "F_platform/boundary/itask_notifier.hpp"
 
 namespace Harness {
 
@@ -35,6 +37,9 @@ struct PlatformResources {
     Platform::ITaskStats* taskStats;
     Platform::IScheduler* scheduler;
     Platform::IQueue<Scheduler::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>* motorCmdQueue;
+    Platform::IMicrosecondClock* usClock;
+    Platform::ICriticalSection* critical;
+    Platform::ITaskNotifier* notifier;
 };
 
 /**

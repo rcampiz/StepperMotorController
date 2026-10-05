@@ -1,57 +1,26 @@
 /**
  * @file encoder_task_init.cpp
- * @brief Implements Harness::initEncoderTask() — task + RTOS creation
- *
- * All dependencies arrive as harness interfaces — no L4 includes.
+ * @brief Implements Harness::initEncoderTask() — task creation only
  */
 
 #include "F_platform/tasks/encoder_task_init.hpp"
-#include "harness/pins/ischeduler.hpp"
-#include "harness/pins/encoder_driver_init.hpp"
-#include "harness/harness_wiring_map.hpp"
-#include "F_platform/rtos/freertos_critical_section.hpp"
 #include "F_platform/tasks/encoder_task.hpp"
+#include "F_platform/boundary/ischeduler.hpp"
 
 namespace Harness {
 
-static Platform::FreeRTOSCriticalSection s_critSection;
-
-bool initEncoderTask(Drivers::EncoderDriverHandle& driverHandle,
+bool initEncoderTask(Services::IEncoderService& service,
                      Platform::IClock& clock,
-                     Services::IEncoderProcessing& processor,
-                     Services::IEncoderStatusSink& statusSink,
-                     uint8_t measWindowMs,
-                     uint16_t sampleRateHz,
-                     Platform::IScheduler& scheduler,
-                     EncoderTaskResult& result)
+                     Platform::IScheduler& scheduler)
 {
-    // Task init — adapt provider types to consumer ports
-    auto& encoderPort = Harness::adaptEncoderHardware(*driverHandle.encoder);
-    auto& timerPort = Harness::adaptTimerCounter(*driverHandle.timer);
-    auto& samplerPort = Harness::adaptEncoderSampler(*driverHandle.sampler);
-    auto& processorPort = Harness::adaptEncoderProcessing(processor);
-    auto& statusSinkPort = Harness::adaptEncoderStatusSink(statusSink);
-    auto& critPort = Harness::adaptCriticalSection(s_critSection);
-    if (!Scheduler::EncoderTask_Init(encoderPort, timerPort,
-                                      samplerPort, critPort,
-                                      clock, processorPort, statusSinkPort,
-                                      measWindowMs, sampleRateHz)) {
+    if (!Scheduler::EncoderTask_Init(service, clock)) {
         return false;
     }
-
-    // RTOS task creation
     auto* handle = scheduler.createTask(
         {"Encoder", Scheduler::ENCODER_TASK_STACK_SIZE,
          Scheduler::ENCODER_TASK_PRIORITY,
          Scheduler::vEncoderTask, nullptr});
-    if (handle == nullptr) {
-        return false;
-    }
-
-    // Return harness interfaces for dispatch wiring
-    result.encoder = Scheduler::EncoderTask_GetEncoderInterface();
-    result.filterControl = Scheduler::EncoderTask_GetFilterInterface();
-    return true;
+    return handle != nullptr;
 }
 
 } // namespace Harness

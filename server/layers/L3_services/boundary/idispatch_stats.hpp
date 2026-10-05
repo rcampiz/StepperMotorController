@@ -1,24 +1,16 @@
 /**
- * @file boundary/idispatchstats.hpp
- * @brief Consumer port — Services side of the Scheduler::IDispatchStats harness connection
- *
- * Structurally identical to Scheduler::IDispatchStats.
- * The harness adapter bridges the provider to this consumer port.
+ * @file boundary/idispatch_stats.hpp
+ * @brief Dispatch statistics (parsed/ok/error counts) for the heartbeat and DIAG commands (L3-internal interface)
  */
 
 #pragma once
 
 #include <stdint.h>
+#include "harness/pins/dispatch_stats.hpp"
 
 namespace Services {
 
-struct DispatchStats {
-    uint32_t totalCommands;
-    uint32_t unknownCommands;
-    uint32_t parseErrors;
-    uint8_t  recentCount;
-    char     recentCmds[8][24];
-};
+using DispatchStats = Harness::DispatchStats;
 
 class IDispatchStats {
 public:

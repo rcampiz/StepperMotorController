@@ -3,16 +3,11 @@
  * @brief L5 board init for motor subsystem — implements Harness::initMotorBoard
  */
 
-#include "harness/pins/motor_board.hpp"
+#include "harness/defs/harness_l4_l5.hpp"
 #include "L5_board/gpio.hpp"
 #include "L5_board/board_pins.hpp"
 #include "L5_board/spi/spi_manager.hpp"
 
-// Tracing (conditional)
-#include "harness/trace/interface_trace.hpp"
-#ifdef ENABLE_INTERFACE_TRACE
-#include "harness/taps/traced_spi_bus.hpp"
-#endif
 
 using Board::GPIO;
 using Board::GPIOMode;
@@ -30,12 +25,7 @@ bool Harness::initMotorBoard(Harness::MotorPins& pins)
         return false;
     }
 
-#ifdef ENABLE_INTERFACE_TRACE
-    static Harness::TracedSPIBus s_tracedSPI(*spi1);
-    pins.spi = &s_tracedSPI;
-#else
     pins.spi = spi1;
-#endif
 
     // GPIO objects for PowerSTEP01 pins
     static GPIO motorCS(Pins::IHM03A1::CS_PORT, Pins::IHM03A1::CS_PIN);

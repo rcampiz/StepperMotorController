@@ -8,7 +8,7 @@
 #ifdef ENABLE_INTERFACE_TRACE
 
 #include "harness/trace/interface_trace.hpp"
-#include "harness/pins/itrace_sink.hpp"
+#include "L3_services/boundary/itrace_sink.hpp"
 #include "X_middlewares/SEGGER/RTT/SEGGER_RTT.h"
 #include <string.h>
 

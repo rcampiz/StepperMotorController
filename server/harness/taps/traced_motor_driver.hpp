@@ -2,14 +2,14 @@
  * @file traced_motor_driver.hpp
  * @brief Traced wrapper for IMotorDriver (L3->L4 boundary)
  *
- * Logs motor commands and status queries via ITrace.
+ * Logs motor commands and status queries via ITrace. Pure observer: it never writes
+ * telemetry (MotorController::periodicUpdate owns the snapshot writes).
  * Only compiled when ENABLE_INTERFACE_TRACE is defined.
  */
 
 #pragma once
 
 #include "harness/pins/imotor_driver.hpp"
-#include "harness/pins/isnapshot_writer.hpp"
 #include "harness/trace/interface_trace.hpp"
 
 #ifdef ENABLE_INTERFACE_TRACE
@@ -88,7 +88,6 @@ public:
     uint32_t getParam(uint8_t reg) override {
         uint32_t val = m_real.getParam(reg);
         Harness::ITrace::logResult(Harness::ITrace::L3_L4_MOTOR, "[L3<L4]", "getParam", val);
-        Scheduler::snapshotWriter().writeMotorParam(reg, val);
         return val;
     }
 
@@ -104,7 +103,6 @@ public:
         Drivers::MotorStatus st = m_real.getStatus();
         Harness::ITrace::logResult(Harness::ITrace::L3_L4_MOTOR, "[L3<L4]", "getStatus",
                           static_cast<uint32_t>(st.raw));
-        Scheduler::snapshotWriter().writeMotorStatus(st.raw);
         return st;
     }
 

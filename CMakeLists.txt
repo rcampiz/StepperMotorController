@@ -1,53 +1,69 @@
 cmake_minimum_required(VERSION 3.20)
 
-# Project settings
-set(CMAKE_SYSTEM_NAME Generic)
-set(CMAKE_SYSTEM_PROCESSOR ARM)
-
-# Toolchain settings
-set(TOOLCHAIN_PREFIX arm-none-eabi-)
-set(CMAKE_C_COMPILER ${TOOLCHAIN_PREFIX}gcc)
-set(CMAKE_CXX_COMPILER ${TOOLCHAIN_PREFIX}g++)
-set(CMAKE_ASM_COMPILER ${TOOLCHAIN_PREFIX}gcc)
-set(CMAKE_AR ${TOOLCHAIN_PREFIX}ar)
-set(CMAKE_OBJCOPY ${TOOLCHAIN_PREFIX}objcopy)
-set(CMAKE_OBJDUMP ${TOOLCHAIN_PREFIX}objdump)
-set(CMAKE_SIZE ${TOOLCHAIN_PREFIX}size)
-
-# Don't try to run the compiler during configuration
-set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
-
-# Project name
+# ---------------------------------------------------------------------------
+# StepperMotorController firmware (NUCLEO-F401RE)
+#
+# Authoritative build. Configure with a preset:
+#   cmake --preset firmware-debug && cmake --build --preset firmware-debug
+# Output lands in build/ (StepperMotorController.elf/.hex/.bin/.map) so
+# scripts/flash.bat and .vscode/launch.json keep working.
+#
+# Host-side unit tests are a separate project: see tests/CMakeLists.txt
+# (preset "host-tests").
+# ---------------------------------------------------------------------------
 project(StepperMotorController C CXX ASM)
 
-# Enable compile_commands.json generation
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-
-# MCU settings
-set(MCU_FLAGS "-mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard")
-
-# Compiler flags
-set(CMAKE_C_FLAGS "${MCU_FLAGS} -Wall -fdata-sections -ffunction-sections")
-set(CMAKE_CXX_FLAGS "${MCU_FLAGS} -Wall -fdata-sections -ffunction-sections -fno-exceptions -fno-rtti -fno-use-cxa-atexit")
-set(CMAKE_ASM_FLAGS "${MCU_FLAGS} -x assembler-with-cpp")
-
-# Debug/Release flags
-set(CMAKE_C_FLAGS_DEBUG "-Og -g -gdwarf-2")
-set(CMAKE_CXX_FLAGS_DEBUG "-Og -g -gdwarf-2")
-set(CMAKE_C_FLAGS_RELEASE "-O2")
-set(CMAKE_CXX_FLAGS_RELEASE "-O2")
-
-# Linker flags
-set(LINKER_SCRIPT "${CMAKE_SOURCE_DIR}/server/foundation/F_platform/STM32F401RETx_FLASH.ld")
-set(CMAKE_EXE_LINKER_FLAGS "${MCU_FLAGS} -specs=nano.specs -T${LINKER_SCRIPT} -Wl,-Map=${PROJECT_NAME}.map,--cref -Wl,--gc-sections -lc -lm -lnosys")
-
-# C/C++ standards
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Include directories
+if(NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
+endif()
+
+# Interface-boundary tracing (taps + RTT emitter). Debug-only: the firmware-debug
+# preset turns it ON, firmware-release leaves it OFF.
+option(ENABLE_INTERFACE_TRACE "Compile harness taps and interface trace output" OFF)
+
+# ---------------------------------------------------------------------------
+# MCU flags (identical to scripts/build_direct.bat)
+# ---------------------------------------------------------------------------
+set(MCU_FLAGS -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard)
+
+add_compile_options(
+    ${MCU_FLAGS}
+    -Wall -fdata-sections -ffunction-sections
+    $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions>
+    $<$<COMPILE_LANGUAGE:CXX>:-fno-rtti>
+    $<$<COMPILE_LANGUAGE:CXX>:-fno-use-cxa-atexit>
+    $<$<COMPILE_LANGUAGE:ASM>:-x>
+    $<$<COMPILE_LANGUAGE:ASM>:assembler-with-cpp>
+)
+set(CMAKE_C_FLAGS_DEBUG   "-Og -g -gdwarf-2")
+set(CMAKE_CXX_FLAGS_DEBUG "-Og -g -gdwarf-2")
+set(CMAKE_ASM_FLAGS_DEBUG "-g -gdwarf-2")
+set(CMAKE_C_FLAGS_RELEASE   "-O2")
+set(CMAKE_CXX_FLAGS_RELEASE "-O2")
+
+set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/server/foundation/F_platform/startup/STM32F401RETx_FLASH.ld)
+add_link_options(
+    ${MCU_FLAGS}
+    -specs=nano.specs
+    -T${LINKER_SCRIPT}
+    -Wl,-Map=${CMAKE_BINARY_DIR}/${PROJECT_NAME}.map,--cref
+    -Wl,--gc-sections
+    -Wl,--no-warn-rwx-segments
+)
+
+# ---------------------------------------------------------------------------
+# Include paths and defines (identical to scripts/build_direct.bat)
+# ---------------------------------------------------------------------------
+set(EXT server/external)
+set(FREERTOS_DIR ${EXT}/X_middlewares/Third_Party/FreeRTOS-Kernel)
+
 include_directories(
     server
     server/layers
@@ -58,27 +74,32 @@ include_directories(
     server/layers/L5_board
     server/foundation
     server/foundation/F_platform
-    server/external
-    server/external/X_vendor/CMSIS
-    server/external/X_middlewares/Third_Party/FreeRTOS-Kernel/include
-    server/external/X_middlewares/Third_Party/FreeRTOS-Kernel/portable/GCC/ARM_CM4F
-    # SEGGER RTT and SystemView
-    server/external/X_middlewares/SEGGER/RTT
-    server/external/X_middlewares/SEGGER/SystemView
+    server/foundation/F_platform/rtos
+    ${EXT}
+    ${EXT}/X_vendor/CMSIS
+    ${FREERTOS_DIR}/include
+    ${FREERTOS_DIR}/portable/GCC/ARM_CM4F
+    ${EXT}/X_middlewares/SEGGER/RTT
+    ${EXT}/X_middlewares/SEGGER/SystemView
 )
 
-# Defines
 add_compile_definitions(
     STM32F401xE
     __FPU_PRESENT=1
     __FPU_USED=1
     ENABLE_SEGGER_SYSTEMVIEW
     RTT_USE_ASM=0
+    $<$<BOOL:${ENABLE_INTERFACE_TRACE}>:ENABLE_INTERFACE_TRACE>
 )
 
-# FreeRTOS source files
-set(FREERTOS_DIR server/external/X_middlewares/Third_Party/FreeRTOS-Kernel)
-set(FREERTOS_SOURCES
+# ---------------------------------------------------------------------------
+# Sources
+#   Third-party: explicit list.
+#   Application: every .cpp/.c under server/{layers,foundation,harness} plus
+#   server/*.cpp. The layer directories ARE the module boundaries, so the
+#   directory tree is the source list; CONFIGURE_DEPENDS re-globs on build.
+# ---------------------------------------------------------------------------
+set(THIRD_PARTY_SOURCES
     ${FREERTOS_DIR}/tasks.c
     ${FREERTOS_DIR}/queue.c
     ${FREERTOS_DIR}/list.c
@@ -87,157 +108,59 @@ set(FREERTOS_SOURCES
     ${FREERTOS_DIR}/stream_buffer.c
     ${FREERTOS_DIR}/portable/MemMang/heap_4.c
     ${FREERTOS_DIR}/portable/GCC/ARM_CM4F/port.c
+    ${EXT}/X_middlewares/SEGGER/RTT/SEGGER_RTT.c
+    ${EXT}/X_middlewares/SEGGER/RTT/SEGGER_RTT_printf.c
+    ${EXT}/X_middlewares/SEGGER/SystemView/SEGGER_SYSVIEW.c
+    ${EXT}/X_middlewares/SEGGER/SystemView/SEGGER_SYSVIEW_Config_FreeRTOS.c
+    ${EXT}/X_middlewares/SEGGER/SystemView/SEGGER_SYSVIEW_FreeRTOS.c
 )
 
-# SEGGER RTT sources
-set(SEGGER_RTT_SOURCES
-    server/external/X_middlewares/SEGGER/RTT/SEGGER_RTT.c
-    server/external/X_middlewares/SEGGER/RTT/SEGGER_RTT_printf.c
+file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS
+    ${CMAKE_SOURCE_DIR}/server/layers/*.cpp
+    ${CMAKE_SOURCE_DIR}/server/foundation/*.cpp
+    ${CMAKE_SOURCE_DIR}/server/foundation/*.c
+    ${CMAKE_SOURCE_DIR}/server/harness/*.cpp
 )
+file(GLOB ROOT_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/server/*.cpp)
 
-# SEGGER SystemView sources
-set(SEGGER_SYSVIEW_SOURCES
-    server/external/X_middlewares/SEGGER/SystemView/SEGGER_SYSVIEW.c
-    server/external/X_middlewares/SEGGER/SystemView/SEGGER_SYSVIEW_Config_FreeRTOS.c
-    server/external/X_middlewares/SEGGER/SystemView/SEGGER_SYSVIEW_FreeRTOS.c
-)
-
-# Source files
-set(C_SOURCES
-    server/foundation/F_platform/system_stm32f4xx.c
-    server/foundation/F_platform/syscalls.c
-    ${FREERTOS_SOURCES}
-    ${SEGGER_RTT_SOURCES}
-    ${SEGGER_SYSVIEW_SOURCES}
-)
-
-# Transport module sources (byte-level I/O)
-set(TRANSPORT_SOURCES
-    server/layers/L1_transport/uart_transport.cpp
-    server/layers/L1_transport/rtt_transport.cpp
-)
-
-# Protocol module sources (command framing/dispatch)
-set(PROTOCOL_SOURCES
-    server/layers/L2_protocol/command_parser.cpp
-    server/layers/L2_protocol/telemetry.cpp
-    server/layers/L2_protocol/event_codec.cpp
-)
-
-# Task sources
-set(TASK_SOURCES
-    server/foundation/F_platform/tasks/motor_task.cpp
-    server/foundation/F_platform/tasks/encoder_task.cpp
-    server/foundation/F_platform/tasks/display_task.cpp
-    server/foundation/F_platform/tasks/comms_task.cpp
-    server/foundation/F_platform/tasks/bringup_task.cpp
-)
-
-# Service sources — motion
-set(SERVICE_MOTION_SOURCES
-    server/layers/L3_services/motion/motion_service.cpp
-    server/layers/L3_services/motion/motor_config.cpp
-    server/layers/L3_services/motion/control_mode.cpp
-    server/layers/L3_services/motion/following_supervisor.cpp
-    server/layers/L3_services/motion/pid_controller.cpp
-    server/layers/L3_services/motion/speed_trim_controller.cpp
-    server/layers/L3_services/motion/sysid.cpp
-)
-
-# Service sources — safety
-set(SERVICE_SAFETY_SOURCES
-    server/layers/L3_services/safety/safety_service.cpp
-)
-
-# Service sources — config
-set(SERVICE_CONFIG_SOURCES
-    server/layers/L3_services/config/config_service.cpp
-    server/layers/L3_services/config/device_config.cpp
-)
-
-# Service sources — dispatch
-set(SERVICE_DISPATCH_SOURCES
-    server/layers/L3_services/dispatch/command_queue.cpp
-    server/layers/L3_services/dispatch/event_service.cpp
-)
-
-# Service sources — infra
-set(SERVICE_INFRA_SOURCES
-    server/layers/L3_services/infra/tick_timer.cpp
-    server/layers/L3_services/infra/timing_service.cpp
-    server/layers/L3_services/infra/trace.cpp
-    server/layers/L3_services/infra/unit_conversion.cpp
-    server/layers/L3_services/infra/indicator_service.cpp
-    server/layers/L3_services/infra/flash_image_service.cpp
-)
-
-# UI sources
-set(UI_SOURCES
-    server/layers/L3_services/ui/ui_mode.cpp
-    server/layers/L3_services/ui/menu_screen.cpp
-    server/layers/L3_services/ui/terminal_screen.cpp
-    server/layers/L3_services/ui/screen_manager.cpp
-    server/layers/L3_services/ui/screens/boot_color_screen.cpp
-    server/layers/L3_services/ui/screens/device_info_screen.cpp
-    server/layers/L3_services/ui/screens/encoder_screen.cpp
-    server/layers/L3_services/ui/screens/motion_screen.cpp
-    server/layers/L3_services/ui/screens/config_screen.cpp
-    server/layers/L3_services/ui/screens/graph_screen.cpp
-    server/layers/L3_services/ui/screens/image_view_screen.cpp
-    server/layers/L3_services/ui/screens/trace_screen.cpp
-)
-
-# Driver sources
-set(DRIVER_SOURCES
-    server/layers/L4_drivers/spi/spi_manager.cpp
-)
-
-set(CXX_SOURCES
-    server/main.cpp
-    ${TRANSPORT_SOURCES}
-    ${PROTOCOL_SOURCES}
-    ${TASK_SOURCES}
-    ${SERVICE_MOTION_SOURCES}
-    ${SERVICE_SAFETY_SOURCES}
-    ${SERVICE_CONFIG_SOURCES}
-    ${SERVICE_DISPATCH_SOURCES}
-    ${SERVICE_INFRA_SOURCES}
-    ${UI_SOURCES}
-    ${DRIVER_SOURCES}
-)
-
-set(ASM_SOURCES
-    server/foundation/F_platform/startup_stm32f401xe.s
-)
-
-# Create executable
-add_executable(${PROJECT_NAME}.elf
-    ${C_SOURCES}
-    ${CXX_SOURCES}
-    ${ASM_SOURCES}
-)
-
-# Set ASM language for startup file
+set(ASM_SOURCES server/foundation/F_platform/startup/startup_stm32f401xe.s)
 set_source_files_properties(${ASM_SOURCES} PROPERTIES LANGUAGE ASM)
 
-# Custom commands for hex and bin files
+add_executable(${PROJECT_NAME}.elf
+    ${THIRD_PARTY_SOURCES}
+    ${APP_SOURCES}
+    ${ROOT_SOURCES}
+    ${ASM_SOURCES}
+)
+target_link_libraries(${PROJECT_NAME}.elf c m nosys)
+
+# Match build_direct.bat output names/locations
+set_target_properties(${PROJECT_NAME}.elf PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+
 add_custom_command(TARGET ${PROJECT_NAME}.elf POST_BUILD
-    COMMAND ${CMAKE_OBJCOPY} -O ihex $<TARGET_FILE:${PROJECT_NAME}.elf> ${PROJECT_NAME}.hex
-    COMMAND ${CMAKE_OBJCOPY} -O binary -S $<TARGET_FILE:${PROJECT_NAME}.elf> ${PROJECT_NAME}.bin
+    COMMAND ${CMAKE_OBJCOPY} -O ihex   $<TARGET_FILE:${PROJECT_NAME}.elf> ${CMAKE_BINARY_DIR}/${PROJECT_NAME}.hex
+    COMMAND ${CMAKE_OBJCOPY} -O binary -S $<TARGET_FILE:${PROJECT_NAME}.elf> ${CMAKE_BINARY_DIR}/${PROJECT_NAME}.bin
     COMMAND ${CMAKE_SIZE} $<TARGET_FILE:${PROJECT_NAME}.elf>
-    COMMENT "Building ${PROJECT_NAME}.hex and ${PROJECT_NAME}.bin"
+    COMMENT "Producing ${PROJECT_NAME}.hex / .bin and size report"
 )
 
-# Flash target
 add_custom_target(flash
-    COMMAND openocd -f interface/stlink.cfg -f target/stm32f4x.cfg -c "program ${PROJECT_NAME}.elf verify reset exit"
+    COMMAND openocd -f interface/stlink.cfg -f target/stm32f4x.cfg
+            -c "program $<TARGET_FILE:${PROJECT_NAME}.elf> verify reset exit"
     DEPENDS ${PROJECT_NAME}.elf
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
-    COMMENT "Flashing ${PROJECT_NAME}.elf to target"
+    COMMENT "Flashing ${PROJECT_NAME}.elf via ST-LINK"
 )
 
-# Print build info
-message(STATUS "Project: ${PROJECT_NAME}")
-message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
-message(STATUS "C Compiler: ${CMAKE_C_COMPILER}")
-message(STATUS "CXX Compiler: ${CMAKE_CXX_COMPILER}")
+# Architecture checkers as a build-time target (python required)
+add_custom_target(arch-check
+    COMMAND python ${CMAKE_SOURCE_DIR}/scripts/check_includes.py --strict
+    COMMAND python ${CMAKE_SOURCE_DIR}/scripts/check_harness_defs.py --strict
+    COMMAND python ${CMAKE_SOURCE_DIR}/scripts/gen_architecture.py --check
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Checking layer/harness include rules"
+)
+
+message(STATUS "Build type:              ${CMAKE_BUILD_TYPE}")
+message(STATUS "ENABLE_INTERFACE_TRACE:  ${ENABLE_INTERFACE_TRACE}")
+list(LENGTH APP_SOURCES _n_app)
+message(STATUS "Application sources:     ${_n_app}")

@@ -1,0 +1,19 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "host-tests",
+      "displayName": "Host unit tests (native g++)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../build-tests",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_C_COMPILER": "gcc"
+      }
+    }
+  ],
+  "buildPresets": [ { "name": "host-tests", "configurePreset": "host-tests" } ],
+  "testPresets":  [ { "name": "host-tests", "configurePreset": "host-tests", "output": { "outputOnFailure": true } } ]
+}

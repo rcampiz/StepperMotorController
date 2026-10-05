@@ -8,8 +8,8 @@
  */
 
 #include "ui/screens/graph_screen.hpp"
-#include "L3_services/boundary/icanvas.hpp"
-#include "harness/pins/itelemetry.hpp"
+#include "harness/defs/harness_l3_l4.hpp"
+#include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include <stdio.h>
 #include <string.h>
 
@@ -270,7 +270,7 @@ void GraphScreen::render(Services::ICanvas& lcd)
     }
 
     // Sample current data
-    Protocol::TelemetrySnapshot telem = Scheduler::telemetry().getSnapshot();
+    Protocol::TelemetrySnapshot telem = Services::g_telemetryStore.getSnapshot();
 
     int32_t value = 0;
     switch (m_channel) {

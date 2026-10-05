@@ -1,9 +1,6 @@
 /**
- * @file boundary/imotortaskcontrol.hpp
- * @brief Consumer port — Services side of the Scheduler::IMotorTaskControl harness connection
- *
- * Structurally identical to Scheduler::IMotorTaskControl.
- * The harness adapter bridges the provider to this consumer port.
+ * @file boundary/imotor_task_control.hpp
+ * @brief Motor task-side control: suspend/resume around step-mode changes, debug params (L3-internal interface)
  */
 
 #pragma once

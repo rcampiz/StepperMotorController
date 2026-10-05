@@ -19,7 +19,7 @@
 #define FLASH_IMAGE_SERVICE_HPP
 
 #include "harness/pins/iflash_image_access.hpp"
-#include "L3_services/boundary/iflash.hpp"
+#include "harness/defs/harness_l3_l4.hpp"
 #include <stdint.h>
 #include <stddef.h>
 

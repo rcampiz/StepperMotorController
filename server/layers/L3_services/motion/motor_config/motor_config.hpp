@@ -19,12 +19,12 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "harness/defs/harness_l3_l4.hpp"
 
 namespace Services {
 
 // Flash storage constants - use last 4KB of Sector 7 (128KB sector at 0x08060000)
 // We'll use address 0x0807F000 (last 4KB before end of 512KB flash)
-constexpr uint32_t MOTOR_CONFIG_FLASH_ADDR = 0x0807F000;
 constexpr uint32_t MOTOR_CONFIG_MAGIC = 0x4D4F5452;  // "MOTR"
 constexpr uint16_t MOTOR_CONFIG_VERSION = 2;
 
@@ -122,10 +122,10 @@ static_assert(sizeof(MotorConfig) == 64, "MotorConfig must be 64 bytes");
 class MotorConfigManager {
 public:
     /**
-     * @brief Initialize and load configuration from flash
-     * @return true if valid config loaded, false if defaults applied
+     * @brief Bind the persistent store (H_L3_L4) and load the configuration
+     * @return true if a valid config was loaded, false if defaults were applied
      */
-    bool init();
+    bool init(Drivers::IConfigStore& store);
 
     /**
      * @brief Check if configuration is valid (loaded from flash)
@@ -245,9 +245,8 @@ private:
     // Validate magic and CRC
     bool validateConfig(const MotorConfig& cfg);
 
-    // Internal flash operations
-    bool eraseFlashPage();
-    bool writeFlash(const uint8_t* data, size_t len);
+    // Persistent blob store (L4, via H_L3_L4)
+    Drivers::IConfigStore* m_store = nullptr;
 };
 
 // Global instance

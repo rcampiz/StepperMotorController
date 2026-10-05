@@ -1,9 +1,6 @@
 /**
- * @file boundary/isnapshotwriter.hpp
- * @brief Consumer port — Services side of the Scheduler::ISnapshotWriter harness connection
- *
- * Structurally identical to Scheduler::ISnapshotWriter.
- * The harness adapter bridges the provider to this consumer port.
+ * @file boundary/isnapshot_writer.hpp
+ * @brief Write side of the telemetry store (filled by the motor controller and encoder service) (L3-internal interface)
  */
 
 #pragma once

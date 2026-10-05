@@ -66,7 +66,7 @@ const char *encoderStatusToString(EncoderStatus status) {
   }
 }
 
-bool ControlModeManager::init(Services::ILock& lock) {
+bool ControlModeManager::init(Platform::ILock& lock) {
   m_lock = &lock;
 
   // Start in safe defaults

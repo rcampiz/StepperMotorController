@@ -7,6 +7,7 @@
 
 #include "harness/pins/dispatch_result.hpp"
 #include <stdint.h>
+#include "harness/pins/telemetry_types.hpp"
 
 namespace Services {
 
@@ -17,6 +18,8 @@ public:
     // Timing
     virtual uint32_t getTickUs() = 0;
     virtual uint32_t getTickMs() = 0;
+    /// Copy of the shared telemetry snapshot (serves the L2 status/encoder/driver queries)
+    virtual void getTelemetry(Protocol::TelemetrySnapshot& out) = 0;
     virtual void setTransportDelay(uint32_t ms) = 0;
     virtual uint32_t getTransportDelay() = 0;
 

@@ -7,8 +7,8 @@
  */
 
 #include "ui/screens/dispatcher_screen.hpp"
-#include "L3_services/boundary/icanvas.hpp"
-#include "harness/pins/idispatch_stats.hpp"
+#include "harness/defs/harness_l3_l4.hpp"
+#include "L3_services/comms/comms_service/comms_service.hpp"
 #include "L3_services/dispatch/command_queue/command_queue.hpp"
 #include "L3_services/motion/motion.hpp"
 #include "L3_services/infra/trace/trace.hpp"
@@ -82,8 +82,8 @@ void DispatcherScreen::render(Services::ICanvas& lcd)
     }
 
     // Gather data
-    Scheduler::DispatchStats dstats;
-    Scheduler::dispatchStats().getStats(dstats);
+    Harness::DispatchStats dstats;
+    Services::g_commsService.getStats(dstats);
 
     auto cmdQDepth = static_cast<uint8_t>(Services::g_commandQueue.getQueueDepth());
     Services::MotorEventStats evtStats = Services::motion.stepper.event.getStats();

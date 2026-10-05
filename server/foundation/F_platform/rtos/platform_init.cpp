@@ -6,6 +6,10 @@
  */
 
 #include "F_platform/rtos/platform_init.hpp"
+#include "harness/pins/motor_command.hpp"
+#include "F_platform/hw/microsecond_timer_tim5.hpp"
+#include "F_platform/rtos/freertos_critical_section.hpp"
+#include "F_platform/rtos/freertos_task_notifier.hpp"
 #include "F_platform/rtos/platform_board.hpp"
 #include "F_platform/hw/early_debug.hpp"
 #include "F_platform/rtos/freertos_lock.hpp"
@@ -30,6 +34,8 @@ static Platform::FreeRTOSTaskStats s_taskStats;
 static Platform::FreeRTOSScheduler s_scheduler;
 static Platform::FreeRTOSQueue<Scheduler::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH> s_motorCmdQueue;
 
+static Platform::FreeRTOSCriticalSection s_critical;
+static Platform::FreeRTOSTaskNotifier s_notifier;
 static Platform::Resources s_resources;
 
 // ============================================================================
@@ -84,6 +90,9 @@ bool initPlatformBoard(PlatformResources& out)
     out.taskStats        = &s_taskStats;
     out.scheduler        = &s_scheduler;
     out.motorCmdQueue    = &s_motorCmdQueue;
+    out.usClock          = &Platform::initMicrosecondClockTIM5();
+    out.critical         = &s_critical;
+    out.notifier         = &s_notifier;
 
     return true;
 }

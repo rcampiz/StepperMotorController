@@ -11,7 +11,7 @@ namespace Services {
 
 MotorEventManager g_motorEvent;
 
-void MotorEventManager::init(Services::IQueue<AsyncEvent, 8>& queue) {
+void MotorEventManager::init(Platform::IQueue<AsyncEvent, 8>& queue) {
     m_queue = &queue;
     m_queue->reset();
     m_enableMask = 0;

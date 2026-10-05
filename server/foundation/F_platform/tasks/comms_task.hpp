@@ -1,143 +1,29 @@
 /**
  * @file comms_task.hpp
- * @brief Communications task for command/telemetry
+ * @brief Comms task — thin sheet: wait 10 ms, call Services::ICommsService::tick()
  *
- * Parses commands from Raspberry Pi, dispatches to MotorTask.
- * Publishes periodic telemetry.
- * Priority: High (tskIDLE_PRIORITY + 3)
+ * All comms logic lives in L3 CommsService (H_TASKS_L3).
  */
-
 #ifndef COMMS_TASK_HPP
 #define COMMS_TASK_HPP
 
+#include "F_platform/boundary/ischeduler.hpp"
 #include <stdint.h>
 
-namespace Platform { class IClock; }
-namespace Transport { class ITransport; }
-namespace Scheduler { class IMotorEventReceiver; }
-namespace Scheduler { class IEmergencyStop; class IDispatchStats; }
-namespace Protocol { class ICommandProcessor; }
+namespace Platform { class IClock; class ITaskNotifier; }
+namespace Services { class ICommsService; }
 
 namespace Scheduler {
 
-// Task configuration
 constexpr uint32_t COMMS_TASK_STACK_SIZE = 2048;  // 8192 bytes (GET_STATUS JSON uses 640B local buf + snprintf)
 constexpr uint32_t COMMS_TASK_PRIORITY = 3;
-constexpr uint32_t COMMS_POLL_PERIOD_MS = 10; // Command polling
-constexpr uint32_t TELEMETRY_PERIOD_MS = 100; // Telemetry publish rate
+constexpr uint32_t COMMS_POLL_PERIOD_MS = 10;     // Fallback poll when no RX wake arrives
 
-/**
- * @brief Initialize comms task with injected dependencies
- *
- * Stores references from the composition root. No object construction.
- * Call before vTaskStartScheduler().
- *
- * @param transport  Byte-level I/O (wired by composition root)
- * @param parser     Command parser (wired by composition root)
- * @param clock      System clock (for delays and tick timing)
- * @return true on success
- */
-bool CommsTask_Init(Transport::ITransport& transport,
-                    Protocol::ICommandProcessor& parser,
-                    Platform::IClock& clock,
-                    Scheduler::IMotorEventReceiver& eventReceiver,
-                    Scheduler::IEmergencyStop& emergencyStop);
+bool CommsTask_Init(Services::ICommsService& service, Platform::IClock& clock,
+                    Platform::ITaskNotifier* rxWake);
+void vCommsTask(void* pvParameters);
 
-/**
- * @brief Comms task entry point
- * @param pvParameters Unused
- */
-void vCommsTask(void *pvParameters);
-
-/**
- * @brief Enable/disable periodic telemetry publishing
- * @param enable true to enable
- */
-void CommsTask_EnableTelemetry(bool enable);
-
-/**
- * @brief Check if telemetry is enabled
- * @return true if enabled
- */
-bool CommsTask_IsTelemetryEnabled();
-
-/**
- * @brief Send joystick event upstream (for REMOTE mode)
- * @param direction Direction string (LEFT, RIGHT, UP, DOWN, CENTER, NONE)
- * @param pressed true if pressed, false if released
- */
-void CommsTask_SendJoyEvent(const char* direction, bool pressed);
-
-/**
- * @brief Register joystick callback with UI mode manager
- *
- * Call after both CommsTask_Init and UI mode init to set up
- * joystick event forwarding in REMOTE mode.
- */
-void CommsTask_RegisterJoyCallback();
-
-// -------------------------------------------------------------------------
-// Heartbeat watchdog API
-// -------------------------------------------------------------------------
-
-constexpr uint32_t HEARTBEAT_TIMEOUT_MIN_MS = 100;
-constexpr uint32_t HEARTBEAT_TIMEOUT_MAX_MS = 5000;
-
-/**
- * @brief Notify that a HEARTBEAT command was received
- * @param seq Sequence number from client
- */
-void CommsTask_HeartbeatReceived(uint32_t seq);
-
-/**
- * @brief Configure heartbeat watchdog timeout
- * @param timeout_ms Timeout in ms (0=disabled, clamped to [100,5000])
- * @return Accepted timeout value (may be clamped)
- */
-uint32_t CommsTask_SetHeartbeatTimeout(uint32_t timeout_ms);
-
-/**
- * @brief Query heartbeat watchdog status
- */
-void CommsTask_GetHeartbeatStatus(
-    bool& out_enabled, uint32_t& out_timeout_ms,
-    uint32_t& out_last_seq, uint32_t& out_remaining_ms,
-    bool& out_timed_out);
-
-/**
- * @brief Clear comms timeout latch and disable watchdog
- */
-void CommsTask_ClearCommsTimeout();
-
-/**
- * @brief Get the last event wire sequence number (for EVENT_STATUS)
- * @return Most recently assigned event seq (0 if no events sent)
- */
-uint32_t CommsTask_GetLastEventSeq();
-
-// -------------------------------------------------------------------------
-// Dispatch stats (for UI observability)
-// -------------------------------------------------------------------------
-
-struct CommsDispatchStats {
-    uint32_t totalCommands;
-    uint32_t unknownCommands;
-    uint32_t parseErrors;
-    uint8_t  recentCount;
-    char     recentCmds[8][24];
-};
-
-/**
- * @brief Get command dispatch statistics snapshot
- * @param out Output structure
- */
-void CommsTask_GetDispatchStats(CommsDispatchStats& out);
-
-/**
- * @brief Get IDispatchStats interface for L3 consumption
- * @return Pointer to static IDispatchStats adapter (valid after init)
- */
-Scheduler::IDispatchStats* CommsTask_GetDispatchStatsInterface();
+extern Platform::TaskHandle g_commsTaskHandle;
 
 } // namespace Scheduler
 

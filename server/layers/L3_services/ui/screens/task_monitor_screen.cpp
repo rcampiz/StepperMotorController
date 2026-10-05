@@ -14,9 +14,9 @@
  */
 
 #include "ui/screens/task_monitor_screen.hpp"
-#include "L3_services/boundary/icanvas.hpp"
+#include "harness/defs/harness_l3_l4.hpp"
 #include "harness/pins/itask_stats.hpp"
-#include "harness/pins/itelemetry.hpp"
+#include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include "L3_services/infra/trace/trace.hpp"
 #include <stdio.h>
 #include <string.h>
@@ -233,7 +233,7 @@ void TaskMonitorScreen::renderStats(Services::ICanvas& lcd)
     y += 4;
 
     // System info
-    Protocol::TelemetrySnapshot telem = Scheduler::telemetry().getSnapshot();
+    Protocol::TelemetrySnapshot telem = Services::g_telemetryStore.getSnapshot();
     uint32_t secs = telem.system.uptimeTicks / 1000;
     uint32_t mins = secs / 60;
     secs %= 60;

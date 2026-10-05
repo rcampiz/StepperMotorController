@@ -1,30 +1,20 @@
 /**
  * @file system_service_init.hpp
- * @brief Harness contract for L3 system services init
- *
- * Initializes L3 singletons and cross-cutting services (control mode,
- * motor event) with injected Platform deps.
+ * @brief Services::initSystemServices() — L3 shared state (control mode, events, telemetry, UI mode)
  */
-
 #pragma once
 
-#include "harness/pins/iqueue.hpp"
 #include "harness/pins/async_event.hpp"
+#include "F_platform/boundary/iqueue.hpp"
 
-namespace Platform { class ILock; }
+namespace Platform { class ILock; class IClock; }
 
 namespace Services {
 
-/**
- * @brief Initialize system services (control mode, motor event)
- *
- * Telemetry and UI mode init handled by the composition root (system_init.cpp).
- *
- * @param controlModeLock Lock for control mode service
- * @param eventQueue      Async event queue
- * @return true on success
- */
 bool initSystemServices(Platform::ILock& controlModeLock,
-                        Platform::IQueue<AsyncEvent, 8>& eventQueue);
+                        Platform::IQueue<AsyncEvent, 8>& eventQueue,
+                        Platform::ILock& telemetryLock,
+                        Platform::ILock& uiModeLock,
+                        Platform::IClock& clock);
 
 } // namespace Services

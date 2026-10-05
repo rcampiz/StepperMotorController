@@ -80,6 +80,9 @@ public:
 
     virtual void drawTestPattern() = 0;
 
+    /// Block until the next display V-blank (tearing-effect edge). Default: no sync.
+    virtual void waitForVSync() {}
+
     // --- Inline helpers (delegate to fillRect) ---
 
     void fillScreen(uint16_t color) {

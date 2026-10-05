@@ -1,106 +1,54 @@
 /**
  * @file motor_service_init.cpp
- * @brief Implements Services::initMotorSubsystem() — L3 drives init cascade
+ * @brief Implements Services::initMotorSubsystem() — L3 drives the motor init cascade
  *
- * Layer-clean: only includes L3 + harness.
- * No L4, L5, F_platform/tasks, or F_platform/rtos includes.
- * All Platform deps injected as parameters.
+ * The L4 motor driver and config store arrive through H_L3_L4; MotorController owns the
+ * driver; MotorService owns the Motor task's work and is created through the task init
+ * contract (H_TASKS_L3). Platform primitives are injected.
  */
 
 #include "L3_services/motion/motor_service_init.hpp"
-
-// L4 init through harness
-#include "harness/pins/motor_driver_init.hpp"
-
-// Task init through harness
+#include "harness/defs/harness_l3_l4.hpp"
 #include "harness/pins/motor_task_init.hpp"
-
-// Harness adapt functions (forward declarations to avoid harness_wiring_map.hpp conflicts)
-namespace Drivers { class IMotorDriver; }
-namespace Services { class IMotorDriver; class IMotorTaskControl; class IMotorCommandSink; }
-namespace Scheduler { class IMotorTaskControl; class IMotorCommandSink; }
-namespace Services { class IClock; class ILock; }
-namespace Harness {
-    Services::IMotorDriver& adaptMotorDriver(Drivers::IMotorDriver& raw);
-    Services::IMotorTaskControl& adaptMotorTaskControl(Scheduler::IMotorTaskControl& raw);
-    Services::IMotorCommandSink& adaptMotorCommandSink(Scheduler::IMotorCommandSink& raw);
-    Services::IClock& adaptClock(Platform::IClock& raw);
-    Services::ILock& adaptLock(Platform::ILock& raw);
-}
-
-// L3 internal
 #include "L3_services/motion/motion.hpp"
+#include "L3_services/motion/motor_service/motor_service.hpp"
 #include "L3_services/dispatch/command_queue/command_queue.hpp"
-
-// Harness interfaces
-#include "harness/pins/imotor_command_sink.hpp"
-
-// Tracing (conditional)
-#ifdef ENABLE_INTERFACE_TRACE
-#include "harness/taps/traced_command_sink.hpp"
-#endif
-
-// --- MotorCommandSinkImpl adapter (only uses harness interfaces) ---
-
-class MotorCommandSinkImpl : public Scheduler::IMotorCommandSink {
-public:
-    explicit MotorCommandSinkImpl(
-        Platform::IQueue<Scheduler::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& queue)
-        : m_queue(queue) {}
-
-    bool sendCommand(const Scheduler::MotorCommand& cmd, uint32_t timeoutMs = 0) override {
-        return m_queue.send(cmd, timeoutMs);
-    }
-
-private:
-    Platform::IQueue<Scheduler::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& m_queue;
-};
-
-// --- Global pin (L3 init owns wiring) ---
-Scheduler::IMotorCommandSink* Scheduler::g_motorCommandSink = nullptr;
+#include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 
 namespace Services {
 
 bool initMotorSubsystem(
-    Platform::IQueue<Scheduler::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& commandQueue,
+    Platform::IQueue<MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& commandQueue,
     Platform::IClock& clock,
     Platform::IScheduler& scheduler,
     Platform::ILock& commandQueueLock,
+    Platform::ITaskStats* taskStats,
     MotorSubsystemResult& result)
 {
-    // L4 driver (through harness → L4 → L5)
-    Drivers::IMotorDriver* rawDriver = nullptr;
-    if (!Drivers::initMotorDriver(rawDriver)) {
+    // L4 devices through H_L3_L4 (the harness runs the L4 -> L5 init cascade)
+    const Harness::L3L4Harness& h = Harness::connectL3L4(clock);
+    if (h.motor == nullptr || h.configStore == nullptr) {
         return false;
     }
-    // Adapt provider type to consumer port
-    Services::IMotorDriver& driver = Harness::adaptMotorDriver(*rawDriver);
 
-    // L3 config
-    motion.configStore.init();
+    // L3 owns the driver from here on
+    motion.stepper.controller.bind(*h.motor, clock);
 
-    // Task (through harness → F_platform)
-    Harness::MotorTaskResult taskResult;
-    if (!Harness::initMotorTask(driver, commandQueue,
-                                 clock, motion.stepper.controller,
-                                 scheduler, taskResult)) {
+    // L3 config (persistent blob via the L4 config store)
+    motion.configStore.init(*h.configStore);
+
+    // Motor service (task body, command sink, task control, immediate stop)
+    g_motorService.init(motion.stepper.controller, motion.stepper.controller,
+                        commandQueue, clock, scheduler, taskStats, g_telemetryStore);
+
+    // Motor task (through harness -> F_platform)
+    if (!Harness::initMotorTask(g_motorService, commandQueue, clock, scheduler)) {
         return false;
     }
-    result.motorCtrl = &Harness::adaptMotorTaskControl(*taskResult.motorCtrl);
+    result.motorCtrl = &g_motorService;
 
-    // Adapter (harness interfaces only)
-    static MotorCommandSinkImpl motorSink(commandQueue);
-#ifdef ENABLE_INTERFACE_TRACE
-    static Harness::TracedMotorCommandSink tracedSink(motorSink);
-    Scheduler::g_motorCommandSink = &tracedSink;
-#else
-    Scheduler::g_motorCommandSink = &motorSink;
-#endif
-
-    // L3 command queue (adapt Platform:: → Services:: consumer ports)
-    g_commandQueue.init(Harness::adaptLock(commandQueueLock),
-                        Harness::adaptClock(clock),
-                        Harness::adaptMotorCommandSink(*Scheduler::g_motorCommandSink));
+    // L3 command queue (ARM/START): bounded sends, immediate stop for ESTOP
+    g_commandQueue.init(commandQueueLock, clock, g_motorService, &g_motorService);
 
     return true;
 }

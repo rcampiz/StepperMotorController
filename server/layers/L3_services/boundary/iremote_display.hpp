@@ -1,9 +1,6 @@
 /**
- * @file boundary/iremotedisplay.hpp
- * @brief Consumer port — Services side of the Scheduler::IRemoteDisplay harness connection
- *
- * Structurally identical to Scheduler::IRemoteDisplay.
- * The harness adapter bridges the provider to this consumer port.
+ * @file boundary/iremote_display.hpp
+ * @brief Host-driven display commands (text/clear) served by the display service (L3-internal interface)
  */
 
 #pragma once

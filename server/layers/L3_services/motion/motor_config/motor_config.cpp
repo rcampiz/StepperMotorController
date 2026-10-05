@@ -7,7 +7,6 @@
  */
 
 #include "L3_services/motion/motor_config/motor_config.hpp"
-#include "harness/pins/iinternal_flash.hpp"
 #include <string.h>
 
 namespace Services {
@@ -15,7 +14,8 @@ namespace Services {
 // Global instance
 MotorConfigManager g_motorConfig;
 
-bool MotorConfigManager::init() {
+bool MotorConfigManager::init(Drivers::IConfigStore& store) {
+    m_store = &store;
     m_valid = false;
 
     // Try to load from flash
@@ -154,11 +154,17 @@ void MotorConfigManager::setFollowThresholds(int16_t moveErr, uint16_t moveTimeM
 }
 
 bool MotorConfigManager::loadFromFlash() {
-    // Read config from flash
-    const auto *flashConfig = reinterpret_cast<const MotorConfig*>(MOTOR_CONFIG_FLASH_ADDR);
+    // Read the stored blob through the L4 config store
+    if (m_store == nullptr) {
+        return false;
+    }
+    MotorConfig flashConfig;
+    if (m_store->read(reinterpret_cast<uint8_t*>(&flashConfig), sizeof(flashConfig)) != sizeof(flashConfig)) {
+        return false;
+    }
 
-    if (validateConfig(*flashConfig)) {
-        m_config = *flashConfig;
+    if (validateConfig(flashConfig)) {
+        m_config = flashConfig;
         // Clamp stepMode to valid range (0-7)
         if (m_config.stepMode > 7) {
             m_config.stepMode = 7;
@@ -194,17 +200,18 @@ bool MotorConfigManager::saveToFlash() {
     );
 
     // Erase and write
-    if (!eraseFlashPage()) {
+    if (m_store == nullptr || !m_store->erase()) {
         return false;
     }
 
-    if (!writeFlash(reinterpret_cast<const uint8_t*>(&m_config), sizeof(m_config))) {
+    if (!m_store->write(reinterpret_cast<const uint8_t*>(&m_config), sizeof(m_config))) {
         return false;
     }
 
-    // Verify
-    const auto *flashConfig = reinterpret_cast<const MotorConfig*>(MOTOR_CONFIG_FLASH_ADDR);
-    m_valid = (memcmp(&m_config, flashConfig, sizeof(m_config)) == 0);
+    // Verify by reading back
+    MotorConfig verify;
+    m_valid = (m_store->read(reinterpret_cast<uint8_t*>(&verify), sizeof(verify)) == sizeof(verify))
+           && (memcmp(&m_config, &verify, sizeof(m_config)) == 0);
 
     return m_valid;
 }
@@ -252,13 +259,5 @@ uint32_t MotorConfigManager::calculateCRC(const uint8_t* data, size_t len) {
     return crc ^ 0xFFFFFFFF;
 }
 
-bool MotorConfigManager::eraseFlashPage() {
-    // Sector 7 contains our config at MOTOR_CONFIG_FLASH_ADDR (0x0807F000)
-    return Harness::internalFlashEraseSector(7);
-}
-
-bool MotorConfigManager::writeFlash(const uint8_t* data, size_t len) {
-    return Harness::internalFlashWriteData(MOTOR_CONFIG_FLASH_ADDR, data, len);
-}
 
 } // namespace Services

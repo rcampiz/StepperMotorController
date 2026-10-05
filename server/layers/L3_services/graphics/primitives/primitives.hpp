@@ -12,7 +12,7 @@
 #ifndef GRAPHICS_PRIMITIVES_HPP
 #define GRAPHICS_PRIMITIVES_HPP
 
-#include "L3_services/boundary/icanvas.hpp"
+#include "harness/defs/harness_l3_l4.hpp"
 #include <stdint.h>
 
 namespace Graphics {

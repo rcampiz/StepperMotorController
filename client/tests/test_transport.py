@@ -4,9 +4,9 @@ import pytest
 from unittest.mock import Mock, patch
 
 import sys
+from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
-from pathlib import Path
 from transport.interface import ITransport, TransportInfo
 from transport.vcp import VcpTransport
 

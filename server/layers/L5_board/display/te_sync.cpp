@@ -1,16 +1,16 @@
 /**
  * @file te_sync.cpp
- * @brief Tearing effect synchronization — L5 board implementation
+ * @brief LCD tearing-effect synchronisation — EXTI0 on PA0 (X-NUCLEO-GFX01M2 TE pin)
  *
- * Manages LCD TE pin (PA0 → EXTI0) and DWT cycle counter for
- * frame-sync timeout. The EXTI0 ISR lives here since the TE flag
- * is local state.
+ * The ISR runs at NVIC priority 4, above configMAX_SYSCALL_INTERRUPT_PRIORITY, so it
+ * must not call any FreeRTOS API: it only sets a flag. Waiting is a bounded busy-wait
+ * on the DWT cycle counter in the caller's task context.
  */
 
-#include "harness/pins/ite_sync.hpp"
+#include "L5_board/display/te_sync.hpp"
 #include "X_vendor/CMSIS/stm32f401xe.h"
 
-// DWT cycle counter definitions (minimal CMSIS may not include core_cm4.h)
+// DWT cycle counter (not in the CMSIS device header for this part)
 #ifndef DWT_CTRL_CYCCNTENA_Msk
 #define DWT_BASE            (0xE0001000UL)
 #define DWT                 ((DWT_Type*)DWT_BASE)
@@ -41,7 +41,6 @@ typedef struct {
 
 extern uint32_t SystemCoreClock;
 
-// TE flag — set by EXTI0 ISR, cleared by waitForTearingEffect()
 static volatile bool s_teFlag = false;
 
 extern "C" void EXTI0_IRQHandler(void)
@@ -52,28 +51,46 @@ extern "C" void EXTI0_IRQHandler(void)
     }
 }
 
-void Harness::initTearingEffectSync()
-{
-    // Enable DWT cycle counter (idempotent if already enabled)
-    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
-    DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+namespace {
 
-    // Configure EXTI0 on PA0 (TE pin) — rising edge
-    RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
-    SYSCFG->EXTICR[0] = (SYSCFG->EXTICR[0] & ~0xFU) | 0x0U;  // PA0 → EXTI0
-    EXTI->RTSR |= (1U << 0);    // Rising edge trigger
-    EXTI->FTSR &= ~(1U << 0);   // No falling edge
-    EXTI->IMR  |= (1U << 0);    // Unmask line 0
-    NVIC_SetPriority(EXTI0_IRQn, 4);  // Above FreeRTOS syscall threshold
-    NVIC_EnableIRQ(EXTI0_IRQn);
-}
+class TearingSyncEXTI0 : public Board::ITearingSync {
+public:
+    void init() {
+        if (m_initialized) return;
+        m_initialized = true;
 
-void Harness::waitForTearingEffect()
-{
-    s_teFlag = false;
-    uint32_t start = DWT->CYCCNT;
-    uint32_t timeout = (SystemCoreClock / 1000) * 18;  // 18ms > one frame @ 60Hz
-    while (!s_teFlag) {
-        if ((DWT->CYCCNT - start) >= timeout) break;
+        CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;
+        DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;
+
+        RCC->APB2ENR |= RCC_APB2ENR_SYSCFGEN;
+        SYSCFG->EXTICR[0] = (SYSCFG->EXTICR[0] & ~0xFU) | 0x0U;  // PA0 -> EXTI0
+        EXTI->RTSR |= (1U << 0);    // Rising edge trigger
+        EXTI->FTSR &= ~(1U << 0);   // No falling edge
+        EXTI->IMR  |= (1U << 0);    // Unmask line 0
+
+        NVIC_SetPriority(EXTI0_IRQn, 4);  // Above FreeRTOS syscall threshold: flag only
+        NVIC_EnableIRQ(EXTI0_IRQn);
     }
+
+    void waitForVSync() override {
+        s_teFlag = false;
+        uint32_t start = DWT->CYCCNT;
+        uint32_t timeout = (SystemCoreClock / 1000) * 18;  // 18 ms > one frame @ 60 Hz
+        while (!s_teFlag) {
+            if ((DWT->CYCCNT - start) >= timeout) break;
+        }
+    }
+
+private:
+    bool m_initialized = false;
+};
+
+TearingSyncEXTI0 s_teSync;
+
+} // namespace
+
+Board::ITearingSync& Board::initTearingSync()
+{
+    s_teSync.init();
+    return s_teSync;
 }

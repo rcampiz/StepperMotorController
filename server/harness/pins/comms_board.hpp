@@ -1,29 +1,26 @@
 /**
  * @file comms_board.hpp
- * @brief Harness contract for comms board initialization
+ * @brief Init contract: L5 provides the host byte channel (UART or RTT)
  *
- * Declares init struct and function for the comms (UART) subsystem.
- * L5 provides the implementation; L1 transport calls through this harness.
+ * Both channels implement Transport::IByteChannel — the one documented L5 -> L1
+ * exception (rule 3). Formalised as harness_l5_l1_bytes.hpp in migration step 5.
  */
-
 #pragma once
+#include <stdint.h>
 
 namespace Transport { class IByteChannel; }
 
 namespace Harness {
 
+enum class CommsChannel : uint8_t {
+    VCP_UART,   ///< USART2 via ST-LINK Virtual COM Port
+    RTT         ///< SEGGER RTT channel 0
+};
+
 struct CommsBoardHw {
     Transport::IByteChannel* channel = nullptr;
 };
 
-/**
- * @brief Initialize comms board UART hardware
- *
- * Constructs UART hardware for VCP. Implemented by L5 board layer.
- *
- * @param hw Output struct populated with UART hardware pointer
- * @return true on success
- */
-bool initCommsBoard(CommsBoardHw& hw);
+bool initCommsBoard(CommsBoardHw& hw, CommsChannel type);
 
 } // namespace Harness

@@ -4,7 +4,7 @@
  */
 
 #include "ui/menu_screen/menu_screen.hpp"
-#include "L3_services/boundary/icanvas.hpp"
+#include "harness/defs/harness_l3_l4.hpp"
 #include <string.h>
 
 namespace UI {

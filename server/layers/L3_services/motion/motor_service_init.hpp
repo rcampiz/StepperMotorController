@@ -1,44 +1,28 @@
 /**
  * @file motor_service_init.hpp
- * @brief Harness contract for L3 motor subsystem init
- *
- * L3 orchestrates: L4 driver (through harness) → L3 config →
- * task (through harness) → command queue → adapter wiring.
- * All Platform deps injected — no Platform::resources() calls.
+ * @brief Services::initMotorSubsystem() — L3 entry point for the motor cascade
  */
-
 #pragma once
 
-#include "harness/pins/motor_task_init.hpp"
+#include "harness/pins/motor_command.hpp"
+#include "F_platform/boundary/iqueue.hpp"
 
-namespace Platform { class IClock; class IScheduler; class ILock; }
+namespace Platform { class IClock; class IScheduler; class ILock; class ITaskStats; }
 
 namespace Services {
 
 class IMotorTaskControl;
 
-/**
- * @brief Result of motor subsystem initialization
- */
 struct MotorSubsystemResult {
-    Services::IMotorTaskControl* motorCtrl = nullptr;  ///< Motor task control interface
+    Services::IMotorTaskControl* motorCtrl = nullptr;  ///< Motor task control interface (MotorService)
 };
 
-/**
- * @brief Initialize motor subsystem — L3 drives the cascade
- *
- * @param commandQueue Motor command queue (from Platform)
- * @param clock        System clock (injected from Platform)
- * @param scheduler    Scheduler for RTOS task creation (injected from Platform)
- * @param commandQueueLock Lock for command queue service (injected from Platform)
- * @param result       Output: motor task interfaces
- * @return true on success
- */
 bool initMotorSubsystem(
-    Platform::IQueue<Scheduler::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& commandQueue,
+    Platform::IQueue<MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>& commandQueue,
     Platform::IClock& clock,
     Platform::IScheduler& scheduler,
     Platform::ILock& commandQueueLock,
+    Platform::ITaskStats* taskStats,
     MotorSubsystemResult& result);
 
 } // namespace Services

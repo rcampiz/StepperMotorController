@@ -519,6 +519,6 @@ print(ser.readline().decode())
 
 ## References
 
-- [docs/COMMUNICATION_ARCHITECTURE.md](COMMUNICATION_ARCHITECTURE.md) - Transport layer design
-- [docs/TASK_ARCHITECTURE.md](TASK_ARCHITECTURE.md) - FreeRTOS task structure
+- [docs/ARCHITECTURE.md](ARCHITECTURE.md) - Generated layer/harness architecture (transport, tasks, signals)
+- [docs/archive/TASK_ARCHITECTURE.md](archive/TASK_ARCHITECTURE.md) - Historical (Core/Inc era) task notes
 - [powerSTEP01 Datasheet](https://www.st.com/resource/en/datasheet/powerstep01.pdf) - Motor driver commands

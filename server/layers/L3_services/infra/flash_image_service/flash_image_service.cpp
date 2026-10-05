@@ -4,7 +4,7 @@
  */
 
 #include "L3_services/infra/flash_image_service/flash_image_service.hpp"
-#include "L3_services/boundary/iflash.hpp"
+#include "harness/defs/harness_l3_l4.hpp"
 #include "harness/trace/interface_trace.hpp"
 
 namespace Services {

@@ -1,39 +1,30 @@
 /**
  * @file system_service_init.cpp
- * @brief Implements Services::initSystemServices() — L3 system service init
- *
- * Initializes control mode and motor event service.
- * Telemetry and UI mode init handled by the composition root (system_init.cpp).
+ * @brief Implements Services::initSystemServices() — control mode, events, telemetry store, UI mode
  */
 
 #include "L3_services/motion/system_service_init.hpp"
 #include "L3_services/motion/motion.hpp"
 #include "L3_services/motion/control_mode/control_mode.hpp"
-
-// Adapt Platform:: → Services:: at wiring boundary
-#include "harness/adapters/queue_adapter.hpp"
-namespace Services { class ILock; }
-namespace Harness {
-    Services::ILock& adaptLock(Platform::ILock& raw);
-}
+#include "L3_services/infra/telemetry_store/telemetry_store.hpp"
+#include "L3_services/ui/ui_mode/ui_mode.hpp"
 
 namespace Services {
 
 bool initSystemServices(Platform::ILock& controlModeLock,
-                        Platform::IQueue<AsyncEvent, 8>& eventQueue)
+                        Platform::IQueue<AsyncEvent, 8>& eventQueue,
+                        Platform::ILock& telemetryLock,
+                        Platform::ILock& uiModeLock,
+                        Platform::IClock& clock)
 {
-    // Adapt Platform:: → Services:: consumer ports
-    static Harness::QueueAdapter<AsyncEvent, 8> adaptedQueue(eventQueue);
-
-    // Control mode init
-    if (!motion.control.mode.init(Harness::adaptLock(controlModeLock))) {
+    if (!motion.control.mode.init(controlModeLock)) {
         return false;
     }
     motion.control.mode.setMode(ControlMode::OPEN_LOOP);
+    motion.stepper.event.init(eventQueue);
 
-    // Motor event service
-    motion.stepper.event.init(adaptedQueue);
-
+    g_telemetryStore.init(telemetryLock, clock);
+    UI::g_uiMode.init(uiModeLock);
     return true;
 }
 

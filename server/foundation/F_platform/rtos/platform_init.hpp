@@ -15,7 +15,10 @@
 #include "harness/pins/iqueue.hpp"
 #include "harness/pins/itask_stats.hpp"
 #include "harness/pins/ischeduler.hpp"
-#include "F_platform/types/async_event_types.hpp"
+#include "harness/pins/async_event.hpp"
+#include "F_platform/boundary/imicrosecond_clock.hpp"
+#include "F_platform/boundary/icritical_section.hpp"
+#include "F_platform/boundary/itask_notifier.hpp"
 
 namespace Platform {
 
@@ -30,6 +33,9 @@ struct Resources {
     IQueue<AsyncEvent, 8>* eventQueue;
     ITaskStats* taskStats;
     IScheduler* scheduler;
+    IMicrosecondClock* usClock;
+    ICriticalSection* critical;
+    ITaskNotifier* notifier;
 };
 
 /// Create FreeRTOS primitives. Halts on failure.

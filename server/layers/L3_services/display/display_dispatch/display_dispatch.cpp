@@ -4,23 +4,23 @@
  */
 
 #include "display_dispatch.hpp"
-#include "harness/pins/iui_mode.hpp"
+#include "L3_services/ui/ui_mode/ui_mode.hpp"
 
 namespace Services {
 
 bool DisplayDispatch::displayIsRemoteMode() {
-    return Scheduler::uiMode().getMode() == UI::UIMode::REMOTE;
+    return UI::g_uiMode.getMode() == UI::UIMode::REMOTE;
 }
 
 uint8_t DisplayDispatch::displayGetMode() {
-    return static_cast<uint8_t>(Scheduler::uiMode().getMode());
+    return static_cast<uint8_t>(UI::g_uiMode.getMode());
 }
 
 Harness::ServiceStatus DisplayDispatch::displaySetMode(uint8_t mode) {
     if (mode > static_cast<uint8_t>(UI::UIMode::REMOTE)) {
         return Harness::ServiceStatus::InvalidParam;
     }
-    Scheduler::uiMode().setMode(static_cast<UI::UIMode>(mode));
+    UI::g_uiMode.setMode(static_cast<UI::UIMode>(mode));
     return Harness::ServiceStatus::Ok;
 }
 

@@ -4,7 +4,7 @@
  */
 
 #include "ui/screens/config_screen.hpp"
-#include "L3_services/boundary/icanvas.hpp"
+#include "harness/defs/harness_l3_l4.hpp"
 #include "L3_services/motion/motion.hpp"
 #include "L3_services/config/config_service/config_service.hpp"
 #include <stdio.h>

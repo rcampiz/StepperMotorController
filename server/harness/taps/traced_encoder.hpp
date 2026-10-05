@@ -1,54 +1,57 @@
 /**
  * @file traced_encoder.hpp
- * @brief Traced wrapper for IEncoder (L3->L4 boundary)
+ * @brief Traced wrapper for Drivers::IEncoderHardware (L3->L4 boundary)
  *
- * Logs encoder queries via ITrace.
- * Only compiled when ENABLE_INTERFACE_TRACE is defined.
+ * Logs the infrequent control calls (reset, clearIndexFlag, restartSampling) and index
+ * observations. Per-sample ring reads are not traced (called every 10 ms in a loop).
+ * Pure observer. Only compiled when ENABLE_INTERFACE_TRACE is defined.
  */
 
 #pragma once
 
-#include "harness/pins/iencoder.hpp"
+#include "L4_drivers/boundary/iencoder_hardware.hpp"
 #include "harness/trace/interface_trace.hpp"
 
 #ifdef ENABLE_INTERFACE_TRACE
 
+#include <stdio.h>
+
 namespace Harness {
 
-class TracedEncoder : public Scheduler::IEncoder {
+class TracedEncoder : public Drivers::IEncoderHardware {
 public:
-    explicit TracedEncoder(Scheduler::IEncoder& real) : m_real(real) {}
+    explicit TracedEncoder(Drivers::IEncoderHardware& real) : m_real(real) {}
 
-    Scheduler::EncoderSnapshot getState() override {
-        Scheduler::EncoderSnapshot snap = m_real.getState();
-        Harness::ITrace::logResult(Harness::ITrace::L3_L4_ENCODER, "[L3<L4]", "enc.getState",
-                          static_cast<uint32_t>(snap.velocity));
-        return snap;
+    bool isReady() const override { return m_real.isReady(); }
+    int32_t getCount() const override { return m_real.getCount(); }
+    void reset() override {
+        Harness::ITrace::log(Harness::ITrace::L3_L4_ENCODER, "[L3>L4]", "enc.reset");
+        m_real.reset();
     }
 
-    int32_t getCount() override {
-        int32_t c = m_real.getCount();
-        Harness::ITrace::logResult(Harness::ITrace::L3_L4_ENCODER, "[L3<L4]", "enc.getCount",
-                          static_cast<uint32_t>(c));
-        return c;
-    }
-
-    void resetCount() override {
-        Harness::ITrace::log(Harness::ITrace::L3_L4_ENCODER, "[L3>L4]", "enc.resetCount");
-        m_real.resetCount();
-    }
-
+    bool isIndexSeen() const override { return m_real.isIndexSeen(); }
     void clearIndexFlag() override {
         Harness::ITrace::log(Harness::ITrace::L3_L4_ENCODER, "[L3>L4]", "enc.clearIndex");
         m_real.clearIndexFlag();
     }
+    uint32_t getIndexTick() const override { return m_real.getIndexTick(); }
+    int32_t getRevolutions() const override { return m_real.getRevolutions(); }
+    uint32_t getIndexPeriodUs() const override { return m_real.getIndexPeriodUs(); }
+    void indexISR(uint32_t tickMs, uint32_t tickUs) override { m_real.indexISR(tickMs, tickUs); }
 
-    bool isAvailable() override {
-        return m_real.isAvailable();  // polled frequently, skip trace
+    const uint16_t* sampleBuffer() const override { return m_real.sampleBuffer(); }
+    uint32_t sampleBufferSize() const override { return m_real.sampleBufferSize(); }
+    uint32_t sampleWriteIndex() const override { return m_real.sampleWriteIndex(); }
+    uint16_t sampleRateHz() const override { return m_real.sampleRateHz(); }
+    void restartSampling(uint16_t hz) override {
+        char detail[16];
+        snprintf(detail, sizeof(detail), "%uHz", (unsigned)hz);
+        Harness::ITrace::log(Harness::ITrace::L3_L4_ENCODER, "[L3>L4]", "enc.restart", detail);
+        m_real.restartSampling(hz);
     }
 
 private:
-    Scheduler::IEncoder& m_real;
+    Drivers::IEncoderHardware& m_real;
 };
 
 } // namespace Harness

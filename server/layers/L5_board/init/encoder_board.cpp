@@ -3,7 +3,7 @@
  * @brief L5 board init for encoder subsystem — implements Harness::initEncoderBoard
  */
 
-#include "harness/pins/encoder_board.hpp"
+#include "harness/defs/harness_l4_l5.hpp"
 #include "L5_board/gpio.hpp"
 #include "L5_board/board_pins.hpp"
 #include "L5_board/timer/timer_counter_hw.hpp"
@@ -50,6 +50,7 @@ bool Harness::initEncoderBoard(Harness::EncoderPins& pins)
     // Construct DMA sampler (reads TIM4->CNT via TIM3 + DMA1_Stream2)
     static Board::EncoderSampler sampler(&TIM4->CNT);
     pins.sampler = &sampler;
+    pins.indexExtiLine = Pins::Encoder::EZ_PIN;
 
     return true;
 }

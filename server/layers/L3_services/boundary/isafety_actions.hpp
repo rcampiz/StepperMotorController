@@ -1,9 +1,6 @@
 /**
- * @file boundary/isafetyactions.hpp
- * @brief Consumer port — Services side of the Scheduler::ISafetyActions harness connection
- *
- * Structurally identical to Scheduler::ISafetyActions.
- * The harness adapter bridges the provider to this consumer port.
+ * @file boundary/isafety_actions.hpp
+ * @brief Safety actions invoked by the comms path: emergency stop, motor disable (L3-internal interface)
  */
 
 #pragma once

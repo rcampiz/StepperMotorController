@@ -303,153 +303,108 @@ it is not truly enforced.
 
 ---
 
-## 14) Namespace Boundary Enforcement (Build-Enforced)
+## 14) Layer Rules and the Harness Model (Build-Enforced)
 
-Every cross-namespace dependency goes through `Harness::` interfaces.
-No direct includes between namespaces. Always through `server/harness/pins/`.
+Four rules, checked on every build by `scripts/check_includes.py --strict` and
+`scripts/check_harness_defs.py --strict` (the `arch-check` CMake target).
+Where this section and earlier sections disagree, this section wins.
 
-### Adjacency Graph
+### Rule 1: Tasks call services
 
-```
-System::    ↔ Harness ↔ Services::
-Services::  ↔ Harness ↔ Scheduler::
+The task sheet (`F_platform/tasks`, `Scheduler::`) owns priorities, periods, stack sizes
+and task handles, nothing else. Each task loop *waits* (queue, notification, sleepUntil)
+and then calls **one** L3 entry point (`IMotorService`, `ICommsService`, `IEncoderService`,
+`IDisplayService`). Tasks never include L1, L2, L4 or L5. The task sheet reaches L3 only
+through `H_TASKS_L3`.
 
-Transport:: ↔ Harness ↔ Protocol::
-Protocol::  ↔ Harness ↔ Services::
-Services::  ↔ Harness ↔ Drivers::
-Drivers::   ↔ Harness ↔ Board::
-```
-
-### Directory → Namespace Mapping
-
-| Directory                       | Namespace    |
-|---------------------------------|-------------|
-| `server/layers/L1_transport/`   | Transport:: |
-| `server/layers/L2_protocol/`    | Protocol::  |
-| `server/layers/L3_services/`    | Services::  |
-| `server/layers/L4_drivers/`     | Drivers::   |
-| `server/layers/L5_board/`       | Board::     |
-| `server/foundation/F_platform/tasks/` | Scheduler:: |
-| `server/foundation/F_platform/` | Platform::  |
-| `server/harness/`               | Harness::   |
-| `server/system_init.cpp`        | System::    |
-
-### Include Rules
-
-Each namespace may only include:
-
-| Namespace   | Allowed includes                                      |
-|-------------|-------------------------------------------------------|
-| Transport:: | `L1_transport/`, `harness/`                           |
-| Protocol::  | `L2_protocol/`, `harness/`                            |
-| Services::  | `L3_services/`, `harness/`                            |
-| Drivers::   | `L4_drivers/`, `harness/`                             |
-| Board::     | `L5_board/`, `harness/`, `X_vendor/`, `X_middlewares/`|
-| Scheduler:: | `F_platform/`, `harness/`                             |
-| Platform::  | `F_platform/`, `harness/`, `X_vendor/`, `X_middlewares/` |
-| Harness::   | Everything (it IS the bridge)                         |
-| System::    | `harness/`, `L3_services/`                            |
-
-### CMSIS Rule
-
-Only `Board::` (`L5_board/`) may include `X_vendor/CMSIS/stm32*.h` or `core_cm*.h`.
-Platform:: (`F_platform/`) may include CMSIS for low-level runtime support (interrupt guard, runtime stats).
-All other namespaces: CMSIS includes = violation.
-
-### Flow Direction
-
-Dependencies always flow in layer order — never skipping layers:
+### Rule 2: Adjacent layers only
 
 ```
-L1 → L2 → L3 → L4 → L5   (toward hardware)
-L5 → L4 → L3 → L2 → L1   (toward transport)
+L1 Transport <-> L2 Protocol <-> L3 Services <-> L4 Drivers <-> L5 Board
 ```
 
-Init cascades and business logic are always **triggered through Services:: (L3)**.
-L3 is the entry point. It cascades down to L4 → L5 for hardware, and down to L2 → L1 for comms.
+Each pair sees the other **only** through that boundary's harness header. No skipping.
+A layer's own `boundary/` directory holds the abstract interfaces it *provides*; the
+consumer gets them via the harness header, never by including the provider directly.
 
-System:: (composition root) calls L3. L3 drives everything else.
+### Rule 3: The one exception
 
-### SCPI Command Flow
+Host command bytes go L5 -> L1 through `Transport::IByteChannel` (owned by L1, implemented by
+`Board::UartHardware` and `Board::RttChannel`). It is declared in
+`harness/defs/harness_l5_l1_bytes.hpp`, flagged `exception` in the manifest, and is the only
+non-adjacent edge the checker accepts.
 
-SCPI commands flow through the stack in strict layer order:
+### Rule 4: Platform is a power net
 
-```
-Client → Transport (L1) → Protocol (L2) → Services (L3) → Drivers (L4) → Board (L5)
-```
+`F_platform/boundary` primitives (`IClock`, `IMicrosecondClock`, `ILock`, `IQueue`,
+`IScheduler`, `ITaskNotifier`, `ICriticalSection`, task stats) may be used by **any** sheet
+without a harness, like VCC on a schematic. Consequence: L3 contains **no RTOS loops** and
+builds natively for host tests (`tests/`).
 
-1. **Transport (L1)** receives raw bytes from the client (UART, RTT, etc.)
-2. **Protocol (L2)** frames, parses, and dispatches the command via a command dispatcher
-3. **Services (L3)** receives the dispatched service request and executes business logic
-4. **Drivers (L4)** are called by services to interact with hardware through abstractions
-5. **Board (L5)** performs the actual register/peripheral access
+### Directory -> Namespace
 
-The dispatcher lives in L2 (Protocol). It maps command namespaces to service handlers.
-Services decide what to do. Drivers decide how to do it. Board touches hardware.
+| Directory                              | Namespace    | Role |
+|----------------------------------------|--------------|------|
+| `server/layers/L1_transport/`          | Transport::  | byte stream to/from host |
+| `server/layers/L2_protocol/`           | Protocol::   | SCPI parse, all host-facing formatting |
+| `server/layers/L3_services/`           | Services::   | business logic + safety, host-testable |
+| `server/layers/L4_drivers/`            | Drivers::    | device drivers over Board pin bundles |
+| `server/layers/L5_board/`              | Board::      | registers, peripherals, ISRs |
+| `server/foundation/F_platform/tasks/`  | Scheduler::  | task loops (rule 1) |
+| `server/foundation/F_platform/`        | Platform::   | power net (rule 4) |
+| `server/harness/`                      | Harness::    | harness defs, connect(), pins, taps, trace |
+| `server/system_init.cpp`               | System::     | composition root |
 
-No layer may skip another. Protocol never touches drivers. Transport never touches services.
+### One header per boundary
 
-### Harness Role
+| Harness      | Header                                   | Connect function |
+|--------------|------------------------------------------|------------------|
+| H_L1_L2      | `harness/defs/harness_l1_l2.hpp`         | `connectL1L2()` |
+| H_L2_L3      | `harness/defs/harness_l2_l3.hpp`         | `connectL2L3()` |
+| H_L3_L4      | `harness/defs/harness_l3_l4.hpp`         | `connectL3L4()` |
+| H_L4_L5      | `harness/defs/harness_l4_l5.hpp`         | `connectL4L5()` |
+| H_L5_L1      | `harness/defs/harness_l5_l1_bytes.hpp`   | `connectL5L1Bytes()` (rule 3) |
+| H_TASKS_L3   | `harness/defs/harness_tasks_l3.hpp`      | task handles only |
 
-Harness:: is a wiring harness — it connects interfaces, it does not define them.
+Each header is a struct of references plus a `constexpr SignalDesc[]` table that states, per
+signal: provider side, flow direction, timing (sync / async-queue / async-flag), calling
+context (task / ISR / pre-scheduler) and ownership. `scripts/gen_architecture.py` turns these
+tables into `docs/ARCHITECTURE.md` and `docs/architecture_manifest.json`; the docs are
+generated, never hand-edited.
 
-The harness has three jobs:
-1. **Connect** — wire provider interfaces to consumer interfaces across namespace boundaries
-2. **Adapt** — reconcile mismatches when provider and consumer interfaces differ
-3. **Tap** — tee off data flow for tracing and system snapshots
+All `connect*()` bodies live in `harness/defs/harness_connect.cpp`. That file is the
+**only** place a tap (`harness/taps/`) is applied, via `Harness::applyTap<>()`. Taps exist only
+when `ENABLE_INTERFACE_TRACE` is defined (firmware-debug preset); release builds compile the
+raw interfaces straight through.
 
-The harness does NOT contain business logic, state, or decisions.
-It does NOT own interface definitions — those belong to the namespaces that provide them.
+### What the harness is not
 
-### Interface Ownership
+- It defines no interfaces: those belong to the providing layer's `boundary/`.
+- It holds no adapters: if consumer and provider disagree, fix the interface, do not bridge it.
+- It holds no state beyond the one static harness struct per boundary.
+- `harness/pins/` holds only shared PODs (commands, snapshots, pin bundles) and init contracts.
 
-**Interfaces belong to the namespace that provides them — not to the harness.**
+### Include rules (as enforced)
 
-In an Altium hierarchical schematic:
-- Each sheet defines its own ports (what it exposes, what it expects)
-- Nets connect ports between sheets — the net has no definition, it's just a wire
-- Each sheet owns its port definitions
+| Sheet       | May include |
+|-------------|-------------|
+| L1          | `L1_transport/`, `harness_l1_l2.hpp`, `harness_l5_l1_bytes.hpp`, `harness/pins/`, `F_platform/boundary/` |
+| L2          | `L2_protocol/`, `harness_l1_l2.hpp`, `harness_l2_l3.hpp`, `harness/pins/`, `F_platform/boundary/` |
+| L3          | `L3_services/`, `harness_l2_l3.hpp`, `harness_l3_l4.hpp`, `harness_tasks_l3.hpp`, `harness/pins/`, `F_platform/boundary/` |
+| L4          | `L4_drivers/`, `harness_l3_l4.hpp`, `harness_l4_l5.hpp`, `harness/pins/`, `F_platform/boundary/` |
+| L5          | `L5_board/`, `harness_l4_l5.hpp`, `harness_l5_l1_bytes.hpp`, `harness/pins/`, `F_platform/boundary/`, CMSIS, middlewares |
+| Tasks       | `F_platform/`, `harness_tasks_l3.hpp`, `harness/pins/` |
+| Platform    | `F_platform/`, CMSIS, middlewares |
+| Harness     | everything (it is the wiring) |
+| System      | `harness/`, `F_platform/`, L3 init contracts |
 
-In firmware:
-- Each namespace defines its own boundary interfaces at its edge
-- The harness connects interfaces between namespaces — like nets on a schematic
-- Each namespace owns its interface definitions
+Only `Board::` (and Platform for runtime support) may include CMSIS device headers.
 
-On each side of a harness boundary is an interface:
+### Bring-up debug path
 
-```
-L3_services/boundary/  ← "here's what Services needs from a motor driver"
-        ↕ harness connects + taps
-L4_drivers/boundary/   ← "here's what Drivers provides as motor hardware"
-```
-
-The harness connector:
-- Is synchronous (pass-through) or asynchronous (queue-mediated)
-- May adapt when provider and consumer interfaces don't match exactly
-- Tees data to the trace/snapshot system for observability
-- Contains zero domain knowledge
-
-**What lives WHERE:**
-
-| Location | Contains |
-|---|---|
-| `<layer>/boundary/` | Abstract interfaces (pure virtual classes) this namespace provides |
-| `harness/pins/` | Signal types (structs, enums shared across boundaries), init contracts, connector wiring |
-| `harness/taps/` | Traced wrappers (observation proxies at boundaries) |
-| `harness/trace/` | Trace recording infrastructure |
-
-**When both sides need the same interface** (common case): the provider owns the
-single definition. The consumer accesses it through the harness connection.
-
-**When interfaces differ**: each side defines its own, and the harness adapter
-bridges the gap. Neither side includes the other's headers directly.
-
-### Enforcement
-
-`scripts/check_includes.py` scans all `#include` directives and reports violations.
-`scripts/check_interface_ownership.py` reports abstract interfaces in `harness/pins/`
-that should be owned by their providing namespace.
-Run both. Fix violations before they accumulate.
+`DBG:*` commands reach `Services::DebugService` (L3) only after `DBG:UNLOCK`; it forwards raw
+register/bus commands to `Drivers::IDebugAccess` -> `Board::IBoardDebug`. Debug never bypasses
+the layers; it is a service like any other, just locked by default.
 
 ---
 

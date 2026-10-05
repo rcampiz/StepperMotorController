@@ -11,7 +11,7 @@
 #pragma once
 
 #include "harness/pins/isystem_dispatcher.hpp"
-#include "L3_services/boundary/iclock.hpp"
+#include "F_platform/boundary/iclock.hpp"
 #include <stdint.h>
 
 namespace Services {
@@ -21,14 +21,15 @@ public:
     using EventSeqFn = uint32_t(*)();
 
     SystemDispatch() = default;
-    SystemDispatch(Services::IClock* clock, EventSeqFn eventSeqFn)
+    SystemDispatch(Platform::IClock* clock, EventSeqFn eventSeqFn)
         : m_clock(clock), m_eventSeqFn(eventSeqFn) {}
 
-    void setClock(Services::IClock* c) { m_clock = c; }
+    void setClock(Platform::IClock* c) { m_clock = c; }
     void setEventSeqFn(EventSeqFn fn) { m_eventSeqFn = fn; }
 
     uint32_t getTickUs() override;
     uint32_t getTickMs() override;
+    void getTelemetry(Protocol::TelemetrySnapshot& out) override;
     void setTransportDelay(uint32_t ms) override;
     uint32_t getTransportDelay() override;
     void getDeviceInfo(uint16_t& deviceId, uint8_t& role) override;
@@ -40,7 +41,7 @@ public:
     uint32_t getLastEventSeq() override;
 
 private:
-    Services::IClock* m_clock = nullptr;
+    Platform::IClock* m_clock = nullptr;
     EventSeqFn m_eventSeqFn = nullptr;
 };
 

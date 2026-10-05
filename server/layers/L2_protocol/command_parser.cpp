@@ -20,7 +20,7 @@ namespace Protocol {
 // Responses are sent back over the same transport in ASCII or JSON format.
 CommandParser::CommandParser(Transport::ITransport &transport,
                              ICommandDispatcher &dispatcher)
-    : m_transport(transport), m_dispatcher(dispatcher),
+    : m_transport(transport), m_sink(transport), m_dispatcher(dispatcher),
       m_bufIndex(0),                    // start with empty input buffer
       m_format(ResponseFormat::ASCII) { // default to ASCII (switch via FMT command)
   memset(m_buffer, 0, sizeof(m_buffer));
@@ -199,19 +199,15 @@ void CommandParser::dispatch(const ParsedCommand &cmd) {
       cmdSetFormat(cmd);
     else if (strcmp(cmd.cmd, "FMT?") == 0)
       cmdGetFormat();
-    else if (m_debugCommands) {
-      // Fall through to bringup/debug handler (SPI_TEST, REG_READ, etc.)
+    else {
+      // Fall through to the L3 debug service (legacy flat bring-up commands, DBG:UNLOCK gated)
       const char *argPtrs[MAX_ARGS];
       for (uint8_t i = 0; i < cmd.argCount; i++)
         argPtrs[i] = cmd.args[i];
-      if (!m_debugCommands->dispatch(cmd.cmd, argPtrs, cmd.argCount,
-                                     m_transport)) {
+      if (!m_dispatcher.debugDispatch(cmd.cmd, argPtrs, cmd.argCount, m_sink)) {
         m_dispatchStats.unknownCommands++;
         respondErr("Unknown command");
       }
-    } else {
-      m_dispatchStats.unknownCommands++;
-      respondErr("Unknown command");
     }
   }
   m_dispatcher.traceRecordExit("CMD:RX");
@@ -324,10 +320,8 @@ void CommandParser::dispatchDiag(const char *suffix, const ParsedCommand &cmd) {
 void CommandParser::dispatchCtrl(const char *suffix, const ParsedCommand &cmd) {
   // Special: ENC:DBG? — delegate to debug command handler (different interface)
   if (strcmp(suffix, "ENC:DBG?") == 0) {
-    if (m_debugCommands) {
-      const char *noArgs[] = {nullptr};
-      m_debugCommands->dispatch("ENC_DEBUG", noArgs, 0, m_transport);
-    }
+    const char *noArgs[] = {nullptr};
+    m_dispatcher.debugDispatch("ENC_DEBUG", noArgs, 0, m_sink);
     return;
   }
   // Special: ENC:FILT sub-dispatch (different handler signature)
@@ -446,10 +440,17 @@ void CommandParser::dispatchDebug(const char *suffix,
   (void)cmd; // no debug commands use parsed args
   // DBG:MOTOR — delegate to bringup debug handler
   if (strcmp(suffix, "MOTOR") == 0) {
-    if (m_debugCommands) {
-      const char *noArgs[] = {nullptr};
-      m_debugCommands->dispatch("MOTOR_DEBUG", noArgs, 0, m_transport);
-    }
+    const char *noArgs[] = {nullptr};
+    m_dispatcher.debugDispatch("MOTOR_DEBUG", noArgs, 0, m_sink);
+    return;
+  }
+  // DBG:UNLOCK / DBG:LOCK — gate for every bring-up command
+  if (strcmp(suffix, "UNLOCK") == 0) {
+    respondStatus(m_dispatcher.debugUnlock(), "DBG unlocked");
+    return;
+  }
+  if (strcmp(suffix, "LOCK") == 0) {
+    respondStatus(m_dispatcher.debugLock(), "DBG locked");
     return;
   }
   static const CmdEntry0 t0[] = {
@@ -575,17 +576,64 @@ void CommandParser::respondStatus(ServiceStatus r, const char *okMsg) {
 
 // --- ICommandProcessor interface ---
 
-void CommandParser::formatEvent(Transport::ITransport &transport,
-                                const AsyncEvent &evt, uint32_t seq,
-                                uint32_t ts_ms) {
+void CommandParser::emitEvent(const AsyncEvent &evt, uint32_t seq, uint32_t ts_ms) {
   if (m_format == ResponseFormat::JSON) {
-    EventCodec::formatJson(transport, evt, seq, ts_ms);
+    EventCodec::formatJson(m_transport, evt, seq, ts_ms);
   } else {
-    EventCodec::formatAscii(transport, evt, seq);
+    EventCodec::formatAscii(m_transport, evt, seq);
   }
 }
 
-void CommandParser::getDispatchStats(Scheduler::DispatchStats &out) const {
+void CommandParser::emitBanner() {
+  m_transport.println("");
+  m_transport.println("========================================");
+  m_transport.println("   Stepper Motor Controller v0.1.0");
+  m_transport.println("========================================");
+  m_transport.println("Type 'HELP' for available commands");
+  m_transport.println("");
+}
+
+namespace {
+void i32ToStr(int32_t val, char *buf) {
+  bool neg = val < 0;
+  uint32_t mag = neg ? static_cast<uint32_t>(-(val + 1)) + 1u : static_cast<uint32_t>(val);
+  char tmp[12];
+  int i = 0;
+  do {
+    tmp[i++] = static_cast<char>('0' + (mag % 10));
+    mag /= 10;
+  } while (mag > 0);
+  int o = 0;
+  if (neg) buf[o++] = '-';
+  while (i > 0) buf[o++] = tmp[--i];
+  buf[o] = '\0';
+}
+} // namespace
+
+void CommandParser::emitTelemetry(const Protocol::TelemetrySnapshot &snap) {
+  char buf[16];
+  m_transport.print("TELEM: pos=");
+  i32ToStr(snap.motor.position, buf);
+  m_transport.print(buf);
+  m_transport.print(" spd=");
+  i32ToStr(static_cast<int32_t>(snap.motor.speed), buf);
+  m_transport.print(buf);
+  m_transport.print(" enc=");
+  i32ToStr(static_cast<int32_t>(snap.encoder.count), buf);
+  m_transport.print(buf);
+  m_transport.print(" vel=");
+  i32ToStr(snap.encoder.velocity, buf);
+  m_transport.print(buf);
+  m_transport.println("");
+}
+
+void CommandParser::emitJoystick(UI::JoyDirection dir, bool pressed) {
+  m_transport.print("EVENT JOY ");
+  m_transport.print(UI::joyDirectionName(dir));
+  m_transport.println(pressed ? " pressed" : " released");
+}
+
+void CommandParser::getDispatchStats(Harness::DispatchStats &out) const {
   out.totalCommands = m_dispatchStats.totalCommands;
   out.unknownCommands = m_dispatchStats.unknownCommands;
   out.parseErrors = m_dispatchStats.parseErrors;

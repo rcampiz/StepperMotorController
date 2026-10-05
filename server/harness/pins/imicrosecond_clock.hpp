@@ -1,21 +1,18 @@
 /**
  * @file imicrosecond_clock.hpp
- * @brief Harness connector for IMicrosecondClock + global accessors
+ * @brief Harness connector + global accessor for the Platform microsecond clock
  *
- * Provider definition owned by Board:: (L5_board/boundary/imicrosecond_clock.hpp).
- * Consumer port owned by Scheduler:: (F_platform/tasks/boundary/imicrosecond_clock.hpp).
- * Global accessor exposes the consumer port type for downstream consumers.
+ * The clock is a Platform primitive (F_platform/boundary/imicrosecond_clock.hpp).
+ * The accessor is transitional: the Encoder task reads it until migration step 4,
+ * after which only Platform injection remains.
  */
-
 #pragma once
 
-#include "L5_board/boundary/imicrosecond_clock.hpp"
-#include "F_platform/tasks/boundary/imicrosecond_clock.hpp"
+#include "F_platform/boundary/imicrosecond_clock.hpp"
 
 namespace Harness {
 
-/// Global accessor (wired by composition root, consumer port type)
-void setMicrosecondClock(Scheduler::IMicrosecondClock* clock);
-Scheduler::IMicrosecondClock* microsecondClock();
+void setMicrosecondClock(Platform::IMicrosecondClock* clock);
+Platform::IMicrosecondClock* microsecondClock();
 
 } // namespace Harness

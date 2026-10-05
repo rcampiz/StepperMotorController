@@ -1,9 +1,6 @@
 /**
- * @file boundary/iencoderfiltercontrol.hpp
- * @brief Consumer port — Services side of the Scheduler::IEncoderFilterControl harness connection
- *
- * Structurally identical to Scheduler::IEncoderFilterControl.
- * The harness adapter bridges the provider to this consumer port.
+ * @file boundary/iencoder_filter_control.hpp
+ * @brief Runtime control of the encoder velocity filter and measurement window (L3-internal interface)
  */
 
 #pragma once

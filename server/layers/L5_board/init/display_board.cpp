@@ -3,16 +3,12 @@
  * @brief L5 board init for display subsystem — implements Harness:: init functions
  */
 
-#include "harness/pins/display_board.hpp"
+#include "harness/defs/harness_l4_l5.hpp"
 #include "L5_board/gpio.hpp"
 #include "L5_board/board_pins.hpp"
 #include "L5_board/spi/spi_manager.hpp"
+#include "L5_board/display/te_sync.hpp"
 
-// Tracing (conditional)
-#include "harness/trace/interface_trace.hpp"
-#ifdef ENABLE_INTERFACE_TRACE
-#include "harness/taps/traced_spi_bus.hpp"
-#endif
 
 using Board::GPIO;
 using Board::GPIOMode;
@@ -33,12 +29,7 @@ bool Harness::initLCDBoard(Harness::LCDPins& pins)
         return false;
     }
 
-#ifdef ENABLE_INTERFACE_TRACE
-    static Harness::TracedSPIBus s_tracedSPI(*spi1);
-    pins.spi = &s_tracedSPI;
-#else
     pins.spi = spi1;
-#endif
 
     static GPIO lcdCS(Pins::GFX_LCD::CS_PORT, Pins::GFX_LCD::CS_PIN);
     lcdCS.setMode(GPIOMode::Output);
@@ -64,6 +55,8 @@ bool Harness::initLCDBoard(Harness::LCDPins& pins)
     lcdTE.setMode(GPIOMode::Input);
     lcdTE.setPull(GPIOPull::None);
     pins.te = &lcdTE;
+
+    pins.teSync = &Board::initTearingSync();
 
     return true;
 }

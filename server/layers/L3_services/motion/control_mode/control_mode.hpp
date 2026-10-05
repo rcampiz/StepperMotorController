@@ -13,7 +13,7 @@
 #pragma once
 
 #include "harness/pins/iencoder_status_sink.hpp"
-#include "L3_services/boundary/ilock.hpp"
+#include "F_platform/boundary/ilock.hpp"
 #include <stdint.h>
 
 namespace Services {
@@ -62,7 +62,7 @@ public:
    *
    * @return true on success
    */
-  bool init(Services::ILock& lock);
+  bool init(Platform::ILock& lock);
 
   /**
    * @brief Get current control mode
@@ -111,7 +111,7 @@ public:
 private:
   ControlMode m_currentMode;
   EncoderStatus m_encoderStatus;
-  Services::ILock* m_lock;
+  Platform::ILock* m_lock;
 };
 
 // Global instance

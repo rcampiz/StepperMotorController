@@ -1,9 +1,6 @@
 /**
  * @file boundary/itelemetry.hpp
- * @brief Consumer port — Services side of the Scheduler::ITelemetry harness connection
- *
- * Structurally identical to Scheduler::ITelemetry.
- * The harness adapter bridges the provider to this consumer port.
+ * @brief Read side of the telemetry store (snapshot copy for the comms path) (L3-internal interface)
  */
 
 #pragma once

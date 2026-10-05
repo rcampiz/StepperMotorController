@@ -1,35 +1,29 @@
 /**
  * @file encoder_driver_init.cpp
- * @brief L4 init for encoder driver
- *
+ * @brief L4 init for the quadrature encoder — pins from the L4<->L5 harness
  */
 
 #include "harness/pins/encoder_driver_init.hpp"
-#include "harness/pins/encoder_board.hpp"
+#include "harness/defs/harness_l4_l5.hpp"
 #include "L4_drivers/devices/encoder.hpp"
 
 namespace Drivers {
 
-static EncoderDriverHandle s_encoderHandle;
-
-bool initEncoderDrivers(EncoderDriverHandle*& handle)
+bool initEncoderDrivers(Platform::IClock& clock,
+                        Platform::IMicrosecondClock& usClock,
+                        uint16_t sampleRateHz,
+                        Drivers::IEncoderHardware*& encoder)
 {
-    // Board init through harness — GPIO, EXTI, timer, sampler
-    Harness::EncoderPins pins;
-    if (!Harness::initEncoderBoard(pins)) {
+    const Harness::L4L5Harness& h = Harness::connectL4L5();
+    if (h.encoder == nullptr || h.encoder->timer == nullptr || h.encoder->sampler == nullptr) {
         return false;
     }
 
-    // Construct and initialize encoder driver
-    static Encoder encoder(*pins.timer);
-    if (!encoder.init()) {
+    static Encoder s_encoder(*h.encoder, clock, usClock, h.registerExti);
+    if (!s_encoder.init(sampleRateHz)) {
         return false;
     }
-
-    s_encoderHandle.encoder = &encoder;
-    s_encoderHandle.timer = pins.timer;
-    s_encoderHandle.sampler = pins.sampler;
-    handle = &s_encoderHandle;
+    encoder = &s_encoder;
     return true;
 }
 

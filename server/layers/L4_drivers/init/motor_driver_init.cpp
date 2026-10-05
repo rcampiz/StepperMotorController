@@ -1,48 +1,28 @@
 /**
  * @file motor_driver_init.cpp
- * @brief L4 init for motor driver
+ * @brief L4 init for the motor driver — takes its pins from the L4<->L5 harness
  */
 
 #include "harness/pins/motor_driver_init.hpp"
-#include "harness/pins/motor_board.hpp"
-#include "harness/adapters/spi_adapter.hpp"
-#include "harness/adapters/gpio_adapter.hpp"
+#include "harness/defs/harness_l4_l5.hpp"
 #include "L4_drivers/devices/powerstep01.hpp"
-
-// Tracing (conditional)
-#include "harness/trace/interface_trace.hpp"
-#ifdef ENABLE_INTERFACE_TRACE
-#include "harness/taps/traced_motor_driver.hpp"
-#endif
 
 namespace Drivers {
 
 bool initMotorDriver(Drivers::IMotorDriver*& driver)
 {
-    // Board init through harness — GPIO + SPI
-    Harness::MotorPins pins;
-    if (!Harness::initMotorBoard(pins)) {
+    const Harness::L4L5Harness& h = Harness::connectL4L5();
+    if (h.motor == nullptr) {
         return false;
     }
+    const Harness::MotorPins& p = *h.motor;
 
-    // Adapt Board:: provider types to Drivers:: consumer types
-    static Harness::SPIAdapter spiAdapter(*pins.spi);
-    static Harness::GPIOAdapter csAdapter(*pins.cs);
-    static Harness::GPIOAdapter stbyRstAdapter(*pins.stbyRst);
-    static Harness::GPIOAdapter busyAdapter(*pins.busy);
-    static Harness::GPIOAdapter flagAdapter(*pins.flag);
-
-    // Construct and initialize PowerSTEP01
-    static PowerSTEP01 motor(spiAdapter, csAdapter, stbyRstAdapter, busyAdapter, flagAdapter);
+    // Construct and initialize PowerSTEP01 directly on the Board:: pins
+    static PowerSTEP01 motor(*p.spi, *p.cs, *p.stbyRst, *p.busy, *p.flag);
     motor.init();
 
-#ifdef ENABLE_INTERFACE_TRACE
-    static Harness::TracedMotorDriver tracedMotor(motor);
-    driver = &tracedMotor;
-#else
+    // Raw driver only. The L3<->L4 harness (adaptMotorDriver) applies the trace tap once.
     driver = &motor;
-#endif
-
     return true;
 }
 

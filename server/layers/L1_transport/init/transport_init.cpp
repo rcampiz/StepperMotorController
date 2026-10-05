@@ -1,57 +1,42 @@
 /**
  * @file transport_init.cpp
- * @brief Implements Transport::initTransport() — L1 transport wrapper
- *
- * Wraps an injected IByteChannel in the appropriate L1 transport.
- * No L4 or L5 includes — only L1 types and harness interfaces.
+ * @brief Implements Transport::initTransport() — L1 over the L5 -> L1 byte-channel exception
  */
 
 #include "harness/pins/transport_init.hpp"
+#include "harness/defs/harness_l5_l1_bytes.hpp"
 
 // L1 transports
 #include "L1_transport/rtt_transport.hpp"
 #include "L1_transport/uart_transport.hpp"
 
-// Tracing (conditional)
-#include "harness/trace/interface_trace.hpp"
-#ifdef ENABLE_INTERFACE_TRACE
-#include "harness/taps/traced_transport.hpp"
-#endif
-
 namespace Transport {
 
-bool initTransport(TransportResult& out, TransportType type,
-                   Transport::IByteChannel& channel, Platform::IClock& clock)
+bool initTransport(TransportResult& out, TransportType type, Platform::IClock& clock)
 {
-    Transport::ITransport* transport = nullptr;
+    // The one documented layer skip: host command bytes come straight from L5
+    const Harness::L5L1ByteHarness* bytes = Harness::connectL5L1Bytes(
+        type == TransportType::RTT ? Harness::CommsChannel::RTT : Harness::CommsChannel::VCP_UART);
+    if (bytes == nullptr) {
+        return false;
+    }
 
+    Transport::ITransport* transport = nullptr;
     switch (type) {
     case TransportType::VCP_UART: {
-        static UartTransport vcpTransport(channel, clock);
+        static UartTransport vcpTransport(bytes->channel, clock);
         transport = &vcpTransport;
     } break;
-
     case TransportType::RTT: {
-        static RttTransport rttTransport(channel);
+        static RttTransport rttTransport(bytes->channel);
         transport = &rttTransport;
     } break;
     }
 
-    if (transport == nullptr) {
+    if (transport == nullptr || !transport->init()) {
         return false;
     }
-
-    if (!transport->init()) {
-        return false;
-    }
-
-#ifdef ENABLE_INTERFACE_TRACE
-    static Harness::TracedTransport tracedTransport(*transport);
-    out.transport = &tracedTransport;
-#else
-    out.transport = transport;
-#endif
-
+    out.transport = transport;   // raw; the L1<->L2 harness applies the trace tap
     return true;
 }
 

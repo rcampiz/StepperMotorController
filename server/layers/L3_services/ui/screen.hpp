@@ -9,7 +9,7 @@
 #ifndef SCREEN_HPP
 #define SCREEN_HPP
 
-#include "L3_services/boundary/icanvas.hpp"
+#include "harness/defs/harness_l3_l4.hpp"
 #include "harness/pins/ui_types.hpp"
 #include "ui/ui_types.hpp"
 #include <stdint.h>

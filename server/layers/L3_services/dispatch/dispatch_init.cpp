@@ -1,14 +1,10 @@
 /**
  * @file dispatch_init.cpp
- * @brief Creates all 12 L3 dispatch implementations
- *
- * Layer-clean: only includes L3 + harness headers.
- * No L1, L2, L4, L5, or F_platform includes.
+ * @brief Implements Services::initDispatches() — the L3 side of H_L2_L3
  */
 
 #include "L3_services/dispatch/dispatch_init.hpp"
-
-// L3 dispatch implementations
+#include "harness/defs/harness_l2_l3.hpp"
 #include "L3_services/comms/system_dispatch/system_dispatch.hpp"
 #include "L3_services/comms/trace_dispatch/trace_dispatch.hpp"
 #include "L3_services/dispatch/queue_dispatch/queue_dispatch.hpp"
@@ -21,21 +17,22 @@
 #include "L3_services/motion/motor_driver_dispatch/motor_driver_dispatch.hpp"
 #include "L3_services/motion/supervisor_trim_dispatch/supervisor_trim_dispatch.hpp"
 #include "L3_services/safety/safety_dispatch/safety_dispatch.hpp"
-
-// Service group headers (extern declarations)
+#include "L3_services/debug/debug_service.hpp"
 #include "L3_services/comms/comms.hpp"
 #include "L3_services/display/display.hpp"
-
-// Tracing
-#include "harness/trace/interface_trace.hpp"
-
-// ── File-scope L3 dispatch instances (group members) ────────────────
 
 static Services::DisplayDispatch s_displayDisp;
 static Services::TraceDispatch s_traceDisp;
 static Services::SystemDispatch s_systemDisp;
-
-// ── Service group definitions (satisfy extern declarations) ─────────
+static Services::MotionDispatch s_motionDisp;
+static Services::ConfigDispatch s_configDisp;
+static Services::SafetyDispatch s_safetyDisp;
+static Services::QueueDispatch s_queueDisp;
+static Services::ControlModeDispatch s_ctrlModeDisp;
+static Services::SupervisorTrimDispatch s_supTrimDisp;
+static Services::FlashDispatch s_flashDisp;
+static Services::EncoderDispatch s_encoderDisp;
+static Services::MotorDriverDispatch s_motorDrvDisp;
 
 namespace Services {
 DisplayGroup display{s_displayDisp};
@@ -44,44 +41,20 @@ CommsGroup comms{s_traceDisp, s_systemDisp};
 
 namespace Services {
 
-bool initDispatches(Harness::DispatchInterfaces& out, const DispatchDeps& deps)
+const Harness::L3Dispatchers* initDispatches(const DispatchDeps& deps)
 {
-    // L3 dispatch implementations (pure L3, no injected deps)
-    static MotionDispatch motionDisp;
-    static ConfigDispatch configDisp;
-    static SafetyDispatch safetyDisp;
-    static QueueDispatch queueDisp;
-    static ControlModeDispatch ctrlModeDisp;
-    static SupervisorTrimDispatch supTrimDisp;
-    static FlashDispatch flashDisp;
-
-    // L3 dispatch implementations (with injected harness pins)
-    static EncoderDispatch encoderDisp;
-    static MotorDriverDispatch motorDrvDisp;
-
-    encoderDisp.setEncoder(deps.encoder);
-    encoderDisp.setEncFilter(deps.encFilter);
-    motorDrvDisp.setMotorCtrl(deps.motorCtrl);
-
-    // Inject deps into file-scope group member dispatch instances
+    s_encoderDisp.setEncoder(deps.encoder);
+    s_encoderDisp.setEncFilter(deps.encFilter);
+    s_motorDrvDisp.setMotorCtrl(deps.motorCtrl);
     s_displayDisp.setRemoteDisplay(deps.remoteDisplay);
     s_systemDisp.setClock(deps.clock);
 
-    // Populate output — 12 sub-dispatcher interface pointers
-    out.motion         = &motionDisp;
-    out.config         = &configDisp;
-    out.safety         = &safetyDisp;
-    out.queue          = &queueDisp;
-    out.controlMode    = &ctrlModeDisp;
-    out.supervisorTrim = &supTrimDisp;
-    out.encoder        = &encoderDisp;
-    out.motorDriver    = &motorDrvDisp;
-    out.display        = &s_displayDisp;
-    out.flash          = &flashDisp;
-    out.system         = &s_systemDisp;
-    out.trace          = &s_traceDisp;
-
-    return true;
+    static const Harness::L3Dispatchers s_bundle{
+        s_motionDisp, s_configDisp, s_safetyDisp, s_queueDisp, s_ctrlModeDisp,
+        s_supTrimDisp, s_encoderDisp, s_motorDrvDisp, s_displayDisp, s_flashDisp,
+        s_systemDisp, s_traceDisp, g_debugService
+    };
+    return &s_bundle;
 }
 
 void setDispatchEventSeqFn(uint32_t (*fn)())

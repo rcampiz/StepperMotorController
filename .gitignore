@@ -69,3 +69,5 @@ __pycache__/
 *.tmp
 *.log
 nul
+# Host test build directory
+build-tests/

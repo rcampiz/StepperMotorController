@@ -1,42 +1,31 @@
 /**
- * @file boundary/icommanddispatcher.hpp
- * @brief Consumer port — Protocol side of the Services::ICommandDispatcher harness connection
+ * @file icommand_dispatcher.hpp
+ * @brief L2-internal composite of the thirteen L3 dispatcher interfaces (H_L2_L3)
  *
- * Structurally identical to Services::ICommandDispatcher.
- * The harness adapter bridges the provider to this consumer port.
+ * The parser and its handlers talk to one object. The single interface definitions are
+ * owned by L3 and arrive through harness_l2_l3.hpp; this composite only aggregates them.
+ * Protocol::ServiceDispatcher implements it by forwarding to Harness::L3Dispatchers.
  */
-
 #pragma once
 
-#include "harness/pins/dispatch_result.hpp"
-#include "L2_protocol/boundary/itrace_dispatcher.hpp"
-#include "L2_protocol/boundary/isafety_dispatcher.hpp"
-#include "L2_protocol/boundary/idisplay_dispatcher.hpp"
-#include "L2_protocol/boundary/iflash_image_dispatcher.hpp"
-#include "L2_protocol/boundary/imotion_dispatcher.hpp"
-#include "L2_protocol/boundary/iqueue_dispatcher.hpp"
-#include "L2_protocol/boundary/iencoder_dispatcher.hpp"
-#include "L2_protocol/boundary/icontrol_mode_dispatcher.hpp"
-#include "L2_protocol/boundary/isupervisor_trim_dispatcher.hpp"
-#include "L2_protocol/boundary/imotor_driver_dispatcher.hpp"
-#include "L2_protocol/boundary/imotor_config_dispatcher.hpp"
-#include "L2_protocol/boundary/isystem_dispatcher.hpp"
+#include "harness/defs/harness_l2_l3.hpp"
 
 namespace Protocol {
 
 class ICommandDispatcher
-    : public ITraceDispatcher
-    , public ISafetyDispatcher
-    , public IDisplayDispatcher
-    , public IFlashImageDispatcher
-    , public IMotionDispatcher
-    , public IQueueDispatcher
-    , public IEncoderDispatcher
-    , public IControlModeDispatcher
-    , public ISupervisorTrimDispatcher
-    , public IMotorDriverDispatcher
-    , public IMotorConfigDispatcher
-    , public ISystemDispatcher
+    : public Services::ITraceDispatcher
+    , public Services::ISafetyDispatcher
+    , public Services::IDisplayDispatcher
+    , public Services::IFlashImageDispatcher
+    , public Services::IMotionDispatcher
+    , public Services::IQueueDispatcher
+    , public Services::IEncoderDispatcher
+    , public Services::IControlModeDispatcher
+    , public Services::ISupervisorTrimDispatcher
+    , public Services::IMotorDriverDispatcher
+    , public Services::IMotorConfigDispatcher
+    , public Services::ISystemDispatcher
+    , public Services::IDebugDispatcher
 {
 public:
     virtual ~ICommandDispatcher() = default;

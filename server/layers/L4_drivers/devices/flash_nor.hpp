@@ -8,8 +8,7 @@
 #ifndef FLASH_HPP
 #define FLASH_HPP
 
-#include "L4_drivers/boundary/igpio.hpp"
-#include "L4_drivers/boundary/ispi_bus.hpp"
+#include "harness/defs/harness_l4_l5.hpp"
 #include "harness/pins/iflash.hpp"
 
 namespace Drivers {
@@ -43,7 +42,7 @@ public:
      *
      * CS pin must be configured as output (high) before construction.
      */
-    SPIFlash(Drivers::ISPIBus& spi, Drivers::IGPIO& cs) : m_spi(spi), m_cs(cs) {
+    SPIFlash(Board::ISPIBus& spi, Board::IGPIO& cs) : m_spi(spi), m_cs(cs) {
         csHigh();
     }
 
@@ -248,8 +247,8 @@ public:
     }
 
 private:
-    Drivers::ISPIBus& m_spi;
-    Drivers::IGPIO& m_cs;
+    Board::ISPIBus& m_spi;
+    Board::IGPIO& m_cs;
 
     void csLow()  { m_cs.write(false); }
     void csHigh() { m_cs.write(true); }

@@ -2,23 +2,27 @@
  * @file system_init.cpp
  * @brief System initialization — composition root
  *
- * All init wiring lives here. Harness/init/ has no .cpp files.
- * Only includes harness contracts, L3 service inits, and trace infra.
- * No direct F_platform, L4, L2, or L1 includes.
+ * Five phases: hardware, platform, L3 shared state, subsystems + tasks, start.
+ * L3 drives every init cascade (L3 -> L4 -> L5 and L3 -> L2 -> L1); this file only
+ * sequences the phases, hands out Platform resources, and publishes the task handles
+ * (H_TASKS_L3). Includes: harness, F_platform, L3 init headers.
  */
 
 #include "system_init.hpp"
 
-// Concrete types for init, then wired as harness interfaces
-#include "F_platform/types/system_snapshot.hpp"
-#include "F_platform/ui/ui_mode.hpp"
-#include "harness/pins/itelemetry.hpp"
-#include "harness/pins/isnapshot_writer.hpp"
-#include "harness/pins/iui_mode.hpp"
-#include "harness/pins/itask_stats.hpp"
-#include "harness/pins/idispatch_stats.hpp"
-#include "harness/pins/imicrosecond_clock.hpp"
+// Platform / hardware
+#include "F_platform/hw/microsecond_timer_tim5.hpp"
+#include "F_platform/tasks/motor_task.hpp"
 #include "F_platform/tasks/comms_task.hpp"
+#include "F_platform/tasks/display_task.hpp"
+#include "harness/pins/imicrosecond_clock.hpp"
+#include "harness/pins/itask_stats.hpp"
+#include "harness/pins/early_debug_board.hpp"
+#include "harness/pins/platform_board.hpp"
+#include "harness/pins/spi_init.hpp"
+#include "harness/taps/apply_taps.hpp"
+#include "harness/defs/harness_tasks_l3.hpp"
+#include "harness/defs/harness_l5_l1_bytes.hpp"
 
 // L3 service inits
 #include "L3_services/comms/comms_service_init.hpp"
@@ -30,22 +34,9 @@
 #include "L3_services/motion/motor_service_init.hpp"
 #include "L3_services/motion/system_service_init.hpp"
 
-// Harness contracts (platform init, debug utilities)
-#include "harness/pins/early_debug_board.hpp"
-#include "harness/pins/platform_board.hpp"
-#include "harness/pins/spi_init.hpp"
-#ifdef ENABLE_INTERFACE_TRACE
-#include "harness/taps/traced_lock.hpp"
-#endif
-
 namespace System {
 
-// Platform resources (populated in initPlatform, used by later phases)
 static Harness::PlatformResources s_platform;
-
-// ============================================================================
-// Helpers
-// ============================================================================
 
 static void initOrHalt(const char *name, bool ok) {
   Harness::debugPrint(name);
@@ -63,91 +54,62 @@ static void logOk(const char *name) {
   Harness::debugPrintln("... OK");
 }
 
-// ============================================================================
-// Phase 1: Hardware — clocks, debug UART, tick timer, trace sink
-// ============================================================================
-
+// Phase 1: Hardware — clocks, debug UART, microsecond clock, trace sink
 void initHardware() {
   Services::initClockBoard();
   Services::initDebugOutput();
   Harness::debugPrintln("\n=== Early Debug ===");
   logOk("Clock config");
-  Services::TickTimer_Init();
-  Harness::setMicrosecondClock(Services::TickTimer_GetMicrosecondClock());
+  Platform::IMicrosecondClock &usClock = Platform::initMicrosecondClockTIM5();
+  Services::TickTimer_Init(usClock);
+  Harness::setMicrosecondClock(&usClock);
   logOk("TickTimer");
   Trace::initTraceSink();
 }
 
-// ============================================================================
 // Phase 2: Platform — RTOS primitives, SPI manager
-// ============================================================================
-
 void initPlatform() {
   initOrHalt("Platform", Harness::initPlatformBoard(s_platform));
   const auto &r = s_platform;
-#ifdef ENABLE_INTERFACE_TRACE
-  static Harness::TracedLock s_tracedSpi1Lock(*r.spi1Lock);
-  static Harness::TracedLock s_tracedSpi2Lock(*r.spi2Lock);
   initOrHalt("SPI Manager",
-             Harness::initSPIManager(s_tracedSpi1Lock, s_tracedSpi2Lock));
-#else
-  initOrHalt("SPI Manager", Harness::initSPIManager(*r.spi1Lock, *r.spi2Lock));
-#endif
+             Harness::initSPIManager(
+                 Harness::applyTap<Harness::TracedLock, 0>(*r.spi1Lock),
+                 Harness::applyTap<Harness::TracedLock, 1>(*r.spi2Lock)));
 }
 
-// ============================================================================
-// Phase 3: Services — L3 control mode, telemetry, UI mode
-// ============================================================================
-
+// Phase 3: L3 shared state — control mode, events, telemetry store, UI mode
 void initServices() {
   const auto &r = s_platform;
-
-  // Task stats — wire platform's ITaskStats into harness accessor
   Platform::setTaskStatsProvider(r.taskStats);
-
-  // System snapshot — tap-populated telemetry aggregator
-  static SystemSnapshot s_snapshot;
-  s_snapshot.init(*r.telemetryLock, *r.clock);
-  Scheduler::setTelemetryProvider(&s_snapshot);
-  Scheduler::setSnapshotWriter(&s_snapshot);
-
-  // UI mode init — composition root owns the concrete type
-  UI::g_uiMode.init(*r.uiModeLock);
-  Scheduler::setUIModeProvider(&UI::g_uiMode);
-
-  initOrHalt("L3 Services", Services::initSystemServices(
-                                *r.controlModeLock, *r.eventQueue));
+  initOrHalt("L3 Services",
+             Services::initSystemServices(*r.controlModeLock, *r.eventQueue,
+                                          *r.telemetryLock, *r.uiModeLock, *r.clock));
 }
 
-// ============================================================================
-// Phase 4: Tasks — subsystem init cascades + RTOS task creation
-// ============================================================================
-
+// Phase 4: Subsystems — L3 init cascades + RTOS task creation
 void initTasks() {
   const auto &r = s_platform;
 
-  // --- Motor ---
   Harness::debugPrint("Motor... ");
   Services::MotorSubsystemResult motorResult;
   if (!Services::initMotorSubsystem(*r.motorCmdQueue, *r.clock, *r.scheduler,
-                                    *r.commandQueueLock, motorResult)) {
+                                    *r.commandQueueLock, r.taskStats, motorResult)) {
     Harness::debugPrintln("FAIL!");
     while (true) {
     }
   }
   Harness::debugPrintln("OK");
 
-  // --- Encoder (optional — system operates in OPEN_LOOP if unavailable) ---
   Harness::debugPrint("Encoder... ");
   Services::EncoderSubsystemResult encResult;
-  if (!Services::initEncoderSubsystem(*r.clock, *r.scheduler, encResult)) {
+  if (!Services::initEncoderSubsystem(*r.clock, *r.scheduler, *r.critical, *r.usClock,
+                                      encResult)) {
     Harness::debugPrintln("FAIL!");
     while (true) {
     }
   }
   Harness::debugPrintln(encResult.encoderAvailable ? "OK" : "SKIP");
 
-  // --- Display ---
   Harness::debugPrint("Display... ");
   Services::DisplaySubsystemResult dispResult;
   if (!Services::initDisplaySubsystem(*r.clock, *r.scheduler, dispResult)) {
@@ -157,27 +119,31 @@ void initTasks() {
   }
   Harness::debugPrintln("OK");
 
-  // --- Comms (gathers interfaces from L3 init results) ---
   Harness::debugPrint("Comms... ");
   Services::CommsServiceDeps deps;
   deps.encoder = encResult.encoder;
   deps.encFilter = encResult.filterControl;
   deps.motorCtrl = motorResult.motorCtrl;
   deps.remoteDisplay = dispResult.remoteDisplay;
-  if (!Services::initCommsSubsystem(deps, *r.clock, *r.scheduler)) {
+  if (!Services::initCommsSubsystem(deps, *r.clock, *r.scheduler, r.notifier)) {
     Harness::debugPrintln("FAIL!");
     while (true) {
     }
   }
-  Scheduler::setDispatchStatsProvider(
-      Scheduler::CommsTask_GetDispatchStatsInterface());
   Harness::debugPrintln("OK");
+
+  // H_TASKS_L3 downward signal: opaque task handles for L3 suspend/resume via Platform
+  Harness::TaskHandles handles;
+  handles.motor = Scheduler::g_motorTaskHandle;
+  handles.comms = Scheduler::g_commsTaskHandle;
+  handles.display = Scheduler::g_displayTaskHandle;
+  Harness::setTaskHandles(handles);
+
+  // X_L5_L1 option: USART2 RX wakes the Comms task (10 ms poll remains the fallback)
+  Harness::setCommsRxWake(r.notifier, Scheduler::g_commsTaskHandle);
 }
 
-// ============================================================================
 // Phase 5: Start scheduler — never returns
-// ============================================================================
-
 [[noreturn]] void start() {
   s_platform.scheduler->start();
   __builtin_unreachable();

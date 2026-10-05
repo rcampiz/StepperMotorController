@@ -1,0 +1,32 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "firmware-debug",
+      "displayName": "Firmware (Debug, interface trace on)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build",
+      "toolchainFile": "${sourceDir}/cmake/arm-none-eabi.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_INTERFACE_TRACE": "ON"
+      }
+    },
+    {
+      "name": "firmware-release",
+      "displayName": "Firmware (Release, no trace)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-release",
+      "toolchainFile": "${sourceDir}/cmake/arm-none-eabi.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "ENABLE_INTERFACE_TRACE": "OFF"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "firmware-debug",   "configurePreset": "firmware-debug" },
+    { "name": "firmware-release", "configurePreset": "firmware-release" }
+  ]
+}
