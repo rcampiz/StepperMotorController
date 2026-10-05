@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "harness/pins/isystem_dispatcher.hpp"
+#include "L3_services/boundary/isystem_dispatcher.hpp"
 #include "F_platform/boundary/iclock.hpp"
 #include <stdint.h>
 

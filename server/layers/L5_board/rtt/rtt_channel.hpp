@@ -7,7 +7,7 @@
  */
 #pragma once
 
-#include "harness/pins/ibyte_channel.hpp"
+#include "harness/defs/harness_l5_l1_bytes.hpp"
 #include "X_middlewares/SEGGER/RTT/SEGGER_RTT.h"
 
 namespace Board {

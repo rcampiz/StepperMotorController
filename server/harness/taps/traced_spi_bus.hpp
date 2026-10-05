@@ -12,7 +12,7 @@
 
 #pragma once
 
-#include "harness/pins/ispi_bus.hpp"
+#include "L5_board/boundary/ispi_bus.hpp"
 #include "harness/trace/interface_trace.hpp"
 
 #ifdef ENABLE_INTERFACE_TRACE

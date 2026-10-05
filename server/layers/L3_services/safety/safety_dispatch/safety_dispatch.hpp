@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include "harness/pins/isafety_dispatcher.hpp"
+#include "L3_services/boundary/isafety_dispatcher.hpp"
 
 namespace Services {
 

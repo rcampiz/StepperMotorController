@@ -10,7 +10,7 @@
 #define POWERSTEP01_HPP
 
 #include "harness/defs/harness_l4_l5.hpp"
-#include "harness/pins/imotor_driver.hpp"
+#include "L4_drivers/boundary/imotor_driver.hpp"
 
 namespace Drivers {
 

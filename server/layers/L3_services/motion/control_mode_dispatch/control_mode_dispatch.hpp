@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include "harness/pins/icontrol_mode_dispatcher.hpp"
+#include "L3_services/boundary/icontrol_mode_dispatcher.hpp"
 
 namespace Services {
 

@@ -6,7 +6,7 @@
 #pragma once
 
 #include "harness/pins/telemetry_types.hpp"
-#include "harness/pins/iencoder_status_sink.hpp"
+#include "L3_services/boundary/iencoder_status_sink.hpp"
 #include <stdint.h>
 
 namespace Services {

@@ -9,7 +9,7 @@
 #define FLASH_HPP
 
 #include "harness/defs/harness_l4_l5.hpp"
-#include "harness/pins/iflash.hpp"
+#include "L4_drivers/boundary/iflash.hpp"
 
 namespace Drivers {
 

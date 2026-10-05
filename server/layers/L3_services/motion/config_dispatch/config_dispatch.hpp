@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "harness/pins/imotor_config_dispatcher.hpp"
+#include "L3_services/boundary/imotor_config_dispatcher.hpp"
 
 namespace Services {
 

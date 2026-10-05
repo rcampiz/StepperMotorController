@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include "harness/pins/iencoder_dispatcher.hpp"
+#include "L3_services/boundary/iencoder_dispatcher.hpp"
 
 namespace Services {
 

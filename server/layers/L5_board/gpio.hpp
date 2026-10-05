@@ -10,7 +10,7 @@
 #define GPIO_HPP
 
 #include "X_vendor/CMSIS/stm32f401xe.h"
-#include "harness/pins/igpio.hpp"
+#include "L5_board/boundary/igpio.hpp"
 
 namespace Board {
 

@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "harness/pins/idisplay_dispatcher.hpp"
+#include "L3_services/boundary/idisplay_dispatcher.hpp"
 #include "L3_services/boundary/iremote_display.hpp"
 
 namespace Services {

@@ -22,7 +22,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "L5_board/gpio.hpp"
-#include "harness/pins/ispi_bus.hpp"
+#include "L5_board/boundary/ispi_bus.hpp"
 #include "harness/pins/ilock.hpp"
 #include "harness/pins/interrupt_guard.hpp"
 

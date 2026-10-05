@@ -13,7 +13,7 @@
 #define SPI_BOARD_CONFIG_HPP
 
 #include <stdint.h>
-#include "harness/pins/ispi_bus.hpp"
+#include "L5_board/boundary/ispi_bus.hpp"
 #include "L5_board/gpio.hpp"
 #include "L5_board/board_pins.hpp"
 

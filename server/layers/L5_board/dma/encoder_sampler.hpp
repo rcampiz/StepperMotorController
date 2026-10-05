@@ -10,7 +10,7 @@
 
 #pragma once
 
-#include "harness/pins/iencoder_sampler.hpp"
+#include "L5_board/boundary/iencoder_sampler.hpp"
 
 namespace Board {
 

@@ -16,7 +16,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "X_vendor/CMSIS/stm32f401xe.h"
-#include "harness/pins/ibyte_channel.hpp"
+#include "harness/defs/harness_l5_l1_bytes.hpp"
 #include "F_platform/boundary/itask_notifier.hpp"
 
 namespace Board {

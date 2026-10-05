@@ -22,7 +22,7 @@ Enforced by `scripts/check_includes.py --strict` and `scripts/check_harness_defs
 - **L5 Board** — Register/peripheral access: clocks, GPIO, SPI1/SPI2, USART2 + RTT byte channels, TIM4, TIM3+DMA sampler, EXTI, TE sync, internal flash, bring-up commands. (35 files)
 - **TASKS Task sheet (Scheduler::)** — Four RTOS task loops that only wait, then call one L3 entry point; owns priorities, periods, stack sizes, task handles and the task-init contracts the composition root calls. (16 files)
 - **PLATFORM Platform (power net)** — RTOS-neutral primitives any sheet may use: clock, microsecond clock, locks, queues, scheduler, task stats, critical section, task notifier; FreeRTOS implementations, startup. (49 files)
-- **HARNESS Harness** — Harness definitions (defs/), connect() functions (the only place taps are applied), shared POD pins, traced taps, interface trace. (89 files)
+- **HARNESS Harness** — Harness definitions (defs/), connect() functions (the only place taps are applied), shared POD pins, traced taps, interface trace. (57 files)
 - **SYSTEM Composition root** — main.cpp + system_init.cpp: phase sequencing, Platform resources, RTOS task creation over the L3 services. (3 files)
 
 ## Harnesses

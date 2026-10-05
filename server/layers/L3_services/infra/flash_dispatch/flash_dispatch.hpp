@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include "harness/pins/iflash_image_dispatcher.hpp"
+#include "L3_services/boundary/iflash_image_dispatcher.hpp"
 
 namespace Services {
 

@@ -11,8 +11,8 @@
 #ifndef RTT_TRANSPORT_HPP
 #define RTT_TRANSPORT_HPP
 
-#include "harness/pins/itransport.hpp"
-#include "harness/pins/ibyte_channel.hpp"
+#include "L1_transport/boundary/itransport.hpp"
+#include "L1_transport/boundary/ibyte_channel.hpp"
 
 namespace Transport {
 

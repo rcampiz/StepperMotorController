@@ -12,7 +12,7 @@
 
 #pragma once
 
-#include "harness/pins/iencoder_status_sink.hpp"
+#include "L3_services/boundary/iencoder_status_sink.hpp"
 #include "F_platform/boundary/ilock.hpp"
 #include <stdint.h>
 

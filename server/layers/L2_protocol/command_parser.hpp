@@ -18,10 +18,10 @@
 #ifndef COMMAND_PARSER_HPP
 #define COMMAND_PARSER_HPP
 
-#include "harness/pins/itransport.hpp"
+#include "harness/defs/harness_l1_l2.hpp"
 #include "L2_protocol/boundary/icommand_dispatcher.hpp"
 #include "harness/pins/dispatch_result.hpp"
-#include "harness/pins/icommand_processor.hpp"
+#include "L2_protocol/boundary/icommand_processor.hpp"
 #include <stdint.h>
 
 namespace Protocol {

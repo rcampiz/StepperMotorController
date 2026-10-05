@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "harness/pins/itransport.hpp"
+#include "L1_transport/boundary/itransport.hpp"
 #include "harness/trace/interface_trace.hpp"
 
 #ifdef ENABLE_INTERFACE_TRACE

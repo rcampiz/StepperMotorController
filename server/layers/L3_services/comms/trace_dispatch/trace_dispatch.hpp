@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include "harness/pins/itrace_dispatcher.hpp"
+#include "L3_services/boundary/itrace_dispatcher.hpp"
 
 namespace Services {
 

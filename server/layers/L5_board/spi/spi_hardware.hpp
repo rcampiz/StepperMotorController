@@ -18,7 +18,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "X_vendor/CMSIS/stm32f401xe.h"
-#include "harness/pins/ispi_bus.hpp"
+#include "L5_board/boundary/ispi_bus.hpp"
 #include "harness/pins/ilock.hpp"
 
 namespace Board {

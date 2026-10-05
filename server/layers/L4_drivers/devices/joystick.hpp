@@ -10,7 +10,7 @@
 #define JOYSTICK_HPP
 
 #include "harness/defs/harness_l4_l5.hpp"
-#include "harness/pins/ijoystick.hpp"
+#include "L4_drivers/boundary/ijoystick.hpp"
 
 namespace Drivers {
 

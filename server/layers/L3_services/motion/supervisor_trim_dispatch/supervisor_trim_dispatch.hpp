@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include "harness/pins/isupervisor_trim_dispatcher.hpp"
+#include "L3_services/boundary/isupervisor_trim_dispatcher.hpp"
 
 namespace Services {
 

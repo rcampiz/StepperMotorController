@@ -12,7 +12,7 @@
 
 #pragma once
 
-#include "harness/pins/iencoder_processing.hpp"
+#include "L3_services/boundary/iencoder_processing.hpp"
 #include <stdint.h>
 
 namespace Services {

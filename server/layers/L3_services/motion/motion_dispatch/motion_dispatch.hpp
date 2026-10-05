@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "harness/pins/imotion_dispatcher.hpp"
+#include "L3_services/boundary/imotion_dispatcher.hpp"
 
 namespace Services {
 

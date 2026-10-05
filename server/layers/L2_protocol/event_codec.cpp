@@ -4,7 +4,7 @@
  */
 
 #include "L2_protocol/event_codec.hpp"
-#include "harness/pins/itransport.hpp"
+#include "harness/defs/harness_l1_l2.hpp"
 #include "harness/trace/interface_trace.hpp"
 #include <stdio.h>
 

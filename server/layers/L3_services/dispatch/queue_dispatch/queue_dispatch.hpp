@@ -5,7 +5,7 @@
 
 #pragma once
 
-#include "harness/pins/iqueue_dispatcher.hpp"
+#include "L3_services/boundary/iqueue_dispatcher.hpp"
 
 namespace Services {
 

@@ -9,7 +9,7 @@
 
 #pragma once
 
-#include "harness/pins/imotor_driver.hpp"
+#include "L4_drivers/boundary/imotor_driver.hpp"
 #include "harness/trace/interface_trace.hpp"
 
 #ifdef ENABLE_INTERFACE_TRACE

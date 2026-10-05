@@ -13,18 +13,18 @@
 #pragma once
 
 #include "harness/pins/dispatch_result.hpp"
-#include "harness/pins/itrace_dispatcher.hpp"
-#include "harness/pins/isafety_dispatcher.hpp"
-#include "harness/pins/idisplay_dispatcher.hpp"
-#include "harness/pins/iflash_image_dispatcher.hpp"
-#include "harness/pins/imotion_dispatcher.hpp"
-#include "harness/pins/iqueue_dispatcher.hpp"
-#include "harness/pins/iencoder_dispatcher.hpp"
-#include "harness/pins/icontrol_mode_dispatcher.hpp"
-#include "harness/pins/isupervisor_trim_dispatcher.hpp"
-#include "harness/pins/imotor_driver_dispatcher.hpp"
-#include "harness/pins/imotor_config_dispatcher.hpp"
-#include "harness/pins/isystem_dispatcher.hpp"
+#include "L3_services/boundary/itrace_dispatcher.hpp"
+#include "L3_services/boundary/isafety_dispatcher.hpp"
+#include "L3_services/boundary/idisplay_dispatcher.hpp"
+#include "L3_services/boundary/iflash_image_dispatcher.hpp"
+#include "L3_services/boundary/imotion_dispatcher.hpp"
+#include "L3_services/boundary/iqueue_dispatcher.hpp"
+#include "L3_services/boundary/iencoder_dispatcher.hpp"
+#include "L3_services/boundary/icontrol_mode_dispatcher.hpp"
+#include "L3_services/boundary/isupervisor_trim_dispatcher.hpp"
+#include "L3_services/boundary/imotor_driver_dispatcher.hpp"
+#include "L3_services/boundary/imotor_config_dispatcher.hpp"
+#include "L3_services/boundary/isystem_dispatcher.hpp"
 
 namespace Services {
 

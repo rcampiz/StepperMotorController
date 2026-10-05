@@ -7,7 +7,7 @@
  */
 #pragma once
 
-#include "harness/pins/itimer_counter.hpp"
+#include "L5_board/boundary/itimer_counter.hpp"
 #include "X_vendor/CMSIS/stm32f401xe.h"
 
 namespace Board {

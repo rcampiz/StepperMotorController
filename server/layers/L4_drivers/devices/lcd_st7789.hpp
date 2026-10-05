@@ -11,7 +11,7 @@
 
 #include <stdint.h>
 #include "harness/defs/harness_l4_l5.hpp"
-#include "harness/pins/icanvas.hpp"
+#include "L4_drivers/boundary/icanvas.hpp"
 
 namespace Drivers {
 

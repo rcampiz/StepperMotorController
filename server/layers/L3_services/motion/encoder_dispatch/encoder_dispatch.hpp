@@ -8,7 +8,7 @@
 
 #pragma once
 
-#include "harness/pins/iencoder_dispatcher.hpp"
+#include "L3_services/boundary/iencoder_dispatcher.hpp"
 #include "L3_services/boundary/iencoder.hpp"
 #include "L3_services/boundary/iencoder_filter_control.hpp"
 

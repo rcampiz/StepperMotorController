@@ -14,6 +14,9 @@ Checks
      allowed there is Harness::IResponseSink.
   6. ENABLE_INTERFACE_TRACE and harness/taps/ appear only under harness/ and server/system_init.cpp.
   7. No server/harness/adapters/ directory and no duplicate consumer-port headers remain.
+  8. No forwarder in harness/pins/: a pins header must not merely re-include a layer's
+     boundary/ header or a task-sheet header (consumers include the defs/ harness header
+     or, within the same layer, the boundary header itself).
 
 Usage: python scripts/check_harness_defs.py [--strict]
 """
@@ -138,6 +141,20 @@ def main():
         text = read(path)
         if re.search(r'Consumer port\s*[—-]', text) and "/boundary/" in path.replace("\\", "/"):
             errors.append(f"{os.path.relpath(path, SERVER)}: still documented as a consumer-port duplicate")
+
+    # ---- 8: pins forwarders (one include of a layer boundary / task-sheet header, no body)
+    FORWARD_RE = re.compile(r'^\s*#\s*include\s*"((?:L[1-5]_\w+/boundary/|F_platform/tasks/)[^"]+)"', re.M)
+    for path in walk(pins, (".hpp",)):
+        text = read(path)
+        targets = FORWARD_RE.findall(text)
+        if not targets:
+            continue
+        body = [l for l in text.splitlines()
+                if l.strip() and not l.strip().startswith(("#", "*", "/*", "//"))]
+        if not body:
+            errors.append(f"harness/pins/{os.path.basename(path)}: forwarder for {targets[0]} (include the defs/ harness header or the boundary header directly)")
+        else:
+            errors.append(f"harness/pins/{os.path.basename(path)}: includes layer header {targets[0]} (pins hold PODs/init contracts only)")
 
     for e in errors:
         print("  " + e)
