@@ -8,7 +8,7 @@
 #ifndef DISPLAY_TASK_HPP
 #define DISPLAY_TASK_HPP
 
-#include "F_platform/boundary/ischeduler.hpp"
+#include "F_platform/boundary/ischeduler.hpp"   // Platform::TaskHandle
 #include <stdint.h>
 
 namespace Platform { class IClock; }
@@ -20,14 +20,10 @@ constexpr uint32_t DISPLAY_TASK_STACK_SIZE = 640;  // uxTaskGetSystemState + snp
 constexpr uint32_t DISPLAY_TASK_PRIORITY = 1;
 constexpr uint32_t DISPLAY_REFRESH_PERIOD_MS = 50; // 20 Hz refresh
 
-bool DisplayTask_Init(Services::IDisplayService& service,
-                      Platform::IClock& clock,
-                      Platform::IScheduler& scheduler);
+bool DisplayTask_Init(Services::IDisplayService& service, Platform::IClock& clock);
 void vDisplayTask(void* pvParameters);
 
 extern Platform::TaskHandle g_displayTaskHandle;
-void DisplayTask_Suspend();
-void DisplayTask_Resume();
 
 } // namespace Scheduler
 

@@ -25,7 +25,6 @@
 #include "harness/pins/clock_board.hpp"
 #include "harness/pins/platform_board.hpp"
 #include "harness/pins/spi_init.hpp"
-#include "harness/taps/apply_taps.hpp"
 #include "harness/defs/harness_l5_l1_bytes.hpp"
 
 // L3 service inits
@@ -75,10 +74,7 @@ void initHardware() {
 void initPlatform() {
   initOrHalt("Platform", Harness::initPlatformBoard(s_platform));
   const auto &r = s_platform;
-  initOrHalt("SPI Manager",
-             Harness::initSPIManager(
-                 Harness::applyTap<Harness::TracedLock, 0>(*r.spi1Lock),
-                 Harness::applyTap<Harness::TracedLock, 1>(*r.spi2Lock)));
+  initOrHalt("SPI Manager", Harness::connectSPIManager(*r.spi1Lock, *r.spi2Lock));
 }
 
 // Phase 3: L3 shared state — control mode, events, telemetry store, UI mode

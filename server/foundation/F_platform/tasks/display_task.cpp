@@ -12,17 +12,13 @@ namespace Scheduler {
 
 static Services::IDisplayService* s_service = nullptr;
 static Platform::IClock* s_clock = nullptr;
-static Platform::IScheduler* s_scheduler = nullptr;
 
 Platform::TaskHandle g_displayTaskHandle = nullptr;
 
-bool DisplayTask_Init(Services::IDisplayService& service,
-                      Platform::IClock& clock,
-                      Platform::IScheduler& scheduler)
+bool DisplayTask_Init(Services::IDisplayService& service, Platform::IClock& clock)
 {
     s_service = &service;
     s_clock = &clock;
-    s_scheduler = &scheduler;
     return true;
 }
 
@@ -41,20 +37,6 @@ void vDisplayTask(void* pvParameters)
         s_service->tick();
 
         s_clock->sleepUntilMs(lastWakeMs, DISPLAY_REFRESH_PERIOD_MS);
-    }
-}
-
-void DisplayTask_Suspend()
-{
-    if (s_scheduler != nullptr && g_displayTaskHandle != nullptr) {
-        s_scheduler->suspendTask(g_displayTaskHandle);
-    }
-}
-
-void DisplayTask_Resume()
-{
-    if (s_scheduler != nullptr && g_displayTaskHandle != nullptr) {
-        s_scheduler->resumeTask(g_displayTaskHandle);
     }
 }
 

@@ -13,7 +13,7 @@ bool initDisplayTask(Services::IDisplayService& service,
                      Platform::IClock& clock,
                      Platform::IScheduler& scheduler)
 {
-    if (!Scheduler::DisplayTask_Init(service, clock, scheduler)) {
+    if (!Scheduler::DisplayTask_Init(service, clock)) {
         return false;
     }
     Scheduler::g_displayTaskHandle = scheduler.createTask(

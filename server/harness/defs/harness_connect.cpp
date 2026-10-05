@@ -17,6 +17,7 @@
 #include "harness/defs/harness_l2_l3.hpp"
 #include "harness/pins/exti_callbacks.hpp"
 #include "harness/pins/imicrosecond_clock.hpp"
+#include "harness/pins/spi_init.hpp"
 #include "harness/taps/apply_taps.hpp"
 
 namespace Harness {
@@ -156,6 +157,19 @@ const L5L1ByteHarness* connectL5L1Bytes(CommsChannel type)
         s_h = &s_harness;
     }
     return s_h;
+}
+
+} // namespace Harness
+
+namespace Harness {
+
+// ============================================================================
+// Platform SPI locks -> L5 SPI manager (power net; the TracedLock taps live here)
+// ============================================================================
+bool connectSPIManager(Platform::ILock& spi1Raw, Platform::ILock& spi2Raw)
+{
+    return initSPIManager(applyTap<TracedLock, 0>(spi1Raw),
+                          applyTap<TracedLock, 1>(spi2Raw));
 }
 
 } // namespace Harness

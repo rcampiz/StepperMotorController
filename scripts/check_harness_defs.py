@@ -12,7 +12,8 @@ Checks
      defined in exactly one <layer>/boundary/ directory.
   5. harness/pins/ holds only shared PODs / enums / init contracts; the only abstract class
      allowed there is Harness::IResponseSink.
-  6. ENABLE_INTERFACE_TRACE and harness/taps/ appear only under harness/ and server/system_init.cpp.
+  6. ENABLE_INTERFACE_TRACE and harness/taps/ appear only under harness/ (taps are applied
+     solely in harness/defs/harness_connect.cpp).
   7. No server/harness/adapters/ directory and no duplicate consumer-port headers remain.
   8. No forwarder in harness/pins/: a pins header must not merely re-include a layer's
      boundary/ header or a task-sheet header (consumers include the defs/ harness header
@@ -126,7 +127,7 @@ def main():
     # ---- 6: trace ifdefs / taps only inside harness (and the composition root)
     for path in walk(SERVER):
         rel = os.path.relpath(path, SERVER).replace("\\", "/")
-        if rel.startswith("harness/") or rel in ("system_init.cpp", "main.cpp"):
+        if rel.startswith("harness/"):
             continue
         text = read(path)
         if "ENABLE_INTERFACE_TRACE" in text:
