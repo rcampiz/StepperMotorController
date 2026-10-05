@@ -69,6 +69,49 @@ def list_files(rel_dir):
     return out
 
 
+SHEET_PREFIX = [
+    ("server/layers/L1_transport/", "L1"), ("server/layers/L2_protocol/", "L2"),
+    ("server/layers/L3_services/", "L3"), ("server/layers/L4_drivers/", "L4"),
+    ("server/layers/L5_board/", "L5"), ("server/foundation/F_platform/tasks/", "TASKS"),
+    ("server/foundation/F_platform/", "PLATFORM"), ("server/harness/", "HARNESS"),
+]
+
+
+def sheet_of(rel):
+    for prefix, sheet in SHEET_PREFIX:
+        if rel.startswith(prefix):
+            return sheet
+    return "SYSTEM"
+
+
+def includers_of(prefix):
+    """Count, per sheet, the source files that include a header starting with `prefix`."""
+    counts = {}
+    for d, _, files in os.walk(SERVER):
+        if "external" in d.replace("\\", "/"):
+            continue
+        for f in files:
+            if not f.endswith((".cpp", ".hpp", ".h")):
+                continue
+            path = os.path.join(d, f)
+            rel = os.path.relpath(path, ROOT).replace("\\", "/")
+            if f'#include "{prefix}' in read(path):
+                sheet = sheet_of(rel)
+                counts[sheet] = counts.get(sheet, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def global_nets():
+    return [
+        {"id": "PLATFORM", "name": "Platform power net", "path": "server/foundation/F_platform/boundary",
+         "rule": "rule 4: RTOS-neutral primitives (clock, us clock, locks, queues, scheduler, task stats, critical section, notifier) usable by any sheet without a harness",
+         "direct_includers": includers_of("F_platform/boundary/")},
+        {"id": "TRACE", "name": "Interface trace net", "path": "server/harness/trace",
+         "rule": "second global net: ITRACE()/ITrace::log and the trace sink may be included by any sheet; compiled to no-ops unless ENABLE_INTERFACE_TRACE (firmware-debug); sink = L3 trace ring via Trace::initTraceSink",
+         "direct_includers": includers_of("harness/trace/")},
+    ]
+
+
 def parse_harnesses():
     result = []
     for path in sorted(os.listdir(DEFS)):
@@ -126,6 +169,7 @@ def build_manifest(harnesses):
         },
         "layers": layers,
         "rtos": {"tasks": TASKS},
+        "global_nets": global_nets(),
         "harnesses": hs,
         "edges": edges,
         "generated_by": "scripts/gen_architecture.py",
@@ -142,7 +186,8 @@ def mermaid(harnesses):
         lines.append(f'    {lid}["{lid} {name}"]:::layer')
     lines += ["  end", "  subgraph RTOS[RTOS column: orthogonal]", "    direction TB",
               '    TASKS["Task sheet (Scheduler::)\\nMotor p4 / Comms p3 / Encoder p2 / Display p1"]:::rtos',
-              '    PLATFORM["Platform power net\\nclock, us clock, locks, queues, scheduler, notifier"]:::rtos', "  end",
+              '    PLATFORM["Platform power net\\nclock, us clock, locks, queues, scheduler, notifier"]:::rtos',
+              '    TRACE["Trace net (debug builds)\\nharness/trace ITRACE + sink"]:::rtos', "  end",
               '  HARNESS["Harness defs/ + connect()"]:::harness']
     for h in harnesses:
         n = len(h["signals"])
@@ -153,6 +198,7 @@ def mermaid(harnesses):
         lines.append(f'  {frm}{style}"{label}"{arrow}{to}')
     lines.append('  PLATFORM -- "power net (rule 4)" --> STACK')
     lines.append('  PLATFORM -- "power net (rule 4)" --> TASKS')
+    lines.append('  TRACE -. "global net (L2, L3, harness taps)" .-> STACK')
     return "\n".join(lines)
 
 
@@ -164,12 +210,17 @@ def document(harnesses, manifest):
            "1. **Tasks call services.** The task sheet (`F_platform/tasks`) only waits, then calls one L3 entry point. Tasks never touch L1, L2, L4 or L5.",
            "2. **Adjacent layers only.** L1 - L2 - L3 - L4 - L5, each through that boundary's harness. No skipping.",
            "3. **One exception:** L5 -> L1 host command bytes through `Transport::IByteChannel` (owned by L1).",
-           "4. **Platform is a power net.** `F_platform/boundary` primitives may be used by any sheet; L3 contains no RTOS loops and is host-testable.",
+           "4. **Platform is a power net.** `F_platform/boundary` primitives may be used by any sheet; L3 contains no RTOS loops and is host-testable. `harness/trace/` is the second global net (debug builds only, see below).",
            "5. **The composition root may see every sheet.** `server/main.cpp` + `system_init.cpp` call the Platform, L5 and L3 init contracts and the task-init contracts directly; no other sheet may.", "",
            "Enforced by `scripts/check_includes.py --strict` and `scripts/check_harness_defs.py --strict`.", "",
            "## Layers", ""]
     for l in manifest["layers"]:
         out.append(f'- **{l["id"]} {l["name"]}** — {l["responsibility"]} ({len(l["files"])} files)')
+    out += ["", "## Global nets", "",
+            "Two headers sets are wired like power rails: any sheet may include them directly, no harness row describes them.", ""]
+    for n in manifest["global_nets"]:
+        inc = ", ".join(f"{k} {v}" for k, v in n["direct_includers"].items()) or "none"
+        out.append(f'- **{n["id"]} {n["name"]}** (`{n["path"]}`) — {n["rule"]}. Direct includers: {inc}.')
     out += ["", "## Harnesses", ""]
     for h in harnesses:
         out += [f'### H_{h["id"]} — {h["upper"]} <-> {h["lower"]}', "",

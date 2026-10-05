@@ -341,6 +341,12 @@ non-adjacent edge the checker accepts.
 without a harness, like VCC on a schematic. Consequence: L3 contains **no RTOS loops** and
 builds natively for host tests (`tests/`).
 
+**Second global net: `harness/trace/`.** The `ITRACE()` macros, `ITrace::log()` and the trace
+sink are included directly by L2, L3 and the taps, exactly like Platform. They compile to
+no-ops unless `ENABLE_INTERFACE_TRACE` is defined (firmware-debug only); the sink is the L3
+trace ring, attached by `Trace::initTraceSink()` from the composition root. No harness row
+describes this net; `docs/ARCHITECTURE.md` lists its direct includers.
+
 ### Rule 5: The composition root may see every sheet
 
 `server/main.cpp` and `server/system_init.cpp` are the wiring diagram, not a layer. They call the

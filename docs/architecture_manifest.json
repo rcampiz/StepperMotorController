@@ -502,6 +502,33 @@
       }
     ]
   },
+  "global_nets": [
+    {
+      "id": "PLATFORM",
+      "name": "Platform power net",
+      "path": "server/foundation/F_platform/boundary",
+      "rule": "rule 4: RTOS-neutral primitives (clock, us clock, locks, queues, scheduler, task stats, critical section, notifier) usable by any sheet without a harness",
+      "direct_includers": {
+        "HARNESS": 9,
+        "L3": 15,
+        "L4": 1,
+        "L5": 1,
+        "PLATFORM": 5,
+        "TASKS": 12
+      }
+    },
+    {
+      "id": "TRACE",
+      "name": "Interface trace net",
+      "path": "server/harness/trace",
+      "rule": "second global net: ITRACE()/ITrace::log and the trace sink may be included by any sheet; compiled to no-ops unless ENABLE_INTERFACE_TRACE (firmware-debug); sink = L3 trace ring via Trace::initTraceSink",
+      "direct_includers": {
+        "HARNESS": 6,
+        "L2": 2,
+        "L3": 7
+      }
+    }
+  ],
   "harnesses": [
     {
       "id": "H_L1_L2",
