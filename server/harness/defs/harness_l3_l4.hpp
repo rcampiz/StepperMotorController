@@ -47,7 +47,7 @@ constexpr SignalDesc L3L4_SIGNALS[] = {
     { "Drivers::ICanvas",          Provider::Lower, Flow::Down, Timing::Sync, ctx(Ctx::Task | Ctx::PreScheduler), "blocks on SPI1 mutex; stream buffers caller-owned until streamBitmapEnd; waitForVSync busy-waits <= 18 ms" },
     { "Drivers::IJoystick",        Provider::Lower, Flow::Down, Timing::Sync, ctx(Ctx::Task),                     "optional" },
     { "Drivers::IFlash",           Provider::Lower, Flow::Down, Timing::Sync, ctx(Ctx::Task),                     "blocks on SPI2 mutex; optional" },
-    { "Drivers::IEncoderHardware", Provider::Lower, Flow::Down, Timing::Sync, ctx(Ctx::Task | Ctx::ISR),          "indexISR only from the L5 EXTI callback; volatile fields, no snapshot atomicity" },
+    { "Drivers::IEncoderHardware", Provider::Lower, Flow::Down, Timing::Sync, ctx(Ctx::Task | Ctx::ISR),          "indexISR only from the L5 EXTI callback; index fields published as a seqlock snapshot (readIndex)" },
     { "Drivers::IDebugAccess",     Provider::Lower, Flow::Down, Timing::Sync, ctx(Ctx::Task),                     "raw bring-up commands pass-through to L5; gated by L3 DebugService" },
     { "Drivers::IConfigStore",     Provider::Lower, Flow::Down, Timing::Sync, ctx(Ctx::Task | Ctx::PreScheduler), "erase/write block for the flash operation; read copies into caller buffer" },
 };

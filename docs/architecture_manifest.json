@@ -461,6 +461,7 @@
         "server/harness/pins/motor_driver_init.hpp",
         "server/harness/pins/motor_task_init.hpp",
         "server/harness/pins/platform_board.hpp",
+        "server/harness/pins/seq_snapshot.hpp",
         "server/harness/pins/spi_init.hpp",
         "server/harness/pins/telemetry_types.hpp",
         "server/harness/pins/transport_init.hpp",
@@ -846,7 +847,7 @@
       "to": "Drivers",
       "via": "harness",
       "name": "Drivers::IEncoderHardware",
-      "data": "indexISR only from the L5 EXTI callback; volatile fields, no snapshot atomicity",
+      "data": "indexISR only from the L5 EXTI callback; index fields published as a seqlock snapshot (readIndex)",
       "direction": "down",
       "sync": "sync",
       "is_violation": false

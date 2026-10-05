@@ -81,10 +81,12 @@ void EncoderService::sample()
 
     int32_t filtered = m_processor->filter(rawVelocity, tickUs);
 
-    bool indexSeen = m_hw->isIndexSeen();
-    uint32_t indexTick = m_hw->getIndexTick();
-    int32_t revolutions = m_hw->getRevolutions();
-    uint32_t indexPeriodUs = m_hw->getIndexPeriodUs();
+    // One consistent copy of the ISR-written index fields (seqlock in L4)
+    const Drivers::IndexSnapshot idx = m_hw->readIndex();
+    const bool indexSeen = (idx.pulses != m_ackedIndexPulses);
+    const uint32_t indexTick = idx.tickMs;
+    const int32_t revolutions = idx.revolutions;
+    const uint32_t indexPeriodUs = idx.periodUs;
 
     // --- Shared snapshot (read by the Comms task through getState) ---
     m_critical->enter();
@@ -145,8 +147,9 @@ void EncoderService::resetCount()
 
 void EncoderService::clearIndexFlag()
 {
+    // Acknowledge every pulse seen so far (word-sized write; the ISR never touches it)
     if (m_hw != nullptr) {
-        m_hw->clearIndexFlag();
+        m_ackedIndexPulses = m_hw->readIndex().pulses;
     }
     m_critical->enter();
     m_state.indexSeen = false;

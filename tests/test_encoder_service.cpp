@@ -13,15 +13,12 @@ namespace {
 struct FakeEncoderHw : Drivers::IEncoderHardware {
     std::vector<uint16_t> ring = std::vector<uint16_t>(256, 0);
     uint32_t writeIdx = 0; uint16_t rate = 1000; bool ready = true;
-    int resets = 0; bool indexSeen = false;
+    int resets = 0; Drivers::IndexSnapshot idx{};
+    FakeEncoderHw() { idx.tickMs = 77; idx.revolutions = 3; idx.periodUs = 5000; }
     bool isReady() const override { return ready; }
     int32_t getCount() const override { return 1234; }
     void reset() override { ++resets; }
-    bool isIndexSeen() const override { return indexSeen; }
-    void clearIndexFlag() override { indexSeen = false; }
-    uint32_t getIndexTick() const override { return 77; }
-    int32_t getRevolutions() const override { return 3; }
-    uint32_t getIndexPeriodUs() const override { return 5000; }
+    Drivers::IndexSnapshot readIndex() const override { return idx; }
     void indexISR(uint32_t, uint32_t) override {}
     const uint16_t* sampleBuffer() const override { return ring.data(); }
     uint32_t sampleBufferSize() const override { return static_cast<uint32_t>(ring.size()); }

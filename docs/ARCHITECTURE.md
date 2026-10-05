@@ -21,7 +21,7 @@ Enforced by `scripts/check_includes.py --strict` and `scripts/check_harness_defs
 - **L5 Board** — Register/peripheral access: clocks, GPIO, SPI1/SPI2, USART2 + RTT byte channels, TIM4, TIM3+DMA sampler, EXTI, TE sync, internal flash, bring-up commands. (35 files)
 - **TASKS Task sheet (Scheduler::)** — Four RTOS task loops that only wait, then call one L3 entry point; owns priorities, periods, stack sizes and task handles. (16 files)
 - **PLATFORM Platform (power net)** — RTOS-neutral primitives any sheet may use: clock, microsecond clock, locks, queues, scheduler, task stats, critical section, task notifier; FreeRTOS implementations, startup. (49 files)
-- **HARNESS Harness** — Harness definitions (defs/), connect() functions (the only place taps are applied), shared POD pins, traced taps, interface trace. (93 files)
+- **HARNESS Harness** — Harness definitions (defs/), connect() functions (the only place taps are applied), shared POD pins, traced taps, interface trace. (94 files)
 - **SYSTEM Composition root** — main.cpp + system_init.cpp: phase sequencing, Platform resources, task handle publication. (3 files)
 
 ## Harnesses
@@ -65,7 +65,7 @@ Enforced by `scripts/check_includes.py --strict` and `scripts/check_harness_defs
 | `Drivers::ICanvas` | Lower | Down | Sync | Task, PreScheduler | blocks on SPI1 mutex; stream buffers caller-owned until streamBitmapEnd; waitForVSync busy-waits <= 18 ms |
 | `Drivers::IJoystick` | Lower | Down | Sync | Task | optional |
 | `Drivers::IFlash` | Lower | Down | Sync | Task | blocks on SPI2 mutex; optional |
-| `Drivers::IEncoderHardware` | Lower | Down | Sync | Task, ISR | indexISR only from the L5 EXTI callback; volatile fields, no snapshot atomicity |
+| `Drivers::IEncoderHardware` | Lower | Down | Sync | Task, ISR | indexISR only from the L5 EXTI callback; index fields published as a seqlock snapshot (readIndex) |
 | `Drivers::IDebugAccess` | Lower | Down | Sync | Task | raw bring-up commands pass-through to L5; gated by L3 DebugService |
 | `Drivers::IConfigStore` | Lower | Down | Sync | Task, PreScheduler | erase/write block for the flash operation; read copies into caller buffer |
 

@@ -6,11 +6,22 @@
  * EXTI line. L3 (EncoderService) reads the DMA ring through the sample*() accessors and
  * keeps its own read index; L5 owns the ring. indexISR() is ISR context (NVIC 5), reached
  * from the L5 EXTI callback the driver registered — never from L3.
+ *
+ * Index fields are published as one IndexSnapshot through a sequence-counter snapshot
+ * (readIndex): the ISR is the only writer, the task reader never sees torn values. "Index
+ * seen" is derived by the consumer from the monotonic pulse count (ack = remember the count).
  */
 #pragma once
 #include <stdint.h>
 
 namespace Drivers {
+
+struct IndexSnapshot {
+    uint32_t pulses = 0;        ///< index pulses since init (monotonic)
+    uint32_t tickMs = 0;        ///< Platform tick (ms) at the last pulse
+    int32_t  revolutions = 0;   ///< signed revolution count (+ counting up, - counting down)
+    uint32_t periodUs = 0;      ///< microseconds between the last two pulses (0 until two seen)
+};
 
 class IEncoderHardware {
 public:
@@ -21,12 +32,9 @@ public:
     virtual int32_t getCount() const = 0;
     virtual void reset() = 0;
 
-    // --- index pulse (set in ISR, read in task context) ---
-    virtual bool isIndexSeen() const = 0;
-    virtual void clearIndexFlag() = 0;
-    virtual uint32_t getIndexTick() const = 0;
-    virtual int32_t getRevolutions() const = 0;
-    virtual uint32_t getIndexPeriodUs() const = 0;
+    // --- index pulse (written in ISR, read in task context) ---
+    /// Consistent copy of the index fields (never torn by a concurrent indexISR).
+    virtual IndexSnapshot readIndex() const = 0;
     /// ISR entry (L5 EXTI callback). tickMs from Platform::IClock::getTickMsFromISR.
     virtual void indexISR(uint32_t tickMs, uint32_t tickUs) = 0;
 

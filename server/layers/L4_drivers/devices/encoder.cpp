@@ -25,11 +25,9 @@ Encoder::Encoder(const Harness::EncoderPins& pins,
 bool Encoder::init(uint16_t sampleRateHz)
 {
     m_status = Status::INITIALIZING;
-    m_indexSeen = false;
-    m_indexTick = 0;
-    m_revolutions = 0;
+    m_isrIndex = IndexSnapshot{};
     m_lastIndexUs = 0;
-    m_indexPeriodUs = 0;
+    m_index.write(m_isrIndex);
 
     // Index pulse: L5 EXTI -> trampoline -> indexISR (ISR context, NVIC 5)
     s_isrInstance = this;
@@ -47,17 +45,19 @@ bool Encoder::init(uint16_t sampleRateHz)
 
 void Encoder::indexISR(uint32_t tickMs, uint32_t tickUs)
 {
-    m_indexSeen = true;
-    m_indexTick = tickMs;
+    // ISR context: update the private working copy, then publish it atomically (seqlock).
+    m_isrIndex.pulses++;
+    m_isrIndex.tickMs = tickMs;
     if (m_timer.isCountingDown()) {
-        m_revolutions--;
+        m_isrIndex.revolutions--;
     } else {
-        m_revolutions++;
+        m_isrIndex.revolutions++;
     }
     if (m_lastIndexUs != 0) {
-        m_indexPeriodUs = tickUs - m_lastIndexUs;
+        m_isrIndex.periodUs = tickUs - m_lastIndexUs;
     }
     m_lastIndexUs = tickUs;
+    m_index.write(m_isrIndex);
 }
 
 void Encoder::indexIsrTrampoline()

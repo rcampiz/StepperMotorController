@@ -2,9 +2,9 @@
  * @file traced_encoder.hpp
  * @brief Traced wrapper for Drivers::IEncoderHardware (L3->L4 boundary)
  *
- * Logs the infrequent control calls (reset, clearIndexFlag, restartSampling) and index
- * observations. Per-sample ring reads are not traced (called every 10 ms in a loop).
- * Pure observer. Only compiled when ENABLE_INTERFACE_TRACE is defined.
+ * Logs the infrequent control calls (reset, restartSampling). Per-sample ring reads and
+ * readIndex() are not traced (called every 10 ms in a loop). Pure observer.
+ * Only compiled when ENABLE_INTERFACE_TRACE is defined.
  */
 
 #pragma once
@@ -29,14 +29,7 @@ public:
         m_real.reset();
     }
 
-    bool isIndexSeen() const override { return m_real.isIndexSeen(); }
-    void clearIndexFlag() override {
-        Harness::ITrace::log(Harness::ITrace::L3_L4_ENCODER, "[L3>L4]", "enc.clearIndex");
-        m_real.clearIndexFlag();
-    }
-    uint32_t getIndexTick() const override { return m_real.getIndexTick(); }
-    int32_t getRevolutions() const override { return m_real.getRevolutions(); }
-    uint32_t getIndexPeriodUs() const override { return m_real.getIndexPeriodUs(); }
+    Drivers::IndexSnapshot readIndex() const override { return m_real.readIndex(); }
     void indexISR(uint32_t tickMs, uint32_t tickUs) override { m_real.indexISR(tickMs, tickUs); }
 
     const uint16_t* sampleBuffer() const override { return m_real.sampleBuffer(); }

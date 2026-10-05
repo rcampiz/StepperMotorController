@@ -5,10 +5,13 @@
  * Owns: the TIM4 count (via Board::ITimerCounter), the TIM3+DMA sample ring
  * (via Board::IEncoderSampler) and the index-pulse ISR registration (H_L4_L5 registerExti).
  * Timestamps come from the Platform clocks (power net, ISR-safe calls only).
+ * Index fields live in an ISR-private working copy and are published through a
+ * sequence-counter snapshot, so readIndex() in task context is never torn.
  */
 #pragma once
 
 #include "harness/defs/harness_l4_l5.hpp"
+#include "harness/pins/seq_snapshot.hpp"
 #include "L4_drivers/boundary/iencoder_hardware.hpp"
 #include "F_platform/boundary/iclock.hpp"
 #include "F_platform/boundary/imicrosecond_clock.hpp"
@@ -37,11 +40,7 @@ public:
     }
     void reset() override { m_timer.setCount(0); }
 
-    bool isIndexSeen() const override { return m_indexSeen; }
-    void clearIndexFlag() override { m_indexSeen = false; }
-    uint32_t getIndexTick() const override { return m_indexTick; }
-    int32_t getRevolutions() const override { return m_revolutions; }
-    uint32_t getIndexPeriodUs() const override { return m_indexPeriodUs; }
+    IndexSnapshot readIndex() const override { return m_index.read(); }
     void indexISR(uint32_t tickMs, uint32_t tickUs) override;
 
     const uint16_t* sampleBuffer() const override { return m_sampler.getBuffer(); }
@@ -62,11 +61,12 @@ private:
     uint8_t                      m_extiLine;
 
     Status m_status = Status::NOT_INITIALIZED;
-    volatile bool     m_indexSeen = false;
-    volatile uint32_t m_indexTick = 0;
-    volatile int32_t  m_revolutions = 0;
-    volatile uint32_t m_lastIndexUs = 0;
-    volatile uint32_t m_indexPeriodUs = 0;
+
+    // ISR-private working state (only indexISR and init touch these)
+    IndexSnapshot m_isrIndex{};
+    uint32_t      m_lastIndexUs = 0;
+    // Published copy: ISR writes, task reads (seqlock)
+    Harness::SeqSnapshot<IndexSnapshot> m_index;
 };
 
 } // namespace Drivers

@@ -69,6 +69,7 @@ private:
 
     volatile EncoderSnapshot m_state = {};
     uint32_t m_lastDmaIdx = 0;
+    uint32_t m_ackedIndexPulses = 0;   ///< pulses acknowledged by clearIndexFlag (Comms task writes, Encoder task reads)
     uint16_t m_sampleRateHz = DEFAULT_SAMPLE_RATE_HZ;
     uint8_t  m_measWindowMs = DEFAULT_MEAS_WINDOW_MS;
     int32_t  m_lastRawVelocity = 0;
