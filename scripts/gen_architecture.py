@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 gen_architecture.py -- generate docs/ARCHITECTURE.md and docs/architecture_manifest.json
 from the harness definition tables (server/harness/defs/harness_*.hpp) and the source tree.
@@ -215,16 +215,16 @@ def document(harnesses, manifest):
            "Enforced by `scripts/check_includes.py --strict` and `scripts/check_harness_defs.py --strict`.", "",
            "## Layers", ""]
     for l in manifest["layers"]:
-        out.append(f'- **{l["id"]} {l["name"]}** — {l["responsibility"]} ({len(l["files"])} files)')
+        out.append(f'- **{l["id"]} {l["name"]}** â€” {l["responsibility"]} ({len(l["files"])} files)')
     out += ["", "## Global nets", "",
-            "Two headers sets are wired like power rails: any sheet may include them directly, no harness row describes them.", ""]
+            "Two header sets are wired like power rails: any sheet may include them directly, no harness row describes them.", ""]
     for n in manifest["global_nets"]:
         inc = ", ".join(f"{k} {v}" for k, v in n["direct_includers"].items()) or "none"
-        out.append(f'- **{n["id"]} {n["name"]}** (`{n["path"]}`) — {n["rule"]}. Direct includers: {inc}.')
+        out.append(f'- **{n["id"]} {n["name"]}** (`{n["path"]}`) â€” {n["rule"]}. Direct includers: {inc}.')
     out += ["", "## Harnesses", ""]
     for h in harnesses:
-        out += [f'### H_{h["id"]} — {h["upper"]} <-> {h["lower"]}', "",
-                f'`{h["file"]}` — {h["brief"]}', "",
+        out += [f'### H_{h["id"]} â€” {h["upper"]} <-> {h["lower"]}', "",
+                f'`{h["file"]}` â€” {h["brief"]}', "",
                 "| Signal | Provider | Flow | Timing | Context | Ownership |", "|---|---|---|---|---|---|"]
         for s in h["signals"]:
             out.append(f'| `{s["name"]}` | {s["provider"]} | {s["flow"]} | {s["timing"]} | {", ".join(s["ctx"])} | {s["ownership"]} |')

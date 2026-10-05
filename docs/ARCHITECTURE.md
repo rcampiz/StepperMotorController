@@ -15,36 +15,36 @@ Enforced by `scripts/check_includes.py --strict` and `scripts/check_harness_defs
 
 ## Layers
 
-- **L1 Transport** — Byte-stream ingress/egress to the host (VCP UART / RTT); owns ITransport and the IByteChannel contract that L5 implements. (7 files)
-- **L2 Protocol** — SCPI parsing, validation, aliases, all host-facing formatting (responses, events, telemetry, joystick, banner); routes to the 13 L3 dispatchers. (19 files)
-- **L3 Services** — All business logic and safety, host-testable, no RTOS loops: Motor/Comms/Encoder/Display/Debug services, controllers, dispatchers, telemetry store, UI, trace. (172 files)
-- **L4 Drivers** — Device drivers over Board pin bundles: powerSTEP01, ST7789, NOR flash, joystick, quadrature encoder (+ index ISR), config store, debug access. (21 files)
-- **L5 Board** — Register/peripheral access: clocks, GPIO, SPI1/SPI2, USART2 + RTT byte channels, TIM4, TIM3+DMA sampler, EXTI, TE sync, internal flash, bring-up commands. (35 files)
-- **TASKS Task sheet (Scheduler::)** — Four RTOS task loops that only wait, then call one L3 entry point; owns priorities, periods, stack sizes, task handles and the task-init contracts the composition root calls. (16 files)
-- **PLATFORM Platform (power net)** — RTOS-neutral primitives any sheet may use: clock, microsecond clock, locks, queues, scheduler, task stats, critical section, task notifier; FreeRTOS implementations, startup. (49 files)
-- **HARNESS Harness** — Harness definitions (defs/), connect() functions (the only place taps are applied), shared POD pins, traced taps, interface trace. (57 files)
-- **SYSTEM Composition root** — main.cpp + system_init.cpp: phase sequencing, Platform resources, RTOS task creation over the L3 services. (3 files)
+- **L1 Transport** â€” Byte-stream ingress/egress to the host (VCP UART / RTT); owns ITransport and the IByteChannel contract that L5 implements. (7 files)
+- **L2 Protocol** â€” SCPI parsing, validation, aliases, all host-facing formatting (responses, events, telemetry, joystick, banner); routes to the 13 L3 dispatchers. (19 files)
+- **L3 Services** â€” All business logic and safety, host-testable, no RTOS loops: Motor/Comms/Encoder/Display/Debug services, controllers, dispatchers, telemetry store, UI, trace. (172 files)
+- **L4 Drivers** â€” Device drivers over Board pin bundles: powerSTEP01, ST7789, NOR flash, joystick, quadrature encoder (+ index ISR), config store, debug access. (21 files)
+- **L5 Board** â€” Register/peripheral access: clocks, GPIO, SPI1/SPI2, USART2 + RTT byte channels, TIM4, TIM3+DMA sampler, EXTI, TE sync, internal flash, bring-up commands. (35 files)
+- **TASKS Task sheet (Scheduler::)** â€” Four RTOS task loops that only wait, then call one L3 entry point; owns priorities, periods, stack sizes, task handles and the task-init contracts the composition root calls. (16 files)
+- **PLATFORM Platform (power net)** â€” RTOS-neutral primitives any sheet may use: clock, microsecond clock, locks, queues, scheduler, task stats, critical section, task notifier; FreeRTOS implementations, startup. (49 files)
+- **HARNESS Harness** â€” Harness definitions (defs/), connect() functions (the only place taps are applied), shared POD pins, traced taps, interface trace. (57 files)
+- **SYSTEM Composition root** â€” main.cpp + system_init.cpp: phase sequencing, Platform resources, RTOS task creation over the L3 services. (3 files)
 
 ## Global nets
 
-Two headers sets are wired like power rails: any sheet may include them directly, no harness row describes them.
+Two header sets are wired like power rails: any sheet may include them directly, no harness row describes them.
 
-- **PLATFORM Platform power net** (`server/foundation/F_platform/boundary`) — rule 4: RTOS-neutral primitives (clock, us clock, locks, queues, scheduler, task stats, critical section, notifier) usable by any sheet without a harness. Direct includers: HARNESS 9, L3 15, L4 1, L5 1, PLATFORM 5, TASKS 12.
-- **TRACE Interface trace net** (`server/harness/trace`) — second global net: ITRACE()/ITrace::log and the trace sink may be included by any sheet; compiled to no-ops unless ENABLE_INTERFACE_TRACE (firmware-debug); sink = L3 trace ring via Trace::initTraceSink. Direct includers: HARNESS 6, L2 2, L3 7.
+- **PLATFORM Platform power net** (`server/foundation/F_platform/boundary`) â€” rule 4: RTOS-neutral primitives (clock, us clock, locks, queues, scheduler, task stats, critical section, notifier) usable by any sheet without a harness. Direct includers: HARNESS 9, L3 15, L4 1, L5 1, PLATFORM 5, TASKS 12.
+- **TRACE Interface trace net** (`server/harness/trace`) â€” second global net: ITRACE()/ITrace::log and the trace sink may be included by any sheet; compiled to no-ops unless ENABLE_INTERFACE_TRACE (firmware-debug); sink = L3 trace ring via Trace::initTraceSink. Direct includers: HARNESS 6, L2 2, L3 7.
 
 ## Harnesses
 
-### H_L1_L2 — Protocol <-> Transport
+### H_L1_L2 â€” Protocol <-> Transport
 
-`server/harness/defs/harness_l1_l2.hpp` — H_L1_L2 — the ONLY header through which L2 Protocol and L1 Transport see each other.
+`server/harness/defs/harness_l1_l2.hpp` â€” H_L1_L2 — the ONLY header through which L2 Protocol and L1 Transport see each other.
 
 | Signal | Provider | Flow | Timing | Context | Ownership |
 |---|---|---|---|---|---|
 | `Transport::ITransport` | Lower | Down | Sync | Task, PreScheduler | caller-owned buffers; L1 owns the RX ring (via L5) and TX polling |
 
-### H_L2_L3 — Protocol <-> Services
+### H_L2_L3 â€” Protocol <-> Services
 
-`server/harness/defs/harness_l2_l3.hpp` — H_L2_L3 — the ONLY header through which L2 Protocol and L3 Services see each other.
+`server/harness/defs/harness_l2_l3.hpp` â€” H_L2_L3 — the ONLY header through which L2 Protocol and L3 Services see each other.
 
 | Signal | Provider | Flow | Timing | Context | Ownership |
 |---|---|---|---|---|---|
@@ -63,9 +63,9 @@ Two headers sets are wired like power rails: any sheet may include them directly
 | `Services::IDebugDispatcher` | Lower | Down | Sync | Task | locked until DBG:UNLOCK; output via the L2-owned IResponseSink |
 | `Protocol::ICommandProcessor` | Upper | Up | Sync | Task | L2 owns transport, line buffer, formatting; AsyncEvent by const ref |
 
-### H_L3_L4 — Services <-> Drivers
+### H_L3_L4 â€” Services <-> Drivers
 
-`server/harness/defs/harness_l3_l4.hpp` — H_L3_L4 — the ONLY header through which L3 Services and L4 Drivers see each other.
+`server/harness/defs/harness_l3_l4.hpp` â€” H_L3_L4 — the ONLY header through which L3 Services and L4 Drivers see each other.
 
 | Signal | Provider | Flow | Timing | Context | Ownership |
 |---|---|---|---|---|---|
@@ -77,9 +77,9 @@ Two headers sets are wired like power rails: any sheet may include them directly
 | `Drivers::IDebugAccess` | Lower | Down | Sync | Task | raw bring-up commands pass-through to L5; gated by L3 DebugService |
 | `Drivers::IConfigStore` | Lower | Down | Sync | Task, PreScheduler | erase/write block for the flash operation; read copies into caller buffer |
 
-### H_L4_L5 — Drivers <-> Board
+### H_L4_L5 â€” Drivers <-> Board
 
-`server/harness/defs/harness_l4_l5.hpp` — H_L4_L5 — the ONLY header through which L4 Drivers and L5 Board see each other.
+`server/harness/defs/harness_l4_l5.hpp` â€” H_L4_L5 — the ONLY header through which L4 Drivers and L5 Board see each other.
 
 | Signal | Provider | Flow | Timing | Context | Ownership |
 |---|---|---|---|---|---|
@@ -92,17 +92,17 @@ Two headers sets are wired like power rails: any sheet may include them directly
 | `Board::IBoardDebug` | Lower | Down | Sync | Task | register-level bring-up commands; text via IResponseSink |
 | `registerExti (index pulse)` | Lower | Up | AsyncFlag | ISR | callback table in harness; runs at NVIC 5 (RTOS-safe) |
 
-### H_L5_L1 — Transport <-> Board
+### H_L5_L1 â€” Transport <-> Board
 
-`server/harness/defs/harness_l5_l1_bytes.hpp` — X_L5_L1 — the ONE documented layer skip (rule 3): host command bytes, L5 -> L1
+`server/harness/defs/harness_l5_l1_bytes.hpp` â€” X_L5_L1 — the ONE documented layer skip (rule 3): host command bytes, L5 -> L1
 
 | Signal | Provider | Flow | Timing | Context | Ownership |
 |---|---|---|---|---|---|
 | `Transport::IByteChannel` | Lower | Up | AsyncFlag | Task, ISR | ring owned by L5; ISR producer (NVIC 6); caller-owned read buffer; may notify the Comms task |
 
-### H_TASKS_L3 — Scheduler (tasks) <-> Services
+### H_TASKS_L3 â€” Scheduler (tasks) <-> Services
 
-`server/harness/defs/harness_tasks_l3.hpp` — H_TASKS_L3 — the ONLY connection between the task sheet (F_platform/tasks,
+`server/harness/defs/harness_tasks_l3.hpp` â€” H_TASKS_L3 — the ONLY connection between the task sheet (F_platform/tasks,
 
 | Signal | Provider | Flow | Timing | Context | Ownership |
 |---|---|---|---|---|---|
