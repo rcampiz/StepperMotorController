@@ -69,7 +69,7 @@ def case_c(port, baud):
         if t_estop is None and sent >= 8192:
             t_estop = time.perf_counter()
             port.write(b"ESTOP\n")               # becomes 6 pixel bytes today
-            sent += 6
+            sent += 11
             print(f"  ESTOP injected at +{t_estop - t_start:.3f} s ({sent} bytes into the stream)")
     port.flush()
     t_end = time.perf_counter()
