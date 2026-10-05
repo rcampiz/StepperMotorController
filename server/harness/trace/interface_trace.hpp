@@ -27,7 +27,11 @@ namespace ITrace {
  * The sink receives recordIface() calls to store entries in the ring buffer.
  * If no sink is set, RTT output still works but no ring buffer recording occurs.
  */
+#ifdef ENABLE_INTERFACE_TRACE
 void setSink(Services::ITraceSink* sink);
+#else
+inline void setSink(Services::ITraceSink*) {}   // tracing compiled out (firmware-release)
+#endif
 
 // Per-boundary enable bits (16-bit to support >8 boundaries)
 enum Boundary : uint16_t {

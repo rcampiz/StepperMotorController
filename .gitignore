@@ -71,3 +71,5 @@ __pycache__/
 nul
 # Host test build directory
 build-tests/
+build-su/
+build-release/
