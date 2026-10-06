@@ -349,3 +349,82 @@ TEST(ascii_mode_keeps_the_short_telem_line) {
     r.proc.emitTelemetry(snap);
     EXPECT_STREQ(r.transport.out.c_str(), "TELEM: pos=7 spd=0 enc=0 vel=0\r\n");
 }
+
+// --- F12: multi-line replies end with a terminator in both formats ---------------------
+namespace {
+struct ChattyDebug : FakeL3::FakeDebugDispatcher {
+    Services::DebugDispatchResult result = Services::DebugDispatchResult::Handled;
+    Services::DebugDispatchResult debugDispatch(const char*, const char* const*, uint8_t,
+                                               Harness::IResponseSink& out) override {
+        if (result != Services::DebugDispatchResult::Handled) return result;
+        out.writeLine("STATUS=0001 (HiZ Idle)\nKVAL: HOLD=29");   // one call, two lines
+        out.write("say \"hi\"");                                   // partial ...
+        out.writeLine(" done");                                     // ... completed
+        return Services::DebugDispatchResult::Handled;
+    }
+};
+struct DebugRig {
+    FakeTransport transport;
+    Protocol::ServiceDispatcher dispatcher;
+    FakeL3::Bundle l3;
+    ChattyDebug debug;
+    Harness::L3Dispatchers d{l3.motion, l3.config, l3.safety, l3.queue, l3.controlMode,
+                             l3.supervisorTrim, l3.encoder, l3.motorDriver, l3.display,
+                             l3.flash, l3.system, l3.trace, debug};
+    Protocol::CommandParser parser{transport, dispatcher};
+    Protocol::ICommandProcessor& proc = parser;
+    DebugRig() { dispatcher.bind(d); }
+    std::string run(const char* line) {
+        transport.out.clear();
+        transport.in = std::string(line) + "\n";
+        proc.process();
+        return transport.out;
+    }
+};
+size_t lineCount(const std::string& s) { size_t n = 0; for (char c : s) if (c == '\n') ++n; return n; }
+bool endsWith(const std::string& s, const std::string& t) {
+    return s.size() >= t.size() && s.compare(s.size() - t.size(), t.size(), t) == 0;
+}
+}
+
+TEST(ascii_multiline_replies_end_with_ok_and_the_line_count) {
+    BoundRig r;
+    r.run("SYST:ECHO OFF");
+    std::string ver = r.run("SYST:VER?");
+    EXPECT_EQ(lineCount(ver), 6u);
+    EXPECT_TRUE(endsWith(ver, "OK 5\r\n"));
+    std::string cfg = r.run("DRV:CFG?");
+    EXPECT_EQ(lineCount(cfg), 8u);
+    EXPECT_TRUE(endsWith(cfg, "OK 7\r\n"));
+    std::string tr = r.run("DBG:TRACE:DUMP");
+    EXPECT_STREQ(tr.c_str(), "TRACE: 0 entries\r\nOK 1\r\n");
+}
+
+TEST(json_multiline_replies_are_one_envelope_with_a_lines_array) {
+    BoundRig r;
+    r.run("FMT JSON");
+    std::string ver = r.run("SYST:VER?");
+    EXPECT_EQ(lineCount(ver), 1u);
+    EXPECT_TRUE(ver.find("{\"status\":\"ok\",\"command\":\"VERSION\",\"data\":{\"lines\":[\"Stepper Motor Controller v") == 0);
+    EXPECT_TRUE(endsWith(ver, "\"],\"count\":5}}\r\n"));
+    std::string tr = r.run("DBG:TRACE:DUMP");
+    EXPECT_STREQ(tr.c_str(), "{\"status\":\"ok\",\"command\":\"TRACE_DUMP\",\"data\":{\"entries\":0,\"lines\":[],\"count\":0}}\r\n");
+}
+
+TEST(debug_sink_output_is_terminated_split_and_escaped) {
+    DebugRig r;
+    r.run("SYST:ECHO OFF");
+    std::string a = r.run("DBG:MOTOR");
+    EXPECT_STREQ(a.c_str(), "STATUS=0001 (HiZ Idle)\r\nKVAL: HOLD=29\r\nsay \"hi\" done\r\nOK 3\r\n");
+    r.run("FMT JSON");
+    std::string j = r.run("DBG:MOTOR");
+    EXPECT_STREQ(j.c_str(), "{\"status\":\"ok\",\"command\":\"MOTOR_DEBUG\",\"data\":{\"lines\":"
+                            "[\"STATUS=0001 (HiZ Idle)\",\"KVAL: HOLD=29\",\"say \\\"hi\\\" done\"],\"count\":3}}\r\n");
+    r.debug.result = Services::DebugDispatchResult::Locked;
+    std::string locked = r.run("DBG:MOTOR");
+    EXPECT_TRUE(locked.find("\"code\":\"DBG_LOCKED\"") != std::string::npos);
+    EXPECT_TRUE(locked.find("\"lines\"") == std::string::npos);
+    r.debug.result = Services::DebugDispatchResult::NotClaimed;
+    std::string gone = r.run("DBG:MOTOR");
+    EXPECT_TRUE(gone.find("\"code\":\"UNKNOWN_CMD\"") != std::string::npos);
+}

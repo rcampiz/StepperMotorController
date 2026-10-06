@@ -202,17 +202,40 @@ public:
    */
 
 private:
-  /// Text sink handed to L3 for multi-line debug output (keeps the transport inside L2)
-  class TransportSink : public Harness::IResponseSink {
+  /**
+   * F12: every multi-line reply ends with a terminator. ASCII: the lines, then `OK <n>`
+   * (n = lines sent). JSON: one line {"status":"ok","command":"<cmd>","data":{<extra>,
+   * "lines":[...],"count":n}} streamed line by line, so no buffer holds the reply.
+   * Also the IResponseSink handed to L3 for debug output (keeps the transport inside L2);
+   * outside begin()/end() it passes text straight through.
+   */
+  class LineReply : public Harness::IResponseSink {
   public:
-    explicit TransportSink(Transport::ITransport& t) : m_t(t) {}
-    void write(const char* s) override { m_t.print(s); }
-    void writeLine(const char* s) override { m_t.println(s); }
+    static constexpr size_t LINE_MAX = 160;   ///< longer lines wrap
+    explicit LineReply(Transport::ITransport& t) : m_t(t) {}
+    /// Start a reply; `extraJson` (no braces, no trailing comma) precedes `lines` in JSON.
+    void begin(bool json, const char* command, const char* extraJson = nullptr);
+    void write(const char* s) override;       ///< partial text, '\n' ends a line
+    void writeLine(const char* s) override;   ///< text plus a line ending
+    void end();                               ///< flush and send the terminator
+    void abort();                             ///< drop the reply if nothing went out, else close it
+    uint32_t count() const { return m_count; }
   private:
+    void put(const char* s, bool endLine);
+    void emitLine();
+    void sendHead();
     Transport::ITransport& m_t;
+    const char* m_command = nullptr;
+    const char* m_extra = nullptr;
+    bool m_json = false;
+    bool m_active = false;
+    bool m_headSent = false;
+    uint32_t m_count = 0;
+    size_t m_len = 0;
+    char m_line[LINE_MAX + 1];
   };
   Transport::ITransport &m_transport;
-  TransportSink m_sink;
+  LineReply m_sink;
   ICommandDispatcher &m_dispatcher;
   char m_buffer[CMD_BUFFER_SIZE];
   size_t m_bufIndex;

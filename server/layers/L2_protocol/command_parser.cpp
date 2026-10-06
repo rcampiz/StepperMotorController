@@ -221,10 +221,15 @@ void CommandParser::dispatch(const ParsedCommand &cmd) {
       const char *argPtrs[MAX_ARGS];
       for (uint8_t i = 0; i < cmd.argCount; i++)
         argPtrs[i] = cmd.args[i];
+      m_sink.begin(m_format == ResponseFormat::JSON, cmd.cmd);   // F12: terminated reply
       const auto dr = m_dispatcher.debugDispatch(cmd.cmd, argPtrs, cmd.argCount, m_sink);
-      if (dr == Services::DebugDispatchResult::Locked) {
+      if (dr == Services::DebugDispatchResult::Handled) {
+        m_sink.end();
+      } else if (dr == Services::DebugDispatchResult::Locked) {
+        m_sink.abort();
         respondErr("DBG_LOCKED", "send DBG:UNLOCK first");
-      } else if (dr == Services::DebugDispatchResult::NotClaimed) {
+      } else {
+        m_sink.abort();
         m_dispatchStats.unknownCommands++;
         respondErr("UNKNOWN_CMD", "Unknown command");
       }
@@ -345,8 +350,17 @@ void CommandParser::dispatchCtrl(const char *suffix, const ParsedCommand &cmd) {
   // Special: ENC:DBG? — delegate to debug command handler (different interface)
   if (strcmp(suffix, "ENC:DBG?") == 0) {
     const char *noArgs[] = {nullptr};
-    if (m_dispatcher.debugDispatch("ENC_DEBUG", noArgs, 0, m_sink) == Services::DebugDispatchResult::Locked)
+    m_sink.begin(m_format == ResponseFormat::JSON, "ENC_DEBUG");   // F12: terminated reply
+    const auto dr = m_dispatcher.debugDispatch("ENC_DEBUG", noArgs, 0, m_sink);
+    if (dr == Services::DebugDispatchResult::Handled) {
+      m_sink.end();
+    } else if (dr == Services::DebugDispatchResult::Locked) {
+      m_sink.abort();
       respondErr("DBG_LOCKED", "send DBG:UNLOCK first");
+    } else {
+      m_sink.abort();
+      respondErr("UNKNOWN_CMD", "debug command unavailable");
+    }
     return;
   }
   // Special: ENC:FILT sub-dispatch (different handler signature)
@@ -466,8 +480,17 @@ void CommandParser::dispatchDebug(const char *suffix,
   // DBG:MOTOR — delegate to bringup debug handler
   if (strcmp(suffix, "MOTOR") == 0) {
     const char *noArgs[] = {nullptr};
-    if (m_dispatcher.debugDispatch("MOTOR_DEBUG", noArgs, 0, m_sink) == Services::DebugDispatchResult::Locked)
+    m_sink.begin(m_format == ResponseFormat::JSON, "MOTOR_DEBUG");   // F12: terminated reply
+    const auto dr = m_dispatcher.debugDispatch("MOTOR_DEBUG", noArgs, 0, m_sink);
+    if (dr == Services::DebugDispatchResult::Handled) {
+      m_sink.end();
+    } else if (dr == Services::DebugDispatchResult::Locked) {
+      m_sink.abort();
       respondErr("DBG_LOCKED", "send DBG:UNLOCK first");
+    } else {
+      m_sink.abort();
+      respondErr("UNKNOWN_CMD", "debug command unavailable");
+    }
     return;
   }
   // DBG:UNLOCK / DBG:LOCK — gate for every bring-up command
@@ -571,10 +594,100 @@ void CommandParser::respondErr(const char *code, const char *msg) {
   }
 }
 
-// Send multi-line data (used for bulk output like sysid CSV, trace dumps)
+// Send multi-line data (F12: terminated like every other multi-line reply)
 void CommandParser::respondData(const char **lines, size_t count) {
+  m_sink.begin(m_format == ResponseFormat::JSON, m_currentCmd);
   for (size_t i = 0; i < count; i++)
-    m_transport.println(lines[i]);
+    m_sink.writeLine(lines[i]);
+  m_sink.end();
+}
+
+// ---------------------------------------------------------------------------
+// F12: LineReply — multi-line replies with a terminator in both formats
+// ---------------------------------------------------------------------------
+void CommandParser::LineReply::begin(bool json, const char *command, const char *extraJson) {
+  m_json = json;
+  m_command = command;
+  m_extra = extraJson;
+  m_active = true;
+  m_headSent = false;
+  m_count = 0;
+  m_len = 0;
+}
+
+void CommandParser::LineReply::sendHead() {
+  if (m_headSent) return;
+  m_headSent = true;
+  if (!m_json) return;
+  char esc[48];
+  jsonEscape(m_command != nullptr ? m_command : "", esc, sizeof(esc));
+  m_t.print("{\"status\":\"ok\",\"command\":\"");
+  m_t.print(esc);
+  m_t.print("\",\"data\":{");
+  if (m_extra != nullptr && m_extra[0] != '\0') {
+    m_t.print(m_extra);
+    m_t.print(",");
+  }
+  m_t.print("\"lines\":[");
+}
+
+void CommandParser::LineReply::emitLine() {
+  m_line[m_len] = '\0';
+  sendHead();
+  if (m_json) {
+    char esc[2 * LINE_MAX + 8];
+    jsonEscape(m_line, esc, sizeof(esc));
+    if (m_count > 0) m_t.print(",");
+    m_t.print("\"");
+    m_t.print(esc);
+    m_t.print("\"");
+  } else {
+    m_t.println(m_line);
+  }
+  m_count++;
+  m_len = 0;
+}
+
+void CommandParser::LineReply::put(const char *s, bool endLine) {
+  for (; s != nullptr && *s != '\0'; ++s) {
+    if (*s == '\n') { emitLine(); continue; }
+    if (*s == '\r') continue;
+    if (m_len >= LINE_MAX) emitLine();   // overlong line: wrap rather than drop text
+    m_line[m_len++] = *s;
+  }
+  if (endLine) emitLine();
+}
+
+void CommandParser::LineReply::write(const char *s) {
+  if (!m_active) { m_t.print(s); return; }      // outside a reply: pass-through
+  put(s, false);
+}
+
+void CommandParser::LineReply::writeLine(const char *s) {
+  if (!m_active) { m_t.println(s); return; }
+  put(s, true);
+}
+
+void CommandParser::LineReply::end() {
+  if (!m_active) return;
+  if (m_len > 0) emitLine();                    // flush a partial line
+  sendHead();                                   // zero lines still make a reply
+  char tail[40];
+  if (m_json) {
+    snprintf(tail, sizeof(tail), "],\"count\":%lu}}", static_cast<unsigned long>(m_count));
+  } else {
+    snprintf(tail, sizeof(tail), "OK %lu", static_cast<unsigned long>(m_count));
+  }
+  m_t.println(tail);
+  m_active = false;
+}
+
+void CommandParser::LineReply::abort() {
+  if (!m_active) return;
+  if (m_headSent) { end(); return; }            // already on the wire: close it properly
+  m_active = false;
+  m_len = 0;
+  m_count = 0;
 }
 
 // Emit JSON success: {"status":"ok","command":"<cmd>","data":<json>}

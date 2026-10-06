@@ -389,12 +389,20 @@ void CommandParser::cmdSysIdData(const ParsedCommand &cmd) {
     count = total - offset;
   }
 
-  // Header line
-  char buf[64];
-  snprintf(buf, sizeof(buf), "SYSID_DATA %u %u %u",
+  // F12: terminated reply. JSON carries offset/samples/total as fields; ASCII keeps the
+  // header line and ends with OK <n> instead of END.
+  char extra[64];
+  snprintf(extra, sizeof(extra), "\"offset\":%u,\"samples\":%u,\"total\":%u",
            static_cast<unsigned>(offset), static_cast<unsigned>(count),
            static_cast<unsigned>(total));
-  m_transport.println(buf);
+  m_sink.begin(m_format == ResponseFormat::JSON, "SYSID_DATA", extra);
+  char buf[64];
+  if (m_format != ResponseFormat::JSON) {
+    snprintf(buf, sizeof(buf), "SYSID_DATA %u %u %u",
+             static_cast<unsigned>(offset), static_cast<unsigned>(count),
+             static_cast<unsigned>(total));
+    m_sink.writeLine(buf);
+  }
 
   // CSV data: time_ms,setpoint_tps,actual_tps,pos_error
   for (uint16_t i = 0; i < count; i++) {
@@ -402,10 +410,9 @@ void CommandParser::cmdSysIdData(const ParsedCommand &cmd) {
     snprintf(buf, sizeof(buf), "%u,%d,%d,%d", static_cast<unsigned>(s.time_ms),
              static_cast<int>(s.setpoint_tps), static_cast<int>(s.actual_tps),
              static_cast<int>(s.pos_error));
-    m_transport.println(buf);
+    m_sink.writeLine(buf);
   }
-
-  m_transport.println("END");
+  m_sink.end();
 }
 
 void CommandParser::cmdSysIdSine(const ParsedCommand &cmd) {

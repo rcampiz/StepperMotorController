@@ -56,6 +56,7 @@ void CommandParser::cmdMaxSpdPhysical(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdMotorConfigShow() {
+  m_sink.begin(m_format == ResponseFormat::JSON, "MCONFIG");   // F12: 7 lines + terminator
   auto cfg = m_dispatcher.getMotorConfig();
   char buf[384];
   snprintf(buf, sizeof(buf),
@@ -78,7 +79,8 @@ void CommandParser::cmdMotorConfigShow() {
            cfg.faultAction == 0 ? "HardStop" :
            cfg.faultAction == 1 ? "HardHiZ" : "SoftStop",
            (unsigned)(cfg.stepMode & 0x07), 1U << (cfg.stepMode & 0x07));
-  m_transport.println(buf);
+  m_sink.writeLine(buf);
+  m_sink.end();
 }
 
 void CommandParser::cmdMotorConfigSave() {

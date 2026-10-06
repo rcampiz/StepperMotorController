@@ -5,6 +5,7 @@ Provides high-level command interface with JSON/ASCII response parsing.
 """
 
 import json
+import re
 import struct
 import threading
 import zlib
@@ -14,6 +15,9 @@ from dataclasses import dataclass, field
 
 from transport.interface import ITransport, TransportError
 
+
+# Protocol 2 (F12): an ASCII multi-line reply ends with `OK <n>` (n = lines sent)
+MULTILINE_TERMINATOR = re.compile(r"^OK \d+$")
 
 class FrameType(Enum):
     """Classification of a received line from the device."""
@@ -273,6 +277,7 @@ class MotorClient:
         lines = []
         short_timeout = min(250, timeout)  # Timeout for subsequent lines
 
+        terminated = False
         for i in range(max_lines):
             # Use full timeout for first line, shorter timeout for subsequent
             line_timeout = timeout if len(lines) == 0 else short_timeout
@@ -285,8 +290,23 @@ class MotorClient:
             if frame_type == FrameType.EVENT:
                 self._event_buffer.append(line.strip())
                 continue
-            lines.append(line.strip())
+            stripped = line.strip()
+            if stripped.startswith("{"):
+                # Protocol 2 (F12): in JSON mode the whole reply is one envelope whose
+                # data.lines holds the text; expose it joined in raw for text consumers.
+                resp = self._parse_json_response(stripped, command)
+                if resp.success and isinstance(resp.data, dict) and "lines" in resp.data:
+                    return Response(success=True, command=resp.command, data=resp.data,
+                                    raw="\n".join(resp.data["lines"]))
+                return resp
+            if MULTILINE_TERMINATOR.match(stripped):
+                # Protocol 2 (F12): `OK <n>` closes an ASCII multi-line reply
+                terminated = True
+                break
+            lines.append(stripped)
 
+        if terminated and not lines:
+            return Response(success=True, command=command, data={"lines": []}, raw="")
         if not lines:
             raise ProtocolError(f"No response to command: {command}")
 

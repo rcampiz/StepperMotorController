@@ -147,7 +147,15 @@ def describe(handler, bodies, sub=None, inline_text=""):
         ascii_ok.append("<plain lines>")
     if "debugDispatch(" in body:
         ascii_ok.append("<debug service output>")
+    begins = re.findall(r'm_sink\.begin\([^,]+,\s*(?:"([^"]+)"|(\w+))', body)
+    if begins:   # F12: terminated multi-line reply
+        ascii_ok = [a for a in ascii_ok if a != "<plain lines>"]
+        ascii_ok.append("<lines> then `OK <n>`")
     json_cmds = []
+    for name, var in begins:
+        extra = sorted(set(re.findall(r'\\"(\w+)\\":', body)))
+        json_cmds.append({"command": name or "<%s>" % var,
+                          "keys": sorted(set(extra + ["count", "lines"]))})
     for jm in re.finditer(r'respondJsonOk\("([^"]+)",\s*(?:"((?:[^"\\]|\\.)*)"|(\w+))', body):
         keys = sorted(set(re.findall(r'\\"(\w+)\\":', jm.group(2) or "")))
         json_cmds.append({"command": jm.group(1), "keys": keys})
@@ -265,7 +273,7 @@ ASCII when the board resets).
 |---|---|---|
 | success | `OK <message>` (message may be empty) | `{{"status":"ok","command":"<name>","data":{{...}}}}`; `data` is `{{"message":"..."}}` when the handler only has text |
 | error | `ERROR <CODE> <message>` (split on the first two spaces) | `{{"status":"error","command":"<name>","code":"<CODE>","message":"<message>"}}` |
-| multi-line data (`DBG:MOTOR`, `DRV:CFG?`, `CTRL:ENC?`, `CTRL:SYSID:DATA?`, `DBG:TRACE:DUMP`, `SYST:VER?`) | plain lines, no terminator (protocol 2 adds `OK <n>`) | same plain lines |
+| multi-line data (`DBG:*` debug output incl. `DBG:MOTOR` and `CTRL:ENC:DBG?`, `DRV:CFG?`, `CTRL:SYSID:DATA?`, `DBG:TRACE:DUMP`, `SYST:VER?`, `UI:FLASH:DUMP`) | the lines, then `OK <n>` with n = number of lines sent (read until a line matching `^OK \\d+$`; an `ERROR` line can replace the whole reply) | one line `{{"status":"ok","command":"<name>","data":{{...,"lines":["..."],"count":<n>}}}}`; `CTRL:SYSID:DATA?` adds `offset`, `samples`, `total` (ASCII keeps its `SYSID_DATA <offset> <samples> <total>` header line), `DBG:TRACE:DUMP` adds `entries`, `UI:FLASH:DUMP` adds `slot`, `offset`, `len`. `CTRL:ENC?` was already a single-line reply. |
 | binary READY (bitmap/flash upload) | `OK READY <bytes>` then the host sends exactly `<bytes>` raw bytes [+ CRC32 LE] then one final OK/ERROR | same |
 
 `command` in JSON is the handler's canonical name (e.g. `GET_STATUS`, `HEARTBEAT`), not
@@ -334,7 +342,7 @@ verify state instead).
 4. (done) Error codes in both formats; `CHECKSUM` arrives with the checksum feature.
 5. (done) JSON-escaped strings everywhere.
 6. (done) JSON telemetry push with the `DIAG:STAT?` schema: `SYST:TLM:RATE <ms>` (0 = off).
-7. Multi-line replies end with `OK <n>` (ASCII) or carry a `lines` array (JSON);
+7. (done) Multi-line replies end with `OK <n>` (ASCII) or carry a `lines` array (JSON);
    `CTRL:SYSID:DATA?` adds `total`.
 8. Dropped-event counter in `SYST:EVT:STAT?`.
 9. `SYST:HELP?` generated from the dispatch tables.

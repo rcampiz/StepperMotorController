@@ -272,15 +272,16 @@ void CommandParser::cmdIdn() {
 }
 
 void CommandParser::cmdVersion() {
+  m_sink.begin(m_format == ResponseFormat::JSON, "VERSION");   // F12: 5 lines + terminator
   char line[80];
   snprintf(line, sizeof(line), "Stepper Motor Controller v%s", Harness::FW_VERSION);
-  m_transport.println(line);
+  m_sink.writeLine(line);
   snprintf(line, sizeof(line), "Build: %s (" __DATE__ " " __TIME__ ")", Harness::BUILD_HASH);
-  m_transport.println(line);
+  m_sink.writeLine(line);
   snprintf(line, sizeof(line), "Protocol: %u (boot %08lX)",
            static_cast<unsigned>(Harness::PROTOCOL_VERSION),
            static_cast<unsigned long>(Platform::bootId()));
-  m_transport.println(line);
+  m_sink.writeLine(line);
 
   // Show device identification
   char buf[48];
@@ -289,13 +290,13 @@ void CommandParser::cmdVersion() {
   m_dispatcher.getDeviceInfo(deviceId, roleId);
   snprintf(buf, sizeof(buf), "Device: %u (%s)", static_cast<unsigned>(deviceId),
            roleIdToString(roleId));
-  m_transport.println(buf);
+  m_sink.writeLine(buf);
 
   // Show control mode
   snprintf(buf, sizeof(buf), "Mode: %s (encoder: %s)",
            controlModeToString(m_dispatcher.getControlMode()),
            encoderStatusToString(m_dispatcher.getEncoderStatus()));
-  m_transport.println(buf);
+  m_sink.writeLine(buf);  m_sink.end();
 }
 
 // SYST:ECHO ON|OFF / SYST:ECHO? — terminal echo of received characters (F7)
@@ -577,9 +578,14 @@ void CommandParser::cmdSystDelayQuery() {
 
 void CommandParser::cmdTraceDump() {
   uint32_t count = m_dispatcher.traceGetCount();
+  char extra[32];
+  snprintf(extra, sizeof(extra), "\"entries\":%lu", static_cast<unsigned long>(count));
+  m_sink.begin(m_format == ResponseFormat::JSON, "TRACE_DUMP", extra);   // F12
   char buf[80];
-  snprintf(buf, sizeof(buf), "TRACE: %u entries", static_cast<unsigned>(count));
-  m_transport.println(buf);
+  if (m_format != ResponseFormat::JSON) {
+    snprintf(buf, sizeof(buf), "TRACE: %u entries", static_cast<unsigned>(count));
+    m_sink.writeLine(buf);
+  }
 
   Protocol::ICommandDispatcher::TraceEntryData e;
   for (uint32_t i = 0; i < count; i++) {
@@ -589,8 +595,9 @@ void CommandParser::cmdTraceDump() {
              static_cast<unsigned>(i), static_cast<unsigned long>(e.tick),
              (e.dir == 0) ? '>' : '<', e.tag,
              static_cast<unsigned long>(e.arg0));
-    m_transport.println(buf);
+    m_sink.writeLine(buf);
   }
+  m_sink.end();
 }
 
 void CommandParser::cmdTraceReset() {

@@ -941,9 +941,17 @@
       "min_args": 0,
       "usage": [],
       "ascii_ok": [
-        "<plain lines>"
+        "<lines> then `OK <n>`"
       ],
-      "json": [],
+      "json": [
+        {
+          "command": "VERSION",
+          "keys": [
+            "count",
+            "lines"
+          ]
+        }
+      ],
       "errors": [],
       "note": ""
     },
@@ -1137,9 +1145,18 @@
       "min_args": 0,
       "usage": [],
       "ascii_ok": [
-        "<debug service output>"
+        "<debug service output>",
+        "<lines> then `OK <n>`"
       ],
-      "json": [],
+      "json": [
+        {
+          "command": "ENC_DEBUG",
+          "keys": [
+            "count",
+            "lines"
+          ]
+        }
+      ],
       "errors": [],
       "note": "special case in dispatcher"
     },
@@ -1394,9 +1411,20 @@
       "min_args": 0,
       "usage": [],
       "ascii_ok": [
-        "<plain lines>"
+        "<lines> then `OK <n>`"
       ],
-      "json": [],
+      "json": [
+        {
+          "command": "SYSID_DATA",
+          "keys": [
+            "count",
+            "lines",
+            "offset",
+            "samples",
+            "total"
+          ]
+        }
+      ],
       "errors": [
         "No data ready (test not DONE)",
         "offset past end"
@@ -1965,10 +1993,20 @@
         "FLASH_DUMP <slot> [offset] [len]\n  if (cmd.argCount < 1) {\n    respondErr("
       ],
       "ascii_ok": [
-        "Dump complete",
-        "<plain lines>"
+        "<lines> then `OK <n>`"
       ],
-      "json": [],
+      "json": [
+        {
+          "command": "FLASH_DUMP",
+          "keys": [
+            "count",
+            "len",
+            "lines",
+            "offset",
+            "slot"
+          ]
+        }
+      ],
       "errors": [
         "Flash not available",
         "Flash read failed",
@@ -2058,9 +2096,18 @@
       "min_args": 0,
       "usage": [],
       "ascii_ok": [
-        "<debug service output>"
+        "<debug service output>",
+        "<lines> then `OK <n>`"
       ],
-      "json": [],
+      "json": [
+        {
+          "command": "MOTOR_DEBUG",
+          "keys": [
+            "count",
+            "lines"
+          ]
+        }
+      ],
       "errors": [],
       "note": "special case in dispatcher"
     },
@@ -2100,9 +2147,18 @@
       "min_args": 0,
       "usage": [],
       "ascii_ok": [
-        "<plain lines>"
+        "<lines> then `OK <n>`"
       ],
-      "json": [],
+      "json": [
+        {
+          "command": "TRACE_DUMP",
+          "keys": [
+            "count",
+            "entries",
+            "lines"
+          ]
+        }
+      ],
       "errors": [],
       "note": ""
     },
@@ -2337,9 +2393,17 @@
       "min_args": 0,
       "usage": [],
       "ascii_ok": [
-        "<plain lines>"
+        "<lines> then `OK <n>`"
       ],
-      "json": [],
+      "json": [
+        {
+          "command": "MCONFIG",
+          "keys": [
+            "count",
+            "lines"
+          ]
+        }
+      ],
       "errors": [],
       "note": ""
     },

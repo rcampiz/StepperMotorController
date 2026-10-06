@@ -1017,7 +1017,12 @@ void CommandParser::cmdFlashDump(const ParsedCommand &cmd) {
     return;
   }
 
-  // Print hex dump in 16-byte rows
+  // F12: terminated reply; hex dump in 16-byte rows
+  char extra[64];
+  snprintf(extra, sizeof(extra), "\"slot\":%lu,\"offset\":%lu,\"len\":%lu",
+           static_cast<unsigned long>(slot), static_cast<unsigned long>(offset),
+           static_cast<unsigned long>(len));
+  m_sink.begin(m_format == ResponseFormat::JSON, "FLASH_DUMP", extra);
   char line[80];
   for (uint32_t i = 0; i < len; i += 16) {
     int pos = snprintf(line, sizeof(line), "%06lX:",
@@ -1026,9 +1031,9 @@ void CommandParser::cmdFlashDump(const ParsedCommand &cmd) {
     for (uint32_t j = 0; j < 16 && (i + j) < len; j++) {
       pos += snprintf(line + pos, sizeof(line) - pos, " %02X", buf[i + j]);
     }
-    m_transport.println(line);
+    m_sink.writeLine(line);
   }
-  respondOk("Dump complete");
+  m_sink.end();
 }
 
 void CommandParser::cmdFlashTest() {
