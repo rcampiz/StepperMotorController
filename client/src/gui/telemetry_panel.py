@@ -544,6 +544,11 @@ class TelemetryPanel(QWidget):
         layout.addStretch()
         return group
 
+    def set_link_alarm(self, color: str, text: str):
+        """Force the LINK indicator to a colour and put `text` in the watchdog field."""
+        self._set_indicator_active(self._link_indicator, True, color)
+        self._watchdog_label.setText(text)
+
     @Slot(dict)
     def update_link_health(self, data: dict):
         """Update link health display from heartbeat ACK data."""

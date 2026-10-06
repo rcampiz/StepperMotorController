@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QTabWidget,
 )
-from PySide6.QtCore import Qt, Signal, Slot
+from PySide6.QtCore import Qt, Signal, Slot, QTimer
 from PySide6.QtGui import QAction, QCloseEvent
 from typing import Optional
 import logging
@@ -122,6 +122,10 @@ class MainWindow(QMainWindow):
 
         # Status bar
         self._status_bar = QStatusBar()
+        # UI dead-man stamp for the worker's heartbeat producer (A2)
+        self._liveness_timer = QTimer(self)
+        self._liveness_timer.setInterval(20)
+        self._liveness_timer.timeout.connect(self._on_liveness_tick)
         self.setStatusBar(self._status_bar)
         self._status_bar.showMessage("Disconnected")
 
@@ -360,12 +364,18 @@ class MainWindow(QMainWindow):
             worker.event_received.connect(self._on_async_event)
             worker.bitmap_progress.connect(self._display_panel.update_progress)
             worker.estop_dispatched.connect(self._on_estop_dispatched)
+            worker.liveness_stale.connect(self._on_liveness_stale)
 
             # Start heartbeat producer BEFORE starting the thread so the
             # flag is set when run() begins its first loop iteration.
             if self._connection_panel.heartbeat_enabled:
                 period_ms = self._connection_panel.heartbeat_period_ms
                 self._serial_thread.start_heartbeat(period_ms / 1000.0)
+
+            # Dead-man: this timer only runs while the UI event loop runs. If the UI
+            # freezes, the stamp goes stale and the worker stops sending heartbeats.
+            worker.touch_liveness()
+            self._liveness_timer.start()
 
             self._serial_thread.start()
             self._serial_thread.start_polling()
@@ -382,6 +392,7 @@ class MainWindow(QMainWindow):
     @Slot()
     def _on_disconnect_clicked(self):
         """Handle disconnect button click."""
+        self._liveness_timer.stop()
         # Stop worker thread FIRST so main thread can safely use the port
         if self._serial_thread:
             self._serial_thread.stop_heartbeat()
@@ -528,6 +539,20 @@ class MainWindow(QMainWindow):
         self._status_bar.showMessage("ESTOP sent, awaiting confirmation...", 5000)
         if self._serial_thread:
             self._serial_thread.worker.request_estop()
+
+    @Slot()
+    def _on_liveness_tick(self):
+        if self._serial_thread:
+            self._serial_thread.worker.touch_liveness()
+
+    @Slot(bool)
+    def _on_liveness_stale(self, stale: bool):
+        if stale:
+            self._status_bar.showMessage(
+                "UI STALLED: heartbeats suppressed, firmware watchdog will stop the motor", 0)
+            self._telemetry_panel.set_link_alarm("#ff8800", "UI stall")
+        else:
+            self._status_bar.showMessage("UI responsive again, heartbeats resumed", 5000)
 
     @Slot(int)
     def _on_estop_dispatched(self, dropped: int):

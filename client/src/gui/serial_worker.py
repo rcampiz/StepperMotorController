@@ -71,6 +71,7 @@ class SerialWorker(QObject):
     event_received = Signal(str, dict)  # (event_type, data_dict)
     bitmap_progress = Signal(int, int)  # (bytes_sent, total_bytes)
     estop_dispatched = Signal(int)      # queued commands dropped by the ESTOP fast path
+    liveness_stale = Signal(bool)       # True: UI dead-man stamp too old, heartbeats suppressed
     flash_upload_progress = Signal(int, int)  # (slot_done, total_slots)
 
     def __init__(self, client):
@@ -104,6 +105,14 @@ class SerialWorker(QObject):
             'avg_rtt_ms': 0.0,
         }
 
+        # Dead-man gating: the frontend stamps liveness from its own event loop
+        # (UI timer / control loop). No heartbeat leaves while the stamp is older
+        # than _liveness_max_age, so a frozen frontend stops feeding the watchdog.
+        self._liveness_stamp = 0.0
+        self._liveness_max_age = 0.2          # seconds; raised to 4 x interval if larger
+        self._liveness_was_stale = False
+        self._heartbeats_suppressed = 0
+
     @Slot()
     def start_polling(self):
         """Start telemetry polling."""
@@ -134,6 +143,35 @@ class SerialWorker(QObject):
     def set_heartbeat_interval(self, interval_sec: float):
         """Set heartbeat interval (thread-safe)."""
         self._heartbeat_interval = max(0.010, min(0.200, interval_sec))
+        self._liveness_max_age = max(0.2, 4.0 * self._heartbeat_interval)
+
+    def touch_liveness(self, now: float = None):
+        """Frontend proof of life (thread-safe). Call from the UI timer / control loop."""
+        self._liveness_stamp = time.monotonic() if now is None else now
+
+    def liveness_fresh(self, now: float = None) -> bool:
+        now = time.monotonic() if now is None else now
+        return (now - self._liveness_stamp) <= self._liveness_max_age
+
+    def heartbeats_suppressed(self) -> int:
+        return self._heartbeats_suppressed
+
+    def _maybe_send_heartbeat(self, now_wall: float):
+        """Send a heartbeat if due AND the frontend is provably alive."""
+        if now_wall - self._last_heartbeat_send_time < self._heartbeat_interval:
+            return
+        self._last_heartbeat_send_time = now_wall
+        if not self.liveness_fresh():
+            self._heartbeats_suppressed += 1
+            if not self._liveness_was_stale:
+                self._liveness_was_stale = True
+                log.warning("Frontend liveness stale: heartbeat suppressed (watchdog will fire)")
+                self.liveness_stale.emit(True)
+            return
+        if self._liveness_was_stale:
+            self._liveness_was_stale = False
+            self.liveness_stale.emit(False)
+        self._send_heartbeat()
 
     def request_estop(self):
         """ESTOP fast path, worker side (thread-safe).
@@ -220,12 +258,9 @@ class SerialWorker(QObject):
                 self._pending_indicator = None
                 self._send_command(QueuedCommand(indicator_cmd, CommandTag.GENERIC))
 
-            # Send heartbeat if enabled and due
+            # Send heartbeat if enabled, due and the frontend is alive
             if self._heartbeat_enabled and self._client and self._client.is_connected():
-                now = time.time()
-                if now - self._last_heartbeat_send_time >= self._heartbeat_interval:
-                    self._last_heartbeat_send_time = now
-                    self._send_heartbeat()
+                self._maybe_send_heartbeat(time.time())
 
             # Drain any buffered async events from protocol layer
             self._drain_events()
