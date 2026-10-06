@@ -151,6 +151,16 @@ class RttTransport(ITransport):
         except pylink.errors.JLinkException as e:
             raise TransportError(f"RTT write failed: {e}")
 
+    def send_priority(self, data: bytes) -> int:
+        """RTT has no host-side output queue to purge; a plain write."""
+        return self.send(data)
+
+    def out_waiting(self) -> int:
+        return 0
+
+    def drain_output(self, timeout_ms: int = 500) -> bool:
+        return True
+
     def send_line(self, line: str) -> int:
         """Send a line of text with CRLF terminator."""
         data = (line + "\r\n").encode("utf-8")

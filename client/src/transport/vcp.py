@@ -5,6 +5,7 @@ Uses pyserial for UART communication over USB via the debugger interface.
 """
 
 import logging
+import threading
 import time
 import serial
 import serial.tools.list_ports
@@ -51,6 +52,8 @@ class VcpTransport(ITransport):
         self._default_timeout_ms = timeout_ms
         self._serial: Optional[serial.Serial] = None
         self._line_buffer = b""
+        # One writer at a time. RLock so send_priority() can call send().
+        self._write_lock = threading.RLock()
 
     def open(self) -> bool:
         """Open the serial port connection."""
@@ -104,9 +107,43 @@ class VcpTransport(ITransport):
             raise TransportError("Not connected")
 
         try:
-            return self._serial.write(data)
+            with self._write_lock:
+                return self._serial.write(data)
         except serial.SerialException as e:
             raise TransportError(f"Send failed: {e}")
+
+    def send_priority(self, data: bytes) -> int:
+        """Purge unsent output, then write `data`; atomic w.r.t. other sends."""
+        if not self.is_connected():
+            raise TransportError("Not connected")
+        try:
+            with self._write_lock:
+                # Drop whatever the worker handed to the driver but the UART
+                # has not clocked out yet (at most one chunk, see drain_output).
+                self._serial.reset_output_buffer()
+                n = self._serial.write(data)
+                self._serial.flush()
+                return n
+        except serial.SerialException as e:
+            raise TransportError(f"Priority send failed: {e}")
+
+    def out_waiting(self) -> int:
+        """Bytes queued in the driver but not yet transmitted."""
+        if not self.is_connected():
+            return 0
+        try:
+            return self._serial.out_waiting
+        except (serial.SerialException, OSError):
+            return 0
+
+    def drain_output(self, timeout_ms: int = 500) -> bool:
+        """Wait until the driver's output buffer is empty."""
+        deadline = time.monotonic() + timeout_ms / 1000.0
+        while self.out_waiting() > 0:
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.001)
+        return True
 
     def send_line(self, line: str) -> int:
         """Send a line of text with CRLF terminator."""

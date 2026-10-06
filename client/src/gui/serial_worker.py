@@ -44,6 +44,7 @@ class CommandTag(Enum):
     SYSID_ABORT = auto()
     REFRESH_ENC_FILTER = auto()
     APPLY_ENC_FILTER = auto()
+    ESTOP_CONFIRM = auto()
 
 
 @dataclass
@@ -69,6 +70,7 @@ class SerialWorker(QObject):
     heartbeat_timeout = Signal()
     event_received = Signal(str, dict)  # (event_type, data_dict)
     bitmap_progress = Signal(int, int)  # (bytes_sent, total_bytes)
+    estop_dispatched = Signal(int)      # queued commands dropped by the ESTOP fast path
     flash_upload_progress = Signal(int, int)  # (slot_done, total_slots)
 
     def __init__(self, client):
@@ -84,6 +86,10 @@ class SerialWorker(QObject):
 
         # Coalesced live command: latest-wins, highest priority (e.g. live speed)
         self._pending_live = None  # str or None
+
+        # ESTOP fast path: set from any thread; the loop drops everything queued,
+        # re-arms the client and queues one confirmation read.
+        self._estop_pending = False
 
         # Heartbeat state
         self._heartbeat_enabled = False
@@ -129,6 +135,35 @@ class SerialWorker(QObject):
         """Set heartbeat interval (thread-safe)."""
         self._heartbeat_interval = max(0.010, min(0.200, interval_sec))
 
+    def request_estop(self):
+        """ESTOP fast path, worker side (thread-safe).
+
+        The caller has already written the stop bytes with MotorClient.estop_fast().
+        Here: cancel the running transfer at its next chunk, then on the next loop
+        iteration drop every queued command and queue a DIAG:STAT? confirmation.
+        """
+        if self._client:
+            self._client.cancel_transfers()
+        self._estop_pending = True
+
+    def _service_estop(self):
+        """Loop-side part of the fast path: purge the FIFO, re-arm, confirm."""
+        dropped = 0
+        while True:
+            try:
+                self._command_queue.get_nowait()
+                dropped += 1
+            except queue.Empty:
+                break
+        self._pending_live = None
+        self._pending_indicator = None
+        self._estop_pending = False
+        if self._client:
+            self._client.clear_cancel()
+        log.warning("ESTOP: dropped %d queued command(s)", dropped)
+        self.estop_dispatched.emit(dropped)
+        self._command_queue.put(QueuedCommand("DIAG:STAT?", CommandTag.ESTOP_CONFIRM))
+
     def queue_command(self, command):
         """Queue a command to be sent (thread-safe).
 
@@ -162,6 +197,9 @@ class SerialWorker(QObject):
         last_poll = 0
 
         while self._running:
+            if self._estop_pending:
+                self._service_estop()
+
             # Send coalesced live command first (highest priority, latest-wins)
             live_cmd = self._pending_live
             if live_cmd is not None:

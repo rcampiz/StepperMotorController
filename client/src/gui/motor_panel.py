@@ -67,6 +67,7 @@ class MotorControlPanel(QWidget):
     # Signal emitted when a command should be sent
     command_requested = Signal(str)
     live_command_requested = Signal(str)  # Coalesced: latest-wins, no queue
+    estop_requested = Signal()            # Fast path: bypasses the command queue
 
     # Minimum jog duration (ms) — ensures each tap produces visible motion
     # even if the button press/release is very quick.
@@ -774,8 +775,22 @@ class MotorControlPanel(QWidget):
 
     @Slot()
     def _on_estop(self):
-        """Emergency stop."""
-        self.command_requested.emit("SYST:ESTOP")
+        """Emergency stop: fast path, not the command queue."""
+        self.estop_requested.emit()
+
+    def show_estop_result(self, confirmed: bool, detail: str):
+        """Show the ESTOP read-back verdict in the fault message area."""
+        if confirmed:
+            self._fault_error_label.setStyleSheet(
+                "background-color: #1a4d1a; color: #66ff66; "
+                "padding: 6px 8px; border-radius: 4px;")
+            self._fault_error_label.setText(f"STOPPED, confirmed ({detail})")
+        else:
+            self._fault_error_label.setStyleSheet(
+                "background-color: #4d1a1a; color: #ff6666; "
+                "padding: 6px 8px; border-radius: 4px;")
+            self._fault_error_label.setText(f"ESTOP NOT CONFIRMED: {detail}")
+        self._fault_error_label.setVisible(True)
 
     @Slot()
     def _on_clear_fault(self):

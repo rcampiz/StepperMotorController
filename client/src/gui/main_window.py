@@ -210,6 +210,7 @@ class MainWindow(QMainWindow):
         # Motor panel commands
         self._motor_panel.command_requested.connect(self._send_command)
         self._motor_panel.live_command_requested.connect(self._send_live_command)
+        self._motor_panel.estop_requested.connect(self._on_estop_requested)
 
         # Driver panel refresh and parameter apply
         self._driver_panel.refresh_requested.connect(self._on_refresh_params)
@@ -358,6 +359,7 @@ class MainWindow(QMainWindow):
             worker.heartbeat_timeout.connect(self._on_heartbeat_timeout)
             worker.event_received.connect(self._on_async_event)
             worker.bitmap_progress.connect(self._display_panel.update_progress)
+            worker.estop_dispatched.connect(self._on_estop_dispatched)
 
             # Start heartbeat producer BEFORE starting the thread so the
             # flag is set when run() begins its first loop iteration.
@@ -503,6 +505,35 @@ class MainWindow(QMainWindow):
                 QueuedCommand(command, CommandTag.APPLY_TRIM))
         else:
             self._serial_thread.send_command(command)
+
+    @Slot()
+    def _on_estop_requested(self):
+        """ESTOP fast path (UI thread): write the stop bytes now, then purge the queue.
+
+        MotorClient.estop_fast() purges the driver output buffer and writes
+        SYST:ESTOP under the transport write lock, so it waits for at most one
+        256-byte chunk of a transfer in progress. The worker then drops every
+        queued command, cancels the running transfer and reads DIAG:STAT? back
+        to confirm (ESTOP_CONFIRM).
+        """
+        if not self._client or not self._client.is_connected():
+            self._status_bar.showMessage("ESTOP: not connected", 5000)
+            return
+        try:
+            self._client.estop_fast()
+        except Exception as e:  # noqa: BLE001 - show, never swallow silently
+            self._motor_panel.show_estop_result(False, f"write failed: {e}")
+            self._status_bar.showMessage(f"ESTOP WRITE FAILED: {e}", 10000)
+            return
+        self._status_bar.showMessage("ESTOP sent, awaiting confirmation...", 5000)
+        if self._serial_thread:
+            self._serial_thread.worker.request_estop()
+
+    @Slot(int)
+    def _on_estop_dispatched(self, dropped: int):
+        if dropped:
+            self._status_bar.showMessage(
+                f"ESTOP: {dropped} queued command(s) dropped", 5000)
 
     @Slot(str)
     def _send_live_command(self, command: str):
@@ -766,6 +797,8 @@ class MainWindow(QMainWindow):
         """Route worker responses to appropriate UI handlers."""
         if response is None:
             self._status_bar.showMessage(f"Error: no response to {command}", 5000)
+            if tag == CommandTag.ESTOP_CONFIRM.name:
+                self._motor_panel.show_estop_result(False, "no reply to DIAG:STAT?")
             if tag == CommandTag.BITMAP_TRANSFER.name:
                 self._display_panel.transfer_complete(False, "No response")
             if tag in (CommandTag.FLASH_UPLOAD_SLOT.name,
@@ -780,6 +813,9 @@ class MainWindow(QMainWindow):
         if not response.success:
             self._status_bar.showMessage(
                 f"Error: {response.error_message}", 5000)
+            if tag == CommandTag.ESTOP_CONFIRM.name:
+                self._motor_panel.show_estop_result(
+                    False, f"DIAG:STAT? error: {response.error_message}")
             self._telemetry_panel.show_raw_response(
                 command, f"ERROR: {response.error_message}")
             # Handle encoder error specifically
@@ -805,7 +841,14 @@ class MainWindow(QMainWindow):
                     False, f"FLASH_TEST FAILED\n\n{response.error_message}")
             return
 
-        if tag == CommandTag.REFRESH_MOTOR_DEBUG.name:
+        if tag == CommandTag.ESTOP_CONFIRM.name:
+            ok, detail = MotorClient.estop_confirmed(response.data)
+            self._motor_panel.show_estop_result(ok, detail)
+            self._status_bar.showMessage(
+                "STOPPED, confirmed" if ok else f"ESTOP NOT CONFIRMED: {detail}",
+                0 if not ok else 5000)
+
+        elif tag == CommandTag.REFRESH_MOTOR_DEBUG.name:
             self._driver_panel.update_driver_params(response.raw)
             self._telemetry_panel.show_raw_response("MOTOR_DEBUG", response.raw)
             self._status_bar.showMessage("Parameters refreshed", 2000)
@@ -1106,11 +1149,15 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event: QCloseEvent):
         """Handle window close - queue cleanup through worker, then disconnect."""
-        if self._serial_thread:
-            # Queue cleanup commands through the worker (don't bypass it)
-            self._serial_thread.send_command("SYST:EVT:DIS")
-            self._serial_thread.send_command("SYST:HB:TIMEOUT 0")
-            self._serial_thread.send_command("SYST:ESTOP")
-            time.sleep(0.2)  # Brief pause to let commands drain
+        if self._serial_thread and self._client and self._client.is_connected():
+            # Stop the motor through the fast path (bypasses the queue), then let
+            # the worker drop whatever was queued. The watchdog is left armed:
+            # once the port closes the firmware times out and stays stopped.
+            try:
+                self._client.estop_fast()
+            except Exception as e:  # noqa: BLE001
+                log.warning("ESTOP on close failed: %s", e)
+            self._serial_thread.worker.request_estop()
+            time.sleep(0.2)  # let the worker purge and the bytes leave the port
         self._on_disconnect_clicked()
         event.accept()

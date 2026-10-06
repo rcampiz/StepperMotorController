@@ -160,6 +160,41 @@ class ITransport(ABC):
         """Wait for all output data to be sent."""
         pass
 
+    # ------------------------------------------------------------------
+    # Priority / flow-control extensions (ESTOP fast path, chunked writes)
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    def send_priority(self, data: bytes) -> int:
+        """
+        Discard any unsent output, then write `data`, atomically with respect
+        to every other send on this transport.
+
+        Used by the ESTOP fast path. Implementations must hold the same write
+        lock that send()/send_line() use, so the priority write can never be
+        interleaved with a chunk another thread is writing; it waits for at
+        most one in-flight send() call.
+        """
+        pass
+
+    @abstractmethod
+    def out_waiting(self) -> int:
+        """Bytes handed to the OS/driver but not yet transmitted (0 if unknown)."""
+        pass
+
+    @abstractmethod
+    def drain_output(self, timeout_ms: int = 500) -> bool:
+        """
+        Wait until out_waiting() == 0 or the timeout expires.
+
+        Long transfers call this after every chunk so that at most one chunk
+        can sit ahead of a priority write.
+
+        Returns:
+            True if the output buffer drained, False on timeout.
+        """
+        pass
+
     @abstractmethod
     def get_info(self) -> TransportInfo:
         """

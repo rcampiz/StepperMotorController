@@ -6,6 +6,7 @@ Provides high-level command interface with JSON/ASCII response parsing.
 
 import json
 import struct
+import threading
 import zlib
 from enum import Enum
 from typing import Optional, Any, Dict
@@ -80,6 +81,8 @@ class MotorClient:
         self._timeout_ms = self.DEFAULT_TIMEOUT_MS
         self._stream_chunk = self.DEFAULT_STREAM_CHUNK
         self._event_buffer: list[str] = []
+        # Set by the ESTOP fast path; every streaming loop checks it per chunk.
+        self._cancel = threading.Event()
 
     @property
     def transport(self) -> ITransport:
@@ -495,8 +498,73 @@ class MotorClient:
         return self.send_command(cmd)
 
     def estop(self) -> Response:
-        """Emergency stop."""
+        """Emergency stop through the normal command path (queued, with reply)."""
         return self.send_command("SYST:ESTOP")
+
+    # ------------------------------------------------------------------
+    # ESTOP fast path
+    # ------------------------------------------------------------------
+
+    ESTOP_LINE = b"SYST:ESTOP\r\n"
+    ESTOP_OOB_BYTE = b"\x18"          # Phase 4: recognised in the USART2 ISR
+
+    def estop_fast(self, oob: bool = False) -> None:
+        """
+        Stop NOW, bypassing the command queue and any transfer in progress.
+
+        1. Set the cancel flag so the streaming loops stop after their current chunk.
+        2. transport.send_priority(): purge unsent output, then write the stop bytes,
+           under the transport write lock (waits for at most one in-flight chunk).
+        Call from any thread. Does not wait for a reply; confirm with
+        estop_confirmed() on a following DIAG:STAT? reply.
+
+        Remaining limit until Phase 4: the firmware parses the text command only when
+        the Comms task is back in its command loop, i.e. after a bitmap/flash handler
+        finishes. With oob=True the 0x18 byte goes first and is honoured in the ISR.
+        """
+        self._cancel.set()
+        payload = (self.ESTOP_OOB_BYTE if oob else b"") + self.ESTOP_LINE
+        self._transport.send_priority(payload)
+
+    def cancel_transfers(self) -> None:
+        """Abort any streaming transfer at its next chunk boundary."""
+        self._cancel.set()
+
+    def clear_cancel(self) -> None:
+        """Re-arm after the worker has dropped its queue."""
+        self._cancel.clear()
+
+    def transfer_cancelled(self) -> bool:
+        return self._cancel.is_set()
+
+    def _send_chunk(self, chunk: bytes) -> None:
+        """One bounded write: <= stream chunk, then wait for the driver to drain it.
+
+        Guarantees that at most one chunk can sit ahead of a priority write, and
+        that a cancelled transfer stops within one chunk.
+        """
+        if self._cancel.is_set():
+            raise ProtocolError("transfer cancelled (ESTOP)")
+        self._transport.send(chunk)
+        self._transport.drain_output(timeout_ms=500)
+        if self._cancel.is_set():
+            raise ProtocolError("transfer cancelled (ESTOP)")
+
+    @staticmethod
+    def estop_confirmed(data: Dict[str, Any]) -> tuple:
+        """
+        Judge a DIAG:STAT? reply after an ESTOP.
+
+        Returns (confirmed, detail). Confirmed means the controller reports the
+        ESTOP (or FAULT) latch AND the driver reports Hi-Z (bridges off).
+        """
+        state = str(data.get("state", "?"))
+        motor = data.get("motor", {}) or {}
+        hiz = motor.get("hi_z", motor.get("hiz"))
+        latched = state in ("ESTOP", "FAULT")
+        ok = bool(latched and hiz)
+        detail = f"state={state} hiZ={hiz}"
+        return ok, detail
 
     def home(self) -> Response:
         """Go to home position."""
@@ -598,7 +666,7 @@ class MotorClient:
         offset = 0
         while offset < ready_bytes:
             chunk = data[offset:offset + self._stream_chunk]
-            self._transport.send(chunk)
+            self._send_chunk(chunk)
             offset += len(chunk)
             if progress_cb is not None:
                 progress_cb(offset, ready_bytes)
@@ -733,7 +801,7 @@ class MotorClient:
         offset = 0
         while offset < ready_bytes:
             chunk = data[offset:offset + self._stream_chunk]
-            self._transport.send(chunk)
+            self._send_chunk(chunk)
             offset += len(chunk)
             if progress_cb is not None:
                 progress_cb(offset, ready_bytes)
@@ -818,7 +886,7 @@ class MotorClient:
         offset = 0
         while offset < compressed_len:
             chunk = rle_data[offset:offset + self._stream_chunk]
-            self._transport.send(chunk)
+            self._send_chunk(chunk)
             offset += len(chunk)
             if progress_cb is not None:
                 progress_cb(offset, compressed_len)
@@ -883,7 +951,7 @@ class MotorClient:
         offset = 0
         while offset < compressed_len:
             chunk = rle_data[offset:offset + self._stream_chunk]
-            self._transport.send(chunk)
+            self._send_chunk(chunk)
             offset += len(chunk)
             if progress_cb is not None:
                 progress_cb(offset, compressed_len)
