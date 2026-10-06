@@ -15,22 +15,42 @@
 
 namespace Platform {
 
+// F11: no kernel heap. TCBs and stacks come from static storage; the stack pool is
+// carved sequentially at init (pre-scheduler, single-threaded), never freed.
+static StaticTask_t s_tcbs[FreeRTOSScheduler::MAX_TASKS];
+static StackType_t  s_stackPool[FreeRTOSScheduler::STACK_POOL_WORDS];
+static uint32_t     s_tasksCreated = 0;
+static uint32_t     s_poolUsed = 0;
+
+uint32_t FreeRTOSScheduler::stackPoolFreeWords()
+{
+    return STACK_POOL_WORDS - s_poolUsed;
+}
+
 Platform::TaskHandle FreeRTOSScheduler::createTask(const Platform::TaskDescriptor& desc)
 {
-    TaskHandle_t handle = nullptr;
-    BaseType_t result = xTaskCreate(
+    if (s_tasksCreated >= MAX_TASKS || s_poolUsed + desc.stackSizeWords > STACK_POOL_WORDS) {
+        EarlyDebug::print("createTask FAIL (static pool exhausted): ");
+        EarlyDebug::println(desc.name);
+        return nullptr;
+    }
+    StackType_t* stack = &s_stackPool[s_poolUsed];
+    TaskHandle_t handle = xTaskCreateStatic(
         desc.entry,
         desc.name,
         static_cast<configSTACK_DEPTH_TYPE>(desc.stackSizeWords),
         desc.parameter,
         tskIDLE_PRIORITY + desc.priority,
-        &handle
+        stack,
+        &s_tcbs[s_tasksCreated]
     );
-    if (result != pdPASS) {
-        EarlyDebug::print("xTaskCreate FAIL: ");
+    if (handle == nullptr) {
+        EarlyDebug::print("xTaskCreateStatic FAIL: ");
         EarlyDebug::println(desc.name);
         return nullptr;
     }
+    s_poolUsed += desc.stackSizeWords;
+    s_tasksCreated++;
     return static_cast<Platform::TaskHandle>(handle);
 }
 

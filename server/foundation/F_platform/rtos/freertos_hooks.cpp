@@ -87,6 +87,16 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char* pcTaskName)
     while (1) {}
 }
 
+// F11: static allocation needs the idle task's storage from the application
+static StaticTask_t s_idleTcb;
+static StackType_t  s_idleStack[configMINIMAL_STACK_SIZE];
+void vApplicationGetIdleTaskMemory(StaticTask_t** tcb, StackType_t** stack, uint32_t* words)
+{
+    *tcb = &s_idleTcb;
+    *stack = s_idleStack;
+    *words = configMINIMAL_STACK_SIZE;
+}
+
 void vApplicationMallocFailedHook(void)
 {
     EarlyDebug::println("!!! MALLOC FAILED !!!");

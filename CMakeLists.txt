@@ -107,7 +107,6 @@ set(THIRD_PARTY_SOURCES
     ${FREERTOS_DIR}/timers.c
     ${FREERTOS_DIR}/event_groups.c
     ${FREERTOS_DIR}/stream_buffer.c
-    ${FREERTOS_DIR}/portable/MemMang/heap_4.c
     ${FREERTOS_DIR}/portable/GCC/ARM_CM4F/port.c
     ${EXT}/X_middlewares/SEGGER/RTT/SEGGER_RTT.c
     ${EXT}/X_middlewares/SEGGER/RTT/SEGGER_RTT_printf.c

@@ -19,7 +19,7 @@ template<typename T, size_t Depth>
 class FreeRTOSQueue : public Platform::IQueue<T, Depth> {
 public:
     FreeRTOSQueue() : m_handle(nullptr) {
-        m_handle = xQueueCreate(Depth, sizeof(T));
+        m_handle = xQueueCreateStatic(Depth, sizeof(T), m_itemStorage, &m_queueStorage);   // F11
     }
 
     ~FreeRTOSQueue() override {
@@ -66,6 +66,8 @@ public:
 
 private:
     QueueHandle_t m_handle;
+    uint8_t       m_itemStorage[Depth * sizeof(T)];   ///< F11: static item storage
+    StaticQueue_t m_queueStorage;
 };
 
 } // namespace Platform

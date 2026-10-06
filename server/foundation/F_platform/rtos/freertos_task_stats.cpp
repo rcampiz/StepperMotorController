@@ -7,6 +7,7 @@
  */
 
 #include "F_platform/rtos/freertos_task_stats.hpp"
+#include "F_platform/rtos/freertos_scheduler.hpp"
 
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
@@ -105,7 +106,9 @@ uint8_t FreeRTOSTaskStats::getCurrentTaskIndex()
 
 uint32_t FreeRTOSTaskStats::getFreeHeapBytes()
 {
-    return static_cast<uint32_t>(xPortGetFreeHeapSize());
+    // F11: there is no kernel heap any more; report the unused part of the static stack
+    // pool so "free_heap" in telemetry still shows allocation headroom (bytes).
+    return FreeRTOSScheduler::stackPoolFreeWords() * sizeof(uint32_t);
 }
 
 } // namespace Platform

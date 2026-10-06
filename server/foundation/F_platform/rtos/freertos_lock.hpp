@@ -18,12 +18,12 @@ namespace Platform {
 class FreeRTOSMutex : public Platform::ILock {
 public:
     FreeRTOSMutex() : m_sem(nullptr) {
-        m_sem = xSemaphoreCreateMutex();
+        m_sem = xSemaphoreCreateMutexStatic(&m_storage);   // F11: no heap
     }
 
     ~FreeRTOSMutex() override {
         if (m_sem != nullptr) {
-            vSemaphoreDelete(m_sem);
+            vSemaphoreDelete(m_sem);   // static: only unregisters
         }
     }
 
@@ -47,6 +47,7 @@ public:
 
 private:
     SemaphoreHandle_t m_sem;
+    StaticSemaphore_t m_storage;   ///< kernel object storage (F11)
 };
 
 } // namespace Platform

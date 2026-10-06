@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <string.h>
+#include <new>
 #include "L5_board/spi/spi_board_config.hpp"
 #include "L5_board/spi/spi_hardware.hpp"
 #include "L5_board/board_pins.hpp"
@@ -89,7 +90,10 @@ public:
         // SPI1: Hardware SPI peripheral on PA5 (SCK), PA6 (MISO), PA7 (MOSI)
         // Prescaler 4 = /32 → 84 MHz / 32 = 2.625 MHz
         // Safe for both ST7789 LCD (max ~62 MHz) and powerSTEP01 (max 5 MHz)
-        m_spi1 = new SPIHardware(
+        // F11: static storage, constructed in place (no heap anywhere in the firmware)
+        alignas(SPIHardware) static uint8_t s_spi1Storage[sizeof(SPIHardware)];
+        alignas(SPIHardware) static uint8_t s_spi2Storage[sizeof(SPIHardware)];
+        m_spi1 = new (s_spi1Storage) SPIHardware(
             SPI1,
             Pins::SPI1_Bus::PORT,
             Pins::SPI1_Bus::SCK_PIN,
@@ -103,7 +107,7 @@ public:
 
         // SPI2: Hardware SPI on PB13 (SCK), PC2 (MISO), PC3 (MOSI)
         // Prescaler 0 = /2 → 42 MHz / 2 = 21 MHz (MX25L6433F supports 86 MHz normal read)
-        m_spi2 = new SPIHardware(
+        m_spi2 = new (s_spi2Storage) SPIHardware(
             SPI2,
             Pins::SPI2_Bus::SCK_PORT,  Pins::SPI2_Bus::SCK_PIN,
             Pins::SPI2_Bus::MISO_PORT, Pins::SPI2_Bus::MISO_PIN,
