@@ -956,6 +956,28 @@
       "note": ""
     },
     {
+      "name": "SYST:HELP?",
+      "prefix": "SYST",
+      "handler": "cmdHelp",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<lines> then OK <n>"
+      ],
+      "json": [
+        {
+          "command": "HELP",
+          "keys": [
+            "count",
+            "lines"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
       "name": "SYST:EVT:DIS",
       "prefix": "SYST",
       "handler": "cmdEventDisable",
@@ -1225,7 +1247,7 @@
       "file": "control_handlers.cpp",
       "min_args": 6,
       "usage": [
-        "CTRL:FOLLOW:THRESH <E_MOVE> <T_MOVE> <E_HOLD> <T_HOLD> "
+        "CTRL:FOLLOW:THRESH <E_MOVE> <T_MOVE> <E_HOLD> <T_HOLD>"
       ],
       "ascii_ok": [
         "Thresholds set"
@@ -1333,7 +1355,7 @@
       "file": "control_handlers.cpp",
       "min_args": 3,
       "usage": [
-        "CTRL:SYSID:RAMP <start_sps> <end_sps> <dir> [dur_ms] "
+        "CTRL:SYSID:RAMP <start_sps> <end_sps> <dir> [dur_ms]"
       ],
       "ascii_ok": [
         "SYSID ramp started"
@@ -1352,7 +1374,7 @@
       "file": "control_handlers.cpp",
       "min_args": 4,
       "usage": [
-        "CTRL:SYSID:SINE <baseline> <amplitude> <freq_mHz> <dir> "
+        "CTRL:SYSID:SINE <baseline> <amplitude> <freq_mHz> <dir>"
       ],
       "ascii_ok": [
         "SYSID sine started"
@@ -1776,8 +1798,7 @@
       "file": "display_handlers.cpp",
       "min_args": 5,
       "usage": [
-        "DISP_TEXT <x> <y> <fg> <bg> <text>",
-        "DISP_TEXT <x> <y> <fg> <bg> <text>\n  if (cmd.argCount < 5) {\n    respondErr("
+        "DISP_TEXT <x> <y> <fg> <bg> <text>"
       ],
       "ascii_ok": [
         ""
@@ -1795,8 +1816,7 @@
       "file": "display_handlers.cpp",
       "min_args": 5,
       "usage": [
-        "DISP_RECT <x> <y> <w> <h> <color> [fill]",
-        "DISP_RECT <x> <y> <w> <h> <color> [fill]\n  if (cmd.argCount < 5) {\n    respondErr("
+        "DISP_RECT <x> <y> <w> <h> <color> [fill]"
       ],
       "ascii_ok": [
         ""
@@ -1814,8 +1834,7 @@
       "file": "display_handlers.cpp",
       "min_args": 5,
       "usage": [
-        "DISP_LINE <x1> <y1> <x2> <y2> <color>",
-        "DISP_LINE <x1> <y1> <x2> <y2> <color>\n  if (cmd.argCount < 5) {\n    respondErr("
+        "DISP_LINE <x1> <y1> <x2> <y2> <color>"
       ],
       "ascii_ok": [
         ""
@@ -1833,8 +1852,7 @@
       "file": "display_handlers.cpp",
       "min_args": 0,
       "usage": [
-        "DISP_BITMAP <x> <y> <w> <h> [CRC]",
-        "DISP_BITMAP <x> <y> <w> <h> [CRC]\n  bool useCrc = hasCrcFlag(cmd);\n  uint32_t minArgs = useCrc ? 5 : 4;\n\n  if (cmd.argCount < minArgs) {\n    respondErr("
+        "DISP_BITMAP <x> <y> <w> <h> [CRC]"
       ],
       "ascii_ok": [
         "",
@@ -1857,8 +1875,7 @@
       "file": "display_handlers.cpp",
       "min_args": 5,
       "usage": [
-        "DISP_BITMAP_B64 <x> <y> <w> <h> <base64_data>",
-        "DISP_BITMAP_B64 <x> <y> <w> <h> <base64_data>\n  if (cmd.argCount < 5) {\n    respondErr("
+        "DISP_BITMAP_B64 <x> <y> <w> <h> <base64_data>"
       ],
       "ascii_ok": [
         ""
@@ -1877,8 +1894,7 @@
       "file": "display_handlers.cpp",
       "min_args": 0,
       "usage": [
-        "DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes> [CRC]",
-        "DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes> [CRC]\n  bool useCrc = hasCrcFlag(cmd);\n  uint32_t minArgs = useCrc ? 6 : 5;\n\n  if (cmd.argCount < minArgs) {\n    respondErr(\n        "
+        "DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes> [CRC]"
       ],
       "ascii_ok": [
         "",
@@ -1923,8 +1939,7 @@
       "file": "display_handlers.cpp",
       "min_args": 0,
       "usage": [
-        "FLASH_UPLOAD <slot> [CRC]",
-        "FLASH_UPLOAD <slot> [CRC]\n  bool useCrc = hasCrcFlag(cmd);\n  uint32_t minArgs = useCrc ? 2 : 1;\n\n  if (cmd.argCount < minArgs) {\n    respondErr("
+        "FLASH_UPLOAD <slot> [CRC]"
       ],
       "ascii_ok": [
         "<plain lines>"
@@ -1964,8 +1979,7 @@
       "file": "display_handlers.cpp",
       "min_args": 0,
       "usage": [
-        "FLASH_UPLOAD_RLE <slot> <compressed_bytes> [CRC]",
-        "FLASH_UPLOAD_RLE <slot> <compressed_bytes> [CRC]\n  bool useCrc = hasCrcFlag(cmd);\n  uint32_t minArgs = useCrc ? 3 : 2; // slot, comp_bytes [, CRC]\n\n  if (cmd.argCount < minArgs) {\n    respondErr("
+        "FLASH_UPLOAD_RLE <slot> <compressed_bytes> [CRC]"
       ],
       "ascii_ok": [
         "<plain lines>"
@@ -1989,8 +2003,7 @@
       "file": "display_handlers.cpp",
       "min_args": 1,
       "usage": [
-        "FLASH_DUMP <slot> [offset] [len]",
-        "FLASH_DUMP <slot> [offset] [len]\n  if (cmd.argCount < 1) {\n    respondErr("
+        "FLASH_DUMP <slot> [offset] [len]"
       ],
       "ascii_ok": [
         "<lines> then OK <n>"
@@ -2197,7 +2210,7 @@
       "file": "config_handlers.cpp",
       "min_args": 4,
       "usage": [
-        "MCONFIG_KVAL <hold> <run> <acc> <dec>\n  if (cmd.argCount < 4) {\n    respondErr(",
+        "MCONFIG_KVAL <hold> <run> <acc> <dec>",
         "MCONFIG_KVAL <hold> <run> <acc> <dec> (hex 00-FF)"
       ],
       "ascii_ok": [
@@ -2214,7 +2227,7 @@
       "file": "config_handlers.cpp",
       "min_args": 1,
       "usage": [
-        "MCONFIG_OCD <threshold>\n  if (cmd.argCount < 1) {\n    respondErr(",
+        "MCONFIG_OCD <threshold>",
         "MCONFIG_OCD <threshold> (0-31, ~375mA/step)"
       ],
       "ascii_ok": [
@@ -2233,7 +2246,7 @@
       "file": "config_handlers.cpp",
       "min_args": 1,
       "usage": [
-        "MCONFIG_STALL <threshold>\n  // powerSTEP01 STALL_TH is 5-bit (0-31), NOT 7-bit like L6470\n  if (cmd.argCount < 1) {\n    respondErr(",
+        "MCONFIG_STALL <threshold>",
         "MCONFIG_STALL <threshold> (0-31, ~31.25mV/step BEMF)"
       ],
       "ascii_ok": [
@@ -2253,7 +2266,7 @@
       "min_args": 1,
       "usage": [
         "MCONFIG_FAULT <ocd> <th_sd> <th_w> <uvlo> <sta> <stb> <cmd>\\n",
-        "MCONFIG_FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd>\n  //        MCONFIG_FAULT ACTION <0|1|2>\n  if (cmd.argCount < 1) {\n    respondErr(\n        ",
+        "MCONFIG_FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd>",
         "MCONFIG_FAULT ACTION <0|1|2>"
       ],
       "ascii_ok": [
@@ -2273,8 +2286,7 @@
       "file": "config_handlers.cpp",
       "min_args": 3,
       "usage": [
-        "MCONFIG_MOTION <acc> <dec> <maxspd>",
-        "MCONFIG_MOTION <acc> <dec> <maxspd>\n  if (cmd.argCount < 3) {\n    respondErr("
+        "MCONFIG_MOTION <acc> <dec> <maxspd>"
       ],
       "ascii_ok": [
         "<formatted text>"
@@ -2293,7 +2305,7 @@
       "file": "config_handlers.cpp",
       "min_args": 1,
       "usage": [
-        "MCONFIG_STEPMODE <mode>\n  // mode: 0=full, 1=half, 2=1/4, 3=1/8, 4=1/16, 5=1/32, 6=1/64, 7=1/128\n  // Also accepts microstep counts: 1,2,4,8,16,32,64,128\n  if (cmd.argCount < 1) {\n    respondErr(",
+        "MCONFIG_STEPMODE <mode>",
         "MCONFIG_STEPMODE <mode> (0-7 or 1/2/4/8/16/32/64/128)"
       ],
       "ascii_ok": [

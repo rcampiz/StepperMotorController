@@ -316,6 +316,7 @@ private:
 
   // Utility command handlers
   void cmdVersion();
+  void cmdHelp();   ///< SYST:HELP? from the generated help_table.inc (F8)
   void cmdHome(const ParsedCommand &cmd);
   void cmdZero();
   void cmdEncoderZero();

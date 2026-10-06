@@ -428,3 +428,22 @@ TEST(debug_sink_output_is_terminated_split_and_escaped) {
     std::string gone = r.run("DBG:MOTOR");
     EXPECT_TRUE(gone.find("\"code\":\"UNKNOWN_CMD\"") != std::string::npos);
 }
+
+// --- F8: SYST:HELP? lists every command from the generated table ----------------------
+TEST(help_lists_every_command_and_is_terminated) {
+    BoundRig r;
+    r.run("SYST:ECHO OFF");
+    std::string help = r.run("SYST:HELP?");
+    EXPECT_TRUE(help.find("SYST:HELP?\r\n") != std::string::npos);
+    EXPECT_TRUE(help.find("SYST:TLM:RATE <ms>\r\n") != std::string::npos);
+    EXPECT_TRUE(help.find("*IDN?\r\n") != std::string::npos);
+    size_t n = lineCount(help);
+    EXPECT_TRUE(n > 100);
+    char tail[24];
+    snprintf(tail, sizeof(tail), "OK %u\r\n", static_cast<unsigned>(n - 1));
+    EXPECT_TRUE(endsWith(help, tail));
+    r.run("FMT JSON");
+    std::string js = r.run("SYST:HELP?");
+    EXPECT_EQ(lineCount(js), 1u);
+    EXPECT_TRUE(js.find("{\"status\":\"ok\",\"command\":\"HELP\",\"data\":{\"lines\":[\"") == 0);
+}

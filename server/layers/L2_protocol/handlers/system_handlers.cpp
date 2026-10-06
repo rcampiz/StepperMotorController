@@ -271,6 +271,21 @@ void CommandParser::cmdIdn() {
   }
 }
 
+// SYST:HELP? — one line per command, generated from the dispatch tables by
+// scripts/gen_protocol.py (F8). The arch-check target fails when the table is stale.
+namespace {
+const char* const kHelpLines[] = {
+#include "L2_protocol/help_table.inc"
+};
+} // namespace
+
+void CommandParser::cmdHelp() {
+  m_sink.begin(m_format == ResponseFormat::JSON, "HELP");
+  for (size_t i = 0; i < sizeof(kHelpLines) / sizeof(kHelpLines[0]); i++)
+    m_sink.writeLine(kHelpLines[i]);
+  m_sink.end();
+}
+
 void CommandParser::cmdVersion() {
   m_sink.begin(m_format == ResponseFormat::JSON, "VERSION");   // F12: 5 lines + terminator
   char line[80];

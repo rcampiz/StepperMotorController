@@ -138,7 +138,7 @@ verify state instead).
 7. (done) Multi-line replies end with `OK <n>` (ASCII) or carry a `lines` array (JSON);
    `CTRL:SYSID:DATA?` adds `total`.
 8. (done) Dropped-event counter in `SYST:EVT:STAT?` (`lost_critical`, `lost_info`; `seq` semantics above).
-9. `SYST:HELP?` generated from the dispatch tables.
+9. (done) `SYST:HELP?` generated from the dispatch tables (one line per command, terminated).
 10. Base64 flash upload (`UI:FLASH:UPLOAD:B64 <slot> <offset> <len> <b64>`) and
     `UI:DISP:BITMAP:RLE:B64`; the raw binary variants are removed (0x18 rule).
 11. `SYST:HB:TIMEOUT 0` refused unless the motor is in Hi-Z (`ERROR INVALID_STATE`).
@@ -206,6 +206,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `SYST:HB:STAT?` | 0 | — | ASCII: `OK <plain lines>`; JSON `GET_HEARTBEAT_STATUS` keys: `enabled`, `last_seq`, `remaining_ms`, `timed_out`, `timeout_ms` | — | `cmdGetHeartbeatStatus` (safety_handlers.cpp) |
 | `SYST:TLM:RATE?` | 0 | — | ASCII: `OK <plain lines>`; JSON `TLM_RATE` keys: `enabled`, `period_ms` | — | `cmdTelemetryRateQuery` (system_handlers.cpp) |
 | `SYST:VER?` | 0 | — | ASCII: `<lines> then OK <n>`; JSON `VERSION` keys: `count`, `lines` | — | `cmdVersion` (system_handlers.cpp) |
+| `SYST:HELP?` | 0 | — | ASCII: `<lines> then OK <n>`; JSON `HELP` keys: `count`, `lines` | — | `cmdHelp` (system_handlers.cpp) |
 | `SYST:EVT:DIS` | 0 | — | ASCII: `OK ` | — | `cmdEventDisable` (system_handlers.cpp) |
 | `SYST:EVT:STAT?` | 0 | — | ASCII: `OK <plain lines>` | — | `cmdEventStatus` (system_handlers.cpp) |
 | `SYST:ZERO` | 0 | — | ASCII: `OK <status> or ALL_ZEROED` | — | `cmdZeroAll` (motion_handlers.cpp) |
@@ -236,13 +237,13 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `CTRL:MODE` | 1 | CTRL:MODE OPEN_LOOP\|MONITOR\|PID | `OK <status>` | `Unknown mode (OPEN_LOOP, MONITOR, SPEED_TRIM)` | `cmdSetMode` (control_handlers.cpp) |
 | `CTRL:ENC:FILT` | 1 | — | ASCII: `OK NONE`, `OK <formatted text>` | `EMA alpha must be 0-255`<br>`EMA requires alpha (0-255)`<br>`SMA requires window size (2-32)`<br>`SMA window must be 2-32`<br>`Unknown filter type or alpha out of range (0-255)` | `cmdEncFilter` (encoder_handlers.cpp) |
 | `CTRL:ENC:FILT?` | 1 | — | ASCII: `OK NONE`, `OK <formatted text>` | `EMA alpha must be 0-255`<br>`EMA requires alpha (0-255)`<br>`SMA requires window size (2-32)`<br>`SMA window must be 2-32`<br>`Unknown filter type or alpha out of range (0-255)` | `cmdEncFilter` (encoder_handlers.cpp) |
-| `CTRL:FOLLOW:THRESH` | 6 | CTRL:FOLLOW:THRESH <E_MOVE> <T_MOVE> <E_HOLD> <T_HOLD>  | ASCII: `OK Thresholds set` | — | `cmdFollowThreshSet` (control_handlers.cpp) |
+| `CTRL:FOLLOW:THRESH` | 6 | CTRL:FOLLOW:THRESH <E_MOVE> <T_MOVE> <E_HOLD> <T_HOLD> | ASCII: `OK Thresholds set` | — | `cmdFollowThreshSet` (control_handlers.cpp) |
 | `CTRL:TRIM:GAINS` | 2 | CTRL:TRIM:GAINS <kp> <ki> | ASCII: `OK Trim gains set`; JSON `CTRL:TRIM:GAINS` keys: `ki`, `kp` | — | `cmdTrimSetGains` (control_handlers.cpp) |
 | `CTRL:TRIM:LIMITS` | 2 | CTRL:TRIM:LIMITS <output_limit> <integral_limit> | ASCII: `OK Trim limits set`; JSON `CTRL:TRIM:LIMITS` keys: `i_limit`, `out_limit` | — | `cmdTrimSetLimits` (control_handlers.cpp) |
 | `CTRL:TRIM:MAXPCT` | 1 | CTRL:TRIM:MAXPCT <1-50> | ASCII: `OK Trim max percent set`; JSON `CTRL:TRIM:MAXPCT` keys: `max_pct` | `maxPct must be 1-50` | `cmdTrimSetMaxPct` (control_handlers.cpp) |
 | `CTRL:SYSID:STEP` | 2 | CTRL:SYSID:STEP <speed_sps> <dir> [dur_ms] [settle_ms] | ASCII: `OK SYSID step started` | `SYSID already running`<br>`speed_sps must be 1-15625` | `cmdSysIdStep` (control_handlers.cpp) |
-| `CTRL:SYSID:RAMP` | 3 | CTRL:SYSID:RAMP <start_sps> <end_sps> <dir> [dur_ms]  | ASCII: `OK SYSID ramp started` | `SYSID already running`<br>`speed must be 0-15625 sps` | `cmdSysIdRamp` (control_handlers.cpp) |
-| `CTRL:SYSID:SINE` | 4 | CTRL:SYSID:SINE <baseline> <amplitude> <freq_mHz> <dir>  | ASCII: `OK SYSID sine started` | `SYSID already running`<br>`freq_mHz must be 1-5000 (0.001-5.0 Hz)`<br>`speed must be 0-15625 sps` | `cmdSysIdSine` (control_handlers.cpp) |
+| `CTRL:SYSID:RAMP` | 3 | CTRL:SYSID:RAMP <start_sps> <end_sps> <dir> [dur_ms] | ASCII: `OK SYSID ramp started` | `SYSID already running`<br>`speed must be 0-15625 sps` | `cmdSysIdRamp` (control_handlers.cpp) |
+| `CTRL:SYSID:SINE` | 4 | CTRL:SYSID:SINE <baseline> <amplitude> <freq_mHz> <dir> | ASCII: `OK SYSID sine started` | `SYSID already running`<br>`freq_mHz must be 1-5000 (0.001-5.0 Hz)`<br>`speed must be 0-15625 sps` | `cmdSysIdSine` (control_handlers.cpp) |
 | `CTRL:SYSID:TRAPEZOID` | 2 | CTRL:SYSID:TRAPEZOID <speed_sps> <dir> [dur_ms] [settle_ms] | ASCII: `OK SYSID trapezoid started` | `SYSID already running`<br>`speed_sps must be 1-15625` | `cmdSysIdTrapezoid` (control_handlers.cpp) |
 | `CTRL:SYSID:RECT` | 2 | CTRL:SYSID:RECT <speed_sps> <dir> [dur_ms] [settle_ms] | ASCII: `OK SYSID rect started` | `SYSID already running`<br>`speed_sps must be 1-15625` | `cmdSysIdRect` (control_handlers.cpp) |
 | `CTRL:SYSID:DATA?` | 0 | — | ASCII: `<lines> then OK <n>`; JSON `SYSID_DATA` keys: `count`, `lines`, `offset`, `samples`, `total` | `No data ready (test not DONE)`<br>`offset past end` | `cmdSysIdData` (control_handlers.cpp) |
@@ -284,48 +285,17 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | Command | Min args | Usage | Reply | Errors | Handler |
 |---|---|---|---|---|---|
 | `UI:DISP:CLEAR` | 0 | — | ASCII: `OK ` | `Not in REMOTE mode` | `cmdDispClear` (display_handlers.cpp) |
-| `UI:DISP:TEXT` | 5 | DISP_TEXT <x> <y> <fg> <bg> <text><br>DISP_TEXT <x> <y> <fg> <bg> <text>
-  if (cmd.argCount < 5) {
-    respondErr( | ASCII: `OK ` | `Not in REMOTE mode` | `cmdDispText` (display_handlers.cpp) |
-| `UI:DISP:RECT` | 5 | DISP_RECT <x> <y> <w> <h> <color> [fill]<br>DISP_RECT <x> <y> <w> <h> <color> [fill]
-  if (cmd.argCount < 5) {
-    respondErr( | ASCII: `OK ` | `Not in REMOTE mode` | `cmdDispRect` (display_handlers.cpp) |
-| `UI:DISP:LINE` | 5 | DISP_LINE <x1> <y1> <x2> <y2> <color><br>DISP_LINE <x1> <y1> <x2> <y2> <color>
-  if (cmd.argCount < 5) {
-    respondErr( | ASCII: `OK ` | `Not in REMOTE mode` | `cmdDispLine` (display_handlers.cpp) |
-| `UI:DISP:BITMAP` | 0 | DISP_BITMAP <x> <y> <w> <h> [CRC]<br>DISP_BITMAP <x> <y> <w> <h> [CRC]
-  bool useCrc = hasCrcFlag(cmd);
-  uint32_t minArgs = useCrc ? 5 : 4;
-
-  if (cmd.argCount < minArgs) {
-    respondErr( | ASCII: `OK `, `OK <plain lines>` | `Bitmap too large`<br>`Invalid dimensions`<br>`LCD streaming failed`<br>`Not in REMOTE mode`<br>`Position out of bounds` | `cmdDispBitmap` (display_handlers.cpp) |
-| `UI:DISP:BITMAP:B64` | 5 | DISP_BITMAP_B64 <x> <y> <w> <h> <base64_data><br>DISP_BITMAP_B64 <x> <y> <w> <h> <base64_data>
-  if (cmd.argCount < 5) {
-    respondErr( | ASCII: `OK ` | `Bitmap too large. Max 512 bytes decoded.`<br>`Not in REMOTE mode` | `cmdDispBitmapB64` (display_handlers.cpp) |
-| `UI:DISP:BITMAP:RLE` | 0 | DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes> [CRC]<br>DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes> [CRC]
-  bool useCrc = hasCrcFlag(cmd);
-  uint32_t minArgs = useCrc ? 6 : 5;
-
-  if (cmd.argCount < minArgs) {
-    respondErr(
-         | ASCII: `OK `, `OK <plain lines>` | `Compressed size too large`<br>`Invalid compressed size`<br>`Invalid dimensions`<br>`LCD streaming failed`<br>`Not in REMOTE mode`<br>`Position out of bounds` | `cmdDispBitmapRle` (display_handlers.cpp) |
+| `UI:DISP:TEXT` | 5 | DISP_TEXT <x> <y> <fg> <bg> <text> | ASCII: `OK ` | `Not in REMOTE mode` | `cmdDispText` (display_handlers.cpp) |
+| `UI:DISP:RECT` | 5 | DISP_RECT <x> <y> <w> <h> <color> [fill] | ASCII: `OK ` | `Not in REMOTE mode` | `cmdDispRect` (display_handlers.cpp) |
+| `UI:DISP:LINE` | 5 | DISP_LINE <x1> <y1> <x2> <y2> <color> | ASCII: `OK ` | `Not in REMOTE mode` | `cmdDispLine` (display_handlers.cpp) |
+| `UI:DISP:BITMAP` | 0 | DISP_BITMAP <x> <y> <w> <h> [CRC] | ASCII: `OK `, `OK <plain lines>` | `Bitmap too large`<br>`Invalid dimensions`<br>`LCD streaming failed`<br>`Not in REMOTE mode`<br>`Position out of bounds` | `cmdDispBitmap` (display_handlers.cpp) |
+| `UI:DISP:BITMAP:B64` | 5 | DISP_BITMAP_B64 <x> <y> <w> <h> <base64_data> | ASCII: `OK ` | `Bitmap too large. Max 512 bytes decoded.`<br>`Not in REMOTE mode` | `cmdDispBitmapB64` (display_handlers.cpp) |
+| `UI:DISP:BITMAP:RLE` | 0 | DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes> [CRC] | ASCII: `OK `, `OK <plain lines>` | `Compressed size too large`<br>`Invalid compressed size`<br>`Invalid dimensions`<br>`LCD streaming failed`<br>`Not in REMOTE mode`<br>`Position out of bounds` | `cmdDispBitmapRle` (display_handlers.cpp) |
 | `UI:DISP:INDICATOR` | 3 | DISP_INDICATOR <angle> <rot_dir> <has_trans> | ASCII: `OK ` | `Invalid angle`<br>`Invalid has_translation`<br>`Invalid rotation_dir`<br>`Not in REMOTE mode` | `cmdDispIndicator` (display_handlers.cpp) |
-| `UI:FLASH:UPLOAD` | 0 | FLASH_UPLOAD <slot> [CRC]<br>FLASH_UPLOAD <slot> [CRC]
-  bool useCrc = hasCrcFlag(cmd);
-  uint32_t minArgs = useCrc ? 2 : 1;
-
-  if (cmd.argCount < minArgs) {
-    respondErr( | ASCII: `OK <plain lines>` | `Flash erase failed`<br>`Flash not available`<br>`Flash program failed`<br>`Slot out of range` | `cmdFlashUpload` (display_handlers.cpp) |
+| `UI:FLASH:UPLOAD` | 0 | FLASH_UPLOAD <slot> [CRC] | ASCII: `OK <plain lines>` | `Flash erase failed`<br>`Flash not available`<br>`Flash program failed`<br>`Slot out of range` | `cmdFlashUpload` (display_handlers.cpp) |
 | `UI:FLASH:SHOW` | 1 | FLASH_SHOW <slot> | `OK <status>` | `Flash not available`<br>`Flash read failed`<br>`LCD streaming failed`<br>`Slot out of range` | `cmdFlashShow` (display_handlers.cpp) |
-| `UI:FLASH:UPLOAD:RLE` | 0 | FLASH_UPLOAD_RLE <slot> <compressed_bytes> [CRC]<br>FLASH_UPLOAD_RLE <slot> <compressed_bytes> [CRC]
-  bool useCrc = hasCrcFlag(cmd);
-  uint32_t minArgs = useCrc ? 3 : 2; // slot, comp_bytes [, CRC]
-
-  if (cmd.argCount < minArgs) {
-    respondErr( | ASCII: `OK <plain lines>` | `Compressed size too large`<br>`Flash erase failed`<br>`Flash not available`<br>`Flash program failed`<br>`Flash program failed (final page)`<br>`Invalid compressed size`<br>`Slot out of range` | `cmdFlashUploadRle` (display_handlers.cpp) |
-| `UI:FLASH:DUMP` | 1 | FLASH_DUMP <slot> [offset] [len]<br>FLASH_DUMP <slot> [offset] [len]
-  if (cmd.argCount < 1) {
-    respondErr( | ASCII: `<lines> then OK <n>`; JSON `FLASH_DUMP` keys: `count`, `len`, `lines`, `offset`, `slot` | `Flash not available`<br>`Flash read failed`<br>`Offset+len exceeds image size`<br>`Slot out of range` | `cmdFlashDump` (display_handlers.cpp) |
+| `UI:FLASH:UPLOAD:RLE` | 0 | FLASH_UPLOAD_RLE <slot> <compressed_bytes> [CRC] | ASCII: `OK <plain lines>` | `Compressed size too large`<br>`Flash erase failed`<br>`Flash not available`<br>`Flash program failed`<br>`Flash program failed (final page)`<br>`Invalid compressed size`<br>`Slot out of range` | `cmdFlashUploadRle` (display_handlers.cpp) |
+| `UI:FLASH:DUMP` | 1 | FLASH_DUMP <slot> [offset] [len] | ASCII: `<lines> then OK <n>`; JSON `FLASH_DUMP` keys: `count`, `len`, `lines`, `offset`, `slot` | `Flash not available`<br>`Flash read failed`<br>`Offset+len exceeds image size`<br>`Slot out of range` | `cmdFlashDump` (display_handlers.cpp) |
 | `UI:FLASH:INFO` | 0 | — | ASCII: `OK <formatted text>` | `Flash not available` | `cmdFlashInfo` (display_handlers.cpp) |
 | `UI:FLASH:ERASE_ALL` | 0 | — | ASCII: `OK All image slots erased` | `Flash erase failed`<br>`Flash not available` | `cmdFlashEraseAll` (display_handlers.cpp) |
 | `UI:FLASH:TEST` | 0 | — | `OK <status>` | `Flash not available` | `cmdFlashTest` (display_handlers.cpp) |
@@ -347,29 +317,12 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | Command | Min args | Usage | Reply | Errors | Handler |
 |---|---|---|---|---|---|
 | `DRV:REINIT` (special case in dispatcher) | 0 | — | ASCII: `OK Motor driver reinitialized and config applied` | — | `inline`  |
-| `DRV:CFG:KVAL` | 4 | MCONFIG_KVAL <hold> <run> <acc> <dec>
-  if (cmd.argCount < 4) {
-    respondErr(<br>MCONFIG_KVAL <hold> <run> <acc> <dec> (hex 00-FF) | ASCII: `OK <formatted text>` | — | `cmdMotorConfigKval` (config_handlers.cpp) |
-| `DRV:CFG:OCD` | 1 | MCONFIG_OCD <threshold>
-  if (cmd.argCount < 1) {
-    respondErr(<br>MCONFIG_OCD <threshold> (0-31, ~375mA/step) | ASCII: `OK <formatted text>` | `OCD threshold must be 0-31` | `cmdMotorConfigOcd` (config_handlers.cpp) |
-| `DRV:CFG:STALL` | 1 | MCONFIG_STALL <threshold>
-  // powerSTEP01 STALL_TH is 5-bit (0-31), NOT 7-bit like L6470
-  if (cmd.argCount < 1) {
-    respondErr(<br>MCONFIG_STALL <threshold> (0-31, ~31.25mV/step BEMF) | ASCII: `OK <formatted text>` | `Stall threshold must be 0-31` | `cmdMotorConfigStall` (config_handlers.cpp) |
-| `DRV:CFG:FAULT` | 1 | MCONFIG_FAULT <ocd> <th_sd> <th_w> <uvlo> <sta> <stb> <cmd>\n<br>MCONFIG_FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd>
-  //        MCONFIG_FAULT ACTION <0\|1\|2>
-  if (cmd.argCount < 1) {
-    respondErr(
-        <br>MCONFIG_FAULT ACTION <0\|1\|2> | ASCII: `OK Fault enables set (not saved)`, `OK <formatted text>` | `Action must be 0=HardStop, 1=HardHiZ, 2=SoftStop` | `cmdMotorConfigFault` (config_handlers.cpp) |
-| `DRV:CFG:MOTION` | 3 | MCONFIG_MOTION <acc> <dec> <maxspd><br>MCONFIG_MOTION <acc> <dec> <maxspd>
-  if (cmd.argCount < 3) {
-    respondErr( | ASCII: `OK <formatted text>` | `ACC/DEC must be 0-4095`<br>`MAXSPD must be 0-1023` | `cmdMotorConfigMotion` (config_handlers.cpp) |
-| `DRV:CFG:STEPMODE` | 1 | MCONFIG_STEPMODE <mode>
-  // mode: 0=full, 1=half, 2=1/4, 3=1/8, 4=1/16, 5=1/32, 6=1/64, 7=1/128
-  // Also accepts microstep counts: 1,2,4,8,16,32,64,128
-  if (cmd.argCount < 1) {
-    respondErr(<br>MCONFIG_STEPMODE <mode> (0-7 or 1/2/4/8/16/32/64/128) | ASCII: `OK <formatted text>` | `Invalid mode. Use 0-7 or microstep count (8/16/32/64/128)` | `cmdMotorConfigStepMode` (config_handlers.cpp) |
+| `DRV:CFG:KVAL` | 4 | MCONFIG_KVAL <hold> <run> <acc> <dec><br>MCONFIG_KVAL <hold> <run> <acc> <dec> (hex 00-FF) | ASCII: `OK <formatted text>` | — | `cmdMotorConfigKval` (config_handlers.cpp) |
+| `DRV:CFG:OCD` | 1 | MCONFIG_OCD <threshold><br>MCONFIG_OCD <threshold> (0-31, ~375mA/step) | ASCII: `OK <formatted text>` | `OCD threshold must be 0-31` | `cmdMotorConfigOcd` (config_handlers.cpp) |
+| `DRV:CFG:STALL` | 1 | MCONFIG_STALL <threshold><br>MCONFIG_STALL <threshold> (0-31, ~31.25mV/step BEMF) | ASCII: `OK <formatted text>` | `Stall threshold must be 0-31` | `cmdMotorConfigStall` (config_handlers.cpp) |
+| `DRV:CFG:FAULT` | 1 | MCONFIG_FAULT <ocd> <th_sd> <th_w> <uvlo> <sta> <stb> <cmd>\n<br>MCONFIG_FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd><br>MCONFIG_FAULT ACTION <0\|1\|2> | ASCII: `OK Fault enables set (not saved)`, `OK <formatted text>` | `Action must be 0=HardStop, 1=HardHiZ, 2=SoftStop` | `cmdMotorConfigFault` (config_handlers.cpp) |
+| `DRV:CFG:MOTION` | 3 | MCONFIG_MOTION <acc> <dec> <maxspd> | ASCII: `OK <formatted text>` | `ACC/DEC must be 0-4095`<br>`MAXSPD must be 0-1023` | `cmdMotorConfigMotion` (config_handlers.cpp) |
+| `DRV:CFG:STEPMODE` | 1 | MCONFIG_STEPMODE <mode><br>MCONFIG_STEPMODE <mode> (0-7 or 1/2/4/8/16/32/64/128) | ASCII: `OK <formatted text>` | `Invalid mode. Use 0-7 or microstep count (8/16/32/64/128)` | `cmdMotorConfigStepMode` (config_handlers.cpp) |
 | `DRV:STEP_MODE` | 1 | DRV:STEP_MODE <0-7> | ASCII: `OK <formatted text>`; JSON `DRV:STEP_MODE` keys: `microstep_ratio`, `microsteps_per_rev`, `step_mode` | `MOTOR_BUSY: Motor must be idle to change microstep mode`<br>`Step mode must be 0-7`<br>`VERIFY_FAILED: STEP_MODE readback mismatch` | `cmdDrvStepMode` (driver_handlers.cpp) |
 | `DRV:FULL_STEPS` | 1 | DRV:FULL_STEPS <steps_per_rev> | ASCII: `OK <formatted text>`; JSON `DRV:FULL_STEPS` keys: `full_steps_per_rev`, `microsteps_per_rev` | `Full steps/rev must be 1-10000` | `cmdDrvFullSteps` (driver_handlers.cpp) |
 | `DRV:ENC_PPR` | 1 | DRV:ENC_PPR <pulses_per_rev> | ASCII: `OK <formatted text>`; JSON `DRV:ENC_PPR` keys: `encoder_ppr` | `Encoder PPR must be 1-65535` | `cmdDrvEncoderPPR` (driver_handlers.cpp) |
