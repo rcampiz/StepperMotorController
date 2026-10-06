@@ -126,6 +126,7 @@ class MainWindow(QMainWindow):
         self._liveness_timer = QTimer(self)
         self._liveness_timer.setInterval(20)
         self._liveness_timer.timeout.connect(self._on_liveness_tick)
+        self._last_status: dict = {}      # last DIAG:STAT? snapshot (upload precondition)
         self.setStatusBar(self._status_bar)
         self._status_bar.showMessage("Disconnected")
 
@@ -674,6 +675,7 @@ class MainWindow(QMainWindow):
                               raw_len):
                 """Create a closure that sends one RLE band."""
                 def do_transfer(client):
+                    client.heartbeat(0)        # feed the watchdog before each ~1 s band
                     resp = client.disp_bitmap_rle(
                         bx, by, bw, bh, rle_bytes, use_crc=True)
                     worker.bitmap_progress.emit(
@@ -716,31 +718,35 @@ class MainWindow(QMainWindow):
         # No UI_MODE REMOTE here — flash upload writes to flash, not LCD.
         # FLASH_SHOW (queued after upload success) sets REMOTE mode internally.
 
-        # Capture heartbeat timeout for re-enable after upload
-        hb_timeout_ms = max(2000, int(worker._heartbeat_interval * 6000))
+        # A3: the watchdog is never disarmed. UI:FLASH:UPLOAD is one ~13 s command
+        # the firmware cannot be fed during, so: require the motor idle in Hi-Z,
+        # feed once right before, and clear the expected comms-timeout fault after.
+        allowed, reason = MotorClient.upload_precondition(self._last_status)
+        if not allowed:
+            self._display_panel.transfer_complete(False, reason)
+            self._status_bar.showMessage(f"Flash upload refused: {reason}", 8000)
+            return
 
-        def make_upload(s, data, w, hb_ms):
+        def make_upload(s, data, w):
             def do_upload(client):
-                # Disable heartbeat watchdog for the duration of the upload
-                # (the callable blocks the worker thread, so no heartbeats
-                # can be sent during the upload)
-                client.send_command("SYST:HB:TIMEOUT 0")
-                try:
-                    resp = client.flash_upload(
-                        s, data, use_crc=True,
-                        progress_cb=lambda sent, total:
-                            w.bitmap_progress.emit(sent, total))
-                finally:
-                    # Re-enable heartbeat watchdog
-                    client.send_command(f"SYST:HB:TIMEOUT {hb_ms}")
+                client.heartbeat(0)            # last feed before the blocking transfer
+                resp = client.flash_upload(
+                    s, data, use_crc=True,
+                    progress_cb=lambda sent, total:
+                        w.bitmap_progress.emit(sent, total))
+                client.heartbeat(0)            # re-feed; the watchdog has most likely fired
+                w.queue_command(QueuedCommand("SYST:FAULT:CLEAR", CommandTag.CLEAR_FAULT))
                 return resp
             return do_upload
 
+        self._status_bar.showMessage(
+            "Flash upload: watchdog stays armed; a comms-timeout stop during the "
+            "transfer is expected and cleared afterwards", 8000)
         worker.queue_command(
             QueuedCommand(
                 command=f"UI:FLASH:UPLOAD {slot}",
                 tag=CommandTag.FLASH_UPLOAD_SLOT,
-                callable=make_upload(slot, rgb565_data, worker, hb_timeout_ms),
+                callable=make_upload(slot, rgb565_data, worker),
             )
         )
 
@@ -1011,6 +1017,7 @@ class MainWindow(QMainWindow):
     @Slot(dict)
     def _on_telemetry_updated(self, data: dict):
         """Handle telemetry data from worker polling."""
+        self._last_status = data
         self._telemetry_panel.update_data(data)
         self._graph_panel.update_data(data)
         self._motion_panel.update_telemetry(data)

@@ -169,3 +169,16 @@ def test_worker_drops_queue_and_queues_one_confirmation(qapp):
     assert remaining.command == "DIAG:STAT?"
     assert remaining.tag == CommandTag.ESTOP_CONFIRM
     assert w._command_queue.empty()
+
+
+def test_upload_precondition_requires_idle_hiz():
+    ok, why = MotorClient.upload_precondition({})
+    assert not ok and "snapshot" in why
+    ok, _ = MotorClient.upload_precondition({"state": "RUNNING", "motor": {"hi_z": True}})
+    assert not ok
+    ok, _ = MotorClient.upload_precondition({"state": "IDLE", "motor": {"hi_z": False}})
+    assert not ok
+    ok, _ = MotorClient.upload_precondition({"state": "IDLE", "motor": {"hi_z": True, "busy": True}})
+    assert not ok
+    ok, why = MotorClient.upload_precondition({"state": "IDLE", "motor": {"hi_z": True, "busy": False}})
+    assert ok and why == "idle, Hi-Z"

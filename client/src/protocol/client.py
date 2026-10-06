@@ -551,6 +551,29 @@ class MotorClient:
             raise ProtocolError("transfer cancelled (ESTOP)")
 
     @staticmethod
+    def upload_precondition(data: Dict[str, Any]) -> tuple:
+        """
+        May a blocking flash upload start? (allowed, reason)
+
+        The firmware watchdog is never disarmed, and UI:FLASH:UPLOAD blocks the
+        Comms task for ~13 s at 115200 baud, so the stop it will trigger must be
+        harmless: the motor has to be idle and in Hi-Z already.
+        """
+        if not data:
+            return False, "no status snapshot yet (wait for telemetry)"
+        state = str(data.get("state", "?"))
+        motor = data.get("motor", {}) or {}
+        hiz = motor.get("hi_z", motor.get("hiz"))
+        busy = motor.get("busy", False)
+        if state not in ("IDLE", "ESTOP", "FAULT"):
+            return False, f"motor must be idle (state={state})"
+        if busy:
+            return False, "motor is busy"
+        if not hiz:
+            return False, "motor must be in Hi-Z (send MOT:DIS first)"
+        return True, "idle, Hi-Z"
+
+    @staticmethod
     def estop_confirmed(data: Dict[str, Any]) -> tuple:
         """
         Judge a DIAG:STAT? reply after an ESTOP.
