@@ -90,3 +90,23 @@ def test_liveness_max_age_tracks_interval(qapp):
     assert w._liveness_max_age == pytest.approx(0.2)    # floor
     w.set_heartbeat_interval(0.100)
     assert w._liveness_max_age == pytest.approx(0.4)    # 4 x interval
+
+
+def test_heartbeat_timeout_emitted_once_after_three_misses(qapp):
+    client = FakeClient(fail=True)
+    w = make_worker(client)
+    fired = []
+    w.heartbeat_timeout.connect(lambda: fired.append(1))
+    w.touch_liveness()
+    for i in range(5):
+        w._maybe_send_heartbeat(now_wall=1.0 + 0.1 * i)
+    assert client.sent == 5
+    assert fired == [1]                       # once per outage, not per miss
+    # An ack re-arms the detector
+    client.fail = False
+    w._maybe_send_heartbeat(now_wall=2.0)
+    assert w._consecutive_misses == 0
+    client.fail = True
+    for i in range(3):
+        w._maybe_send_heartbeat(now_wall=3.0 + 0.1 * i)
+    assert fired == [1, 1]

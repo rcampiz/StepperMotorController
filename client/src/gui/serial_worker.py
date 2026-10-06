@@ -113,6 +113,11 @@ class SerialWorker(QObject):
         self._liveness_was_stale = False
         self._heartbeats_suppressed = 0
 
+        # A4: consecutive heartbeats without an ack -> heartbeat_timeout (once per outage)
+        self._consecutive_misses = 0
+        self._timeout_signalled = False
+        self.HEARTBEAT_TIMEOUT_MISSES = 3
+
     @Slot()
     def start_polling(self):
         """Start telemetry polling."""
@@ -316,6 +321,8 @@ class SerialWorker(QObject):
 
             if resp and resp.success:
                 self._heartbeat_stats['acked'] += 1
+                self._consecutive_misses = 0
+                self._timeout_signalled = False
                 self._heartbeat_stats['last_rtt_ms'] = rtt_ms
 
                 # Exponential moving average for RTT
@@ -342,10 +349,22 @@ class SerialWorker(QObject):
                 self.heartbeat_ack_received.emit(ack_data)
             else:
                 self._heartbeat_stats['missed'] += 1
+                self._note_heartbeat_miss()
 
         except Exception as e:
             log.debug("Heartbeat %d failed: %s", seq, e)
             self._heartbeat_stats['missed'] += 1
+            self._note_heartbeat_miss()
+
+    def _note_heartbeat_miss(self):
+        """Count a missed ack; after HEARTBEAT_TIMEOUT_MISSES in a row signal once."""
+        self._consecutive_misses += 1
+        if (self._consecutive_misses >= self.HEARTBEAT_TIMEOUT_MISSES
+                and not self._timeout_signalled):
+            self._timeout_signalled = True
+            log.error("Heartbeat: %d consecutive misses, firmware watchdog has likely fired",
+                      self._consecutive_misses)
+            self.heartbeat_timeout.emit()
 
     def _poll(self):
         """Poll for telemetry data."""

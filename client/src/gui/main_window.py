@@ -1123,9 +1123,12 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _on_heartbeat_timeout(self):
-        """Handle heartbeat timeout — MCU has entered safe state."""
+        """Three heartbeats without an ack: the firmware watchdog has latched an ESTOP."""
         self._status_bar.showMessage(
-            "COMMS TIMEOUT: Motor stopped. Send CLEAR_FAULT to recover.")
+            "HEARTBEAT LOST: firmware watchdog stops the motor. Check the link, then CLEAR.", 0)
+        self._telemetry_panel.set_link_alarm("#ff0000", "LOST")
+        self._motor_panel.show_fault_error(
+            "Heartbeat lost: no ack for 3 heartbeats (comms-timeout ESTOP expected)")
 
     @Slot(str, dict)
     def _on_async_event(self, event_type: str, data: dict):
