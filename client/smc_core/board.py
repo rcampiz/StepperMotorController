@@ -108,7 +108,7 @@ class Record:
 
 
 class Cancelled(ProtocolError):
-    """The running job was cancelled by an ESTOP."""
+    """The running job was cancelled (by an ESTOP, or by cancel_job())."""
 
 
 class Liveness:
@@ -164,7 +164,19 @@ class JobContext:
         return self.board._execute(req, "job")
 
     def cancelled(self) -> bool:
-        return self.board._cancel.is_set()
+        return self.board._cancel.is_set() or self.board._job_cancel.is_set()
+
+    def hold(self, seconds: float) -> None:
+        """Block the worker WITHOUT feeding the heartbeat (heartbeat-loss scenarios)."""
+        time.sleep(seconds)
+
+    def estop(self) -> "EstopResult":
+        """ESTOP from inside a job: write now, drop the queue, confirm inline."""
+        b = self.board
+        t_write = b.estop_write()
+        dropped = b._drop_queued()
+        b._cancel.clear()
+        return b._confirm_estop(t_write, dropped)
 
     def sleep(self, seconds: float) -> None:
         """Wait while keeping the heartbeat flowing; raises Cancelled on ESTOP."""
@@ -197,7 +209,9 @@ class Board:
         self._latest: Dict[str, C.Request] = {}
         self._latest_lock = threading.Lock()
         self._wake = threading.Event()
-        self._cancel = threading.Event()
+        self._cancel = threading.Event()          # ESTOP: abort everything
+        self._job_cancel = threading.Event()      # cancel_job(): abort the running job only
+        self._job_running = False
         self._running = False
         self._link_up = False
         self._reader: Optional[threading.Thread] = None
@@ -325,6 +339,12 @@ class Board:
         (live speed fader, display indicator)."""
         with self._latest_lock:
             self._latest[key] = req
+        self._wake.set()
+
+    def cancel_job(self) -> None:
+        """Cancel the running job at its next call()/sleep() (no ESTOP, queue kept)."""
+        if self._job_running:
+            self._job_cancel.set()
         self._wake.set()
 
     def run_job(self, fn: Callable[[JobContext], Any],
@@ -541,6 +561,8 @@ class Board:
     def _check_cancel(self) -> None:
         if self._cancel.is_set():
             raise Cancelled("cancelled by ESTOP")
+        if self._job_cancel.is_set():
+            raise Cancelled("job cancelled")
 
     def _drop_queued(self) -> int:
         dropped = 0
@@ -569,6 +591,9 @@ class Board:
             return
         t_write, ticket = pending
         dropped, self._estop_dropped = self._estop_dropped, 0
+        ticket._finish(self._confirm_estop(t_write, dropped))
+
+    def _confirm_estop(self, t_write: float, dropped: int) -> EstopResult:
         resp = self._execute(C.status().tagged("estop-confirm"), "estop")
         if resp.success:
             self.last_status = resp.data
@@ -578,8 +603,8 @@ class Board:
         result = EstopResult(ok, detail, dropped, t_write, self._clock(), resp.data or {})
         log.warning("%s: ESTOP %s (%s), %d queued dropped", self.name,
                     "confirmed" if ok else "NOT CONFIRMED", detail, dropped)
-        ticket._finish(result)
         self._emit("estop", result)
+        return result
 
     def _run_setup(self) -> None:
         """Session setup: JSON mode, identity, events, telemetry push, watchdog."""
@@ -648,6 +673,8 @@ class Board:
                 result = Response(False, payload.name, {}, "CANCELLED", str(e))
             ticket._finish(result)
             return
+        self._job_cancel.clear()
+        self._job_running = True
         try:
             result = payload(JobContext(self))
         except Cancelled as e:
@@ -655,6 +682,9 @@ class Board:
         except Exception as e:  # noqa: BLE001 - R8: errors reach the frontend
             log.exception("%s: job failed", self.name)
             result = e
+        finally:
+            self._job_running = False
+            self._job_cancel.clear()
         ticket._finish(result)
 
     def _service_heartbeat(self) -> None:

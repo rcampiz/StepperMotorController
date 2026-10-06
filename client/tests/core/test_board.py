@@ -249,3 +249,15 @@ def test_link_budget_accounts_bytes_by_kind(rig):
     time.sleep(0.2)
     budget = rig.board.link_budget()
     assert budget["tx:heartbeat"] > 0 and budget["rx:line"] > 0
+
+
+def test_ascii_multiline_reply_is_collected_until_ok_n(rig):
+    """After a reset whose !RESET line was lost the board is back in ASCII mode; a
+    multi-line reply then ends with `OK <n>` and must still come back whole."""
+    rig.open()
+    rig.fake.json, rig.fake.echo = False, True        # silent fall-back to ASCII
+    resp = rig.board.request(C.driver_config())
+    assert resp.success and resp.lines[0] == "Motor Config (defaults)"
+    assert resp.data["count"] == 7 and resp.lines[-1].startswith("StepMode:")
+    err = rig.board.request(C.debug_raw("PS01_DIAG"))
+    assert not err.success and err.error_code == "UNKNOWN_CMD"

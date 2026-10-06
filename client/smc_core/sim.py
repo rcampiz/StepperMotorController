@@ -375,6 +375,62 @@ class FakeBoard:
     def _c_UI_DISP_BITMAP(self, name, args):
         self._start_binary(name, int(args[2]) * int(args[3]) * 2, "CRC" in args[4:])
 
+    def _c_DRV_CFG_STEPMODE(self, name, args):
+        self.step_mode = int(args[0]) & 7
+        self._ok(name, "StepMode %d" % self.step_mode)
+
+    def _c_DRV_STEP_MODE(self, name, args):
+        self.step_mode = int(args[0]) & 7
+        self._ok(name)
+
+    # --- system identification: a test "runs" for sysid_run_s, then has N samples --------
+    sysid_run_s = 0.15
+    sysid_samples = 95
+
+    def _sysid_start(self, name, args):
+        if not self._motion_allowed(name):
+            return
+        self.sysid_phase, self.sysid_done_at = 2, time.monotonic() + self.sysid_run_s
+        self._ok(name, "SYSID started")
+
+    _c_CTRL_SYSID_STEP = _c_CTRL_SYSID_RAMP = _c_CTRL_SYSID_SINE = _sysid_start
+    _c_CTRL_SYSID_TRAPEZOID = _c_CTRL_SYSID_RECT = _sysid_start
+
+    def _sysid_phase_now(self) -> int:
+        if getattr(self, "sysid_phase", 0) == 2 and time.monotonic() >= self.sysid_done_at:
+            self.sysid_phase = 4
+        return getattr(self, "sysid_phase", 0)
+
+    def _c_CTRL_SYSID_STATUS_Q(self, name, args):
+        phase = self._sysid_phase_now()
+        n = self.sysid_samples if phase == 4 else 0
+        if self.json:
+            self._ok("CTRL:SYSID:STATUS", data={"phase": phase, "samples": n})
+        else:
+            self._ok(name, "phase=%d samples=%d" % (phase, n))
+
+    def _c_CTRL_SYSID_DATA_Q(self, name, args):
+        if self._sysid_phase_now() != 4:
+            self._err(name, "ERROR", "No data ready (test not DONE)")
+            return
+        offset = int(args[0]) if args else 0
+        count = int(args[1]) if len(args) > 1 else 20
+        total = self.sysid_samples
+        if offset >= total:
+            self._err(name, "ERROR", "offset past end")
+            return
+        count = min(count, total - offset)
+        rows = ["%d,%d,%d,%d" % (i * 5, 800, 800 - max(0, 40 - i), max(0, 40 - i) // 4)
+                for i in range(offset, offset + count)]
+        if self.json:
+            self._lines("SYSID_DATA", rows, {"offset": offset, "samples": count, "total": total})
+        else:
+            self._lines("SYSID_DATA", ["SYSID_DATA %d %d %d" % (offset, count, total)] + rows)
+
+    def _c_CTRL_SYSID_ABORT(self, name, args):
+        self.sysid_phase = 0
+        self._ok(name, "SYSID aborted")
+
     # ------------------------------------------------------------------
     def _hb_remaining(self) -> int:
         if self.hb_timeout_ms <= 0:

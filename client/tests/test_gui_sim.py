@@ -102,3 +102,24 @@ def test_protection_apply_sends_typed_requests_in_order(gui):
     assert [l.split()[0] for l in tail] == ["DRV:CFG:OCD", "DRV:CFG:STALL", "DRV:CFG:FAULT",
                                             "DRV:CFG:FAULT", "DRV:CFG:APPLY"]
     assert tail[3].startswith("DRV:CFG:FAULT ACTION ")
+
+
+def test_sysid_panel_runs_its_tests_through_the_core_scenario(gui):
+    from smc_gui.sysid_panel import SysIdTestConfig
+    app, w, fake = gui
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    p = w._sysid_panel
+    p._tests = [SysIdTestConfig(type="step", speed=800, start_speed=0, duration_ms=1000,
+                                settle_ms=100)]
+    p._start_tests()
+    assert pump(app, lambda: not p._running, timeout=10.0)
+    assert len(p._results) == 1 and len(p._results[0].samples) == 95
+    assert "CTRL:SYSID:STEP 800 1 1000 100" in fake.received
+
+
+def test_tests_tab_runs_a_scenario(gui):
+    app, w, fake = gui
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    w._tests_panel.start("bringup", {})
+    assert pump(app, lambda: w._tests_panel.results, timeout=10.0)
+    assert w._tests_panel.results[0].ok

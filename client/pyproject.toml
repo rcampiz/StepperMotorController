@@ -15,10 +15,11 @@ rtt = ["pylink-square>=1.0"]
 dev = ["pytest>=7.0"]
 
 [tool.setuptools.packages.find]
-include = ["smc_core*", "smc_gui*"]
+include = ["smc_core*", "smc_gui*", "smc_cli*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [project.scripts]
+smc = "smc_cli.__main__:main"
 smc-gui = "smc_gui.__main__:main"

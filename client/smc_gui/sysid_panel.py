@@ -14,7 +14,6 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, Slot, QTimer, Qt
 
 from smc_core import commands as C
-from smc_core.views import SYSID_DONE, SysIdChunk
 from PySide6.QtGui import QFont
 from dataclasses import dataclass, field
 from typing import Optional
@@ -571,7 +570,8 @@ class SysIdPanel(QWidget):
     """System Identification panel for automated trim tuning."""
 
     command_requested = Signal(object)        # Request
-    tagged_command_requested = Signal(object, str)  # (Request, tag_name)
+    scenario_requested = Signal(str, dict)   # ("sysid", params): runs in smc_core
+    scenario_cancel_requested = Signal()
     gains_applied = Signal()  # emitted after Apply to Trim, so motion panel can refresh
 
     def __init__(self, parent=None):
@@ -580,14 +580,9 @@ class SysIdPanel(QWidget):
         self._results: list[SysIdTestResult] = []
         self._current_idx = 0
         self._running = False
-        self._download_offset = 0
         self._download_samples: list[SysIdSample] = []
-        self._download_total = 0
 
         # Polling timer for test status
-        self._poll_timer = QTimer(self)
-        self._poll_timer.setInterval(500)
-        self._poll_timer.timeout.connect(self._poll_status)
 
         self._setup_ui()
 
@@ -904,41 +899,28 @@ class SysIdPanel(QWidget):
         test = self._tests[self._current_idx]
         self._update_table_status(self._current_idx, "Running...")
 
-        dir_val = 1 if test.forward else 0
-        if test.type == "step":
-            cmd = C.sysid_step(test.speed, dir_val, test.duration_ms, test.settle_ms)
-        elif test.type == "ramp":
-            cmd = C.sysid_ramp(test.start_speed, test.speed, dir_val, test.duration_ms,
-                               test.settle_ms)
-        elif test.type == "sine":
-            cmd = C.sysid_sine(test.start_speed, test.speed, test.frequency_mhz, dir_val,
-                               test.duration_ms, test.settle_ms)
-        elif test.type == "trapezoid":
-            cmd = C.sysid_trapezoid(test.speed, dir_val, test.duration_ms, test.settle_ms)
-        elif test.type == "rectangle":
-            cmd = C.sysid_rect(test.speed, dir_val, test.duration_ms, test.settle_ms)
-        else:
+        if test.type not in ("step", "ramp", "sine", "trapezoid", "rectangle"):
             log.error(f"Unknown test type: {test.type}")
             self._current_idx += 1
             self._send_current_test()
             return
 
-        self.tagged_command_requested.emit(cmd, "SYSID_START")
-
-        # Start polling for completion
-        self._poll_timer.start()
+        # The whole test (start, wait for DONE, download) is the core `sysid` scenario;
+        # this panel only fits and plots what comes back (on_scenario_result).
+        self.scenario_requested.emit("sysid", {
+            "type": test.type, "speed": test.speed, "start_speed": test.start_speed,
+            "frequency_mhz": test.frequency_mhz, "forward": test.forward,
+            "duration_ms": test.duration_ms, "settle_ms": test.settle_ms,
+            "timeout_s": (test.duration_ms + 2 * test.settle_ms) / 1000.0 + 30.0})
 
     def _abort_tests(self):
-        self._poll_timer.stop()
-        self.tagged_command_requested.emit(C.sysid_abort(), "SYSID_ABORT")
+        self.scenario_cancel_requested.emit()
+        self.command_requested.emit(C.sysid_abort())
         self._running = False
         self._update_ui_idle()
         if self._current_idx < len(self._tests):
             self._update_table_status(self._current_idx, "Aborted")
         self._progress.setFormat("Aborted")
-
-    def _poll_status(self):
-        self.tagged_command_requested.emit(C.sysid_status(), "SYSID_STATUS")
 
     def _update_table_status(self, idx: int, status: str):
         if idx < self._test_table.rowCount():
@@ -946,56 +928,17 @@ class SysIdPanel(QWidget):
 
     # ── Response handlers (called from main_window) ──
 
-    def on_sysid_start_response(self, success: bool, data):
-        if not success:
-            log.error(f"SYSID start failed: {data}")
+    def on_scenario_result(self, result):
+        """Result of the core `sysid` scenario for the current test."""
+        if not self._running:
+            return
+        if isinstance(result, Exception) or not getattr(result, "ok", False):
+            log.error("SYSID test failed: %s", result if isinstance(result, Exception) else result.summary)
             self._abort_tests()
-
-    def on_sysid_status_response(self, success: bool, data):
-        if not success or not self._running:
             return
-
-        # Parse phase from response
-        phase = data.get("phase", -1) if isinstance(data, dict) else -1
-        if phase == SYSID_DONE:
-            self._poll_timer.stop()
-            self._update_table_status(self._current_idx, "Downloading...")
-            self._start_download()
-
-    def on_sysid_data_response(self, success: bool, raw_data):
-        if not success or not self._running:
-            return
-        self._process_data_chunk(raw_data)
-
-
-
-    def _start_download(self):
-        self._download_offset = 0
-        self._download_samples = []
-        self._download_total = 0
-        self._request_data_chunk()
-
-    def _request_data_chunk(self):
-        chunk_size = 40
-        self.tagged_command_requested.emit(
-            C.sysid_data(self._download_offset, chunk_size), "SYSID_DATA")
-
-    def _process_data_chunk(self, chunk: SysIdChunk):
-        """One CTRL:SYSID:DATA? chunk (smc_core.views.sysid_data)."""
-        if chunk.total >= 0:
-            self._download_total = chunk.total
-        for t_ms, setpoint, actual, err in chunk.samples:
-            self._download_samples.append(SysIdSample(
-                time_ms=t_ms, setpoint_tps=setpoint, actual_tps=actual, pos_error=err))
-        self._download_offset = len(self._download_samples)
-
-        if self._download_total > 0 and self._download_offset >= self._download_total:
-            self._on_test_data_complete()
-        elif self._download_total > 0 and chunk.samples:
-            self._request_data_chunk()
-        else:
-            # total 0 (empty test) or a chunk that brought nothing: stop here
-            self._on_test_data_complete()
+        self._download_samples = [SysIdSample(*s) for s in result.measurements.get("samples", [])]
+        self._update_table_status(self._current_idx, f"{len(self._download_samples)} samples")
+        self._on_test_data_complete()
 
     def _on_test_data_complete(self):
         """One test's data is fully downloaded."""
@@ -1068,7 +1011,6 @@ class SysIdPanel(QWidget):
     def _on_all_complete(self):
         """All tests finished."""
         self._running = False
-        self._poll_timer.stop()
         self._update_ui_idle()
         self._progress.setFormat("Complete")
         self._progress.setValue(self._progress.maximum())

@@ -34,11 +34,13 @@ from smc_gui.graph_panel import GraphPanel
 from smc_gui.display_panel import DisplayPanel
 from smc_gui.motion_panel import MotionPanel
 from smc_gui.sysid_panel import SysIdPanel
+from smc_gui.tests_panel import TestsPanel
 from smc_gui.rle_codec import encode_rle_rgb565
 from smc_gui.image_loader import LCD_WIDTH, LCD_HEIGHT
 from smc_gui.bridge import BoardBridge
 from smc_core import commands as C
 from smc_core import views as V
+from smc_core import runner
 from smc_core.board import Board, BoardConfig, EstopResult, Liveness
 from smc_core.codec import Response
 from smc_core.transport.base import ITransport
@@ -155,6 +157,9 @@ class MainWindow(QMainWindow):
         self._display_panel = DisplayPanel()
         self._right_tabs.addTab(self._display_panel, "Display")
 
+        self._tests_panel = TestsPanel()
+        self._right_tabs.addTab(self._tests_panel, "Tests")
+
         splitter.addWidget(self._right_tabs)
 
         # Set initial splitter sizes (50% control, 50% tabs)
@@ -267,8 +272,12 @@ class MainWindow(QMainWindow):
 
         # System ID panel commands
         self._sysid_panel.command_requested.connect(self._send_command)
-        self._sysid_panel.tagged_command_requested.connect(
-            self._on_sysid_tagged_command)
+        self._sysid_panel.scenario_requested.connect(
+            lambda name, params: self._run_scenario(name, params, "SCENARIO_SYSID"))
+        self._sysid_panel.scenario_cancel_requested.connect(self._cancel_scenario)
+        self._tests_panel.run_requested.connect(
+            lambda name, params: self._run_scenario(name, params, "SCENARIO_TESTS"))
+        self._tests_panel.cancel_requested.connect(self._cancel_scenario)
         self._sysid_panel.gains_applied.connect(self._refresh_trim_config)
 
         # Telemetry panel encoder filter commands
@@ -504,9 +513,17 @@ class MainWindow(QMainWindow):
         if self._bridge is not None:
             self._bridge.latest("live", req)
 
-    def _on_sysid_tagged_command(self, req: C.Request, tag_name: str):
-        """A tagged Request from the SysIdPanel."""
-        self._call(req, tag_name)
+    def _run_scenario(self, name: str, params: dict, tag: str):
+        """Run a core scenario as a board job (the CLI runs the same function)."""
+        if self._bridge is None:
+            self._on_job_done(tag, RuntimeError("not connected"))
+            return
+        self._bridge.job(lambda job: runner.run_in_job(name, job, params), tag)
+
+    @Slot()
+    def _cancel_scenario(self):
+        if self._board is not None:
+            self._board.cancel_job()
 
     @Slot()
     def _on_refresh_params(self):
@@ -612,6 +629,12 @@ class MainWindow(QMainWindow):
 
     @Slot(str, object)
     def _on_job_done(self, tag: str, result):
+        if tag == "SCENARIO_SYSID":
+            self._sysid_panel.on_scenario_result(result)
+            return
+        if tag == "SCENARIO_TESTS":
+            self._tests_panel.show_result(result)
+            return
         if isinstance(result, Exception):
             self._status_bar.showMessage(f"{tag} failed: {result}", 8000)
             self._display_panel.transfer_complete(False, str(result))
@@ -803,18 +826,6 @@ class MainWindow(QMainWindow):
 
         elif tag == "APPLY_TRIM":
             self._status_bar.showMessage("Trim config updated", 2000)
-
-        elif tag == "SYSID_START":
-            self._sysid_panel.on_sysid_start_response(
-                response.success, response.data)
-
-        elif tag == "SYSID_STATUS":
-            self._sysid_panel.on_sysid_status_response(
-                response.success, V.sysid_status(response))
-
-        elif tag == "SYSID_DATA":
-            self._sysid_panel.on_sysid_data_response(
-                response.success, V.sysid_data(response))
 
         elif tag == "SYSID_ABORT":
             self._status_bar.showMessage("SYSID aborted", 2000)

@@ -1,11 +1,10 @@
-"""pytest root for client/: the packages (smc_core, ...) live here, legacy code in src/."""
+"""pytest root for client/: smc_core, smc_gui and smc_cli live here."""
 import os
 import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-for p in (_HERE, os.path.join(_HERE, "src")):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+if _HERE not in sys.path:
+    sys.path.insert(0, _HERE)
 
 # Headless Qt for the GUI smoke tests
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
