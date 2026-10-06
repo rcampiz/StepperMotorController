@@ -4,6 +4,7 @@
  */
 
 #include "L2_protocol/command_parser_internal.hpp"
+#include "L2_protocol/status_json.hpp"
 #include "harness/pins/async_event.hpp"
 
 namespace Protocol {
@@ -63,6 +64,71 @@ void CommandParser::cmdGetTick() {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// F4: DIAG:STAT? JSON render (pure; worst-case length is host-tested)
+// ---------------------------------------------------------------------------
+int renderStatusJson(char* buf, size_t bufSize,
+                     const TelemetrySnapshot& snap, const StatusJsonView& v) {
+  // newlib-nano: no %lld — pre-format int64_t as string
+  char encCountStr[24];
+  i64toa(snap.encoder.count, encCountStr, sizeof(encCountStr));
+  return snprintf(
+      buf, bufSize,
+        "{\"status\":\"ok\",\"command\":\"GET_STATUS\",\"data\":"
+        "{\"state\":\"%s\",\"tick\":%lu,\"queue_depth\":%u,"
+        "\"motor\":{\"position\":%ld,\"speed\":%lu,\"busy\":%s,\"hi_z\":%s,"
+        "\"direction\":%d,\"mot_status\":%u,\"status_reg\":\"%04X\","
+        "\"cmd_err\":%s,\"ocd\":%s,\"thermal_sd\":%s,"
+        "\"thermal_warn\":%s,\"uvlo\":%s,\"stall_a\":%s,\"stall_b\":%s},"
+        "\"encoder\":{\"count\":%s,\"velocity\":%ld,\"index_seen\":%s,"
+        "\"revolutions\":%ld,\"index_period_us\":%lu,\"vel_quality\":%u},"
+        "\"control\":{\"following_error\":%ld,\"setpoint\":%ld,"
+        "\"mode\":%u,\"tracking\":%s,"
+        "\"trim_out\":%d,\"p\":%d,\"i\":%d,\"d\":%d,"
+        "\"sup_state\":%u,\"tier\":%u,\"vel_error\":%ld,\"retries\":%u,"
+        "\"base_spd\":%ld,\"trim_spd\":%ld,\"final_spd\":%ld,"
+        "\"trim_frozen\":%u,\"vel_quality\":%u},"
+        "\"heartbeat\":{\"enabled\":%s,\"timeout_ms\":%lu,"
+        "\"remaining_ms\":%lu,\"timed_out\":%s},"
+        "\"mode\":\"%s\",\"encoder_status\":\"%s\",\"error\":%s}}",
+        v.stateStr, static_cast<unsigned long>(v.tick),
+        static_cast<unsigned>(v.queueDepth),
+        static_cast<long>(snap.motor.position),
+        static_cast<unsigned long>(snap.motor.speed),
+        snap.motor.busy ? "true" : "false", snap.motor.hiZ ? "true" : "false",
+        v.direction, v.motStat, static_cast<unsigned>(v.statusReg),
+        v.cmdErr ? "true" : "false", v.ocd ? "true" : "false",
+        v.thermalSD ? "true" : "false", v.thermalWarn ? "true" : "false",
+        v.uvlo ? "true" : "false", v.stallA ? "true" : "false",
+        v.stallB ? "true" : "false", encCountStr,
+        static_cast<long>(snap.encoder.velocity),
+        snap.encoder.indexSeen ? "true" : "false",
+        static_cast<long>(snap.encoder.revolutions),
+        static_cast<unsigned long>(snap.encoder.indexPeriodUs),
+        static_cast<unsigned>(snap.encoder.velocityQuality),
+        static_cast<long>(snap.control.followingError),
+        static_cast<long>(snap.control.setpoint),
+        static_cast<unsigned>(snap.control.mode),
+        snap.control.tracking ? "true" : "false",
+        static_cast<int>(snap.control.pidOutput),
+        static_cast<int>(snap.control.pTerm),
+        static_cast<int>(snap.control.iTerm),
+        static_cast<int>(snap.control.dTerm),
+        static_cast<unsigned>(snap.control.supervisorState),
+        static_cast<unsigned>(snap.control.currentTier),
+        static_cast<long>(snap.control.velError),
+        static_cast<unsigned>(snap.control.retryCount),
+        static_cast<long>(snap.control.baseSpeedRaw),
+        static_cast<long>(snap.control.trimSpeedRaw),
+        static_cast<long>(snap.control.finalSpeedRaw),
+        static_cast<unsigned>(snap.control.trimFrozen),
+        static_cast<unsigned>(snap.control.velQuality),
+        v.hbEnabled ? "true" : "false", static_cast<unsigned long>(v.hbTimeoutMs),
+        static_cast<unsigned long>(v.hbRemainingMs), v.hbTimedOut ? "true" : "false",
+        v.modeStr, v.encStatusStr, v.anyError ? "true" : "false");
+}
+
 void CommandParser::cmdGetStatus() {
   uint32_t tick = m_dispatcher.getTickUs();
   const char *stateStr = controllerStateToString(m_dispatcher.getControllerState());
@@ -107,66 +173,23 @@ void CommandParser::cmdGetStatus() {
     // Get heartbeat watchdog status
     auto hb = m_dispatcher.safetyGetHeartbeatStatus();
 
-    // Bypass respondJsonOk (256-byte buffer too small) — format full envelope
-    // newlib-nano: no %lld — pre-format int64_t as string
-    char encCountStr[24];
-    i64toa(snap.encoder.count, encCountStr, sizeof(encCountStr));
+    // F4: render through a pure function whose worst-case length is host-tested;
+    // never send a truncated JSON line.
+    StatusJsonView v;
+    v.stateStr = stateStr; v.tick = tick; v.queueDepth = queueDepth;
+    v.direction = direction; v.motStat = motStat; v.statusReg = sr;
+    v.cmdErr = cmdErrEn; v.ocd = ocdEn; v.thermalSD = thermalSDEn; v.thermalWarn = thermalWarnEn;
+    v.uvlo = uvloEn; v.stallA = stallAEn; v.stallB = stallBEn;
+    v.hbEnabled = hb.enabled; v.hbTimeoutMs = hb.timeoutMs;
+    v.hbRemainingMs = hb.remainingMs; v.hbTimedOut = hb.timedOut;
+    v.modeStr = modeStr; v.encStatusStr = encStatusStr; v.anyError = anyError;
 
-    char buf[1024];
-    snprintf(
-        buf, sizeof(buf),
-        "{\"status\":\"ok\",\"command\":\"GET_STATUS\",\"data\":"
-        "{\"state\":\"%s\",\"tick\":%lu,\"queue_depth\":%u,"
-        "\"motor\":{\"position\":%ld,\"speed\":%lu,\"busy\":%s,\"hi_z\":%s,"
-        "\"direction\":%d,\"mot_status\":%u,\"status_reg\":\"%04X\","
-        "\"cmd_err\":%s,\"ocd\":%s,\"thermal_sd\":%s,"
-        "\"thermal_warn\":%s,\"uvlo\":%s,\"stall_a\":%s,\"stall_b\":%s},"
-        "\"encoder\":{\"count\":%s,\"velocity\":%ld,\"index_seen\":%s,"
-        "\"revolutions\":%ld,\"index_period_us\":%lu,\"vel_quality\":%u},"
-        "\"control\":{\"following_error\":%ld,\"setpoint\":%ld,"
-        "\"mode\":%u,\"tracking\":%s,"
-        "\"trim_out\":%d,\"p\":%d,\"i\":%d,\"d\":%d,"
-        "\"sup_state\":%u,\"tier\":%u,\"vel_error\":%ld,\"retries\":%u,"
-        "\"base_spd\":%ld,\"trim_spd\":%ld,\"final_spd\":%ld,"
-        "\"trim_frozen\":%u,\"vel_quality\":%u},"
-        "\"heartbeat\":{\"enabled\":%s,\"timeout_ms\":%lu,"
-        "\"remaining_ms\":%lu,\"timed_out\":%s},"
-        "\"mode\":\"%s\",\"encoder_status\":\"%s\",\"error\":%s}}",
-        stateStr, static_cast<unsigned long>(tick),
-        static_cast<unsigned>(queueDepth),
-        static_cast<long>(snap.motor.position),
-        static_cast<unsigned long>(snap.motor.speed),
-        snap.motor.busy ? "true" : "false", snap.motor.hiZ ? "true" : "false",
-        direction, motStat, static_cast<unsigned>(sr),
-        cmdErrEn ? "true" : "false", ocdEn ? "true" : "false",
-        thermalSDEn ? "true" : "false", thermalWarnEn ? "true" : "false",
-        uvloEn ? "true" : "false", stallAEn ? "true" : "false",
-        stallBEn ? "true" : "false", encCountStr,
-        static_cast<long>(snap.encoder.velocity),
-        snap.encoder.indexSeen ? "true" : "false",
-        static_cast<long>(snap.encoder.revolutions),
-        static_cast<unsigned long>(snap.encoder.indexPeriodUs),
-        static_cast<unsigned>(snap.encoder.velocityQuality),
-        static_cast<long>(snap.control.followingError),
-        static_cast<long>(snap.control.setpoint),
-        static_cast<unsigned>(snap.control.mode),
-        snap.control.tracking ? "true" : "false",
-        static_cast<int>(snap.control.pidOutput),
-        static_cast<int>(snap.control.pTerm),
-        static_cast<int>(snap.control.iTerm),
-        static_cast<int>(snap.control.dTerm),
-        static_cast<unsigned>(snap.control.supervisorState),
-        static_cast<unsigned>(snap.control.currentTier),
-        static_cast<long>(snap.control.velError),
-        static_cast<unsigned>(snap.control.retryCount),
-        static_cast<long>(snap.control.baseSpeedRaw),
-        static_cast<long>(snap.control.trimSpeedRaw),
-        static_cast<long>(snap.control.finalSpeedRaw),
-        static_cast<unsigned>(snap.control.trimFrozen),
-        static_cast<unsigned>(snap.control.velQuality),
-        hb.enabled ? "true" : "false", static_cast<unsigned long>(hb.timeoutMs),
-        static_cast<unsigned long>(hb.remainingMs), hb.timedOut ? "true" : "false",
-        modeStr, encStatusStr, anyError ? "true" : "false");
+    char buf[STATUS_JSON_BUF];
+    int n = renderStatusJson(buf, sizeof(buf), snap, v);
+    if (n < 0 || n >= static_cast<int>(sizeof(buf))) {
+      respondJsonErr("GET_STATUS", "ERROR", "status reply too long");
+      return;
+    }
     m_transport.println(buf);
   } else {
     // ASCII format: STATUS <state> <tick> <queue_depth> <mode> <encoder_status>

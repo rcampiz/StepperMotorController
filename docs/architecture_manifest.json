@@ -33,6 +33,7 @@
         "server/layers/L2_protocol/event_codec.hpp",
         "server/layers/L2_protocol/service_dispatcher.cpp",
         "server/layers/L2_protocol/service_dispatcher.hpp",
+        "server/layers/L2_protocol/status_json.hpp",
         "server/layers/L2_protocol/boundary/icommand_dispatcher.hpp",
         "server/layers/L2_protocol/boundary/icommand_processor.hpp",
         "server/layers/L2_protocol/handlers/config_handlers.cpp",

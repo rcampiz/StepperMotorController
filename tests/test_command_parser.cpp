@@ -68,3 +68,56 @@ TEST(async_event_is_emitted_in_ascii_by_default) {
     EXPECT_TRUE(r.transport.out.find("FAULT") != std::string::npos);
     EXPECT_TRUE(r.transport.out.find('!') != std::string::npos);
 }
+
+// --- F4: DIAG:STAT? JSON never truncates ---------------------------------------
+#include "L2_protocol/status_json.hpp"
+#include <limits.h>
+#include <stdint.h>
+
+TEST(status_json_worst_case_fits_the_buffer_with_margin) {
+    Protocol::TelemetrySnapshot snap{};
+    snap.motor.position = INT32_MIN; snap.motor.speed = UINT32_MAX;
+    snap.motor.statusReg = 0xFFFF; snap.motor.busy = true; snap.motor.hiZ = true;
+    snap.encoder.count = INT64_MIN; snap.encoder.velocity = INT32_MIN;
+    snap.encoder.indexSeen = true; snap.encoder.revolutions = INT32_MIN;
+    snap.encoder.indexPeriodUs = UINT32_MAX; snap.encoder.velocityQuality = 255;
+    snap.control.followingError = INT32_MIN; snap.control.setpoint = INT32_MIN;
+    snap.control.mode = 255; snap.control.tracking = true;
+    snap.control.pidOutput = INT16_MIN; snap.control.pTerm = INT16_MIN;
+    snap.control.iTerm = INT16_MIN; snap.control.dTerm = INT16_MIN;
+    snap.control.supervisorState = 255; snap.control.currentTier = 255;
+    snap.control.velError = INT32_MIN; snap.control.retryCount = 255;
+    snap.control.baseSpeedRaw = INT32_MIN; snap.control.trimSpeedRaw = INT32_MIN;
+    snap.control.finalSpeedRaw = INT32_MIN; snap.control.trimFrozen = 255;
+    snap.control.velQuality = 255;
+
+    Protocol::StatusJsonView v;
+    v.stateStr = "RUNNING_XXXXXXXXXXXXXXXX";          // 24 chars: longer than any real state
+    v.tick = UINT32_MAX; v.queueDepth = UINT32_MAX; v.direction = 1; v.motStat = 3;
+    v.statusReg = 0xFFFF;
+    v.cmdErr = v.ocd = v.thermalSD = v.thermalWarn = v.uvlo = v.stallA = v.stallB = true;
+    v.hbEnabled = true; v.hbTimeoutMs = UINT32_MAX; v.hbRemainingMs = UINT32_MAX; v.hbTimedOut = true;
+    v.modeStr = "CLOSED_LOOP_MONITOR_XXXX"; v.encStatusStr = "NOT_READY_XXXXXXXXXXXXXX";
+    v.anyError = true;
+
+    char buf[Protocol::STATUS_JSON_BUF];
+    int n = Protocol::renderStatusJson(buf, sizeof(buf), snap, v);
+    EXPECT_TRUE(n > 600);
+    EXPECT_TRUE(n < static_cast<int>(sizeof(buf)) - 64);        // >= 64 bytes of margin
+    std::string js(buf);
+    EXPECT_EQ(js.size(), static_cast<size_t>(n));
+    EXPECT_TRUE(js.rfind("}}") == js.size() - 2);
+    int depth = 0;
+    for (char c : js) { if (c == '{') ++depth; if (c == '}') --depth; EXPECT_TRUE(depth >= 0); }
+    EXPECT_EQ(depth, 0);
+    EXPECT_TRUE(js.find("\"position\":-2147483648") != std::string::npos);
+    EXPECT_TRUE(js.find("\"count\":-9223372036854775808") != std::string::npos);
+}
+
+TEST(status_json_reports_truncation_instead_of_sending_garbage) {
+    Protocol::TelemetrySnapshot snap{};
+    Protocol::StatusJsonView v;
+    char small[200];
+    int n = Protocol::renderStatusJson(small, sizeof(small), snap, v);
+    EXPECT_TRUE(n >= static_cast<int>(sizeof(small)));   // caller must refuse to send
+}
