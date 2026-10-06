@@ -4,38 +4,33 @@ Motor controller protocol client.
 Provides high-level command interface with JSON/ASCII response parsing.
 """
 
-import json
 import re
 import struct
 import threading
+import time
 import zlib
 from enum import Enum
 from typing import Optional, Any, Dict
-from dataclasses import dataclass, field
 
 from transport.interface import ITransport, TransportError
+# Framing and parsing live in the shared core (client refactor step 1).
+from smc_core.framing import FrameKind, classify
+from smc_core.codec import ProtocolError, Response, parse_response
 
 
 # Protocol 2 (F12): an ASCII multi-line reply ends with `OK <n>` (n = lines sent)
 MULTILINE_TERMINATOR = re.compile(r"^OK \d+$")
 
-class FrameType(Enum):
-    """Classification of a received line from the device."""
-    RESPONSE = "RESPONSE"      # OK, ERROR, PONG, STATUS, JSON responses
-    EVENT = "EVENT"            # Async event (!FAULT, {"kind":"event",...})
-    ECHO = "ECHO"              # Command echo
-    TELEMETRY = "TELEMETRY"    # TELEM: or EVENT JOY lines
+# Frames a command reader skips (buffered as events: EVENT and RESET)
+_SKIP = (FrameKind.ECHO, FrameKind.TELEMETRY, FrameKind.BANNER, FrameKind.JOYSTICK,
+         FrameKind.EMPTY)
+_KEEP_AS_EVENT = (FrameKind.EVENT, FrameKind.RESET)
 
 
 class ResponseFormat(Enum):
     """Response format mode."""
     ASCII = "ASCII"
     JSON = "JSON"
-
-
-class ProtocolError(Exception):
-    """Protocol-level error."""
-    pass
 
 
 class CommandError(ProtocolError):
@@ -46,21 +41,6 @@ class CommandError(ProtocolError):
         self.message = message
         self.command = command
         super().__init__(f"{code}: {message}")
-
-
-@dataclass
-class Response:
-    """Parsed response from the device."""
-    success: bool
-    command: str
-    data: Dict[str, Any] = field(default_factory=dict)
-    error_code: Optional[str] = None
-    error_message: Optional[str] = None
-    raw: str = ""
-
-    @property
-    def is_error(self) -> bool:
-        return not self.success
 
 
 class MotorClient:
@@ -114,54 +94,25 @@ class MotorClient:
     # Frame classification and event-aware response reading
     # -------------------------------------------------------------------------
 
-    @staticmethod
-    def _classify_line(line: str, sent_command: str = "") -> FrameType:
-        """
-        Single point of line classification (per protocol contract).
-
-        Classification order:
-          1. ECHO — if it exactly matches the command just sent
-          2. EVENT — if it starts with '!' (ASCII) or is JSON with "kind":"event"
-          3. TELEMETRY — if it starts with 'TELEM:' or 'EVENT JOY'
-          4. RESPONSE — everything else
-        """
-        stripped = line.strip()
-        # Echo detection
-        if sent_command and stripped == sent_command.strip():
-            return FrameType.ECHO
-        # Event detection
-        if stripped.startswith("!"):
-            return FrameType.EVENT
-        if stripped.startswith("{") and '"kind":"event"' in stripped:
-            return FrameType.EVENT
-        # Telemetry detection
-        if stripped.startswith("TELEM:") or stripped.startswith("EVENT JOY"):
-            return FrameType.TELEMETRY
-        # Everything else is a response
-        return FrameType.RESPONSE
-
     def _recv_response(self, command: str, timeout_ms: int) -> Optional[str]:
         """
-        Read lines until we get a RESPONSE, buffering events along the way.
-
-        Skips ECHO and TELEMETRY frames silently.
-        Buffers EVENT frames into _event_buffer.
-
-        Returns:
-            The first RESPONSE line, or None on timeout.
+        Read lines until a RESPONSE frame arrives or the deadline passes (R11: the
+        loop is bounded by time, not by a line count). Events and !RESET lines are
+        buffered; echo, telemetry, banner and joystick lines are skipped.
         """
-        max_skip = 16  # Safety: don't loop forever on non-response lines
-        for _ in range(max_skip):
-            line = self._transport.recv_line(timeout_ms=timeout_ms)
+        deadline = time.monotonic() + timeout_ms / 1000.0
+        while True:
+            left_ms = int((deadline - time.monotonic()) * 1000)
+            if left_ms <= 0:
+                return None
+            line = self._transport.recv_line(timeout_ms=left_ms)
             if line is None:
                 return None
-            frame_type = self._classify_line(line, command)
-            if frame_type == FrameType.RESPONSE:
+            frame = classify(line, command)
+            if frame.kind == FrameKind.RESPONSE:
                 return line
-            elif frame_type == FrameType.EVENT:
-                self._event_buffer.append(line.strip())
-            # ECHO and TELEMETRY are silently skipped
-        return None  # Too many non-response lines
+            if frame.kind in _KEEP_AS_EVENT:
+                self._event_buffer.append(frame.text)
 
     def pop_events(self) -> list[str]:
         """Return and clear buffered event lines."""
@@ -182,8 +133,9 @@ class MotorClient:
             line = self._transport.recv_line(timeout_ms=10)
             if line is None:
                 break
-            if self._classify_line(line) == FrameType.EVENT:
-                self._event_buffer.append(line.strip())
+            frame = classify(line)
+            if frame.kind in _KEEP_AS_EVENT:
+                self._event_buffer.append(frame.text)
 
     def set_format(self, fmt: ResponseFormat) -> Response:
         """
@@ -284,13 +236,13 @@ class MotorClient:
             line = self._transport.recv_line(timeout_ms=line_timeout)
             if line is None:
                 break
-            frame_type = self._classify_line(line, command)
-            if frame_type == FrameType.ECHO or frame_type == FrameType.TELEMETRY:
+            frame = classify(line, command)
+            if frame.kind in _SKIP:
                 continue
-            if frame_type == FrameType.EVENT:
-                self._event_buffer.append(line.strip())
+            if frame.kind in _KEEP_AS_EVENT:
+                self._event_buffer.append(frame.text)
                 continue
-            stripped = line.strip()
+            stripped = frame.text
             if stripped.startswith("{"):
                 # Protocol 2 (F12): in JSON mode the whole reply is one envelope whose
                 # data.lines holds the text; expose it joined in raw for text consumers.
@@ -316,14 +268,9 @@ class MotorClient:
         # Check for error in first line
         first_line = lines[0]
         if first_line.startswith("ERROR"):
-            message = first_line[5:].strip() if len(first_line) > 5 else "Unknown error"
-            return Response(
-                success=False,
-                command=command,
-                error_code="ERROR",
-                error_message=message,
-                raw=full_response,
-            )
+            err = parse_response(first_line, command)
+            err.raw = full_response
+            return err
 
         # Success with all data
         return Response(
@@ -334,138 +281,11 @@ class MotorClient:
         )
 
     def _parse_response(self, line: str, command: str) -> Response:
-        """Parse a response line based on current format."""
-        line = line.strip()
+        """Parse a reply line (either format) with the core codec."""
+        return parse_response(line, command)
 
-        # Try JSON parsing first (handles both modes gracefully)
-        if line.startswith("{"):
-            return self._parse_json_response(line, command)
-
-        # ASCII format parsing
-        return self._parse_ascii_response(line, command)
-
-    def _parse_json_response(self, line: str, command: str) -> Response:
-        """Parse a JSON response."""
-        try:
-            data = json.loads(line)
-        except json.JSONDecodeError as e:
-            raise ProtocolError(f"Invalid JSON response: {e}")
-
-        status = data.get("status", "")
-        cmd = data.get("command", command)
-
-        if status == "ok":
-            return Response(
-                success=True,
-                command=cmd,
-                data=data.get("data", {}),
-                raw=line,
-            )
-        elif status == "error":
-            return Response(
-                success=False,
-                command=cmd,
-                error_code=data.get("code", "ERROR"),
-                error_message=data.get("message", "Unknown error"),
-                raw=line,
-            )
-        else:
-            raise ProtocolError(f"Unknown status in JSON response: {status}")
-
-    def _parse_ascii_response(self, line: str, command: str) -> Response:
-        """Parse an ASCII response."""
-        # Handle common ASCII response formats
-        if line.startswith("OK"):
-            # "OK" or "OK message"
-            message = line[2:].strip() if len(line) > 2 else ""
-            data = {}
-            if message.startswith("READY"):
-                # "OK READY <bytes>"
-                parts = message.split()
-                if len(parts) == 2 and parts[0] == "READY":
-                    try:
-                        data["ready_bytes"] = int(parts[1])
-                    except ValueError:
-                        data["message"] = message
-                else:
-                    data["message"] = message
-            elif message:
-                data["message"] = message
-            return Response(
-                success=True,
-                command=command,
-                data=data,
-                raw=line,
-            )
-        elif line.startswith("ERROR"):
-            # "ERROR message"
-            message = line[5:].strip() if len(line) > 5 else "Unknown error"
-            return Response(
-                success=False,
-                command=command,
-                error_code="ERROR",
-                error_message=message,
-                raw=line,
-            )
-        elif line.startswith("PONG"):
-            # "PONG seq rx_tick tx_tick state"
-            parts = line.split()
-            data = {}
-            if len(parts) >= 5:
-                data = {
-                    "seq": int(parts[1]),
-                    "rx_tick": int(parts[2]),
-                    "tx_tick": int(parts[3]),
-                    "state": parts[4],
-                }
-            return Response(success=True, command=command, data=data, raw=line)
-        elif line.startswith("HEARTBEAT_ACK"):
-            # "HEARTBEAT_ACK seq mcu_tick remaining_ms"
-            parts = line.split()
-            data = {}
-            if len(parts) >= 4:
-                data = {
-                    "seq": int(parts[1]),
-                    "mcu_tick": int(parts[2]),
-                    "remaining_ms": int(parts[3]),
-                }
-            return Response(success=True, command=command, data=data, raw=line)
-        elif line.startswith("HEARTBEAT_STATUS"):
-            # "HEARTBEAT_STATUS ENABLED/DISABLED timeout_ms last_seq remaining_ms OK/TIMED_OUT"
-            parts = line.split()
-            data = {}
-            if len(parts) >= 6:
-                data = {
-                    "enabled": parts[1] == "ENABLED",
-                    "timeout_ms": int(parts[2]),
-                    "last_seq": int(parts[3]),
-                    "remaining_ms": int(parts[4]),
-                    "timed_out": parts[5] == "TIMED_OUT",
-                }
-            return Response(success=True, command=command, data=data, raw=line)
-        elif line.startswith("STATUS"):
-            # "STATUS state tick queue_depth mode enc_status pos speed"
-            parts = line.split()
-            data = {}
-            if len(parts) >= 8:
-                data = {
-                    "state": parts[1],
-                    "tick": int(parts[2]),
-                    "queue_depth": int(parts[3]),
-                    "mode": parts[4],
-                    "encoder_status": parts[5],
-                    "position": int(parts[6]),
-                    "speed": int(parts[7]),
-                }
-            return Response(success=True, command=command, data=data, raw=line)
-        else:
-            # Unknown format - treat as success with raw data
-            return Response(
-                success=True,
-                command=command,
-                data={"raw": line},
-                raw=line,
-            )
+    _parse_json_response = _parse_response
+    _parse_ascii_response = _parse_response
 
     # -------------------------------------------------------------------------
     # Convenience command methods
@@ -741,7 +561,7 @@ class MotorClient:
         """
         import time
 
-        old_baud = self._transport._baudrate
+        old_baud = self._transport.baudrate
 
         # Send SET_BAUD at current baud rate
         try:
@@ -756,10 +576,7 @@ class MotorClient:
         time.sleep(0.05)
 
         # Switch the serial port to the new baud rate
-        self._transport._serial.baudrate = baud
-        self._transport._baudrate = baud
-        self._transport._line_buffer = b""
-        self._transport.flush_input()
+        self._transport.set_baudrate(baud)
 
         # Small delay for ST-LINK to reconfigure its UART bridge
         time.sleep(0.05)
@@ -773,10 +590,7 @@ class MotorClient:
             pass
 
         # Verification failed — revert to old baud rate
-        self._transport._serial.baudrate = old_baud
-        self._transport._baudrate = old_baud
-        self._transport._line_buffer = b""
-        self._transport.flush_input()
+        self._transport.set_baudrate(old_baud)
         return False
 
     # -------------------------------------------------------------------------

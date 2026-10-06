@@ -133,11 +133,6 @@ def test_estop_confirmed_requires_latch_and_hiz():
 PySide6 = pytest.importorskip("PySide6")
 
 
-@pytest.fixture(scope="module")
-def qapp():
-    from PySide6.QtCore import QCoreApplication
-    app = QCoreApplication.instance() or QCoreApplication([])
-    yield app
 
 
 class FakeClient:

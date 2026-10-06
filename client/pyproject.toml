@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "smc-client"
+version = "0.2.0"
+description = "Host client for the STM32 stepper motor controller: shared core, GUI and CLI"
+requires-python = ">=3.11"
+dependencies = ["pyserial>=3.5"]
+
+[project.optional-dependencies]
+gui = ["PySide6>=6.5", "pyqtgraph>=0.13", "numpy>=1.24", "scipy>=1.10", "Pillow>=10.0"]
+rtt = ["pylink-square>=1.0"]
+dev = ["pytest>=7.0"]
+
+[tool.setuptools.packages.find]
+include = ["smc_core*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
