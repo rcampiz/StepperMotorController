@@ -15,7 +15,7 @@
 
 namespace Harness {
 
-constexpr uint8_t     PROTOCOL_VERSION = 1;          // bumped to 2 at the end of the protocol pass
+constexpr uint8_t     PROTOCOL_VERSION = 2;          // protocol pass of 2026-10-06; docs/PROTOCOL.md section 7
 constexpr const char* FW_VERSION       = "0.4.0";
 constexpr const char* IDN_VENDOR       = "SMC";
 constexpr const char* IDN_MODEL        = "NUCLEO-F401RE-IHM03A1";
