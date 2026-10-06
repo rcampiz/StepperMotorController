@@ -5,7 +5,7 @@ code, the mechanism to draw (usually a timeline or sequence), the quantified imp
 it matters, the proposed fix (also drawable), and status. Items are ordered by risk.
 
 
-## Status after the 2026-10-06 fix-now batch
+## Status after the 2026-10-06 fix-now batch and protocol pass (protocol 2)
 
 | Item | State | Commit |
 |---|---|---|
@@ -13,13 +13,25 @@ it matters, the proposed fix (also drawable), and status. Items are ordered by r
 | 4 Encoder stack | still an estimate; the task now runs from a 4096-word static pool (3968 used) and `free_heap` telemetry reports the pool's unused bytes | F11 |
 | 3 Unlocked Comms-task calls into the controller | open (Phase 4 step 4) | — |
 | 6 Two ESTOP state holders | open (Phase 4 step 2 makes the MotorService latch the single source) | — |
-| 12 Platform files define `Harness::` functions | open (scheduled with the protocol pass) | — |
+| 12 Platform files define `Harness::` functions | open (Phase 4 step 5) | — |
 | Server review F1.1/F1.2 | **done**: lines spanning an RX overflow are refused (`ERROR RX_OVERFLOW`), ring 256 -> 1024 B, counters in `DIAG:STAT?.system` | F1 |
 | Server review F3 | **done**: read-only debug dumps bypass `DBG:UNLOCK` | F3 |
 | Server review F4 | **done**: guarded, host-tested `DIAG:STAT?` render (1280-byte buffer, worst case asserted) | F4 |
 | Server review F13 | **done**: bounded copies; release build is `-Werror` | F13 |
 | Server review F15 | **done**: `DEV:ROLE?` has its own handler | F15 |
 | Client review A1–A7 | **done** on the existing GUI (fast-path ESTOP with purge and confirmation, dead-man heartbeat, no watchdog disarm, heartbeat-timeout display, scripts moved) | client hotfixes |
+| Server review F17 | **done**: `!RESET boot= fw= proto= build=`, boot id in heartbeat acks, `*IDN?` | P1 |
+| Server review F7 | **done**: echo off in JSON mode, `SYST:ECHO ON\|OFF`, `SYST:ECHO?` | P2 |
+| Server review F6 | **done**: `ERROR <CODE> <message>` in ASCII, `code` in JSON, `ServiceStatus` -> code table | P3 |
+| Server review F5 | **done**: `Protocol::jsonEscape()` on every string that enters JSON; host tests | P4 |
+| Server review F9 | **done**: `SYST:TLM:RATE <ms>` (20..5000, 0 = off) JSON push with the `DIAG:STAT?` data object; `TELEM:` kept for ASCII | P5 |
+| Server review F12 | **done**: every multi-line reply ends with `OK <n>` / is one JSON envelope with `lines` (`LineReply`); client reader updated | P6 |
+| Server review F10 | **done** (documentation): `seq` is JSON-only, per-boot, counts lines sent; drops are `lost_critical` / `lost_info` in `SYST:EVT:STAT?` | P7 |
+| Server review F8 | **done**: `SYST:HELP?` from `help_table.inc`, generated and checked by `gen_protocol.py --check` | P8 |
+| Usage strings | **done**: all `Usage:` texts and `SYST:HELP?` spell SCPI names | P9 |
+| Server review F14 | **done**: adapter limitation documented in PROTOCOL.md; GUI offers 115200 and above only | P10 |
+| Protocol version | **2** in `harness/pins/protocol_version.hpp`; the generator reads it; `docs/PROTOCOL.md` section 7 lists the changes and what Phase 4 still reserves | P11 |
+| Server review F2, F16, item 10/11 of PROTOCOL.md §7 | open (Phase 4: `SYST:HB:TIMEOUT 0` only in Hi-Z, debugPrint guard, base64 uploads with the 0x18 rule) | — |
 
 ## 1. SPI1 is held for an entire remote bitmap; ESTOP cannot interrupt it
 
