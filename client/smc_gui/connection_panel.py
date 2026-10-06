@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Signal, Slot
 
-from transport import VcpTransport
+from smc_core.transport.serial import VcpTransport
 
 
 class ConnectionPanel(QWidget):

@@ -20,57 +20,9 @@ from protocol import MotorClient, ResponseFormat
 
 
 def launch_gui() -> int:
-    """Launch the GUI application."""
-    try:
-        from PySide6.QtWidgets import QApplication
-        from PySide6.QtCore import Qt
-        from gui.main_window import MainWindow
-    except ImportError:
-        print("Error: PySide6 not installed. Install with: pip install PySide6", file=sys.stderr)
-        return 1
-
-    # Enable high DPI scaling
-    QApplication.setHighDpiScaleFactorRoundingPolicy(
-        Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
-    )
-
-    app = QApplication(sys.argv)
-    app.setApplicationName("STM32 Motor Controller")
-    app.setOrganizationName("STMicro")
-    app.setApplicationVersion("0.1.0")
-
-    # Apply dark theme
-    app.setStyle("Fusion")
-    _apply_dark_palette(app)
-
-    window = MainWindow()
-    window.show()
-
-    return app.exec()
-
-
-def _apply_dark_palette(app):
-    """Apply dark color palette to application."""
-    from PySide6.QtGui import QPalette, QColor
-
-    palette = QPalette()
-    palette.setColor(QPalette.Window, QColor(53, 53, 53))
-    palette.setColor(QPalette.WindowText, QColor(255, 255, 255))
-    palette.setColor(QPalette.Base, QColor(25, 25, 25))
-    palette.setColor(QPalette.AlternateBase, QColor(53, 53, 53))
-    palette.setColor(QPalette.ToolTipBase, QColor(255, 255, 255))
-    palette.setColor(QPalette.ToolTipText, QColor(255, 255, 255))
-    palette.setColor(QPalette.Text, QColor(255, 255, 255))
-    palette.setColor(QPalette.Button, QColor(53, 53, 53))
-    palette.setColor(QPalette.ButtonText, QColor(255, 255, 255))
-    palette.setColor(QPalette.BrightText, QColor(255, 0, 0))
-    palette.setColor(QPalette.Link, QColor(42, 130, 218))
-    palette.setColor(QPalette.Highlight, QColor(42, 130, 218))
-    palette.setColor(QPalette.HighlightedText, QColor(0, 0, 0))
-    palette.setColor(QPalette.Disabled, QPalette.WindowText, QColor(127, 127, 127))
-    palette.setColor(QPalette.Disabled, QPalette.Text, QColor(127, 127, 127))
-    palette.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(127, 127, 127))
-    app.setPalette(palette)
+    """Launch the GUI (client/smc_gui)."""
+    from smc_gui.__main__ import main as gui_main
+    return gui_main([])
 
 
 def list_ports() -> None:

@@ -128,43 +128,6 @@ def test_estop_confirmed_requires_latch_and_hiz():
     assert not ok
 
 
-# --- worker side (needs PySide6) ---------------------------------------------
-
-PySide6 = pytest.importorskip("PySide6")
-
-
-
-
-class FakeClient:
-    def __init__(self):
-        self.cancelled = False
-        self.cleared = False
-    def is_connected(self): return True
-    def cancel_transfers(self): self.cancelled = True
-    def clear_cancel(self): self.cleared = True
-
-
-def test_worker_drops_queue_and_queues_one_confirmation(qapp):
-    from gui.serial_worker import SerialWorker, QueuedCommand, CommandTag
-    client = FakeClient()
-    w = SerialWorker(client)
-    dropped = []
-    w.estop_dispatched.connect(lambda n: dropped.append(n))
-    for i in range(5):
-        w.queue_command(f"MOT:MOVE {i}")
-    w.set_live_command("MOT:RUN 100 1")
-    w.request_estop()
-    assert client.cancelled
-    assert w._estop_pending
-    w._service_estop()
-    assert dropped == [5]
-    assert w._pending_live is None
-    assert client.cleared
-    remaining = w._command_queue.get_nowait()
-    assert remaining.command == "DIAG:STAT?"
-    assert remaining.tag == CommandTag.ESTOP_CONFIRM
-    assert w._command_queue.empty()
-
 
 def test_upload_precondition_requires_idle_hiz():
     ok, why = MotorClient.upload_precondition({})

@@ -1,7 +1,9 @@
 """
 Main application window.
 
-Provides the primary GUI layout with connection, control, and telemetry panels.
+Thin frontend over smc_core (client refactor step 3): one Board per connection owns
+the serial port, the threads, the heartbeat, ESTOP and the session; the BoardBridge
+turns its callbacks into Qt signals. This window builds Requests and renders replies.
 """
 
 from PySide6.QtWidgets import (
@@ -19,25 +21,47 @@ from PySide6.QtGui import QAction, QCloseEvent
 from typing import Optional
 import logging
 import os
-import time
 
 log = logging.getLogger("main_window")
 
-from gui.connection_panel import ConnectionPanel
-from gui.motor_panel import MotorControlPanel
-from gui.telemetry_panel import TelemetryPanel
-from gui.driver_panel import DriverPanel
-from gui.protection_panel import ProtectionPanel
-from gui.stepmode_panel import StepModePanel
-from gui.graph_panel import GraphPanel
-from gui.display_panel import DisplayPanel
-from gui.motion_panel import MotionPanel
-from gui.sysid_panel import SysIdPanel
-from gui.rle_codec import encode_rle_rgb565
-from gui.serial_worker import SerialThread, QueuedCommand, CommandTag
-from gui.image_loader import LCD_WIDTH, LCD_HEIGHT
-from protocol import MotorClient, ResponseFormat
-from transport import VcpTransport
+from smc_gui.connection_panel import ConnectionPanel
+from smc_gui.motor_panel import MotorControlPanel
+from smc_gui.telemetry_panel import TelemetryPanel
+from smc_gui.driver_panel import DriverPanel
+from smc_gui.protection_panel import ProtectionPanel
+from smc_gui.stepmode_panel import StepModePanel
+from smc_gui.graph_panel import GraphPanel
+from smc_gui.display_panel import DisplayPanel
+from smc_gui.motion_panel import MotionPanel
+from smc_gui.sysid_panel import SysIdPanel
+from smc_gui.rle_codec import encode_rle_rgb565
+from smc_gui.image_loader import LCD_WIDTH, LCD_HEIGHT
+from smc_gui.bridge import BoardBridge
+from smc_core import commands as C
+from smc_core.board import Board, BoardConfig, EstopResult, Liveness
+from smc_core.codec import Response
+from smc_core.transport.base import ITransport
+
+
+def upload_precondition(data: dict) -> tuple:
+    """May a blocking flash upload start? (allowed, reason)
+
+    The firmware watchdog is never disarmed, and UI:FLASH:UPLOAD blocks the Comms
+    task for ~13 s at 115200 baud, so the stop it will trigger must be harmless:
+    the motor has to be idle and in Hi-Z already.
+    """
+    if not data:
+        return False, "no status snapshot yet (wait for telemetry)"
+    state = str(data.get("state", "?"))
+    motor = data.get("motor", {}) or {}
+    hiz = motor.get("hi_z", motor.get("hiz"))
+    if state not in ("IDLE", "ESTOP", "FAULT"):
+        return False, f"motor must be idle (state={state})"
+    if motor.get("busy", False):
+        return False, "motor is busy"
+    if not hiz:
+        return False, "motor must be in Hi-Z (send MOT:DIS first)"
+    return True, "idle, Hi-Z"
 
 
 class MainWindow(QMainWindow):
@@ -51,10 +75,13 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self._client: Optional[MotorClient] = None
-        self._transport: Optional[VcpTransport] = None
-        self._serial_thread: Optional[SerialThread] = None
+        self._board: Optional[Board] = None
+        self._bridge: Optional[BoardBridge] = None
+        self._port_label = ""
         self._remote_mode_sent = False
+        # Dead-man token for the board's heartbeat (CLIENT_REVIEW B: liveness is a core
+        # input). Only this window's event loop touches it, through _liveness_timer.
+        self._liveness = Liveness(max_age_s=0.2)
 
         self._setup_ui()
         self._setup_menu()
@@ -122,7 +149,7 @@ class MainWindow(QMainWindow):
 
         # Status bar
         self._status_bar = QStatusBar()
-        # UI dead-man stamp for the worker's heartbeat producer (A2)
+        # UI dead-man stamp: the board sends heartbeats only while it is fresh (A2)
         self._liveness_timer = QTimer(self)
         self._liveness_timer.setInterval(20)
         self._liveness_timer.timeout.connect(self._on_liveness_tick)
@@ -162,20 +189,6 @@ class MainWindow(QMainWindow):
         refresh_action.setShortcut("F5")
         refresh_action.triggered.connect(self._connection_panel.refresh_ports)
         conn_menu.addAction(refresh_action)
-
-        # Format menu
-        format_menu = menubar.addMenu("F&ormat")
-
-        self._ascii_action = QAction("&ASCII", self)
-        self._ascii_action.setCheckable(True)
-        self._ascii_action.setChecked(True)
-        self._ascii_action.triggered.connect(lambda: self._set_format(ResponseFormat.ASCII))
-        format_menu.addAction(self._ascii_action)
-
-        self._json_action = QAction("&JSON", self)
-        self._json_action.setCheckable(True)
-        self._json_action.triggered.connect(lambda: self._set_format(ResponseFormat.JSON))
-        format_menu.addAction(self._json_action)
 
         # Debug menu
         debug_menu = menubar.addMenu("&Debug")
@@ -277,148 +290,84 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _on_connect_clicked(self):
-        """Handle connect button click."""
+        """Open the selected serial port and hand it to a Board (non-blocking, R5)."""
         port = self._connection_panel.selected_port
-        baudrate = self._connection_panel.baudrate
-
         if not port:
             QMessageBox.warning(self, "Connection Error", "Please select a port.")
             return
+        from smc_core.transport.serial import VcpTransport
+        transport = VcpTransport(port=port, baudrate=self._connection_panel.baudrate)
+        self.attach_transport(transport, port)
 
+    def attach_transport(self, transport: ITransport, label: str) -> bool:
+        """Start a session on any transport (serial port, simulator, test pipe)."""
+        period_ms = self._connection_panel.heartbeat_period_ms
+        hb = self._connection_panel.heartbeat_enabled
+        config = BoardConfig(
+            heartbeat=hb,
+            heartbeat_period_s=period_ms / 1000.0,
+            heartbeat_timeout_ms=max(2000, period_ms * 6),
+            telemetry_period_ms=100,
+            clear_fault_on_connect=True,      # a comms-timeout ESTOP from the last session
+        )
+        self._liveness.max_age_s = max(0.2, 4 * period_ms / 1000.0)
+        board = Board(transport, config, liveness=self._liveness, name=label)
+        bridge = BoardBridge(board, self)
+        bridge.connected.connect(lambda identity: self.connected.emit())
+        bridge.session.connect(self._on_session)
+        bridge.telemetry.connect(self._on_telemetry_updated)
+        bridge.event.connect(self._on_async_event)
+        bridge.event_gap.connect(self._on_event_gap)
+        bridge.board_reset.connect(self._on_board_reset)
+        bridge.heartbeat.connect(self._on_heartbeat_ack)
+        bridge.heartbeat_lost.connect(self._on_heartbeat_timeout)
+        bridge.liveness_stale.connect(self._on_liveness_stale)
+        bridge.estop_result.connect(self._on_estop_result)
+        bridge.link_lost.connect(self._on_connection_lost)
+        bridge.error.connect(lambda msg: self._status_bar.showMessage(f"Board: {msg}", 8000))
+        bridge.response.connect(self._on_response_received)
+        bridge.job_done.connect(self._on_job_done)
+        bridge.progress.connect(self._display_panel.update_progress)
+
+        self._status_bar.showMessage(f"Connecting to {label}...")
+        self._liveness.touch()
+        self._liveness_timer.start()
         try:
-            self._transport = VcpTransport(port=port, baudrate=baudrate)
-            self._client = MotorClient(self._transport)
-
-            self._status_bar.showMessage(f"Connecting to {port}...")
-
-            if not self._client.connect():
-                raise Exception("Connection failed")
-
-            log.info("Port opened, waiting for firmware banner...")
-
-            # Read firmware banner to verify comms link is alive
-            time.sleep(0.5)
-            banner_ok = False
-            for _ in range(10):
-                line = self._transport.recv_line(timeout_ms=200)
-                if line is None:
-                    break
-                log.info("FW banner: %s", line)
-                banner_ok = True
-
-            if not banner_ok:
-                # No banner — firmware may already be past boot.
-                # Probe with PING (empty lines produce no response
-                # because the firmware skips CR/LF when buffer is empty).
-                log.warning("No banner received — probing with PING...")
-                self._transport.flush_input()
-                self._transport.send_line("DIAG:PING 0")
-                # Read echo + PONG response (up to 2 lines)
-                probe = self._transport.recv_line(timeout_ms=2000)
-                if probe is not None:
-                    log.info("Probe response: %r", probe)
-                    # Read PONG if echo came first
-                    if probe.startswith("DIAG:PING"):
-                        pong = self._transport.recv_line(timeout_ms=1000)
-                        if pong:
-                            log.info("Probe PONG: %r", pong)
-                else:
-                    log.error("Firmware not responding at all. "
-                              "Try resetting the board.")
-                    raise Exception(
-                        "Firmware not responding — try resetting the board "
-                        "(press black RESET button or power-cycle).")
-
-            # Drain any remaining banner/probe bytes
-            self._transport.flush_input()
-
-            # Set JSON format with retry
-            for attempt in range(3):
-                try:
-                    log.debug("SET_FORMAT attempt %d", attempt + 1)
-                    self._client.set_format(ResponseFormat.JSON)
-                    break
-                except Exception as e:
-                    log.debug("SET_FORMAT failed: %s", e)
-                    time.sleep(0.3)
-                    self._transport.flush_input()
-            else:
-                raise Exception("Failed to set JSON format after retries")
-
-            self._json_action.setChecked(True)
-            self._ascii_action.setChecked(False)
-
-            # Baud auto-negotiation disabled — ST-LINK V2-1 VCP drops bytes
-            # above 115200 during bulk binary transfers.  The SET_BAUD command
-            # is still available for manual use if a different adapter is used.
-            self._status_bar.showMessage(f"Connected to {port}")
-
-            # Create and start worker thread — after this point, ALL serial
-            # communication must go through the worker's command queue
-            self._serial_thread = SerialThread(self._client)
-            worker = self._serial_thread.worker
-            worker.response_received.connect(self._on_response_received)
-            worker.telemetry_updated.connect(self._on_telemetry_updated)
-            worker.connection_error.connect(self._on_connection_lost)
-            worker.heartbeat_ack_received.connect(self._on_heartbeat_ack)
-            worker.heartbeat_timeout.connect(self._on_heartbeat_timeout)
-            worker.event_received.connect(self._on_async_event)
-            worker.bitmap_progress.connect(self._display_panel.update_progress)
-            worker.estop_dispatched.connect(self._on_estop_dispatched)
-            worker.liveness_stale.connect(self._on_liveness_stale)
-
-            # Start heartbeat producer BEFORE starting the thread so the
-            # flag is set when run() begins its first loop iteration.
-            if self._connection_panel.heartbeat_enabled:
-                period_ms = self._connection_panel.heartbeat_period_ms
-                self._serial_thread.start_heartbeat(period_ms / 1000.0)
-
-            # Dead-man: this timer only runs while the UI event loop runs. If the UI
-            # freezes, the stamp goes stale and the worker stops sending heartbeats.
-            worker.touch_liveness()
-            self._liveness_timer.start()
-
-            self._serial_thread.start()
-            self._serial_thread.start_polling()
-
-            self.connected.emit()
-
-        except Exception as e:
+            board.open()
+        except Exception as e:  # noqa: BLE001 - the port could not be opened
+            self._liveness_timer.stop()
             QMessageBox.critical(self, "Connection Error", str(e))
             self._status_bar.showMessage("Connection failed")
-            self._serial_thread = None
-            self._client = None
-            self._transport = None
+            return False
+        self._board, self._bridge, self._port_label = board, bridge, label
+        return True
 
     @Slot()
     def _on_disconnect_clicked(self):
-        """Handle disconnect button click."""
+        """Stop the board and close the port. The firmware watchdog stays armed: with
+        heartbeats gone the board stops the motor after its timeout."""
         self._liveness_timer.stop()
-        # Stop worker thread FIRST so main thread can safely use the port
-        if self._serial_thread:
-            self._serial_thread.stop_heartbeat()
-            self._serial_thread.stop()
-            self._serial_thread = None
-            self._remote_mode_sent = False
-
-        # Close the serial port but do NOT disarm the MCU heartbeat watchdog.
-        # If heartbeat was enabled, the MCU will notice the missing heartbeats
-        # and enter safe state (stop motor) after the timeout expires.
-        if self._client and self._client.is_connected():
-            try:
-                self._client.disconnect()
-            except Exception:
-                pass
-
-        self._client = None
-        self._transport = None
+        if self._board is not None:
+            self._board.close()
+        self._board = None
+        self._bridge = None
+        self._remote_mode_sent = False
         self.disconnected.emit()
+
+    def _call(self, req: C.Request, tag: str = "GENERIC") -> None:
+        if self._bridge is not None:
+            self._bridge.call(req, tag)
+
+    def _queue_refresh(self):
+        """The three text refreshes (driver registers, encoder, motor config)."""
+        self._call(C.motor_debug(), "REFRESH_MOTOR_DEBUG")
+        self._call(C.encoder(), "REFRESH_ENC")
+        self._call(C.driver_config(), "REFRESH_MCONFIG")
 
     @Slot()
     def _on_connected(self):
-        """Handle successful connection."""
-        port = self._connection_panel.selected_port
-        self._status_bar.showMessage(f"Connected to {port}")
+        """First session ready: populate the panels."""
+        self._status_bar.showMessage(f"Connected to {self._port_label}")
 
         # Update UI state
         self._connection_panel.set_connected(True)
@@ -426,47 +375,39 @@ class MainWindow(QMainWindow):
         self._connect_action.setEnabled(False)
         self._disconnect_action.setEnabled(True)
         self._reinit_motor_action.setEnabled(True)
+        self._populate()
 
-        if self._serial_thread:
-            # Clear any latched faults (e.g. comms timeout from previous
-            # session where heartbeat watchdog fired after USB disconnect)
-            self._serial_thread.worker.queue_command(
-                QueuedCommand("SYST:FAULT:CLEAR", CommandTag.CLEAR_FAULT))
+    def _populate(self):
+        """Queries that fill the panels (also re-run after a board reset)."""
+        self._queue_refresh()
+        # Motor/encoder config for the Motion panel's unit conversion
+        for req in (C.step_mode_query(), C.full_steps_query(), C.encoder_ppr_query(),
+                    C.transport_delay_query()):
+            self._call(req, "REFRESH_DRV_CONFIG")
+        self._call(C.trim_query(), "REFRESH_TRIM_CONFIG")
+        self._call(C.enc_filter_query(), "REFRESH_ENC_FILTER")
 
-            # Request initial parameter refresh via worker
-            self._serial_thread.queue_refresh()
+    @Slot(object)
+    def _on_session(self, identity):
+        if identity is not None:
+            self.setWindowTitle(f"STM32 Motor Controller - {identity.serial} "
+                                f"(fw {identity.fw}, protocol {identity.proto})")
 
-            # Queue SET_HEARTBEAT AFTER refresh commands so the MCU
-            # watchdog only starts once heartbeats are already flowing.
-            # (The worker sends heartbeats between command processing
-            # cycles, so the watchdog gets fed while refresh runs.)
-            if self._connection_panel.heartbeat_enabled:
-                period_ms = self._connection_panel.heartbeat_period_ms
-                timeout_ms = max(2000, period_ms * 6)
-                log.info("Queueing heartbeat watchdog: period=%dms, "
-                         "MCU timeout=%dms", period_ms, timeout_ms)
-                self._serial_thread.worker.queue_command(
-                    QueuedCommand(
-                        f"SYST:HB:TIMEOUT {timeout_ms}",
-                        CommandTag.GENERIC))
+    @Slot(object)
+    def _on_board_reset(self, info):
+        """R3/S-6: the board rebooted. The core re-runs the session setup (JSON mode,
+        events, telemetry, watchdog); the panels are refilled once it is ready."""
+        self._status_bar.showMessage(
+            f"BOARD RESET (boot {info.boot:08X}): session restored, check the motor state", 0)
+        self._telemetry_panel.set_link_alarm("#ff8800", "board reset")
+        QTimer.singleShot(500, self._populate)
 
-            # Enable async events (all types) after setup is complete
-            self._serial_thread.worker.queue_command(
-                QueuedCommand("SYST:EVT:EN", CommandTag.GENERIC))
-
-            # Query motor/encoder config for Motion panel unit conversion
-            for cmd in ("DRV:STEP_MODE?", "DRV:FULL_STEPS?",
-                        "DRV:ENC_PPR?", "SYST:DELAY?"):
-                self._serial_thread.worker.queue_command(
-                    QueuedCommand(cmd, CommandTag.REFRESH_DRV_CONFIG))
-
-            # Query trim gains for Motion panel tuning controls
-            self._serial_thread.worker.queue_command(
-                QueuedCommand("CTRL:TRIM?", CommandTag.REFRESH_TRIM_CONFIG))
-
-            # Query encoder filter config to populate Dashboard controls
-            self._serial_thread.worker.queue_command(
-                QueuedCommand("CTRL:ENC:FILT?", CommandTag.REFRESH_ENC_FILTER))
+    @Slot(object)
+    def _on_event_gap(self, gap):
+        msg = (f"{gap.missing} event(s) lost between {gap.before_type or '?'} and "
+               f"{gap.after_type}; status re-read")
+        log.warning(msg)
+        self._status_bar.showMessage(("CRITICAL: " if gap.critical else "") + msg, 10000)
 
     @Slot()
     def _on_disconnected(self):
@@ -491,60 +432,55 @@ class MainWindow(QMainWindow):
     @Slot()
     def _refresh_trim_config(self):
         """Re-query trim gains so the motion panel reflects applied changes."""
-        if not self._serial_thread:
-            return
-        self._serial_thread.worker.queue_command(
-            QueuedCommand("CTRL:TRIM?", CommandTag.REFRESH_TRIM_CONFIG))
+        self._call(C.trim_query(), "REFRESH_TRIM_CONFIG")
 
     @Slot(str)
     def _send_command(self, command: str):
-        """Send a command to the device via worker thread."""
-        if not self._serial_thread:
+        """A panel's command line (until step 4 the panels still emit text)."""
+        try:
+            req = C.from_line(command)
+        except C.CommandError as e:
+            self._status_bar.showMessage(f"Refused: {e}", 5000)
             return
-
-        # Route known commands through tagged path for response handling
-        if command == "SYST:FAULT:CLEAR":
-            self._serial_thread.worker.queue_command(
-                QueuedCommand("SYST:FAULT:CLEAR", CommandTag.CLEAR_FAULT))
-        elif command == "SYST:FAULT:FORCE":
-            self._serial_thread.worker.queue_command(
-                QueuedCommand("SYST:FAULT:FORCE", CommandTag.CLEAR_FAULT))
-        elif command.startswith("CTRL:MODE"):
-            self._serial_thread.worker.queue_command(
-                QueuedCommand(command, CommandTag.SET_CTRL_MODE))
-        elif command.startswith("CTRL:TRIM:"):
-            self._serial_thread.worker.queue_command(
-                QueuedCommand(command, CommandTag.APPLY_TRIM))
+        if req.name in ("SYST:FAULT:CLEAR", "SYST:FAULT:FORCE"):
+            tag = "CLEAR_FAULT"
+        elif req.name == "CTRL:MODE":
+            tag = "SET_CTRL_MODE"
+        elif req.name.startswith("CTRL:TRIM:"):
+            tag = "APPLY_TRIM"
+        elif req.name == "SYST:ESTOP":
+            self._on_estop_requested()      # never through the FIFO (S-1)
+            return
         else:
-            self._serial_thread.send_command(command)
+            tag = "GENERIC"
+        self._call(req, tag)
 
     @Slot()
     def _on_estop_requested(self):
-        """ESTOP fast path (UI thread): write the stop bytes now, then purge the queue.
-
-        MotorClient.estop_fast() purges the driver output buffer and writes
-        SYST:ESTOP under the transport write lock, so it waits for at most one
-        256-byte chunk of a transfer in progress. The worker then drops every
-        queued command, cancels the running transfer and reads DIAG:STAT? back
-        to confirm (ESTOP_CONFIRM).
-        """
-        if not self._client or not self._client.is_connected():
+        """ESTOP fast path: the board purges, writes 0x18 + SYST:ESTOP, drops its queue,
+        cancels a running upload within one chunk and reads the latch back."""
+        if self._board is None or not self._board.connected:
             self._status_bar.showMessage("ESTOP: not connected", 5000)
             return
         try:
-            self._client.estop_fast()
+            self._board.estop()
         except Exception as e:  # noqa: BLE001 - show, never swallow silently
             self._motor_panel.show_estop_result(False, f"write failed: {e}")
             self._status_bar.showMessage(f"ESTOP WRITE FAILED: {e}", 10000)
             return
         self._status_bar.showMessage("ESTOP sent, awaiting confirmation...", 5000)
-        if self._serial_thread:
-            self._serial_thread.worker.request_estop()
+
+    @Slot(object)
+    def _on_estop_result(self, result: EstopResult):
+        self._motor_panel.show_estop_result(result.confirmed, result.detail)
+        msg = "STOPPED, confirmed" if result.confirmed else f"ESTOP NOT CONFIRMED: {result.detail}"
+        if result.dropped:
+            msg += f" ({result.dropped} queued command(s) dropped)"
+        self._status_bar.showMessage(msg, 5000 if result.confirmed else 0)
 
     @Slot()
     def _on_liveness_tick(self):
-        if self._serial_thread:
-            self._serial_thread.worker.touch_liveness()
+        self._liveness.touch()
 
     @Slot(bool)
     def _on_liveness_stale(self, stale: bool):
@@ -555,288 +491,191 @@ class MainWindow(QMainWindow):
         else:
             self._status_bar.showMessage("UI responsive again, heartbeats resumed", 5000)
 
-    @Slot(int)
-    def _on_estop_dispatched(self, dropped: int):
-        if dropped:
-            self._status_bar.showMessage(
-                f"ESTOP: {dropped} queued command(s) dropped", 5000)
-
     @Slot(str)
     def _send_live_command(self, command: str):
-        """Send a coalesced live command (latest-wins, highest priority)."""
-        if self._serial_thread:
-            self._serial_thread.set_live_command(command)
+        """Coalesced live command (latest-wins, ahead of the FIFO)."""
+        if self._bridge is None:
+            return
+        try:
+            self._bridge.latest("live", C.from_line(command))
+        except C.CommandError as e:
+            self._status_bar.showMessage(f"Refused: {e}", 5000)
 
     def _on_sysid_tagged_command(self, command: str, tag_name: str):
         """Send a tagged command from the SysIdPanel."""
-        if not self._serial_thread:
-            return
-        tag = CommandTag[tag_name]
-        multiline = (tag_name == "SYSID_DATA")
-        max_lines = 50 if multiline else 20
-        self._serial_thread.worker.queue_command(
-            QueuedCommand(command, tag, multiline=multiline,
-                          max_lines=max_lines))
+        try:
+            self._call(C.from_line(command), tag_name)
+        except C.CommandError as e:
+            self._status_bar.showMessage(f"Refused: {e}", 5000)
 
     @Slot()
     def _on_refresh_params(self):
-        """Refresh driver parameters and encoder status via worker."""
-        if self._serial_thread:
-            self._serial_thread.queue_refresh()
+        """Refresh driver parameters and encoder status."""
+        self._queue_refresh()
+
+    def _call_lines(self, commands: list, tag: str, last_tag: Optional[str] = None):
+        for i, cmd in enumerate(commands):
+            try:
+                req = C.from_line(cmd)
+            except C.CommandError as e:
+                self._status_bar.showMessage(f"Refused: {e}", 5000)
+                return
+            self._call(req, last_tag if (last_tag and i == len(commands) - 1) else tag)
 
     @Slot(str)
     def _on_kval_apply(self, cmd_str: str):
-        """Send MCONFIG_KVAL + MCONFIG_APPLY to update config and push to hardware."""
-        if self._serial_thread:
-            self._serial_thread.worker.queue_command(
-                QueuedCommand(cmd_str, CommandTag.APPLY_KVAL))
-            self._serial_thread.worker.queue_command(
-                QueuedCommand("DRV:CFG:APPLY", CommandTag.APPLY_KVAL))
+        """KVAL + DRV:CFG:APPLY: update the config and push it to the driver."""
+        self._call_lines([cmd_str, "DRV:CFG:APPLY"], "APPLY_KVAL")
 
     @Slot(list)
     def _on_param_apply(self, commands: list):
-        """Send multiple parameter commands (ACCEL, DECEL, MAXSPD) via worker."""
-        if not self._serial_thread:
-            return
-        for cmd in commands:
-            self._serial_thread.worker.queue_command(
-                QueuedCommand(cmd, CommandTag.APPLY_PARAMS))
+        """Several parameter commands (ACCEL, DECEL, MAXSPD)."""
+        self._call_lines(commands, "APPLY_PARAMS")
 
     @Slot(list)
     def _on_protection_apply(self, commands: list):
-        """Send protection parameter commands (OCD, STALL, FAULT, APPLY) via worker.
-
-        Intermediate commands are tagged GENERIC so they don't trigger
-        auto-refresh. Only the final MCONFIG_APPLY is tagged
-        APPLY_PROTECTION, which clears the dirty flag and refreshes.
-        """
-        if not self._serial_thread:
-            return
-        for cmd in commands[:-1]:
-            self._serial_thread.worker.queue_command(
-                QueuedCommand(cmd, CommandTag.GENERIC))
-        if commands:
-            self._serial_thread.worker.queue_command(
-                QueuedCommand(commands[-1], CommandTag.APPLY_PROTECTION))
+        """OCD, STALL, FAULT, APPLY: only the final APPLY is tagged APPLY_PROTECTION,
+        which clears the dirty flag and refreshes."""
+        self._call_lines(commands, "GENERIC", last_tag="APPLY_PROTECTION")
 
     @Slot(str)
     def _on_stepmode_apply(self, cmd_str: str):
-        """Send MCONFIG_STEPMODE + MCONFIG_APPLY to update step mode."""
-        if self._serial_thread:
-            self._serial_thread.worker.queue_command(
-                QueuedCommand(cmd_str, CommandTag.APPLY_PARAMS))
-            self._serial_thread.worker.queue_command(
-                QueuedCommand("DRV:CFG:APPLY", CommandTag.APPLY_PARAMS))
+        """DRV:CFG:STEPMODE + DRV:CFG:APPLY."""
+        self._call_lines([cmd_str, "DRV:CFG:APPLY"], "APPLY_PARAMS")
 
     @Slot(str)
     def _on_enc_filter_scpi(self, command: str):
-        """Send encoder filter SCPI command from telemetry panel."""
-        if self._serial_thread:
-            self._serial_thread.worker.queue_command(
-                QueuedCommand(command, CommandTag.APPLY_ENC_FILTER))
+        """Encoder filter command from the telemetry panel."""
+        self._call_lines([command], "APPLY_ENC_FILTER")
 
     # Rows per band for chunked bitmap transfer.  Each band is a separate
-    # DISP_BITMAP_RLE command so heartbeats can flow between bands.
-    # 20 rows × 240px × 2 bytes = 9600 raw bytes per band.
+    # UI:DISP:BITMAP:RLE command so heartbeats flow between bands.
+    # 20 rows x 240px x 2 bytes = 9600 raw bytes per band.
     BITMAP_BAND_ROWS = 20
 
     @Slot(bytes, bytes)
     def _on_image_send_requested(self, rgb565_data, rle_data):
-        """Handle image send request from display panel.
-
-        Splits the image into horizontal bands, RLE-compresses each band
-        independently, and queues as DISP_BITMAP_RLE commands so the serial
-        worker can send heartbeats between bands.
-        """
-        if not self._serial_thread:
+        """Send the image as RLE bands in one board job. The job feeds the heartbeat
+        between bands and an ESTOP cancels it within one 256-byte chunk."""
+        if self._bridge is None:
             self._display_panel.transfer_complete(False, "Not connected")
             return
-
-        worker = self._serial_thread.worker
         w, h = LCD_WIDTH, LCD_HEIGHT
-        total_bytes = len(rgb565_data)
         band_h = self.BITMAP_BAND_ROWS
         bytes_per_row = w * 2
-
-        # Switch to REMOTE mode first
-        worker.queue_command(
-            QueuedCommand("UI:MODE REMOTE", CommandTag.GENERIC))
-
-        # Queue one DISP_BITMAP_RLE per band
+        total = len(rgb565_data)
+        bands = []
         row = 0
         while row < h:
-            rows_this_band = min(band_h, h - row)
-            data_offset = row * bytes_per_row
-            band_raw = rgb565_data[
-                data_offset:data_offset + rows_this_band * bytes_per_row]
-            band_rle = encode_rle_rgb565(band_raw)
+            rows = min(band_h, h - row)
+            raw = rgb565_data[row * bytes_per_row:(row + rows) * bytes_per_row]
+            bands.append((row, rows, encode_rle_rgb565(raw), len(raw)))
+            row += rows
+        progress = self._bridge.progress
 
-            def make_transfer(bx, by, bw, bh, rle_bytes, accumulated_offset,
-                              raw_len):
-                """Create a closure that sends one RLE band."""
-                def do_transfer(client):
-                    client.heartbeat(0)        # feed the watchdog before each ~1 s band
-                    resp = client.disp_bitmap_rle(
-                        bx, by, bw, bh, rle_bytes, use_crc=True)
-                    worker.bitmap_progress.emit(
-                        accumulated_offset + raw_len, total_bytes)
+        def send_bands(ctx):
+            ctx.call(C.ui_mode(remote=True))
+            done = 0
+            for y, rows, rle, raw_len in bands:
+                resp = ctx.call(C.disp_bitmap_rle(0, y, w, rows, rle, crc=True))
+                if not resp.success:
                     return resp
-                return do_transfer
+                done += raw_len
+                progress.emit(done, total)
+            return resp
 
-            accumulated = data_offset
-            is_last = (row + rows_this_band >= h)
-            tag = CommandTag.BITMAP_TRANSFER if is_last else CommandTag.GENERIC
-
-            worker.queue_command(
-                QueuedCommand(
-                    command=f"UI:DISP:BITMAP:RLE 0 {row} {w} {rows_this_band} "
-                            f"{len(band_rle)}",
-                    tag=tag,
-                    callable=make_transfer(0, row, w, rows_this_band,
-                                           band_rle, accumulated,
-                                           len(band_raw)),
-                )
-            )
-            row += rows_this_band
+        self._bridge.job(send_bands, "BITMAP_TRANSFER")
 
     @Slot(int, bytes, bytes)
     def _on_image_flash_upload_requested(self, slot, rgb565_data, rle_data):
-        """Handle image flash upload request from display panel.
+        """Upload raw RGB565 to a flash slot (CRC checked), then show it.
 
-        Uploads raw RGB565 image data to a flash slot via FLASH_UPLOAD
-        with CRC integrity verification.  Temporarily disables heartbeats
-        during the blocking upload to prevent MCU watchdog timeout.
-        After successful upload, auto-issues FLASH_SHOW to display the
-        stored image on the LCD.
+        A3: the watchdog is never disarmed. UI:FLASH:UPLOAD is one ~13 s command the
+        firmware cannot be fed during, so the motor must be idle in Hi-Z; the expected
+        comms-timeout fault is cleared afterwards.
         """
-        if not self._serial_thread:
+        if self._bridge is None:
             self._display_panel.transfer_complete(False, "Not connected")
             return
-
-        worker = self._serial_thread.worker
-
-        # No UI_MODE REMOTE here — flash upload writes to flash, not LCD.
-        # FLASH_SHOW (queued after upload success) sets REMOTE mode internally.
-
-        # A3: the watchdog is never disarmed. UI:FLASH:UPLOAD is one ~13 s command
-        # the firmware cannot be fed during, so: require the motor idle in Hi-Z,
-        # feed once right before, and clear the expected comms-timeout fault after.
-        allowed, reason = MotorClient.upload_precondition(self._last_status)
+        allowed, reason = upload_precondition(self._board.last_status if self._board else {})
         if not allowed:
             self._display_panel.transfer_complete(False, reason)
             self._status_bar.showMessage(f"Flash upload refused: {reason}", 8000)
             return
 
-        def make_upload(s, data, w):
-            def do_upload(client):
-                client.heartbeat(0)            # last feed before the blocking transfer
-                resp = client.flash_upload(
-                    s, data, use_crc=True,
-                    progress_cb=lambda sent, total:
-                        w.bitmap_progress.emit(sent, total))
-                client.heartbeat(0)            # re-feed; the watchdog has most likely fired
-                w.queue_command(QueuedCommand("SYST:FAULT:CLEAR", CommandTag.CLEAR_FAULT))
-                return resp
-            return do_upload
+        def upload(ctx):
+            resp = ctx.call(C.flash_upload(slot, rgb565_data, crc=True))
+            ctx.call(C.fault_clear())
+            if resp.success:
+                ctx.call(C.flash_show(slot))
+            return resp
 
         self._status_bar.showMessage(
             "Flash upload: watchdog stays armed; a comms-timeout stop during the "
             "transfer is expected and cleared afterwards", 8000)
-        worker.queue_command(
-            QueuedCommand(
-                command=f"UI:FLASH:UPLOAD {slot}",
-                tag=CommandTag.FLASH_UPLOAD_SLOT,
-                callable=make_upload(slot, rgb565_data, worker),
-            )
-        )
+        self._bridge.job(upload, "FLASH_UPLOAD_SLOT")
+
+    @Slot(str, object)
+    def _on_job_done(self, tag: str, result):
+        if isinstance(result, Exception):
+            self._status_bar.showMessage(f"{tag} failed: {result}", 8000)
+            self._display_panel.transfer_complete(False, str(result))
+            return
+        self._on_response_received(tag, tag, result)
 
     # --- Indicator handler ---
 
     @Slot(int, int, bool)
     def _on_indicator_send_requested(self, angle: int, rotation_dir: int,
                                      has_translation: bool):
-        """Handle indicator send request from display panel."""
-        if not self._serial_thread:
+        """Indicator: coalesced (latest-wins), REMOTE mode sent once per session."""
+        if self._bridge is None:
             self._display_panel.transfer_complete(False, "Not connected")
             return
-
-        worker = self._serial_thread.worker
-
-        # Ensure REMOTE mode (send only once per session)
         if not self._remote_mode_sent:
-            worker.queue_command(
-                QueuedCommand("UI:MODE REMOTE", CommandTag.GENERIC))
+            self._call(C.ui_mode(remote=True))
             self._remote_mode_sent = True
-
-        # Use coalesced indicator path (latest-wins, no queue backlog)
-        trans_int = 1 if has_translation else 0
-        worker.set_indicator_command(
-            f"UI:DISP:INDICATOR {angle} {rotation_dir} {trans_int}")
-
+        self._bridge.latest("indicator", C.disp_indicator(angle, rotation_dir, has_translation))
         self._display_panel.transfer_complete(True, "Indicator sent")
 
     # --- Flash operation handlers ---
 
-    @Slot()
-    def _on_flash_info_requested(self):
-        """Handle Flash Info button click."""
-        if not self._serial_thread:
+    def _flash_call(self, req: C.Request, tag: str):
+        if self._bridge is None:
             self._display_panel.transfer_complete(False, "Not connected")
             return
-        self._serial_thread.worker.queue_command(
-            QueuedCommand("UI:FLASH:INFO", CommandTag.FLASH_INFO))
+        self._call(req, tag)
+
+    @Slot()
+    def _on_flash_info_requested(self):
+        self._flash_call(C.flash_info(), "FLASH_INFO")
 
     @Slot(int)
     def _on_flash_show_requested(self, slot: int):
-        """Handle Show from Flash button click."""
-        if not self._serial_thread:
-            self._display_panel.transfer_complete(False, "Not connected")
-            return
-        self._serial_thread.worker.queue_command(
-            QueuedCommand(f"UI:FLASH:SHOW {slot}", CommandTag.FLASH_SHOW))
+        self._flash_call(C.flash_show(slot), "FLASH_SHOW")
 
     @Slot()
     def _on_flash_diag_requested(self):
-        """Handle Flash Diagnostics button click — sends FLASH_TEST."""
-        if not self._serial_thread:
-            self._display_panel.transfer_complete(False, "Not connected")
-            return
-        self._serial_thread.worker.queue_command(
-            QueuedCommand("UI:FLASH:TEST", CommandTag.FLASH_DIAG))
+        self._flash_call(C.flash_test(), "FLASH_DIAG")
 
     @Slot()
     def _on_flash_erase_requested(self):
-        """Handle Erase Flash button click."""
-        if not self._serial_thread:
-            self._display_panel.transfer_complete(False, "Not connected")
-            return
-        self._display_panel._set_status("Erasing flash...", "blue")
-
-        def do_erase(client):
-            return client.flash_erase_all(timeout_ms=60000)
-
-        self._serial_thread.worker.queue_command(
-            QueuedCommand(
-                command="UI:FLASH:ERASE_ALL",
-                tag=CommandTag.FLASH_ERASE,
-                callable=do_erase,
-            )
-        )
+        if self._bridge is not None:
+            self._display_panel._set_status("Erasing flash...", "blue")
+        self._flash_call(C.flash_erase_all(), "FLASH_ERASE")
 
     @Slot(str, str, object)
     def _on_response_received(self, tag: str, command: str, response):
         """Route worker responses to appropriate UI handlers."""
         if response is None:
             self._status_bar.showMessage(f"Error: no response to {command}", 5000)
-            if tag == CommandTag.ESTOP_CONFIRM.name:
-                self._motor_panel.show_estop_result(False, "no reply to DIAG:STAT?")
-            if tag == CommandTag.BITMAP_TRANSFER.name:
+            if tag == "BITMAP_TRANSFER":
                 self._display_panel.transfer_complete(False, "No response")
-            if tag in (CommandTag.FLASH_UPLOAD_SLOT.name,
-                       CommandTag.FLASH_SHOW.name,
-                       CommandTag.FLASH_ERASE.name):
+            if tag in ("FLASH_UPLOAD_SLOT",
+                       "FLASH_SHOW",
+                       "FLASH_ERASE"):
                 self._display_panel.transfer_complete(False, "No response")
-            if tag == CommandTag.FLASH_DIAG.name:
+            if tag == "FLASH_DIAG":
                 self._display_panel.show_diag_result(
                     False, "No response from FLASH_TEST")
             return
@@ -844,81 +683,67 @@ class MainWindow(QMainWindow):
         if not response.success:
             self._status_bar.showMessage(
                 f"Error: {response.error_message}", 5000)
-            if tag == CommandTag.ESTOP_CONFIRM.name:
-                self._motor_panel.show_estop_result(
-                    False, f"DIAG:STAT? error: {response.error_message}")
             self._telemetry_panel.show_raw_response(
                 command, f"ERROR: {response.error_message}")
             # Handle encoder error specifically
-            if tag == CommandTag.REFRESH_ENC.name:
+            if tag == "REFRESH_ENC":
                 self._telemetry_panel.update_encoder_data(
                     None, response.error_message)
             # Show CLEAR_FAULT failure prominently on motor panel
-            if tag == CommandTag.CLEAR_FAULT.name:
+            if tag == "CLEAR_FAULT":
                 self._motor_panel.show_fault_error(
                     f"Cannot clear: {response.error_message}")
             # Mode change failure — revert combo
-            if tag == CommandTag.SET_CTRL_MODE.name:
+            if tag == "SET_CTRL_MODE":
                 self._motion_panel.update_mode_response(False, {})
             # Flash operation failures
-            if tag in (CommandTag.FLASH_UPLOAD_SLOT.name,
-                       CommandTag.FLASH_SHOW.name,
-                       CommandTag.FLASH_ERASE.name,
-                       CommandTag.FLASH_INFO.name):
+            if tag in ("FLASH_UPLOAD_SLOT",
+                       "FLASH_SHOW",
+                       "FLASH_ERASE",
+                       "FLASH_INFO"):
                 self._display_panel.transfer_complete(
                     False, f"Flash error: {response.error_message}")
-            if tag == CommandTag.FLASH_DIAG.name:
+            if tag == "FLASH_DIAG":
                 self._display_panel.show_diag_result(
                     False, f"FLASH_TEST FAILED\n\n{response.error_message}")
             return
 
-        if tag == CommandTag.ESTOP_CONFIRM.name:
-            ok, detail = MotorClient.estop_confirmed(response.data)
-            self._motor_panel.show_estop_result(ok, detail)
-            self._status_bar.showMessage(
-                "STOPPED, confirmed" if ok else f"ESTOP NOT CONFIRMED: {detail}",
-                0 if not ok else 5000)
-
-        elif tag == CommandTag.REFRESH_MOTOR_DEBUG.name:
+        if tag == "REFRESH_MOTOR_DEBUG":
             self._driver_panel.update_driver_params(response.raw)
             self._telemetry_panel.show_raw_response("MOTOR_DEBUG", response.raw)
             self._status_bar.showMessage("Parameters refreshed", 2000)
 
-        elif tag == CommandTag.REFRESH_ENC.name:
+        elif tag == "REFRESH_ENC":
             self._telemetry_panel.update_encoder_data(response.raw)
 
-        elif tag == CommandTag.REFRESH_MCONFIG.name:
+        elif tag == "REFRESH_MCONFIG":
             self._telemetry_panel.update_motor_config(response.raw)
             self._protection_panel.update_protection_params(response.raw)
             self._stepmode_panel.update_step_mode(response.raw)
             self._motion_panel.update_mconfig(response.raw)
 
-        elif tag == CommandTag.SET_FORMAT.name:
+        elif tag == "SET_FORMAT":
             self._status_bar.showMessage("Format set", 2000)
 
-        elif tag == CommandTag.APPLY_KVAL.name:
+        elif tag == "APPLY_KVAL":
             self._status_bar.showMessage("KVAL applied", 2000)
-            if self._serial_thread:
-                self._serial_thread.queue_refresh()
+            self._queue_refresh()
 
-        elif tag == CommandTag.APPLY_PARAMS.name:
+        elif tag == "APPLY_PARAMS":
             self._status_bar.showMessage("Parameters applied", 2000)
-            if self._serial_thread:
-                self._serial_thread.queue_refresh()
+            self._queue_refresh()
 
-        elif tag == CommandTag.APPLY_PROTECTION.name:
+        elif tag == "APPLY_PROTECTION":
             self._status_bar.showMessage("Protection config applied", 2000)
             # Clear dirty flag so the upcoming refresh updates the panel
             self._protection_panel._dirty = False
-            if self._serial_thread:
-                self._serial_thread.queue_refresh()
+            self._queue_refresh()
 
-        elif tag == CommandTag.CLEAR_FAULT.name:
+        elif tag == "CLEAR_FAULT":
             self._status_bar.showMessage("Fault cleared", 2000)
-            if self._serial_thread:
-                self._serial_thread.queue_refresh()
+            self._queue_refresh()
 
-        elif tag == CommandTag.BITMAP_TRANSFER.name:
+        elif tag == "BITMAP_TRANSFER":
             if response.success:
                 self._display_panel.transfer_complete(True, "Transfer complete")
                 self._status_bar.showMessage("Bitmap sent to LCD", 3000)
@@ -926,7 +751,7 @@ class MainWindow(QMainWindow):
                 self._display_panel.transfer_complete(
                     False, f"Transfer failed: {response.error_message}")
 
-        elif tag == CommandTag.FLASH_INFO.name:
+        elif tag == "FLASH_INFO":
             info = response.data if response.data else {}
             cap_kb = info.get("capacity_kb", "?")
             max_slots = info.get("max_slots", "?")
@@ -938,35 +763,29 @@ class MainWindow(QMainWindow):
                 self._display_panel.update_max_slots(max_slots)
             self._status_bar.showMessage("Flash info received", 3000)
 
-        elif tag == CommandTag.FLASH_UPLOAD_SLOT.name:
+        elif tag == "FLASH_UPLOAD_SLOT":
             msg = response.data.get("message", "")
             log.info("Flash upload response: %s (raw: %s)", msg, response.raw)
             self._display_panel.transfer_complete(
                 True, f"Uploaded: {msg}" if msg else "Image uploaded to flash")
             self._status_bar.showMessage(
                 f"Flash upload: {msg}" if msg else "Flash upload complete", 5000)
-            # Auto-show the uploaded image on the LCD
-            slot_str = command.split()[1] if len(command.split()) > 1 else "0"
-            if self._serial_thread:
-                self._serial_thread.worker.queue_command(
-                    QueuedCommand(
-                        f"UI:FLASH:SHOW {slot_str}", CommandTag.FLASH_SHOW))
 
-        elif tag == CommandTag.FLASH_SHOW.name:
+        elif tag == "FLASH_SHOW":
             self._display_panel.transfer_complete(True, "Displayed from flash")
             self._status_bar.showMessage("Image shown from flash", 3000)
 
-        elif tag == CommandTag.FLASH_ERASE.name:
+        elif tag == "FLASH_ERASE":
             self._display_panel.transfer_complete(True, "Flash erased")
             self._status_bar.showMessage("Flash erased", 3000)
 
-        elif tag == CommandTag.FLASH_DIAG.name:
+        elif tag == "FLASH_DIAG":
             msg = response.data.get("message", response.raw) if response.data else response.raw
             self._display_panel.show_diag_result(
                 True, f"FLASH_TEST PASSED\n\n{msg}")
             self._status_bar.showMessage("Flash diagnostics passed", 5000)
 
-        elif tag == CommandTag.REFRESH_DRV_CONFIG.name:
+        elif tag == "REFRESH_DRV_CONFIG":
             if response.data:
                 self._motion_panel.update_drv_config(response.data)
                 self._motor_panel.update_drv_config(response.data)
@@ -974,40 +793,40 @@ class MainWindow(QMainWindow):
                 self._driver_panel.update_drv_config(response.data)
                 self._telemetry_panel.update_drv_config(response.data)
 
-        elif tag == CommandTag.REFRESH_TRIM_CONFIG.name:
+        elif tag == "REFRESH_TRIM_CONFIG":
             if response.data:
                 self._motion_panel.update_trim_config(response.data)
 
-        elif tag == CommandTag.SET_CTRL_MODE.name:
+        elif tag == "SET_CTRL_MODE":
             if response.success:
                 self._status_bar.showMessage("Control mode set", 2000)
                 self._motion_panel.update_mode_response(True, response.data or {})
             else:
                 self._motion_panel.update_mode_response(False, {})
 
-        elif tag == CommandTag.APPLY_TRIM.name:
+        elif tag == "APPLY_TRIM":
             self._status_bar.showMessage("Trim config updated", 2000)
 
-        elif tag == CommandTag.SYSID_START.name:
+        elif tag == "SYSID_START":
             self._sysid_panel.on_sysid_start_response(
                 response.success, response.data)
 
-        elif tag == CommandTag.SYSID_STATUS.name:
+        elif tag == "SYSID_STATUS":
             self._sysid_panel.on_sysid_status_response(
                 response.success, response.data or response.raw)
 
-        elif tag == CommandTag.SYSID_DATA.name:
+        elif tag == "SYSID_DATA":
             self._sysid_panel.on_sysid_data_response(
                 response.success, response.raw)
 
-        elif tag == CommandTag.SYSID_ABORT.name:
+        elif tag == "SYSID_ABORT":
             self._status_bar.showMessage("SYSID aborted", 2000)
 
-        elif tag == CommandTag.REFRESH_ENC_FILTER.name:
+        elif tag == "REFRESH_ENC_FILTER":
             if response.data:
                 self._telemetry_panel.update_filter_config(response.data)
 
-        elif tag == CommandTag.APPLY_ENC_FILTER.name:
+        elif tag == "APPLY_ENC_FILTER":
             self._status_bar.showMessage("Encoder filter updated", 2000)
 
         else:  # GENERIC
@@ -1016,7 +835,7 @@ class MainWindow(QMainWindow):
 
     @Slot(dict)
     def _on_telemetry_updated(self, data: dict):
-        """Handle telemetry data from worker polling."""
+        """Handle telemetry data pushed by the board."""
         self._last_status = data
         self._telemetry_panel.update_data(data)
         self._graph_panel.update_data(data)
@@ -1041,22 +860,6 @@ class MainWindow(QMainWindow):
         self._status_bar.showMessage(f"Connection lost: {error}", 5000)
         self._on_disconnect_clicked()
 
-    def _set_format(self, fmt: ResponseFormat):
-        """Set response format."""
-        if not self._serial_thread:
-            # Just update UI state
-            self._ascii_action.setChecked(fmt == ResponseFormat.ASCII)
-            self._json_action.setChecked(fmt == ResponseFormat.JSON)
-            return
-
-        # Route through worker
-        self._serial_thread.worker.queue_command(
-            QueuedCommand(f"FMT {fmt.value}", CommandTag.SET_FORMAT)
-        )
-        # Update UI checkboxes optimistically
-        self._ascii_action.setChecked(fmt == ResponseFormat.ASCII)
-        self._json_action.setChecked(fmt == ResponseFormat.JSON)
-
     def _show_about(self):
         """Show about dialog."""
         QMessageBox.about(
@@ -1067,7 +870,7 @@ class MainWindow(QMainWindow):
             "<p>Cross-platform client for controlling STM32F401RE "
             "stepper motor controller.</p>"
             "<p>Transport: VCP (Serial) / RTT</p>"
-            "<p>Protocol: ASCII / JSON</p>",
+            "<p>Protocol: JSON (protocol 2)</p>",
         )
 
     # -------------------------------------------------------------------------
@@ -1098,18 +901,12 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _on_reinit_motor(self):
-        """Re-initialize the powerSTEP01 after a motor power cycle.
-
-        Sends MOTOR_REINIT which re-runs the driver init sequence and
-        re-applies the saved motor config, then refreshes all panels.
-        """
-        if not self._serial_thread:
+        """Re-initialize the powerSTEP01 after a motor power cycle, then refresh."""
+        if self._bridge is None:
             return
         self._status_bar.showMessage("Re-initializing motor driver...", 3000)
-        self._serial_thread.worker.queue_command(
-            QueuedCommand("DRV:REINIT", CommandTag.GENERIC))
-        # Refresh all panels to pick up the restored config
-        self._serial_thread.queue_refresh()
+        self._call(C.driver_reinit())
+        self._queue_refresh()
 
     def _open_log_file(self):
         """Open the debug log file in the system editor."""
@@ -1124,7 +921,7 @@ class MainWindow(QMainWindow):
 
     @Slot(dict)
     def _on_heartbeat_ack(self, data: dict):
-        """Handle heartbeat ACK from worker — update link health display."""
+        """Handle heartbeat ACK from the board — update link health display."""
         self._telemetry_panel.update_link_health(data)
         self._motion_panel.update_link_health(data)
 
@@ -1142,8 +939,8 @@ class MainWindow(QMainWindow):
         """Handle async event from firmware (FAULT, STALL, MOTION_DONE, etc.).
 
         NOTE: Events update the status bar and log warnings, but do NOT
-        change motor_panel button state.  The GET_STATUS telemetry poll
-        (every 100ms) is the sole authority for button enable/disable.
+        change motor_panel button state.  The pushed telemetry
+        (every 100 ms) is the sole authority for button enable/disable.
         This prevents transient events (OCD on ENABLE, false stall during
         acceleration) from flickering buttons and blocking jog input.
         """
@@ -1183,16 +980,13 @@ class MainWindow(QMainWindow):
             f"!{event_type} " + " ".join(f"{k}={v}" for k, v in data.items()))
 
     def closeEvent(self, event: QCloseEvent):
-        """Handle window close - queue cleanup through worker, then disconnect."""
-        if self._serial_thread and self._client and self._client.is_connected():
-            # Stop the motor through the fast path (bypasses the queue), then let
-            # the worker drop whatever was queued. The watchdog is left armed:
-            # once the port closes the firmware times out and stays stopped.
+        """Stop the motor through the fast path, then close. The watchdog stays armed:
+        once the port closes the firmware times out and stays stopped."""
+        if self._board is not None and self._board.connected:
             try:
-                self._client.estop_fast()
+                self._board.close(estop=True)
             except Exception as e:  # noqa: BLE001
                 log.warning("ESTOP on close failed: %s", e)
-            self._serial_thread.worker.request_estop()
-            time.sleep(0.2)  # let the worker purge and the bytes leave the port
+            self._board = None
         self._on_disconnect_clicked()
         event.accept()

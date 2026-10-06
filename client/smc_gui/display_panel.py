@@ -26,7 +26,7 @@ from PySide6.QtCore import Qt, Slot, Signal
 from PySide6.QtGui import QImage, QPixmap
 import logging
 
-from gui.image_loader import (
+from smc_gui.image_loader import (
     load_image,
     resize_for_lcd,
     crop_for_lcd,
@@ -36,7 +36,7 @@ from gui.image_loader import (
     LCD_WIDTH,
     LCD_HEIGHT,
 )
-from gui.rle_codec import encode_rle_rgb565
+from smc_gui.rle_codec import encode_rle_rgb565
 
 log = logging.getLogger("display_panel")
 

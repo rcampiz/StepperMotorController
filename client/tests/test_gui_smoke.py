@@ -7,7 +7,7 @@ pytest.importorskip("PySide6")
 
 def test_main_window_constructs_and_closes(qapp):
     app = qapp
-    from gui.main_window import MainWindow
+    from smc_gui.main_window import MainWindow
     w = MainWindow()
     w.show()
     app.processEvents()

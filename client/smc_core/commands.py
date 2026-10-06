@@ -642,3 +642,17 @@ def covered() -> Set[str]:
     for names in BUILDERS.values():
         out |= names
     return out
+
+
+def from_line(line: str) -> Request:
+    """Parse a typed command line into a Request (raw consoles, and the GUI until its
+    panels call the typed builders). Validated like every other Request; binary
+    commands need their payload and cannot be typed."""
+    parts = line.split()
+    if not parts:
+        raise CommandError("empty command")
+    name = parts[0].upper()
+    spec = COMMANDS.get(name)
+    if spec is not None and spec.binary:
+        raise CommandError(f"{name} carries a binary payload; use its typed builder")
+    return request(name, *parts[1:], debug=spec is None)
