@@ -337,6 +337,21 @@ void CommandParser::cmdSetDeviceId(const ParsedCommand &cmd) {
   }
 }
 
+// DEV:ROLE? — role only (F15; DEV:ID? keeps "<id> <role>")
+void CommandParser::cmdGetRole() {
+  uint16_t deviceId;
+  uint8_t roleId;
+  m_dispatcher.getDeviceInfo(deviceId, roleId);
+  if (m_format == ResponseFormat::JSON) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "{\"role\":\"%s\",\"role_id\":%u}", roleIdToString(roleId),
+             static_cast<unsigned>(roleId));
+    respondJsonOk("GET_ROLE", buf);
+  } else {
+    respondOk(roleIdToString(roleId));
+  }
+}
+
 void CommandParser::cmdSetRole(const ParsedCommand &cmd) {
   if (cmd.argCount < 1) {
     respondErr("Usage: SET_ROLE <FL|FR|RL|RR|NONE>");

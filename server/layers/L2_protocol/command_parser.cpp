@@ -376,7 +376,7 @@ void CommandParser::dispatchDevice(const char *suffix,
   };
   static const CmdEntry0 t0[] = {
       {"ID?", &CommandParser::cmdGetDeviceId},
-      {"ROLE?", &CommandParser::cmdGetDeviceId},
+      {"ROLE?", &CommandParser::cmdGetRole},
   };
   if (dispatch1(suffix, t1, NCMD(t1), cmd))
     return;
