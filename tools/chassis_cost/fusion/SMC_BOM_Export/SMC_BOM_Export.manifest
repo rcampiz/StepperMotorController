@@ -1,0 +1,10 @@
+{
+  "autodeskProduct": "Fusion360",
+  "type": "script",
+  "author": "StepperMotorController",
+  "description": {
+    "": "Export the active design's parts list (part numbers, quantities, extrusion profiles and lengths, mass) for the chassis cost tool."
+  },
+  "supportedOS": "windows|mac",
+  "editEnabled": true
+}

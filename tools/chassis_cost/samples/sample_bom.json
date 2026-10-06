@@ -1,0 +1,416 @@
+{
+  "schema": "smc-chassis-bom/1",
+  "units": {
+    "length": "mm",
+    "mass": "kg"
+  },
+  "design": "SAMPLE mecanum base (synthetic)",
+  "document": "sample",
+  "exported_at": "2026-10-06T00:00:00+00:00",
+  "exporter": "make_sample.py",
+  "fusion_version": "n/a",
+  "parts": [
+    {
+      "key": "00000T001",
+      "name": "EXT-1010-120",
+      "category": "extrusion",
+      "quantity": 4,
+      "part_number": "00000T001",
+      "vendor": "McMaster-Carr",
+      "vendor_part_number": "00000T001",
+      "description": "",
+      "material": "Aluminum 6105-T5",
+      "mass_kg": 0.09,
+      "bbox_mm": [
+        25.4,
+        25.4,
+        125.0
+      ],
+      "extrusion": {
+        "profile": "1010",
+        "length_mm": 120.0,
+        "source": "name",
+        "model_length_mm": 125.0
+      },
+      "attributes": {},
+      "paths": [
+        "Base:1/Uprights:1/EXT-1010-120:1",
+        "Base:1/Uprights:1/EXT-1010-120:2",
+        "Base:1/Uprights:1/EXT-1010-120:3",
+        "Base:1/Uprights:1/EXT-1010-120:4"
+      ],
+      "warnings": [
+        "name says 120.0 mm, model is 125.0 mm"
+      ]
+    },
+    {
+      "key": "00000T001",
+      "name": "Rail",
+      "category": "extrusion",
+      "quantity": 2,
+      "part_number": "00000T001",
+      "vendor": "McMaster-Carr",
+      "vendor_part_number": "00000T001",
+      "description": "",
+      "material": "Aluminum 6105-T5",
+      "mass_kg": 0.1,
+      "bbox_mm": [
+        25.4,
+        25.4,
+        147.0
+      ],
+      "extrusion": {
+        "profile": "1010",
+        "length_mm": 147.0,
+        "source": "geometry"
+      },
+      "attributes": {},
+      "paths": [
+        "Base:1/Frame:1/Rail:1",
+        "Base:1/Frame:1/Rail:2"
+      ],
+      "warnings": []
+    },
+    {
+      "key": "00000T001",
+      "name": "EXT-1010-350",
+      "category": "extrusion",
+      "quantity": 3,
+      "part_number": "00000T001",
+      "vendor": "McMaster-Carr",
+      "vendor_part_number": "00000T001",
+      "description": "T-slot rail, 1in, 4 slots",
+      "material": "Aluminum 6105-T5",
+      "mass_kg": 0.24,
+      "bbox_mm": [
+        25.4,
+        25.4,
+        350.0
+      ],
+      "extrusion": {
+        "profile": "1010",
+        "length_mm": 350.0,
+        "source": "name"
+      },
+      "attributes": {},
+      "paths": [
+        "Base:1/Frame:1/EXT-1010-350:1",
+        "Base:1/Frame:1/EXT-1010-350:2",
+        "Base:1/Frame:1/EXT-1010-350:3"
+      ],
+      "warnings": []
+    },
+    {
+      "key": "00000T001",
+      "name": "EXT-1010-500",
+      "category": "extrusion",
+      "quantity": 2,
+      "part_number": "00000T001",
+      "vendor": "McMaster-Carr",
+      "vendor_part_number": "00000T001",
+      "description": "T-slot rail, 1in, 4 slots",
+      "material": "Aluminum 6105-T5",
+      "mass_kg": 0.34,
+      "bbox_mm": [
+        25.4,
+        25.4,
+        500.0
+      ],
+      "extrusion": {
+        "profile": "1010",
+        "length_mm": 500.0,
+        "source": "name"
+      },
+      "attributes": {},
+      "paths": [
+        "Base:1/Frame:1/EXT-1010-500:1",
+        "Base:1/Frame:1/EXT-1010-500:2"
+      ],
+      "warnings": []
+    },
+    {
+      "key": "00000T010",
+      "name": "BRK-corner-1in",
+      "category": "bracket",
+      "quantity": 16,
+      "part_number": "00000T010",
+      "vendor": "McMaster-Carr",
+      "vendor_part_number": "00000T010",
+      "description": "Corner bracket, 1in series",
+      "material": "Aluminum",
+      "mass_kg": 0.03,
+      "bbox_mm": [
+        6.0,
+        25.4,
+        25.4
+      ],
+      "extrusion": null,
+      "attributes": {},
+      "paths": [
+        "Base:1/Frame:1/BRK-corner-1in:0",
+        "Base:1/Frame:1/BRK-corner-1in:1",
+        "Base:1/Frame:1/BRK-corner-1in:2",
+        "Base:1/Frame:1/BRK-corner-1in:3",
+        "Base:1/Frame:1/BRK-corner-1in:4",
+        "Base:1/Frame:1/BRK-corner-1in:5",
+        "Base:1/Frame:1/BRK-corner-1in:6",
+        "Base:1/Frame:1/BRK-corner-1in:7",
+        "Base:1/Frame:1/BRK-corner-1in:8",
+        "Base:1/Frame:1/BRK-corner-1in:9",
+        "Base:1/Frame:1/BRK-corner-1in:10",
+        "Base:1/Frame:1/BRK-corner-1in:11",
+        "Base:1/Frame:1/BRK-corner-1in:12",
+        "Base:1/Frame:1/BRK-corner-1in:13",
+        "Base:1/Frame:1/BRK-corner-1in:14",
+        "Base:1/Frame:1/BRK-corner-1in:15"
+      ],
+      "warnings": []
+    },
+    {
+      "key": "00000A020",
+      "name": "FST-tnut-1/4-20",
+      "category": "fastener",
+      "quantity": 48,
+      "part_number": "00000A020",
+      "vendor": "McMaster-Carr",
+      "vendor_part_number": "00000A020",
+      "description": "Drop-in T-nut 1/4-20",
+      "material": "Zinc-plated steel",
+      "mass_kg": 0.004,
+      "bbox_mm": [
+        6.0,
+        10.0,
+        15.0
+      ],
+      "extrusion": null,
+      "attributes": {},
+      "paths": [
+        "Base:1/Frame:1/tnut:0",
+        "Base:1/Frame:1/tnut:1",
+        "Base:1/Frame:1/tnut:2",
+        "Base:1/Frame:1/tnut:3",
+        "Base:1/Frame:1/tnut:4",
+        "Base:1/Frame:1/tnut:5",
+        "Base:1/Frame:1/tnut:6",
+        "Base:1/Frame:1/tnut:7",
+        "Base:1/Frame:1/tnut:8",
+        "Base:1/Frame:1/tnut:9",
+        "Base:1/Frame:1/tnut:10",
+        "Base:1/Frame:1/tnut:11",
+        "Base:1/Frame:1/tnut:12",
+        "Base:1/Frame:1/tnut:13",
+        "Base:1/Frame:1/tnut:14",
+        "Base:1/Frame:1/tnut:15",
+        "Base:1/Frame:1/tnut:16",
+        "Base:1/Frame:1/tnut:17",
+        "Base:1/Frame:1/tnut:18",
+        "Base:1/Frame:1/tnut:19",
+        "Base:1/Frame:1/tnut:20",
+        "Base:1/Frame:1/tnut:21",
+        "Base:1/Frame:1/tnut:22",
+        "Base:1/Frame:1/tnut:23",
+        "Base:1/Frame:1/tnut:24",
+        "Base:1/Frame:1/tnut:25",
+        "Base:1/Frame:1/tnut:26",
+        "Base:1/Frame:1/tnut:27",
+        "Base:1/Frame:1/tnut:28",
+        "Base:1/Frame:1/tnut:29",
+        "Base:1/Frame:1/tnut:30",
+        "Base:1/Frame:1/tnut:31",
+        "Base:1/Frame:1/tnut:32",
+        "Base:1/Frame:1/tnut:33",
+        "Base:1/Frame:1/tnut:34",
+        "Base:1/Frame:1/tnut:35",
+        "Base:1/Frame:1/tnut:36",
+        "Base:1/Frame:1/tnut:37",
+        "Base:1/Frame:1/tnut:38",
+        "Base:1/Frame:1/tnut:39",
+        "Base:1/Frame:1/tnut:40",
+        "Base:1/Frame:1/tnut:41",
+        "Base:1/Frame:1/tnut:42",
+        "Base:1/Frame:1/tnut:43",
+        "Base:1/Frame:1/tnut:44",
+        "Base:1/Frame:1/tnut:45",
+        "Base:1/Frame:1/tnut:46",
+        "Base:1/Frame:1/tnut:47"
+      ],
+      "warnings": []
+    },
+    {
+      "key": "00000A030",
+      "name": "Bolt (1)",
+      "category": "fastener",
+      "quantity": 48,
+      "part_number": "00000A030",
+      "vendor": "McMaster-Carr",
+      "vendor_part_number": "00000A030",
+      "description": "Button head 1/4-20 x 1/2",
+      "material": "Steel",
+      "mass_kg": 0.006,
+      "bbox_mm": [
+        6.35,
+        11.0,
+        12.7
+      ],
+      "extrusion": null,
+      "attributes": {},
+      "paths": [
+        "Base:1/Frame:1/Bolt (1):0",
+        "Base:1/Frame:1/Bolt (1):1",
+        "Base:1/Frame:1/Bolt (1):2",
+        "Base:1/Frame:1/Bolt (1):3",
+        "Base:1/Frame:1/Bolt (1):4",
+        "Base:1/Frame:1/Bolt (1):5",
+        "Base:1/Frame:1/Bolt (1):6",
+        "Base:1/Frame:1/Bolt (1):7",
+        "Base:1/Frame:1/Bolt (1):8",
+        "Base:1/Frame:1/Bolt (1):9",
+        "Base:1/Frame:1/Bolt (1):10",
+        "Base:1/Frame:1/Bolt (1):11",
+        "Base:1/Frame:1/Bolt (1):12",
+        "Base:1/Frame:1/Bolt (1):13",
+        "Base:1/Frame:1/Bolt (1):14",
+        "Base:1/Frame:1/Bolt (1):15",
+        "Base:1/Frame:1/Bolt (1):16",
+        "Base:1/Frame:1/Bolt (1):17",
+        "Base:1/Frame:1/Bolt (1):18",
+        "Base:1/Frame:1/Bolt (1):19",
+        "Base:1/Frame:1/Bolt (1):20",
+        "Base:1/Frame:1/Bolt (1):21",
+        "Base:1/Frame:1/Bolt (1):22",
+        "Base:1/Frame:1/Bolt (1):23",
+        "Base:1/Frame:1/Bolt (1):24",
+        "Base:1/Frame:1/Bolt (1):25",
+        "Base:1/Frame:1/Bolt (1):26",
+        "Base:1/Frame:1/Bolt (1):27",
+        "Base:1/Frame:1/Bolt (1):28",
+        "Base:1/Frame:1/Bolt (1):29",
+        "Base:1/Frame:1/Bolt (1):30",
+        "Base:1/Frame:1/Bolt (1):31",
+        "Base:1/Frame:1/Bolt (1):32",
+        "Base:1/Frame:1/Bolt (1):33",
+        "Base:1/Frame:1/Bolt (1):34",
+        "Base:1/Frame:1/Bolt (1):35",
+        "Base:1/Frame:1/Bolt (1):36",
+        "Base:1/Frame:1/Bolt (1):37",
+        "Base:1/Frame:1/Bolt (1):38",
+        "Base:1/Frame:1/Bolt (1):39",
+        "Base:1/Mounts:1/Bolt (2):0",
+        "Base:1/Mounts:1/Bolt (2):1",
+        "Base:1/Mounts:1/Bolt (2):2",
+        "Base:1/Mounts:1/Bolt (2):3",
+        "Base:1/Mounts:1/Bolt (2):4",
+        "Base:1/Mounts:1/Bolt (2):5",
+        "Base:1/Mounts:1/Bolt (2):6",
+        "Base:1/Mounts:1/Bolt (2):7"
+      ],
+      "warnings": []
+    },
+    {
+      "key": "PLT-deck",
+      "name": "PLT-deck",
+      "category": "plate",
+      "quantity": 1,
+      "part_number": "",
+      "vendor": "",
+      "vendor_part_number": "",
+      "description": "Top deck, 3 mm",
+      "material": "Aluminum 5052",
+      "mass_kg": 0.9,
+      "bbox_mm": [
+        3.0,
+        330.0,
+        480.0
+      ],
+      "extrusion": null,
+      "attributes": {},
+      "paths": [
+        "Base:1/PLT-deck:1"
+      ],
+      "warnings": [
+        "no part number: set the component's Part Number to the vendor's"
+      ]
+    },
+    {
+      "key": "00000K040",
+      "name": "DRV-motor-mount-NEMA17",
+      "category": "drive",
+      "quantity": 4,
+      "part_number": "00000K040",
+      "vendor": "McMaster-Carr",
+      "vendor_part_number": "00000K040",
+      "description": "NEMA 17 L-mount",
+      "material": "Steel",
+      "mass_kg": 0.07,
+      "bbox_mm": [
+        3.0,
+        42.0,
+        50.0
+      ],
+      "extrusion": null,
+      "attributes": {},
+      "paths": [
+        "Base:1/Mounts:1/DRV-motor-mount-NEMA17:0",
+        "Base:1/Mounts:1/DRV-motor-mount-NEMA17:1",
+        "Base:1/Mounts:1/DRV-motor-mount-NEMA17:2",
+        "Base:1/Mounts:1/DRV-motor-mount-NEMA17:3"
+      ],
+      "warnings": []
+    },
+    {
+      "key": "00000K050",
+      "name": "DRV-mecanum-wheel-97mm",
+      "category": "drive",
+      "quantity": 4,
+      "part_number": "00000K050",
+      "vendor": "McMaster-Carr",
+      "vendor_part_number": "00000K050",
+      "description": "97 mm mecanum wheel",
+      "material": "",
+      "mass_kg": 0.32,
+      "bbox_mm": [
+        45.0,
+        97.0,
+        97.0
+      ],
+      "extrusion": null,
+      "attributes": {},
+      "paths": [
+        "Base:1/Wheels:1/DRV-mecanum-wheel-97mm:0",
+        "Base:1/Wheels:1/DRV-mecanum-wheel-97mm:1",
+        "Base:1/Wheels:1/DRV-mecanum-wheel-97mm:2",
+        "Base:1/Wheels:1/DRV-mecanum-wheel-97mm:3"
+      ],
+      "warnings": []
+    },
+    {
+      "key": "ELE-nucleo-f401re",
+      "name": "ELE-nucleo-f401re",
+      "category": "electronics",
+      "quantity": 4,
+      "part_number": "",
+      "vendor": "",
+      "vendor_part_number": "",
+      "description": "NUCLEO-F401RE + IHM03A1",
+      "material": "",
+      "mass_kg": 0.05,
+      "bbox_mm": [
+        20.0,
+        70.0,
+        82.5
+      ],
+      "extrusion": null,
+      "attributes": {},
+      "paths": [
+        "Base:1/Electronics:1/ELE-nucleo-f401re:0",
+        "Base:1/Electronics:1/ELE-nucleo-f401re:1",
+        "Base:1/Electronics:1/ELE-nucleo-f401re:2",
+        "Base:1/Electronics:1/ELE-nucleo-f401re:3"
+      ],
+      "warnings": [
+        "no part number: set the component's Part Number to the vendor's",
+        "1 instance(s) hidden in the design (still counted)"
+      ]
+    }
+  ]
+}
