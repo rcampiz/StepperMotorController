@@ -1,0 +1,4 @@
+# Chassis cost tool (Python 3.11 - 3.14). Windows x64 and Raspberry Pi OS 64-bit (aarch64).
+cadquery-ocp>=7.8      # OpenCascade: STEP import (pulls in VTK; about 640 MB installed)
+pytest>=7              # tests
+# PySide6 for the costing GUI arrives with the next step

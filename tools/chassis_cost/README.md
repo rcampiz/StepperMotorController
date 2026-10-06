@@ -1,103 +1,118 @@
 # Chassis cost tool
 
-Shows what the T-slot chassis costs and where it can be cheaper. Independent of the
-firmware and the client; nothing here touches them.
+Shows what the T-slot chassis costs and where it can be cheaper. A standalone program for
+the Windows PC (the Raspberry Pi works too). Independent of the firmware and the motor
+client.
 
-**Status:** step 1 of 3 is done: the Fusion 360 export, a sample, and a checker. The price
-catalog and the costing GUI come next, after the open questions at the end are answered
-and you have run the export on your model.
+**Status:** reading the CAD is done: STEP import (main route) and the optional Fusion
+script, a checker, a sample. The price catalog and the costing GUI come next, once a
+real export of the base has been checked.
+
+**Decided:** extrusions are 40 mm T-slot, single (40x40) and double (40x80), **ordered cut
+to length** (priced per length plus the vendor's cut fee; no stock cutting plan needed).
+Parts are McMaster-Carr; equivalent or better alternatives are welcome. The GUI must run
+on the Windows PC; the Pi is optional.
 
 ```
 tools/chassis_cost/
-  fusion/SMC_BOM_Export/     Fusion 360 script (+ bom_core.py, the tested logic)
-  bom_tool.py                check an export: summary, cut list, warnings
+  step_import.py             STEP assembly -> parts list (the main route)
+  bom_tool.py                summary, cut list, warnings; takes a STEP file or the script's JSON
+  fusion/SMC_BOM_Export/     optional Fusion 360 script (+ bom_core.py, the shared logic)
   samples/                   SYNTHETIC example export (make_sample.py regenerates it)
-  tests/                     pytest for bom_core and bom_tool (no Fusion needed)
+  tests/                     pytest (STEP tests build their own STEP files)
+  requirements.txt
 ```
 
-## 1. Getting the data out of Fusion 360
+## 1. Getting the CAD into the tool
 
-| Route | Gives | Limits | Verdict |
+The tool runs on its own and imports a file. Two ways to make that file:
+
+| Route | What you do | Gives | Limits |
 |---|---|---|---|
-| **API script (this folder)** | everything below, aggregated, in JSON + CSV; reads Part Number, Description, material, mass, true extrusion length via the minimum oriented box, custom attributes | needs Fusion open; one click per export | **chosen** |
-| Fusion's own BOM / parts list (drawing or Manage extension) | names, quantities, part numbers, materials | no extrusion length/profile; format varies with the subscription; awkward to automate | fallback for a quick look |
-| STEP export read outside Fusion (CadQuery / OCP) | geometry, assembly tree, names | Fusion's Part Number and Description are usually lost in STEP; needs a heavy CAD kernel installed | only if Fusion is unavailable |
+| **STEP (main)** | Fusion: File > Export > STEP, then open it in the tool | names, quantities through sub-assemblies, true length and cross-section of every part, volume | Fusion's Part Number field may not survive in STEP (to be checked with your file); needs the OpenCascade library |
+| **Fusion script (optional)** | run `SMC_BOM_Export` inside Fusion once | the same, plus Fusion's Part Number, Description, material and mass | needs Fusion open; one click |
 
-### Run the script
+Both produce the same parts list; everything after the import is shared.
+
+**Speed (measured on this PC):** a test base of 316 pieces with slotted 40x40 rails and
+bolts with many grooved faces (a 1.7 MB STEP file) imports in 0.55 s; 414 simpler pieces
+in 0.07 s. Real McMaster models with modelled threads are heavier, so expect seconds,
+not minutes.
+
+### Install (once)
+
+```
+cd tools\chassis_cost
+py -3.12 -m venv .venv
+.venv\Scripts\python -m pip install -r requirements.txt     (about 640 MB, mostly VTK)
+```
+
+On the Pi (64-bit Raspberry Pi OS): the same with `python3 -m venv .venv` and
+`.venv/bin/python`; the library publishes a Linux ARM64 build.
+
+### Use
+
+```
+.venv\Scripts\python bom_tool.py summary  base.step
+.venv\Scripts\python bom_tool.py cutlist  base.step
+.venv\Scripts\python bom_tool.py warnings base.step
+.venv\Scripts\python bom_tool.py import   base.step      writes base_bom.json and base_bom.csv
+```
+
+### The optional Fusion script
 
 1. In Fusion: **Utilities > Add-Ins > Scripts and Add-Ins** (Shift+S), tab **Scripts**.
 2. Click **+** next to *My Scripts* and pick `tools/chassis_cost/fusion/SMC_BOM_Export`.
-3. Open the base assembly, select **SMC_BOM_Export**, **Run**, and choose an output folder.
-4. It writes `<design>_bom.json` and `<design>_bom.csv` and shows a summary.
-5. Check it here: `python tools/chassis_cost/bom_tool.py summary <design>_bom.json`
-   (also `cutlist`, `warnings`), then send me the JSON.
+3. Open the base assembly, select **SMC_BOM_Export**, **Run**, choose an output folder.
+4. It writes `<design>_bom.json` and `<design>_bom.csv`; `bom_tool.py` reads the JSON.
 
-The script was written against Autodesk's documented API (BRepBody.orientedMinimumBoundingBox,
-Component.partNumber/description/id, UserInterface.createFolderDialog) but has not been run
-inside Fusion by me; if it stops with an error, the dialog shows the traceback, please send it.
+It uses only documented API calls, but has not been run inside Fusion by me; if it stops,
+the dialog shows the error, please send it.
 
-### What it exports, per distinct part
+### What a parts list holds, per distinct part
 
-`key` (the vendor part number, else the name), `category`, `quantity`, `vendor`,
-`vendor_part_number`, `name`, `description`, `material`, `mass_kg` (per piece), `bbox_mm`
-(smallest side first), `extrusion` {`profile`, `length_mm`, `source`: name or geometry},
-`attributes` (the `chassis_cost` attribute group), `paths` (where each piece sits in the
-assembly), `warnings`. Units: mm and kg. Schema id: `smc-chassis-bom/1`.
+`key` (vendor part number, else the name), `category`, `quantity`, `vendor`,
+`vendor_part_number`, `name`, `description`, `material`, `mass_kg`, `bbox_mm` (smallest
+side first), `extrusion` {`profile`, `length_mm`, `source`: name or geometry},
+`attributes`, `paths` (where each piece sits), `warnings`. Units: mm and kg.
 
 ## 2. Naming conventions in Fusion (what makes extraction reliable)
 
-1. **Part Number field = vendor part number** (component Properties > Part Number). It is
-   the primary key; everything else is a fallback. McMaster-style numbers
-   (`47065T101`) are also recognised in the component name, which is what Fusion's
-   *Insert McMaster-Carr Component* produces.
-2. **Prefix the component name with its category:** `EXT-` extrusion, `BRK-` bracket,
-   `FST-` fastener, `PLT-` plate, `DRV-` drive (motors, mounts, wheels, hubs),
-   `ELE-` electronics, `MISC-` other. Unprefixed parts are guessed from keywords.
-3. **Extrusions: `EXT-<profile>-<length>`**, length in mm (or `in`):
-   `EXT-1010-450`, `EXT-2020-300`, `EXT-1515-18in`. One component per distinct length
-   (Fusion copies of the same component count as quantity). Unnamed rails are still
-   found when their cross-section is a standard profile (20/30/40 mm series; 1010, 1020,
-   1030, 1515, 1530 inch series) and they are at least 3x longer than wide. A name that
-   disagrees with the model by more than 1 mm is flagged.
-4. **Model each purchased part as its own component** (not a body inside a bigger one),
-   so it is counted.
+1. **Vendor part number in the Part Number field and, for STEP, in the component name**
+   (for example `47065T101 corner bracket`). Fusion's *Insert McMaster-Carr Component*
+   already names parts this way. The part number is the primary key.
+2. **Prefix the name with its category:** `EXT-` extrusion, `BRK-` bracket, `FST-` fastener,
+   `PLT-` plate, `DRV-` drive (motors, mounts, wheels, hubs), `ELE-` electronics,
+   `MISC-` other. Unprefixed parts are guessed from keywords.
+3. **Extrusions:** `EXT-4040-<length>` or `EXT-4080-<length>` (mm), one component per
+   distinct length. Unnamed rails are still recognised from their 40x40 or 40x80 section,
+   at any angle; a name that disagrees with the model by more than 1 mm is flagged.
+4. **Each purchased part is its own component**, so it is counted.
 5. Hidden parts are counted and flagged; delete them if they are not on the build.
 
-**Can the model carry its own cost data?** Partly. Part Number and Description are
-standard component properties, so the part number lives in the model (recommended).
-Prices should not: they change and need a source and a date (section 3). If you want
-extra per-part data in the model anyway (e.g. `supplier`, `finish`), the script reads
-API attributes in the group `chassis_cost`; Fusion's UI has no editor for those, so they
-are set by a script.
+**Should the model carry costs?** Part numbers yes; prices no. Prices change and need a
+source and a date, which the catalog keeps (section 3).
 
 ## 3. Prices: the catalog (next step)
 
-All parts come from McMaster-Carr; equivalent or better alternatives are welcome.
-
 - **Primary key:** vendor part number. **No scraping.**
-- **Official APIs:**
-  - McMaster-Carr: a Product Information API exists, for approved customers only
-    (request through eProcurement; client certificate plus token). It is worth asking for
-    if you order regularly; otherwise prices are entered by hand.
-  - Misumi and 80/20: no official public API found; prices are entered by hand.
+- **Official APIs:** McMaster-Carr has a Product Information API for approved customers
+  (request through eProcurement; client certificate plus token). No official public API
+  found for Misumi or 80/20. Prices are entered by hand unless you get McMaster access.
 - **Catalog CSV**, one row per vendor part: `vendor, part_number, description, unit_price,
-  currency, price_breaks (qty:price;...), price_per_mm (extrusion), cut_fee, min_length_mm,
-  lead_time_days, shipping_estimate, date_checked, source_url, status`.
-  Every price starts as `status=placeholder` and counts as unverified until you set
-  `status=confirmed` with a date.
-- **Equivalence rules** per category (e.g. same profile series and slot size for
-  extrusions; same thread, length, head and material class for fasteners; same series
-  and load class for brackets), so alternatives are compared only when they fit.
-- **Whole systems are compared, not single parts:** switching extrusion vendors drags in
-  that vendor's T-nuts, brackets and cut fees.
+  currency, price_breaks (qty:price;...), price_per_mm, cut_fee, min_length_mm,
+  max_length_mm, lead_time_days, shipping_estimate, date_checked, source_url, status`.
+  Every price starts as `status=placeholder` until you confirm it with a date.
+- **Equivalence rules** per category (same profile and slot size for extrusions; same
+  thread, length, head and material class for fasteners; same series and load class for
+  brackets), so alternatives are compared only when they fit.
+- **Whole systems are compared:** switching extrusion vendors brings in that vendor's
+  T-nuts, brackets and cut fees.
+- **Savings with cut-to-length:** merging nearly equal lengths (fewer distinct lengths,
+  fewer order lines and cut setups), hardware alternatives, vendor comparison.
 
-## Open questions (needed before the catalog and the GUI)
+## Next
 
-1. **Profile system:** which T-slot series is the base built from (for example McMaster's
-   1" 10-series, 1.5" 15-series, or a metric 20/30/40 mm series)?
-2. **Cutting:** do you cut the extrusions yourself (then the tool plans cuts from stock
-   lengths with saw kerf), or order them cut to length (then it prices per-length plus
-   cut fees)?
-3. **Where the GUI runs:** your Windows PC, the Raspberry Pi, or both?
-
-Then: run the script on your base and send the `<design>_bom.json`.
+Export the base as STEP, run `bom_tool.py summary` and `warnings` on it, and send me the
+STEP file (or the summary). That shows what Fusion puts in its STEP files, part numbers
+especially, before the catalog and the GUI are built.

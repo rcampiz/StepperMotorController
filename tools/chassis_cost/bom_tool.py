@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
 """
-Check and summarise a chassis BOM export (from fusion/SMC_BOM_Export) before costing it.
+Check and summarise a chassis parts list before costing it. The input is either a STEP
+file exported from Fusion (read directly, needs cadquery-ocp) or the JSON written by the
+Fusion script (fusion/SMC_BOM_Export).
 
-    python tools/chassis_cost/bom_tool.py summary  path/to/design_bom.json
-    python tools/chassis_cost/bom_tool.py cutlist  path/to/design_bom.json
-    python tools/chassis_cost/bom_tool.py warnings path/to/design_bom.json
+    python tools/chassis_cost/bom_tool.py summary  base.step        (or design_bom.json)
+    python tools/chassis_cost/bom_tool.py cutlist  base.step
+    python tools/chassis_cost/bom_tool.py warnings base.step
+    python tools/chassis_cost/bom_tool.py import   base.step        writes base_bom.json/.csv
 
 No prices here yet: the costing GUI and the price catalog come next, once the open
 questions in README.md are answered.
@@ -15,11 +18,16 @@ import os
 import sys
 from collections import defaultdict
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "fusion", "SMC_BOM_Export"))
 import bom_core  # noqa: E402
 
 
 def load(path):
+    if path.lower().endswith((".step", ".stp")):
+        import step_import
+        js, _, _ = step_import.import_step(path)
+        return bom_core.load_export(js)
     with open(path, encoding="utf-8") as fh:
         return bom_core.load_export(fh.read())
 
@@ -72,9 +80,12 @@ def warnings(doc) -> str:
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("command", choices=("summary", "cutlist", "warnings"))
-    ap.add_argument("export", help="<design>_bom.json from SMC_BOM_Export")
+    ap.add_argument("command", choices=("summary", "cutlist", "warnings", "import"))
+    ap.add_argument("export", help="a STEP file, or <design>_bom.json from SMC_BOM_Export")
     a = ap.parse_args(argv)
+    if a.command == "import":
+        import step_import
+        return step_import.main([a.export])
     doc = load(a.export)
     print({"summary": summary, "cutlist": cutlist, "warnings": warnings}[a.command](doc))
     return 0
