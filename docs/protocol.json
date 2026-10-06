@@ -1,0 +1,2547 @@
+{
+  "protocol_version": 1,
+  "generated_by": "scripts/gen_protocol.py",
+  "limits": {
+    "line_max_chars": 127,
+    "max_args": 8,
+    "arg_max_chars": 31,
+    "rx_ring_bytes": 1024,
+    "telemetry_period_ms": 100,
+    "heartbeat_timeout_min_ms": 100,
+    "heartbeat_timeout_max_ms": 5000,
+    "baud_revert_ms": 2000,
+    "binary_byte_timeout_ms": 100,
+    "binary_chunk_bytes": 64,
+    "motor_queue_send_timeout_ms": 50,
+    "step_mode_wait_ms": 250,
+    "pos_min": -2097152,
+    "pos_max": 2097151,
+    "speed_min": 0,
+    "speed_max": 15625,
+    "accel_min": 1,
+    "accel_max": 4095,
+    "maxspd_min": 1,
+    "maxspd_max": 1023
+  },
+  "status_codes": [
+    {
+      "status": "Ok",
+      "message": "OK"
+    },
+    {
+      "status": "InvalidParam",
+      "message": "Invalid parameter"
+    },
+    {
+      "status": "OutOfRange",
+      "message": "Value out of range"
+    },
+    {
+      "status": "Fault",
+      "message": "Motor fault active"
+    },
+    {
+      "status": "FaultActive",
+      "message": "Hardware faults still present"
+    },
+    {
+      "status": "QueueFull",
+      "message": "Queue full"
+    },
+    {
+      "status": "QueueEmpty",
+      "message": "Queue empty"
+    },
+    {
+      "status": "InvalidState",
+      "message": "Invalid state for operation"
+    },
+    {
+      "status": "InvalidCommand",
+      "message": "Invalid command"
+    },
+    {
+      "status": "TimeoutExpired",
+      "message": "Timeout expired"
+    },
+    {
+      "status": "FlashError",
+      "message": "Flash write failed"
+    },
+    {
+      "status": "EncoderRequired",
+      "message": "Encoder required"
+    },
+    {
+      "status": "NotEnabled",
+      "message": "Motor not enabled"
+    }
+  ],
+  "events": {
+    "types": [
+      {
+        "type": "FAULT",
+        "id": 0
+      },
+      {
+        "type": "FAULT_CLEAR",
+        "id": 1
+      },
+      {
+        "type": "STALL",
+        "id": 2
+      },
+      {
+        "type": "STALL_CLEAR",
+        "id": 3
+      },
+      {
+        "type": "MOTION_DONE",
+        "id": 4
+      },
+      {
+        "type": "FOLLOW_FAULT",
+        "id": 5
+      },
+      {
+        "type": "FOLLOW_RECOVERY",
+        "id": 6
+      },
+      {
+        "type": "FOLLOW_RECOVERED",
+        "id": 7
+      }
+    ],
+    "masks": [
+      {
+        "mask": "FAULT",
+        "bit": 0
+      },
+      {
+        "mask": "FAULT_CLR",
+        "bit": 1
+      },
+      {
+        "mask": "STALL",
+        "bit": 2
+      },
+      {
+        "mask": "STALL_CLR",
+        "bit": 3
+      },
+      {
+        "mask": "MOTION_DONE",
+        "bit": 4
+      },
+      {
+        "mask": "FOLLOW_FAULT",
+        "bit": 5
+      },
+      {
+        "mask": "FOLLOW_RECOVERY",
+        "bit": 6
+      },
+      {
+        "mask": "FOLLOW_RECOVERED",
+        "bit": 7
+      }
+    ]
+  },
+  "status_json_keys": [
+    "status",
+    "command",
+    "data",
+    "state",
+    "tick",
+    "queue_depth",
+    "motor",
+    "position",
+    "speed",
+    "busy",
+    "hi_z",
+    "direction",
+    "mot_status",
+    "status_reg",
+    "cmd_err",
+    "ocd",
+    "thermal_sd",
+    "thermal_warn",
+    "uvlo",
+    "stall_a",
+    "stall_b",
+    "encoder",
+    "count",
+    "velocity",
+    "index_seen",
+    "revolutions",
+    "index_period_us",
+    "vel_quality",
+    "control",
+    "following_error",
+    "setpoint",
+    "mode",
+    "tracking",
+    "trim_out",
+    "p",
+    "i",
+    "d",
+    "sup_state",
+    "tier",
+    "vel_error",
+    "retries",
+    "base_spd",
+    "trim_spd",
+    "final_spd",
+    "trim_frozen",
+    "vel_quality",
+    "heartbeat",
+    "enabled",
+    "timeout_ms",
+    "remaining_ms",
+    "timed_out",
+    "system",
+    "uptime_ticks",
+    "free_heap",
+    "rx_overflows",
+    "rx_overflow_lines",
+    "mode",
+    "encoder_status",
+    "error"
+  ],
+  "telemetry_structs": {
+    "MotorTelemetry": [
+      {
+        "type": "int32_t",
+        "name": "position"
+      },
+      {
+        "type": "int32_t",
+        "name": "targetPosition"
+      },
+      {
+        "type": "uint32_t",
+        "name": "speed"
+      },
+      {
+        "type": "uint16_t",
+        "name": "statusReg"
+      },
+      {
+        "type": "bool",
+        "name": "busy"
+      },
+      {
+        "type": "bool",
+        "name": "hiZ"
+      },
+      {
+        "type": "bool",
+        "name": "stalled"
+      }
+    ],
+    "EncoderTelemetry": [
+      {
+        "type": "int64_t",
+        "name": "count"
+      },
+      {
+        "type": "int32_t",
+        "name": "velocity"
+      },
+      {
+        "type": "bool",
+        "name": "indexSeen"
+      },
+      {
+        "type": "uint32_t",
+        "name": "indexTick"
+      },
+      {
+        "type": "int32_t",
+        "name": "revolutions"
+      },
+      {
+        "type": "uint32_t",
+        "name": "indexPeriodUs"
+      },
+      {
+        "type": "uint8_t",
+        "name": "velocityQuality"
+      },
+      {
+        "type": "uint8_t",
+        "name": "filterFlags"
+      },
+      {
+        "type": "uint8_t",
+        "name": "measWindowMs"
+      },
+      {
+        "type": "uint16_t",
+        "name": "sampleRateHz"
+      }
+    ],
+    "SystemTelemetry": [
+      {
+        "type": "uint32_t",
+        "name": "uptimeTicks"
+      },
+      {
+        "type": "uint32_t",
+        "name": "freeHeap"
+      },
+      {
+        "type": "uint8_t",
+        "name": "cpuLoad"
+      }
+    ],
+    "ControlTelemetry": [
+      {
+        "type": "int32_t",
+        "name": "followingError"
+      },
+      {
+        "type": "int32_t",
+        "name": "setpoint"
+      },
+      {
+        "type": "uint8_t",
+        "name": "mode"
+      },
+      {
+        "type": "bool",
+        "name": "tracking"
+      },
+      {
+        "type": "int16_t",
+        "name": "pidOutput"
+      },
+      {
+        "type": "int16_t",
+        "name": "pTerm"
+      },
+      {
+        "type": "int16_t",
+        "name": "iTerm"
+      },
+      {
+        "type": "int16_t",
+        "name": "dTerm"
+      },
+      {
+        "type": "uint8_t",
+        "name": "supervisorState"
+      },
+      {
+        "type": "uint8_t",
+        "name": "currentTier"
+      },
+      {
+        "type": "int32_t",
+        "name": "velError"
+      },
+      {
+        "type": "uint8_t",
+        "name": "retryCount"
+      },
+      {
+        "type": "int32_t",
+        "name": "baseSpeedRaw"
+      },
+      {
+        "type": "int32_t",
+        "name": "trimSpeedRaw"
+      },
+      {
+        "type": "int32_t",
+        "name": "finalSpeedRaw"
+      },
+      {
+        "type": "uint8_t",
+        "name": "trimFrozen"
+      },
+      {
+        "type": "uint8_t",
+        "name": "velQuality"
+      }
+    ]
+  },
+  "commands": [
+    {
+      "name": "*IDN?",
+      "prefix": "",
+      "handler": "cmdVersion",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [],
+      "errors": [],
+      "note": "top-level (no prefix)"
+    },
+    {
+      "name": "FMT",
+      "prefix": "",
+      "handler": "cmdSetFormat",
+      "file": "system_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "SET_FORMAT <ASCII|JSON>"
+      ],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [
+        {
+          "command": "SET_FORMAT",
+          "keys": [
+            "format"
+          ]
+        }
+      ],
+      "errors": [
+        "Invalid format. Use ASCII or JSON."
+      ],
+      "note": "top-level (no prefix)"
+    },
+    {
+      "name": "FMT?",
+      "prefix": "",
+      "handler": "cmdGetFormat",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [
+        {
+          "command": "GET_FORMAT",
+          "keys": [
+            "format"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": "top-level (no prefix)"
+    },
+    {
+      "name": "MOT:MOVE",
+      "prefix": "MOT",
+      "handler": "cmdMove",
+      "file": "motion_handlers.cpp",
+      "min_args": 2,
+      "usage": [
+        "MOVE <rev> REV <dir> [speed]",
+        "MOVE <steps> <dir> [speed] | MOVE <rev> REV <dir> [speed]"
+      ],
+      "ascii_ok": [
+        "<status> or "
+      ],
+      "json": [],
+      "errors": [
+        "dir must be 0 or 1",
+        "speed out of range (1-15625 steps/s)",
+        "steps out of range (0-2097151)"
+      ],
+      "note": ""
+    },
+    {
+      "name": "MOT:GOTO",
+      "prefix": "MOT",
+      "handler": "cmdGoTo",
+      "file": "motion_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "GOTO <pos> [speed] | GOTO <rev> REV [speed]"
+      ],
+      "ascii_ok": [
+        "<status> or "
+      ],
+      "json": [],
+      "errors": [
+        "position out of range (-2097152 to 2097151)",
+        "speed out of range (1-15625 steps/s)"
+      ],
+      "note": ""
+    },
+    {
+      "name": "MOT:RUN",
+      "prefix": "MOT",
+      "handler": "cmdRun",
+      "file": "motion_handlers.cpp",
+      "min_args": 2,
+      "usage": [
+        "RUN <rpm> RPM <dir>",
+        "RUN <speed> <dir> | RUN <rpm> RPM <dir>"
+      ],
+      "ascii_ok": [
+        "<status> or "
+      ],
+      "json": [],
+      "errors": [
+        "dir must be 0 or 1",
+        "speed out of range (0-15625 steps/s)"
+      ],
+      "note": ""
+    },
+    {
+      "name": "MOT:STOP",
+      "prefix": "MOT",
+      "handler": "cmdStop",
+      "file": "motion_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<status> or "
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "MOT:HOME",
+      "prefix": "MOT",
+      "handler": "cmdHome",
+      "file": "motion_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<status> or "
+      ],
+      "json": [],
+      "errors": [
+        "speed out of range (1-15625 steps/s)"
+      ],
+      "note": ""
+    },
+    {
+      "name": "MOT:CFG:ACCEL",
+      "prefix": "MOT",
+      "handler": "cmdAccelPhysical",
+      "file": "config_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "MOT:CFG:ACCEL <steps/s^2>"
+      ],
+      "ascii_ok": [
+        "<status> or "
+      ],
+      "json": [],
+      "errors": [
+        "accel must be positive"
+      ],
+      "note": ""
+    },
+    {
+      "name": "MOT:CFG:DECEL",
+      "prefix": "MOT",
+      "handler": "cmdDecelPhysical",
+      "file": "config_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "MOT:CFG:DECEL <steps/s^2>"
+      ],
+      "ascii_ok": [
+        "<status> or "
+      ],
+      "json": [],
+      "errors": [
+        "decel must be positive"
+      ],
+      "note": ""
+    },
+    {
+      "name": "MOT:CFG:MAXSPD",
+      "prefix": "MOT",
+      "handler": "cmdMaxSpdPhysical",
+      "file": "config_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "MOT:CFG:MAXSPD <steps/s>"
+      ],
+      "ascii_ok": [
+        "<status> or "
+      ],
+      "json": [],
+      "errors": [
+        "maxspd must be positive"
+      ],
+      "note": ""
+    },
+    {
+      "name": "MOT:EN",
+      "prefix": "MOT",
+      "handler": "cmdEnable",
+      "file": "motion_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<status> or ENABLED"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "MOT:DIS",
+      "prefix": "MOT",
+      "handler": "cmdDisable",
+      "file": "motion_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<status> or HI-Z"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "MOT:ZERO",
+      "prefix": "MOT",
+      "handler": "cmdZero",
+      "file": "motion_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<status> or "
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "SYST:FAULT:CLEAR",
+      "prefix": "SYST",
+      "handler": "cmdClearFault",
+      "file": "safety_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "IDLE"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "SYST:FAULT:FORCE",
+      "prefix": "SYST",
+      "handler": "cmdForceClearFault",
+      "file": "safety_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<status> or IDLE"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "SYST:FAULT:STAT?",
+      "prefix": "SYST",
+      "handler": "cmdGetStatus",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "SYST:HB",
+      "prefix": "SYST",
+      "handler": "cmdHeartbeat",
+      "file": "safety_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [
+        {
+          "command": "HEARTBEAT",
+          "keys": [
+            "mcu_tick",
+            "remaining_ms",
+            "seq"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "SYST:HB:TIMEOUT",
+      "prefix": "SYST",
+      "handler": "cmdSetHeartbeat",
+      "file": "safety_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "SET_HEARTBEAT <timeout_ms>"
+      ],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [
+        {
+          "command": "SET_HEARTBEAT",
+          "keys": [
+            "accepted",
+            "enabled",
+            "requested"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "SYST:BAUD",
+      "prefix": "SYST",
+      "handler": "cmdSetBaud",
+      "file": "system_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "SET_BAUD <115200|230400|460800|921600>"
+      ],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [
+        {
+          "command": "SET_BAUD",
+          "keys": [
+            "baud"
+          ]
+        }
+      ],
+      "errors": [
+        "Supported: 115200, 230400, 460800, 921600"
+      ],
+      "note": ""
+    },
+    {
+      "name": "SYST:EVT:EN",
+      "prefix": "SYST",
+      "handler": "cmdEventEnable",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "Invalid mask (0-255)"
+      ],
+      "note": ""
+    },
+    {
+      "name": "SYST:DELAY",
+      "prefix": "SYST",
+      "handler": "cmdSystDelay",
+      "file": "system_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "SYST:DELAY <ms>"
+      ],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [
+        {
+          "command": "SYST:DELAY",
+          "keys": [
+            "transport_delay_ms"
+          ]
+        }
+      ],
+      "errors": [
+        "Delay must be 0-1000 ms"
+      ],
+      "note": ""
+    },
+    {
+      "name": "SYST:ESTOP",
+      "prefix": "SYST",
+      "handler": "cmdEstop",
+      "file": "motion_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "ESTOP"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "SYST:TICK?",
+      "prefix": "SYST",
+      "handler": "cmdGetTick",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [
+        {
+          "command": "GET_TICK",
+          "keys": [
+            "tick"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "SYST:HB:STAT?",
+      "prefix": "SYST",
+      "handler": "cmdGetHeartbeatStatus",
+      "file": "safety_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [
+        {
+          "command": "GET_HEARTBEAT_STATUS",
+          "keys": [
+            "enabled",
+            "last_seq",
+            "remaining_ms",
+            "timed_out",
+            "timeout_ms"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "SYST:VER?",
+      "prefix": "SYST",
+      "handler": "cmdVersion",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "SYST:EVT:DIS",
+      "prefix": "SYST",
+      "handler": "cmdEventDisable",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        ""
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "SYST:EVT:STAT?",
+      "prefix": "SYST",
+      "handler": "cmdEventStatus",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "SYST:ZERO",
+      "prefix": "SYST",
+      "handler": "cmdZeroAll",
+      "file": "motion_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<status> or ALL_ZEROED"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "SYST:DELAY?",
+      "prefix": "SYST",
+      "handler": "cmdSystDelayQuery",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [
+        {
+          "command": "SYST:DELAY?",
+          "keys": [
+            "transport_delay_ms"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "SYNC:QUEUE",
+      "prefix": "SYNC",
+      "handler": "cmdQueue",
+      "file": "queue_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "QUEUE <cmd> [args...]",
+        "QUEUE GOTO <position>",
+        "QUEUE MOVE <steps> <dir>",
+        "QUEUE RUN <speed> <dir>"
+      ],
+      "ascii_ok": [],
+      "json": [],
+      "errors": [
+        "Unknown queue command",
+        "dir must be 0 or 1",
+        "position out of range (-2097152 to 2097151)",
+        "speed out of range (0-15625 steps/s)",
+        "steps out of range (0-2097151)"
+      ],
+      "note": ""
+    },
+    {
+      "name": "SYNC:START:AT",
+      "prefix": "SYNC",
+      "handler": "cmdStartAt",
+      "file": "queue_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "START_AT <tick>"
+      ],
+      "ascii_ok": [
+        "<status> or RUNNING"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "SYNC:ARM",
+      "prefix": "SYNC",
+      "handler": "cmdArm",
+      "file": "queue_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<status> or ARMED"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "SYNC:START",
+      "prefix": "SYNC",
+      "handler": "cmdStart",
+      "file": "queue_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<status> or RUNNING"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "SYNC:CLEAR",
+      "prefix": "SYNC",
+      "handler": "cmdClearQueue",
+      "file": "queue_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<status> or CLEARED"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "DIAG:PING",
+      "prefix": "DIAG",
+      "handler": "cmdPing",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [
+        {
+          "command": "PING",
+          "keys": [
+            "rx_tick",
+            "seq",
+            "state",
+            "tx_tick"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "DIAG:STAT?",
+      "prefix": "DIAG",
+      "handler": "cmdGetStatus",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "CTRL:ENC:DBG?",
+      "prefix": "CTRL",
+      "handler": "ENC_DEBUG",
+      "file": "",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<debug service output>"
+      ],
+      "json": [],
+      "errors": [],
+      "note": "special case in dispatcher"
+    },
+    {
+      "name": "CTRL:MODE",
+      "prefix": "CTRL",
+      "handler": "cmdSetMode",
+      "file": "control_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "CTRL:MODE OPEN_LOOP|MONITOR|PID"
+      ],
+      "ascii_ok": [],
+      "json": [],
+      "errors": [
+        "Unknown mode (OPEN_LOOP, MONITOR, SPEED_TRIM)"
+      ],
+      "note": ""
+    },
+    {
+      "name": "CTRL:ENC:FILT",
+      "prefix": "CTRL",
+      "handler": "cmdEncFilter",
+      "file": "encoder_handlers.cpp",
+      "min_args": 1,
+      "usage": [],
+      "ascii_ok": [
+        "NONE",
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "EMA alpha must be 0-255",
+        "EMA requires alpha (0-255)",
+        "SMA requires window size (2-32)",
+        "SMA window must be 2-32",
+        "Unknown filter type or alpha out of range (0-255)"
+      ],
+      "note": ""
+    },
+    {
+      "name": "CTRL:ENC:FILT?",
+      "prefix": "CTRL",
+      "handler": "cmdEncFilter",
+      "file": "encoder_handlers.cpp",
+      "min_args": 1,
+      "usage": [],
+      "ascii_ok": [
+        "NONE",
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "EMA alpha must be 0-255",
+        "EMA requires alpha (0-255)",
+        "SMA requires window size (2-32)",
+        "SMA window must be 2-32",
+        "Unknown filter type or alpha out of range (0-255)"
+      ],
+      "note": ""
+    },
+    {
+      "name": "CTRL:FOLLOW:THRESH",
+      "prefix": "CTRL",
+      "handler": "cmdFollowThreshSet",
+      "file": "control_handlers.cpp",
+      "min_args": 6,
+      "usage": [
+        "CTRL:FOLLOW:THRESH <E_MOVE> <T_MOVE> <E_HOLD> <T_HOLD> "
+      ],
+      "ascii_ok": [
+        "Thresholds set"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "CTRL:TRIM:GAINS",
+      "prefix": "CTRL",
+      "handler": "cmdTrimSetGains",
+      "file": "control_handlers.cpp",
+      "min_args": 2,
+      "usage": [
+        "CTRL:TRIM:GAINS <kp> <ki>"
+      ],
+      "ascii_ok": [
+        "Trim gains set"
+      ],
+      "json": [
+        {
+          "command": "CTRL:TRIM:GAINS",
+          "keys": [
+            "ki",
+            "kp"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "CTRL:TRIM:LIMITS",
+      "prefix": "CTRL",
+      "handler": "cmdTrimSetLimits",
+      "file": "control_handlers.cpp",
+      "min_args": 2,
+      "usage": [
+        "CTRL:TRIM:LIMITS <output_limit> <integral_limit>"
+      ],
+      "ascii_ok": [
+        "Trim limits set"
+      ],
+      "json": [
+        {
+          "command": "CTRL:TRIM:LIMITS",
+          "keys": [
+            "i_limit",
+            "out_limit"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "CTRL:TRIM:MAXPCT",
+      "prefix": "CTRL",
+      "handler": "cmdTrimSetMaxPct",
+      "file": "control_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "CTRL:TRIM:MAXPCT <1-50>"
+      ],
+      "ascii_ok": [
+        "Trim max percent set"
+      ],
+      "json": [
+        {
+          "command": "CTRL:TRIM:MAXPCT",
+          "keys": [
+            "max_pct"
+          ]
+        }
+      ],
+      "errors": [
+        "maxPct must be 1-50"
+      ],
+      "note": ""
+    },
+    {
+      "name": "CTRL:SYSID:STEP",
+      "prefix": "CTRL",
+      "handler": "cmdSysIdStep",
+      "file": "control_handlers.cpp",
+      "min_args": 2,
+      "usage": [
+        "CTRL:SYSID:STEP <speed_sps> <dir> [dur_ms] [settle_ms]"
+      ],
+      "ascii_ok": [
+        "SYSID step started"
+      ],
+      "json": [],
+      "errors": [
+        "SYSID already running",
+        "speed_sps must be 1-15625"
+      ],
+      "note": ""
+    },
+    {
+      "name": "CTRL:SYSID:RAMP",
+      "prefix": "CTRL",
+      "handler": "cmdSysIdRamp",
+      "file": "control_handlers.cpp",
+      "min_args": 3,
+      "usage": [
+        "CTRL:SYSID:RAMP <start_sps> <end_sps> <dir> [dur_ms] "
+      ],
+      "ascii_ok": [
+        "SYSID ramp started"
+      ],
+      "json": [],
+      "errors": [
+        "SYSID already running",
+        "speed must be 0-15625 sps"
+      ],
+      "note": ""
+    },
+    {
+      "name": "CTRL:SYSID:SINE",
+      "prefix": "CTRL",
+      "handler": "cmdSysIdSine",
+      "file": "control_handlers.cpp",
+      "min_args": 4,
+      "usage": [
+        "CTRL:SYSID:SINE <baseline> <amplitude> <freq_mHz> <dir> "
+      ],
+      "ascii_ok": [
+        "SYSID sine started"
+      ],
+      "json": [],
+      "errors": [
+        "SYSID already running",
+        "freq_mHz must be 1-5000 (0.001-5.0 Hz)",
+        "speed must be 0-15625 sps"
+      ],
+      "note": ""
+    },
+    {
+      "name": "CTRL:SYSID:TRAPEZOID",
+      "prefix": "CTRL",
+      "handler": "cmdSysIdTrapezoid",
+      "file": "control_handlers.cpp",
+      "min_args": 2,
+      "usage": [
+        "CTRL:SYSID:TRAPEZOID <speed_sps> <dir> [dur_ms] [settle_ms]"
+      ],
+      "ascii_ok": [
+        "SYSID trapezoid started"
+      ],
+      "json": [],
+      "errors": [
+        "SYSID already running",
+        "speed_sps must be 1-15625"
+      ],
+      "note": ""
+    },
+    {
+      "name": "CTRL:SYSID:RECT",
+      "prefix": "CTRL",
+      "handler": "cmdSysIdRect",
+      "file": "control_handlers.cpp",
+      "min_args": 2,
+      "usage": [
+        "CTRL:SYSID:RECT <speed_sps> <dir> [dur_ms] [settle_ms]"
+      ],
+      "ascii_ok": [
+        "SYSID rect started"
+      ],
+      "json": [],
+      "errors": [
+        "SYSID already running",
+        "speed_sps must be 1-15625"
+      ],
+      "note": ""
+    },
+    {
+      "name": "CTRL:SYSID:DATA?",
+      "prefix": "CTRL",
+      "handler": "cmdSysIdData",
+      "file": "control_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [],
+      "errors": [
+        "No data ready (test not DONE)",
+        "offset past end"
+      ],
+      "note": ""
+    },
+    {
+      "name": "CTRL:MODE?",
+      "prefix": "CTRL",
+      "handler": "cmdGetMode",
+      "file": "control_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "CTRL:ENC:STAT?",
+      "prefix": "CTRL",
+      "handler": "cmdGetEncoderStatus",
+      "file": "encoder_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "CTRL:ENC?",
+      "prefix": "CTRL",
+      "handler": "cmdEncoder",
+      "file": "encoder_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [
+        {
+          "command": "ENC",
+          "keys": [
+            "count",
+            "index_period_us",
+            "index_seen",
+            "index_tick",
+            "revolutions",
+            "velocity"
+          ]
+        }
+      ],
+      "errors": [
+        "Encoder not available"
+      ],
+      "note": ""
+    },
+    {
+      "name": "CTRL:ENC:ZERO",
+      "prefix": "CTRL",
+      "handler": "cmdEncoderZero",
+      "file": "motion_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "ENCODER_ZEROED"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "CTRL:FOLLOW?",
+      "prefix": "CTRL",
+      "handler": "cmdFollowingError",
+      "file": "control_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [
+        {
+          "command": "CTRL:FOLLOW?",
+          "keys": [
+            "error_ms",
+            "mode",
+            "pid_out",
+            "pos_error",
+            "retries",
+            "setpoint",
+            "state",
+            "tier",
+            "vel_error"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "CTRL:FOLLOW:THRESH?",
+      "prefix": "CTRL",
+      "handler": "cmdFollowThreshQuery",
+      "file": "control_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [
+        {
+          "command": "CTRL:FOLLOW:THRESH?",
+          "keys": [
+            "hard_limit",
+            "hold_error",
+            "hold_time_ms",
+            "max_retries",
+            "move_error",
+            "move_time_ms"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "CTRL:FOLLOW:SAVE",
+      "prefix": "CTRL",
+      "handler": "cmdFollowSave",
+      "file": "control_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "Follow config saved"
+      ],
+      "json": [],
+      "errors": [
+        "Flash write failed"
+      ],
+      "note": ""
+    },
+    {
+      "name": "CTRL:FOLLOW:CLEAR",
+      "prefix": "CTRL",
+      "handler": "cmdFollowClear",
+      "file": "control_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "Supervisor fault cleared"
+      ],
+      "json": [],
+      "errors": [
+        "No fault to clear"
+      ],
+      "note": ""
+    },
+    {
+      "name": "CTRL:TRIM?",
+      "prefix": "CTRL",
+      "handler": "cmdTrimQuery",
+      "file": "control_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [
+        {
+          "command": "CTRL:TRIM?",
+          "keys": [
+            "active",
+            "base_spd",
+            "final_spd",
+            "frozen",
+            "i_limit",
+            "ki",
+            "kp",
+            "max_pct",
+            "out_limit",
+            "trim_spd",
+            "vel_quality"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "CTRL:TRIM:RESET",
+      "prefix": "CTRL",
+      "handler": "cmdTrimReset",
+      "file": "control_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "Trim reset"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "CTRL:TRIM:SAVE",
+      "prefix": "CTRL",
+      "handler": "cmdTrimSave",
+      "file": "control_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "Trim config saved"
+      ],
+      "json": [],
+      "errors": [
+        "Flash write failed"
+      ],
+      "note": ""
+    },
+    {
+      "name": "CTRL:SYSID:STATUS?",
+      "prefix": "CTRL",
+      "handler": "cmdSysIdStatus",
+      "file": "control_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [
+        {
+          "command": "CTRL:SYSID:STATUS",
+          "keys": [
+            "phase",
+            "samples"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "CTRL:SYSID:ABORT",
+      "prefix": "CTRL",
+      "handler": "cmdSysIdAbort",
+      "file": "control_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "SYSID aborted"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "DEV:ID",
+      "prefix": "DEV",
+      "handler": "cmdSetDeviceId",
+      "file": "system_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "SET_DEVICE_ID <id>"
+      ],
+      "ascii_ok": [
+        "ID saved"
+      ],
+      "json": [],
+      "errors": [
+        "Flash write failed"
+      ],
+      "note": ""
+    },
+    {
+      "name": "DEV:ROLE",
+      "prefix": "DEV",
+      "handler": "cmdSetRole",
+      "file": "system_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "SET_ROLE <FL|FR|RL|RR|NONE>"
+      ],
+      "ascii_ok": [],
+      "json": [],
+      "errors": [
+        "Unknown role (FL, FR, RL, RR, NONE)"
+      ],
+      "note": ""
+    },
+    {
+      "name": "DEV:ID?",
+      "prefix": "DEV",
+      "handler": "cmdGetDeviceId",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "DEV:ROLE?",
+      "prefix": "DEV",
+      "handler": "cmdGetRole",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [],
+      "json": [
+        {
+          "command": "GET_ROLE",
+          "keys": [
+            "role",
+            "role_id"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "UI:DISP:CLEAR",
+      "prefix": "UI",
+      "handler": "cmdDispClear",
+      "file": "display_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        ""
+      ],
+      "json": [],
+      "errors": [
+        "Not in REMOTE mode"
+      ],
+      "note": ""
+    },
+    {
+      "name": "UI:DISP:TEXT",
+      "prefix": "UI",
+      "handler": "cmdDispText",
+      "file": "display_handlers.cpp",
+      "min_args": 5,
+      "usage": [
+        "DISP_TEXT <x> <y> <fg> <bg> <text>",
+        "DISP_TEXT <x> <y> <fg> <bg> <text>\n  if (cmd.argCount < 5) {\n    respondErr("
+      ],
+      "ascii_ok": [
+        ""
+      ],
+      "json": [],
+      "errors": [
+        "Not in REMOTE mode"
+      ],
+      "note": ""
+    },
+    {
+      "name": "UI:DISP:RECT",
+      "prefix": "UI",
+      "handler": "cmdDispRect",
+      "file": "display_handlers.cpp",
+      "min_args": 5,
+      "usage": [
+        "DISP_RECT <x> <y> <w> <h> <color> [fill]",
+        "DISP_RECT <x> <y> <w> <h> <color> [fill]\n  if (cmd.argCount < 5) {\n    respondErr("
+      ],
+      "ascii_ok": [
+        ""
+      ],
+      "json": [],
+      "errors": [
+        "Not in REMOTE mode"
+      ],
+      "note": ""
+    },
+    {
+      "name": "UI:DISP:LINE",
+      "prefix": "UI",
+      "handler": "cmdDispLine",
+      "file": "display_handlers.cpp",
+      "min_args": 5,
+      "usage": [
+        "DISP_LINE <x1> <y1> <x2> <y2> <color>",
+        "DISP_LINE <x1> <y1> <x2> <y2> <color>\n  if (cmd.argCount < 5) {\n    respondErr("
+      ],
+      "ascii_ok": [
+        ""
+      ],
+      "json": [],
+      "errors": [
+        "Not in REMOTE mode"
+      ],
+      "note": ""
+    },
+    {
+      "name": "UI:DISP:BITMAP",
+      "prefix": "UI",
+      "handler": "cmdDispBitmap",
+      "file": "display_handlers.cpp",
+      "min_args": 0,
+      "usage": [
+        "DISP_BITMAP <x> <y> <w> <h> [CRC]",
+        "DISP_BITMAP <x> <y> <w> <h> [CRC]\n  bool useCrc = hasCrcFlag(cmd);\n  uint32_t minArgs = useCrc ? 5 : 4;\n\n  if (cmd.argCount < minArgs) {\n    respondErr("
+      ],
+      "ascii_ok": [
+        "",
+        "<plain lines>"
+      ],
+      "json": [],
+      "errors": [
+        "Bitmap too large",
+        "Invalid dimensions",
+        "LCD streaming failed",
+        "Not in REMOTE mode",
+        "Position out of bounds"
+      ],
+      "note": ""
+    },
+    {
+      "name": "UI:DISP:BITMAP:B64",
+      "prefix": "UI",
+      "handler": "cmdDispBitmapB64",
+      "file": "display_handlers.cpp",
+      "min_args": 5,
+      "usage": [
+        "DISP_BITMAP_B64 <x> <y> <w> <h> <base64_data>",
+        "DISP_BITMAP_B64 <x> <y> <w> <h> <base64_data>\n  if (cmd.argCount < 5) {\n    respondErr("
+      ],
+      "ascii_ok": [
+        ""
+      ],
+      "json": [],
+      "errors": [
+        "Bitmap too large. Max 512 bytes decoded.",
+        "Not in REMOTE mode"
+      ],
+      "note": ""
+    },
+    {
+      "name": "UI:DISP:BITMAP:RLE",
+      "prefix": "UI",
+      "handler": "cmdDispBitmapRle",
+      "file": "display_handlers.cpp",
+      "min_args": 0,
+      "usage": [
+        "DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes> [CRC]",
+        "DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes> [CRC]\n  bool useCrc = hasCrcFlag(cmd);\n  uint32_t minArgs = useCrc ? 6 : 5;\n\n  if (cmd.argCount < minArgs) {\n    respondErr(\n        "
+      ],
+      "ascii_ok": [
+        "",
+        "<plain lines>"
+      ],
+      "json": [],
+      "errors": [
+        "Compressed size too large",
+        "Invalid compressed size",
+        "Invalid dimensions",
+        "LCD streaming failed",
+        "Not in REMOTE mode",
+        "Position out of bounds"
+      ],
+      "note": ""
+    },
+    {
+      "name": "UI:DISP:INDICATOR",
+      "prefix": "UI",
+      "handler": "cmdDispIndicator",
+      "file": "display_handlers.cpp",
+      "min_args": 3,
+      "usage": [
+        "DISP_INDICATOR <angle> <rot_dir> <has_trans>"
+      ],
+      "ascii_ok": [
+        ""
+      ],
+      "json": [],
+      "errors": [
+        "Invalid angle",
+        "Invalid has_translation",
+        "Invalid rotation_dir",
+        "Not in REMOTE mode"
+      ],
+      "note": ""
+    },
+    {
+      "name": "UI:FLASH:UPLOAD",
+      "prefix": "UI",
+      "handler": "cmdFlashUpload",
+      "file": "display_handlers.cpp",
+      "min_args": 0,
+      "usage": [
+        "FLASH_UPLOAD <slot> [CRC]",
+        "FLASH_UPLOAD <slot> [CRC]\n  bool useCrc = hasCrcFlag(cmd);\n  uint32_t minArgs = useCrc ? 2 : 1;\n\n  if (cmd.argCount < minArgs) {\n    respondErr("
+      ],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [],
+      "errors": [
+        "Flash erase failed",
+        "Flash not available",
+        "Flash program failed",
+        "Slot out of range"
+      ],
+      "note": ""
+    },
+    {
+      "name": "UI:FLASH:SHOW",
+      "prefix": "UI",
+      "handler": "cmdFlashShow",
+      "file": "display_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "FLASH_SHOW <slot>"
+      ],
+      "ascii_ok": [],
+      "json": [],
+      "errors": [
+        "Flash not available",
+        "Flash read failed",
+        "LCD streaming failed",
+        "Slot out of range"
+      ],
+      "note": ""
+    },
+    {
+      "name": "UI:FLASH:UPLOAD:RLE",
+      "prefix": "UI",
+      "handler": "cmdFlashUploadRle",
+      "file": "display_handlers.cpp",
+      "min_args": 0,
+      "usage": [
+        "FLASH_UPLOAD_RLE <slot> <compressed_bytes> [CRC]",
+        "FLASH_UPLOAD_RLE <slot> <compressed_bytes> [CRC]\n  bool useCrc = hasCrcFlag(cmd);\n  uint32_t minArgs = useCrc ? 3 : 2; // slot, comp_bytes [, CRC]\n\n  if (cmd.argCount < minArgs) {\n    respondErr("
+      ],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [],
+      "errors": [
+        "Compressed size too large",
+        "Flash erase failed",
+        "Flash not available",
+        "Flash program failed",
+        "Flash program failed (final page)",
+        "Invalid compressed size",
+        "Slot out of range"
+      ],
+      "note": ""
+    },
+    {
+      "name": "UI:FLASH:DUMP",
+      "prefix": "UI",
+      "handler": "cmdFlashDump",
+      "file": "display_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "FLASH_DUMP <slot> [offset] [len]",
+        "FLASH_DUMP <slot> [offset] [len]\n  if (cmd.argCount < 1) {\n    respondErr("
+      ],
+      "ascii_ok": [
+        "Dump complete",
+        "<plain lines>"
+      ],
+      "json": [],
+      "errors": [
+        "Flash not available",
+        "Flash read failed",
+        "Offset+len exceeds image size",
+        "Slot out of range"
+      ],
+      "note": ""
+    },
+    {
+      "name": "UI:FLASH:INFO",
+      "prefix": "UI",
+      "handler": "cmdFlashInfo",
+      "file": "display_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "Flash not available"
+      ],
+      "note": ""
+    },
+    {
+      "name": "UI:FLASH:ERASE_ALL",
+      "prefix": "UI",
+      "handler": "cmdFlashEraseAll",
+      "file": "display_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "All image slots erased"
+      ],
+      "json": [],
+      "errors": [
+        "Flash erase failed",
+        "Flash not available"
+      ],
+      "note": ""
+    },
+    {
+      "name": "UI:FLASH:TEST",
+      "prefix": "UI",
+      "handler": "cmdFlashTest",
+      "file": "display_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [],
+      "json": [],
+      "errors": [
+        "Flash not available"
+      ],
+      "note": ""
+    },
+    {
+      "name": "UI:MODE",
+      "prefix": "UI",
+      "handler": "cmdUIMode",
+      "file": "display_handlers.cpp",
+      "min_args": 1,
+      "usage": [],
+      "ascii_ok": [],
+      "json": [],
+      "errors": [
+        "Unknown mode (use LOCAL or REMOTE)"
+      ],
+      "note": ""
+    },
+    {
+      "name": "UI:MODE?",
+      "prefix": "UI",
+      "handler": "cmdUIGetMode",
+      "file": "display_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "DBG:MOTOR",
+      "prefix": "DBG",
+      "handler": "MOTOR_DEBUG",
+      "file": "",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<debug service output>"
+      ],
+      "json": [],
+      "errors": [],
+      "note": "special case in dispatcher"
+    },
+    {
+      "name": "DBG:UNLOCK",
+      "prefix": "DBG",
+      "handler": "debugUnlock",
+      "file": "",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<status> or DBG unlocked"
+      ],
+      "json": [],
+      "errors": [],
+      "note": "special case in dispatcher"
+    },
+    {
+      "name": "DBG:LOCK",
+      "prefix": "DBG",
+      "handler": "debugLock",
+      "file": "",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<status> or DBG locked"
+      ],
+      "json": [],
+      "errors": [],
+      "note": "special case in dispatcher"
+    },
+    {
+      "name": "DBG:TRACE:DUMP",
+      "prefix": "DBG",
+      "handler": "cmdTraceDump",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "DBG:TRACE:RESET",
+      "prefix": "DBG",
+      "handler": "cmdTraceReset",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "Trace cleared"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "DRV:REINIT",
+      "prefix": "DRV",
+      "handler": "inline",
+      "file": "",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "Motor driver reinitialized and config applied"
+      ],
+      "json": [],
+      "errors": [],
+      "note": "special case in dispatcher"
+    },
+    {
+      "name": "DRV:CFG:KVAL",
+      "prefix": "DRV",
+      "handler": "cmdMotorConfigKval",
+      "file": "config_handlers.cpp",
+      "min_args": 4,
+      "usage": [
+        "MCONFIG_KVAL <hold> <run> <acc> <dec>\n  if (cmd.argCount < 4) {\n    respondErr(",
+        "MCONFIG_KVAL <hold> <run> <acc> <dec> (hex 00-FF)"
+      ],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "DRV:CFG:OCD",
+      "prefix": "DRV",
+      "handler": "cmdMotorConfigOcd",
+      "file": "config_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "MCONFIG_OCD <threshold>\n  if (cmd.argCount < 1) {\n    respondErr(",
+        "MCONFIG_OCD <threshold> (0-31, ~375mA/step)"
+      ],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "OCD threshold must be 0-31"
+      ],
+      "note": ""
+    },
+    {
+      "name": "DRV:CFG:STALL",
+      "prefix": "DRV",
+      "handler": "cmdMotorConfigStall",
+      "file": "config_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "MCONFIG_STALL <threshold>\n  // powerSTEP01 STALL_TH is 5-bit (0-31), NOT 7-bit like L6470\n  if (cmd.argCount < 1) {\n    respondErr(",
+        "MCONFIG_STALL <threshold> (0-31, ~31.25mV/step BEMF)"
+      ],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "Stall threshold must be 0-31"
+      ],
+      "note": ""
+    },
+    {
+      "name": "DRV:CFG:FAULT",
+      "prefix": "DRV",
+      "handler": "cmdMotorConfigFault",
+      "file": "config_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "MCONFIG_FAULT <ocd> <th_sd> <th_w> <uvlo> <sta> <stb> <cmd>\\n",
+        "MCONFIG_FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd>\n  //        MCONFIG_FAULT ACTION <0|1|2>\n  if (cmd.argCount < 1) {\n    respondErr(\n        ",
+        "MCONFIG_FAULT ACTION <0|1|2>"
+      ],
+      "ascii_ok": [
+        "Fault enables set (not saved)",
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "Action must be 0=HardStop, 1=HardHiZ, 2=SoftStop"
+      ],
+      "note": ""
+    },
+    {
+      "name": "DRV:CFG:MOTION",
+      "prefix": "DRV",
+      "handler": "cmdMotorConfigMotion",
+      "file": "config_handlers.cpp",
+      "min_args": 3,
+      "usage": [
+        "MCONFIG_MOTION <acc> <dec> <maxspd>",
+        "MCONFIG_MOTION <acc> <dec> <maxspd>\n  if (cmd.argCount < 3) {\n    respondErr("
+      ],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "ACC/DEC must be 0-4095",
+        "MAXSPD must be 0-1023"
+      ],
+      "note": ""
+    },
+    {
+      "name": "DRV:CFG:STEPMODE",
+      "prefix": "DRV",
+      "handler": "cmdMotorConfigStepMode",
+      "file": "config_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "MCONFIG_STEPMODE <mode>\n  // mode: 0=full, 1=half, 2=1/4, 3=1/8, 4=1/16, 5=1/32, 6=1/64, 7=1/128\n  // Also accepts microstep counts: 1,2,4,8,16,32,64,128\n  if (cmd.argCount < 1) {\n    respondErr(",
+        "MCONFIG_STEPMODE <mode> (0-7 or 1/2/4/8/16/32/64/128)"
+      ],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "Invalid mode. Use 0-7 or microstep count (8/16/32/64/128)"
+      ],
+      "note": ""
+    },
+    {
+      "name": "DRV:STEP_MODE",
+      "prefix": "DRV",
+      "handler": "cmdDrvStepMode",
+      "file": "driver_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "DRV:STEP_MODE <0-7>"
+      ],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [
+        {
+          "command": "DRV:STEP_MODE",
+          "keys": [
+            "microstep_ratio",
+            "microsteps_per_rev",
+            "step_mode"
+          ]
+        }
+      ],
+      "errors": [
+        "MOTOR_BUSY: Motor must be idle to change microstep mode",
+        "Step mode must be 0-7",
+        "VERIFY_FAILED: STEP_MODE readback mismatch"
+      ],
+      "note": ""
+    },
+    {
+      "name": "DRV:FULL_STEPS",
+      "prefix": "DRV",
+      "handler": "cmdDrvFullSteps",
+      "file": "driver_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "DRV:FULL_STEPS <steps_per_rev>"
+      ],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [
+        {
+          "command": "DRV:FULL_STEPS",
+          "keys": [
+            "full_steps_per_rev",
+            "microsteps_per_rev"
+          ]
+        }
+      ],
+      "errors": [
+        "Full steps/rev must be 1-10000"
+      ],
+      "note": ""
+    },
+    {
+      "name": "DRV:ENC_PPR",
+      "prefix": "DRV",
+      "handler": "cmdDrvEncoderPPR",
+      "file": "driver_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "DRV:ENC_PPR <pulses_per_rev>"
+      ],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [
+        {
+          "command": "DRV:ENC_PPR",
+          "keys": [
+            "encoder_ppr"
+          ]
+        }
+      ],
+      "errors": [
+        "Encoder PPR must be 1-65535"
+      ],
+      "note": ""
+    },
+    {
+      "name": "DRV:CFG?",
+      "prefix": "DRV",
+      "handler": "cmdMotorConfigShow",
+      "file": "config_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "DRV:CFG:SAVE",
+      "prefix": "DRV",
+      "handler": "cmdMotorConfigSave",
+      "file": "config_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "Config saved to flash"
+      ],
+      "json": [],
+      "errors": [
+        "Flash write failed"
+      ],
+      "note": ""
+    },
+    {
+      "name": "DRV:CFG:LOAD",
+      "prefix": "DRV",
+      "handler": "cmdMotorConfigLoad",
+      "file": "config_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "Config loaded from flash"
+      ],
+      "json": [],
+      "errors": [
+        "No valid config in flash"
+      ],
+      "note": ""
+    },
+    {
+      "name": "DRV:CFG:RESET",
+      "prefix": "DRV",
+      "handler": "cmdMotorConfigReset",
+      "file": "config_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "Factory defaults restored and saved"
+      ],
+      "json": [],
+      "errors": [
+        "Flash write failed"
+      ],
+      "note": ""
+    },
+    {
+      "name": "DRV:CFG:APPLY",
+      "prefix": "DRV",
+      "handler": "cmdMotorConfigApply",
+      "file": "config_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "Config applied and saved to flash",
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "Applied but flash write failed",
+        "Failed to apply config to motor"
+      ],
+      "note": ""
+    },
+    {
+      "name": "DRV:STEP_MODE?",
+      "prefix": "DRV",
+      "handler": "cmdDrvStepModeQuery",
+      "file": "driver_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [
+        {
+          "command": "DRV:STEP_MODE?",
+          "keys": [
+            "microstep_ratio",
+            "microsteps_per_rev",
+            "step_mode"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "DRV:FULL_STEPS?",
+      "prefix": "DRV",
+      "handler": "cmdDrvFullStepsQuery",
+      "file": "driver_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [
+        {
+          "command": "DRV:FULL_STEPS?",
+          "keys": [
+            "full_steps_per_rev",
+            "microsteps_per_rev"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "DRV:ENC_PPR?",
+      "prefix": "DRV",
+      "handler": "cmdDrvEncoderPPRQuery",
+      "file": "driver_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [
+        {
+          "command": "DRV:ENC_PPR?",
+          "keys": [
+            "encoder_ppr"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "CTRL:ENC:FILT:WINDOW",
+      "prefix": "CTRL",
+      "handler": "cmdEncFilterSub",
+      "file": "encoder_handlers.cpp",
+      "min_args": 1,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "WINDOW requires ms (1-255)",
+        "Window must be 1-255 ms"
+      ],
+      "note": "sub-command"
+    },
+    {
+      "name": "CTRL:ENC:FILT:EMA",
+      "prefix": "CTRL",
+      "handler": "cmdEncFilterSub",
+      "file": "encoder_handlers.cpp",
+      "min_args": 1,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "EMA alpha must be 0-255",
+        "EMA requires 0|1 [alpha]"
+      ],
+      "note": "sub-command"
+    },
+    {
+      "name": "CTRL:ENC:FILT:SMA",
+      "prefix": "CTRL",
+      "handler": "cmdEncFilterSub",
+      "file": "encoder_handlers.cpp",
+      "min_args": 1,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "SMA requires 0|1 [window]",
+        "SMA window must be 0-32"
+      ],
+      "note": "sub-command"
+    },
+    {
+      "name": "CTRL:ENC:FILT:PADE",
+      "prefix": "CTRL",
+      "handler": "cmdEncFilterSub",
+      "file": "encoder_handlers.cpp",
+      "min_args": 1,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "Gain must be 1-100%%",
+        "MaxCorr must be 1-255 tps",
+        "PADE requires 0|1 [gain% 1-100] [maxCorr 1-255]"
+      ],
+      "note": "sub-command"
+    },
+    {
+      "name": "CTRL:ENC:FILT:BIQUAD",
+      "prefix": "CTRL",
+      "handler": "cmdEncFilterSub",
+      "file": "encoder_handlers.cpp",
+      "min_args": 1,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "BIQUAD requires 0|1 [cutoff 1-50 Hz]",
+        "Cutoff must be 1-50 Hz"
+      ],
+      "note": "sub-command"
+    },
+    {
+      "name": "CTRL:ENC:FILT:NOTCH",
+      "prefix": "CTRL",
+      "handler": "cmdEncFilterSub",
+      "file": "encoder_handlers.cpp",
+      "min_args": 1,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "Center must be 1-50 Hz",
+        "NOTCH requires 0|1 [center 1-50 Hz] [Q*10 1-100]",
+        "Q*10 must be 1-100"
+      ],
+      "note": "sub-command"
+    },
+    {
+      "name": "CTRL:ENC:FILT:HOLT",
+      "prefix": "CTRL",
+      "handler": "cmdEncFilterSub",
+      "file": "encoder_handlers.cpp",
+      "min_args": 1,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "Alpha must be 0-255",
+        "Beta must be 0-255",
+        "HOLT requires 0|1 [alpha 0-255] [beta 0-255]"
+      ],
+      "note": "sub-command"
+    },
+    {
+      "name": "CTRL:ENC:FILT:RATE",
+      "prefix": "CTRL",
+      "handler": "cmdEncFilterSub",
+      "file": "encoder_handlers.cpp",
+      "min_args": 1,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "RATE requires hz (100-10000)",
+        "Rate must be 100-10000 Hz"
+      ],
+      "note": "sub-command"
+    },
+    {
+      "name": "CTRL:ENC:FILT:SAVE",
+      "prefix": "CTRL",
+      "handler": "cmdEncFilterSub",
+      "file": "encoder_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "Filter config saved"
+      ],
+      "json": [],
+      "errors": [
+        "Flash write failed"
+      ],
+      "note": "sub-command"
+    },
+    {
+      "name": "CTRL:ENC:FILT:RESET",
+      "prefix": "CTRL",
+      "handler": "cmdEncFilterSub",
+      "file": "encoder_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "Filter reset to defaults"
+      ],
+      "json": [],
+      "errors": [
+        "Unknown ENC:FILT sub-command"
+      ],
+      "note": "sub-command"
+    }
+  ],
+  "oob_estop_byte": 24
+}

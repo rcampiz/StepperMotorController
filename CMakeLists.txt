@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.20)
+﻿cmake_minimum_required(VERSION 3.20)
 
 # ---------------------------------------------------------------------------
 # StepperMotorController firmware (NUCLEO-F401RE)
@@ -156,6 +156,7 @@ add_custom_target(arch-check
     COMMAND python ${CMAKE_SOURCE_DIR}/scripts/check_includes.py --strict
     COMMAND python ${CMAKE_SOURCE_DIR}/scripts/check_harness_defs.py --strict
     COMMAND python ${CMAKE_SOURCE_DIR}/scripts/gen_architecture.py --check
+    COMMAND python ${CMAKE_SOURCE_DIR}/scripts/gen_protocol.py --check
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Checking layer/harness include rules"
 )

@@ -1,0 +1,459 @@
+#!/usr/bin/env python3
+"""
+gen_protocol.py -- generate docs/PROTOCOL.md and docs/protocol.json from the L2 parser.
+
+Everything a client needs is derived from the firmware source so it cannot drift:
+  * the SCPI command catalogue: dispatch tables in L2_protocol/command_parser.cpp
+    (prefix dispatchers, sub-namespace tables, strcmp special cases) plus the
+    CTRL:ENC:FILT:<sub> sub-commands;
+  * per command: usage strings, minimum argument count, ASCII/JSON replies and error
+    messages, read from the handler bodies in L2_protocol/handlers/*.cpp;
+  * status codes from harness/pins/dispatch_result.hpp, event types and wire formats from
+    event_codec.cpp / async_event.hpp, telemetry fields from status_json.hpp and
+    telemetry_types.hpp, framing limits and timing constants from the parser and services.
+The hand-written sections (framing rules, timing, the 0x18 out-of-band stop, the checksum
+proposal, the planned protocol-2 changes) live in this file as text so they are versioned
+with the generator.
+
+Usage: python scripts/gen_protocol.py [--check]   (--check: exit 1 if outputs are stale)
+"""
+import json
+import os
+import re
+import sys
+from collections import OrderedDict
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SERVER = os.path.join(ROOT, "server")
+L2 = os.path.join(SERVER, "layers", "L2_protocol")
+DOCS = os.path.join(ROOT, "docs")
+
+PROTOCOL_VERSION = 1          # bumped to 2 by the protocol pass (see "Planned" section)
+
+
+def read(path):
+    with open(path, encoding="utf-8", errors="ignore") as fh:
+        return fh.read()
+
+
+def const(text, name, default=None):
+    m = re.search(r'\b' + re.escape(name) + r'\s*=\s*([0-9]+)', text)
+    return int(m.group(1)) if m else default
+
+
+# ---------------------------------------------------------------------------
+# 1. Command catalogue from command_parser.cpp
+# ---------------------------------------------------------------------------
+DISPATCH_RE = re.compile(r'void CommandParser::dispatch(\w+)\(')
+ANY_ENTRY_RE = re.compile(r'\{"([^"]+)",\s*&CommandParser::(\w+)\}')
+SUBPFX_RE = re.compile(r'strncmp\(suffix,\s*"([^"]+)",\s*\d+\)\s*==\s*0')
+STRCMP_RE = re.compile(r'strcmp\(suffix,\s*"([^"]+)"\)\s*==\s*0')
+PREFIX_TABLE_RE = re.compile(r'\{"([A-Z]+)",\s*&CommandParser::dispatch(\w+)\}')
+ACTION_RE = re.compile(r'(cmd\w+)\(|debugDispatch\("(\w+)"|respondStatus\(m_dispatcher\.(\w+)\(')
+
+
+def parse_catalogue():
+    text = read(os.path.join(L2, "command_parser.cpp"))
+    lines = text.splitlines()
+    prefix_of = {d: p for p, d in PREFIX_TABLE_RE.findall(text)}   # dispatchMotion -> MOT
+
+    commands = OrderedDict()
+
+    def add(name, handler, note="", inline=""):
+        if name not in commands:
+            commands[name] = {"name": name, "handler": handler, "note": note, "inline": inline}
+
+    # top-level (no colon) commands handled in process()
+    for m in re.finditer(r'strcmp\(cmd\.cmd,\s*"([^"]+)"\)\s*==\s*0\)\s*\n?\s*(\w+)\(', text):
+        add(m.group(1), m.group(2), "top-level (no prefix)")
+
+    current = None
+    sub = None          # sub-namespace prefix while inside an `if (strncmp(suffix, "X:", n) == 0) {` block
+    sub_depth = 0       # brace depth of that block; 0 = not inside
+    for i, line in enumerate(lines):
+        dm = DISPATCH_RE.search(line)
+        if dm:
+            current = dm.group(1)
+            sub, sub_depth = None, 0
+            continue
+        if current is None or current not in prefix_of:
+            continue
+        pfx = prefix_of[current]
+        if sub is not None:
+            sub_depth += line.count("{") - line.count("}")
+            if sub_depth <= 0:
+                sub, sub_depth = None, 0
+                continue
+        sm = SUBPFX_RE.search(line)
+        if sm and sub is None:
+            sub = sm.group(1)            # e.g. "FAULT:"
+            sub_depth = line.count("{") - line.count("}")
+            continue
+        cm = STRCMP_RE.search(line)
+        if cm:
+            action = "\n".join(lines[i + 1:i + 5])
+            hm = ACTION_RE.search(action)
+            handler = next((g for g in (hm.groups() if hm else ()) if g), "inline")
+            add(pfx + ":" + cm.group(1), handler, "special case in dispatcher", action)
+            continue
+        for em in ANY_ENTRY_RE.finditer(line):
+            add(pfx + ":" + (sub or "") + em.group(1), em.group(2))
+
+    # CTRL:ENC:FILT:<sub> sub-commands live in cmdEncFilterSub
+    enc = read(os.path.join(L2, "handlers", "encoder_handlers.cpp"))
+    body = enc[enc.index("void CommandParser::cmdEncFilterSub"):]
+    for s in re.findall(r'strcmp\(sub,\s*"([A-Z]+)"\)\s*==\s*0', body):
+        add("CTRL:ENC:FILT:" + s, "cmdEncFilterSub", "sub-command")
+    return commands
+
+
+# ---------------------------------------------------------------------------
+# 2. Per-handler details from handlers/*.cpp
+# ---------------------------------------------------------------------------
+def handler_bodies():
+    bodies = {}
+    hdir = os.path.join(L2, "handlers")
+    sources = [os.path.join(hdir, f) for f in sorted(os.listdir(hdir)) if f.endswith(".cpp")]
+    sources.append(os.path.join(L2, "command_parser.cpp"))
+    for path in sources:
+        text = read(path)
+        for m in re.finditer(r'void CommandParser::(cmd\w+)\(([^)]*)\)\s*\{', text):
+            start = m.end()
+            depth, i = 1, start
+            while i < len(text) and depth:
+                c = text[i]
+                depth += (c == "{") - (c == "}")
+                i += 1
+            bodies[m.group(1)] = (os.path.basename(path), text[start:i - 1])
+    return bodies
+
+
+def describe(handler, bodies, sub=None, inline_text=""):
+    if handler in bodies:
+        fname, body = bodies[handler]
+    else:
+        fname, body = "", inline_text
+    if sub is not None and handler in bodies:
+        # cmdEncFilterSub: keep only this sub-command's branch
+        parts = re.split(r'(?=if \(strcmp\(sub, ")', body)
+        body = next((b for b in parts if b.startswith('if (strcmp(sub, "%s")' % sub)), body)
+    usage = sorted(set(re.findall(r'Usage:\s*([^"]*)"', body)))
+    argc = [int(n) for n in re.findall(r'argCount\s*<\s*(\d+)', body)]
+    ascii_ok = sorted(set(re.findall(r'respondOk\("([^"]*)"\)', body)))
+    ascii_ok += ["<status> or " + m for m in sorted(set(re.findall(r'respondStatus\([^,]+,\s*"([^"]*)"\)', body)))]
+    if re.search(r'respondOk\((buf|msg|line|out)\b', body):
+        ascii_ok.append("<formatted text>")
+    if re.search(r'm_transport\.println\(', body) and not re.search(r'println\(""\)', body):
+        ascii_ok.append("<plain lines>")
+    if "debugDispatch(" in body:
+        ascii_ok.append("<debug service output>")
+    json_cmds = []
+    for jm in re.finditer(r'respondJsonOk\("([^"]+)",\s*(?:"((?:[^"\\]|\\.)*)"|(\w+))', body):
+        keys = sorted(set(re.findall(r'\\"(\w+)\\":', jm.group(2) or "")))
+        json_cmds.append({"command": jm.group(1), "keys": keys})
+    if json_cmds and not any(j["keys"] for j in json_cmds):
+        keys = sorted(set(re.findall(r'\\"(\w+)\\":', body)))
+        for j in json_cmds:
+            j["keys"] = keys
+    errors = sorted(set(e for e in re.findall(r'respondErr\("([^"]*)"\)', body) if not e.startswith("Usage")))
+    return {"file": fname, "usage": usage, "min_args": min(argc) if argc else 0,
+            "ascii_ok": ascii_ok, "json": json_cmds, "errors": errors}
+
+
+# ---------------------------------------------------------------------------
+# 3. Status codes, events, telemetry, limits
+# ---------------------------------------------------------------------------
+def status_codes():
+    text = read(os.path.join(SERVER, "harness", "pins", "dispatch_result.hpp"))
+    enum = re.search(r'enum class ServiceStatus[^{]*\{(.*?)\};', text, re.S).group(1)
+    names = [n for n in re.findall(r'^\s*(\w+)\s*,?', enum, re.M) if n]
+    strings = dict(re.findall(r'case ServiceStatus::(\w+):\s*return "([^"]*)"', text))
+    return [{"status": n, "message": strings.get(n, "")} for n in names]
+
+
+def events():
+    ae = read(os.path.join(SERVER, "harness", "pins", "async_event.hpp"))
+    enum = re.search(r'enum class EventType[^{]*\{(.*?)\};', ae, re.S).group(1)
+    types = re.findall(r'^\s*(\w+)\s*=\s*(\d+)', enum, re.M)
+    masks = re.findall(r'EVT_MASK_(\w+)\s*=\s*\(1\s*<<\s*(\d+)\)', ae)
+    return [{"type": t, "id": int(v)} for t, v in types], [{"mask": m, "bit": int(b)} for m, b in masks]
+
+
+def telemetry_fields():
+    tt = read(os.path.join(SERVER, "harness", "pins", "telemetry_types.hpp"))
+    out = OrderedDict()
+    for sm in re.finditer(r'struct (\w+Telemetry)\s*\{(.*?)\};', tt, re.S):
+        out[sm.group(1)] = re.findall(r'^\s*([\w:<>]+)\s+(\w+);', sm.group(2), re.M)
+    sj = read(os.path.join(L2, "handlers", "system_handlers.cpp"))
+    fmt = re.search(r'int renderStatusJson\(.*?return snprintf\((.*?)\);', sj, re.S).group(1)
+    json_keys = re.findall(r'\\"(\w+)\\":', fmt)
+    return out, json_keys
+
+
+def limits():
+    cp = read(os.path.join(L2, "command_parser.hpp"))
+    ci = read(os.path.join(L2, "command_parser_internal.hpp"))
+    cs = read(os.path.join(SERVER, "layers", "L3_services", "comms", "comms_service", "comms_service.hpp"))
+    dh = read(os.path.join(L2, "handlers", "display_handlers.cpp"))
+    sh = read(os.path.join(L2, "handlers", "system_handlers.cpp"))
+    ms = read(os.path.join(SERVER, "layers", "L3_services", "motion", "motor_service", "motor_service.hpp"))
+    uh = read(os.path.join(SERVER, "layers", "L5_board", "uart", "uart_hardware.hpp"))
+    lim = {
+        "line_max_chars": const(cp, "CMD_BUFFER_SIZE") - 1,
+        "max_args": const(cp, "MAX_ARGS"),
+        "arg_max_chars": int(re.search(r'char args\[MAX_ARGS\]\[(\d+)\]', cp).group(1)) - 1,
+        "rx_ring_bytes": int(re.search(r'RingBuffer<(\d+)> m_rxBuffer', uh).group(1)),
+        "telemetry_period_ms": const(cs, "TELEMETRY_PERIOD_MS"),
+        "heartbeat_timeout_min_ms": const(cs, "HEARTBEAT_TIMEOUT_MIN_MS"),
+        "heartbeat_timeout_max_ms": const(cs, "HEARTBEAT_TIMEOUT_MAX_MS"),
+        "baud_revert_ms": int(re.search(r'm_baudRevertDeadline = m_dispatcher\.getTickMs\(\) \+ (\d+)', sh).group(1)),
+        "binary_byte_timeout_ms": const(dh, "BYTE_TIMEOUT_MS"),
+        "binary_chunk_bytes": const(dh, "CHUNK_SIZE"),
+        "motor_queue_send_timeout_ms": const(ms, "SEND_TIMEOUT_MS"),
+        "step_mode_wait_ms": const(ms, "STEP_MODE_WAIT_MS"),
+    }
+    for name in ("POS_MIN", "POS_MAX", "SPEED_MIN", "SPEED_MAX", "ACCEL_MIN", "ACCEL_MAX", "MAXSPD_MIN", "MAXSPD_MAX"):
+        m = re.search(r'constexpr int32_t ' + name + r'\s*=\s*(-?\d+)', ci)
+        if m:
+            lim[name.lower()] = int(m.group(1))
+    return lim
+
+
+# ---------------------------------------------------------------------------
+# 4. Documents
+# ---------------------------------------------------------------------------
+PREAMBLE = """# Host <-> board protocol
+
+Generated by `scripts/gen_protocol.py` from the L2 parser at the current commit. Do not edit
+by hand: edit the firmware (or the generator's prose) and regenerate. `docs/protocol.json`
+carries the same catalogue for code generation and conformance tests. Protocol version:
+**{proto}** (reported by `SYST:VER?` as text today; `*IDN?` carries it from protocol 2 on).
+
+## 1. Transport and framing
+
+- Byte stream over the ST-LINK virtual COM port: USART2, 8N1, **115200** baud by default
+  (`SYST:BAUD` can select 230400/460800/921600; the stock ST-LINK V2-1 drops bytes above
+  115200 during bulk transfers, so clients should stay at 115200 on that adapter).
+- A command is one line: printable ASCII (0x20..0x7E), terminated by CR, LF or CRLF.
+  Maximum **{line_max} characters** per line, **{max_args} arguments** of at most **{arg_max}
+  characters** each, separated by spaces. The command word is upper-cased by the parser;
+  arguments are case-sensitive. Backspace (0x08/0x7F) erases the last buffered character.
+- **Echo:** the firmware echoes every printable byte it accepts and prints a newline when
+  the line completes. A client must therefore expect its own command text back before the
+  reply (protocol 2 switches echo off in JSON mode).
+- **Receive ring:** {ring} bytes. If the ring overflows while a line is being received, the
+  line is discarded when its terminator arrives and the reply is `ERROR RX_OVERFLOW`
+  (never a parse of a line with missing bytes). Overflow counters are in
+  `DIAG:STAT?` -> `system.rx_overflows` / `system.rx_overflow_lines`.
+- Command form: `PREFIX:NAME [args]`. A word without a colon is either `*IDN?`, `FMT`, `FMT?`
+  or a flat bring-up command routed to the debug service (most need `DBG:UNLOCK` first).
+- Unknown prefix -> `ERROR Unknown namespace prefix`; unknown suffix -> `ERROR Unknown
+  <PREFIX> command`.
+- The usage strings quoted in the catalogue come from the firmware and still spell the
+  pre-SCPI flat names (`MOVE`, `SET_HEARTBEAT`, ...); the command to type is the one in the
+  first column.
+
+## 2. Replies
+
+Two formats, selected per session with `FMT ASCII` / `FMT JSON` (default ASCII; reset to
+ASCII when the board resets).
+
+| Kind | ASCII | JSON |
+|---|---|---|
+| success | `OK <message>` (message may be empty) | `{{"status":"ok","command":"<name>","data":{{...}}}}`; `data` is `{{"message":"..."}}` when the handler only has text |
+| error | `ERROR <message>` | `{{"status":"error","command":"<name>","code":"<code>","message":"<message>"}}` ; `code` is `ERROR` except `DRV:STEP_MODE` (`MOTOR_BUSY`, `VERIFY_FAILED`) |
+| multi-line data (`DBG:MOTOR`, `DRV:CFG?`, `CTRL:ENC?`, `CTRL:SYSID:DATA?`, `DBG:TRACE:DUMP`, `SYST:VER?`) | plain lines, no terminator (protocol 2 adds `OK <n>`) | same plain lines |
+| binary READY (bitmap/flash upload) | `OK READY <bytes>` then the host sends exactly `<bytes>` raw bytes [+ CRC32 LE] then one final OK/ERROR | same |
+
+`command` in JSON is the handler's canonical name (e.g. `GET_STATUS`, `HEARTBEAT`), not
+necessarily the SCPI text typed; the catalogue below lists it.
+
+Service errors use these messages (`ServiceStatus` -> text); protocol 2 also puts the
+enumerator name in `code`:
+
+{status_table}
+
+## 3. Asynchronous lines (may arrive at any time between replies)
+
+| Line | When | ASCII | JSON |
+|---|---|---|---|
+| Event | motor fault/stall edges, motion done, following supervisor | `!<TYPE> status=0x<hex4> [detail=<text>]` | `{{"kind":"event","type":"<TYPE>","seq":<n>,"ts_ms":<n>,"data":{{"status":<n>[,"detail":"<text>"]}}}}` |
+| Telemetry push | every {telem_ms} ms **when enabled** (no command enables it today; protocol 2 adds a host-settable rate) | `TELEM: pos=<i> spd=<u> enc=<i> vel=<i>` | same ASCII line |
+| Joystick | board joystick in LOCAL UI mode | `EVENT JOY <LEFT\\|RIGHT\\|UP\\|DOWN\\|CENTER> pressed\\|released` | same |
+| Banner | power-up and Comms start | 5 lines starting with a blank line and `====` | same |
+
+Event types and `SYST:EVT:EN <mask>` bits:
+
+{event_table}
+
+`seq` is a per-boot monotonic event counter; a gap means events were dropped (the queue
+holds 8).
+
+## 4. Timing rules
+
+| Rule | Value |
+|---|---|
+| Heartbeat watchdog | `SYST:HB:TIMEOUT <ms>` arms it ({hb_min}..{hb_max} ms, 0 = off); the host must send `SYST:HB <seq>` more often than that. On timeout the firmware performs an emergency stop (latched: motion refused until `SYST:FAULT:CLEAR`). The ack carries `remaining_ms`. |
+| Baud switch | after `SYST:BAUD <rate>` the firmware switches at once and **reverts to 115200 if no valid command arrives within {baud_revert} ms** at the new rate. |
+| Binary transfers | after `OK READY`, each byte must arrive within {byte_timeout} ms or the transfer aborts with `ERROR Timeout at byte i/n`; data is consumed in {chunk}-byte chunks. The Comms task is inside the handler for the whole transfer: no other command (including `SYST:ESTOP`) is parsed until it ends. |
+| Motor command queue | motion commands are queued to the Motor task with a {send_timeout} ms bound; `ERROR Queue full` if it does not fit. |
+| Step-mode change | `DRV:STEP_MODE <m>` is executed by the Motor task; the reply waits up to {step_wait} ms for the readback. |
+| ESTOP latch | `SYST:ESTOP` (and the watchdog) latch: Move/GoTo/Run/Home/Mark are refused (`ERROR Fault`) until `SYST:FAULT:CLEAR`. |
+
+## 5. Out-of-band emergency stop (planned, Phase 4)
+
+Byte **0x18 (CAN)** is reserved. It is recognised in the USART2 interrupt before the byte
+reaches the ring (even when the ring is full), drives the driver's STBY/RESET line low,
+and wakes the Motor task, which then sends `HardHiZ` over SPI, latches, and keeps the pin
+low until `SYST:FAULT:CLEAR` runs the wake-up sequence. The byte is never echoed or
+queued and produces no reply; the host confirms with `DIAG:STAT?` (`state` = `ESTOP`,
+`motor.hi_z` = true). **Consequence:** no host payload may contain 0x18: binary bitmap
+and flash uploads are replaced by base64 variants (`UI:DISP:BITMAP:B64` exists; base64
+flash upload and RLE-over-base64 are part of protocol 2).
+
+## 6. Per-line checksum (proposal, protocol 2)
+
+Optional NMEA-style suffix `*XX` where XX is the hex XOR of every byte between the start
+of the line and the `*`. A board in multi-board mode (`DEV:ROLE` set) **requires** the
+suffix on motion and safety commands and replies `ERROR CHECKSUM` otherwise; on the bench
+it is optional. Replies never carry a checksum (the host can request `DIAG:STAT?` to
+verify state instead).
+
+## 7. Planned protocol 2 (one version bump, lands with the firmware protocol pass)
+
+1. `!RESET boot=<random32> fw=<semver> proto=2 build=<hash>` as the first line at boot
+   and on Comms start; the boot id is repeated in every heartbeat ack so a client detects
+   a reset per board.
+2. `*IDN?` -> `STMicro,SMC,<serial>,<fw>,<proto>` from one `PROTOCOL_VERSION` constant.
+3. Echo off by default in JSON mode; `SYST:ECHO ON|OFF`.
+4. Real error codes: `UNKNOWN_CMD`, `USAGE`, `QUEUE_FULL`, `INVALID_STATE`, `FAULT`,
+   `DBG_LOCKED`, `RX_OVERFLOW`, `CHECKSUM` (+ the `ServiceStatus` names above).
+5. JSON-escaped strings everywhere.
+6. JSON telemetry push with the `DIAG:STAT?` schema: `SYST:TLM:RATE <ms>` (0 = off).
+7. Multi-line replies end with `OK <n>` (ASCII) or carry a `lines` array (JSON);
+   `CTRL:SYSID:DATA?` adds `total`.
+8. Dropped-event counter in `SYST:EVT:STAT?`.
+9. `SYST:HELP?` generated from the dispatch tables.
+10. Base64 flash upload (`UI:FLASH:UPLOAD:B64 <slot> <offset> <len> <b64>`) and
+    `UI:DISP:BITMAP:RLE:B64`; the raw binary variants are removed (0x18 rule).
+11. `SYST:HB:TIMEOUT 0` refused unless the motor is in Hi-Z (`ERROR INVALID_STATE`).
+12. Usage strings spell the SCPI command names.
+
+## 8. `DIAG:STAT?` JSON fields
+
+Top level `data`: {status_keys}.
+
+Telemetry structures behind it (`harness/pins/telemetry_types.hpp`):
+
+{telemetry_structs}
+
+## 9. Command catalogue (generated)
+
+Columns: command as typed; minimum arguments and the usage string(s) from the handler;
+what a successful reply contains (ASCII message literals, `<status>` = the service status
+message, JSON command name and keys); error messages the handler can produce besides the
+usage error. "Handler" is the firmware function, for cross-reference.
+
+"""
+
+
+def md_escape(s):
+    return s.replace("|", "\\|")
+
+
+def build(commands, bodies):
+    details = OrderedDict()
+    for name, c in commands.items():
+        sub = name.rsplit(":", 1)[1] if c.get("note") == "sub-command" else None
+        d = describe(c["handler"], bodies, sub=sub, inline_text=c.get("inline", ""))
+        d.update({k: v for k, v in c.items() if k != "inline"})
+        details[name] = d
+
+    codes = status_codes()
+    ev_types, ev_masks = events()
+    tstructs, status_keys = telemetry_fields()
+    lim = limits()
+
+    status_table = "| ServiceStatus | ASCII / JSON message |\n|---|---|\n" + "\n".join(
+        "| `%s` | %s |" % (c["status"], md_escape(c["message"]) or "(not mapped)") for c in codes)
+    alias = {"FAULT_CLEAR": "FAULT_CLR", "STALL_CLEAR": "STALL_CLR"}
+    bit_of = {m["mask"]: m["bit"] for m in ev_masks}
+    event_table = "| Type | id | `SYST:EVT:EN` mask bit |\n|---|---|---|\n" + "\n".join(
+        "| `%s` | %d | %s |" % (t["type"], t["id"], bit_of.get(alias.get(t["type"], t["type"]), ""))
+        for t in ev_types)
+    telemetry_structs = "\n".join(
+        "- `%s`: " % name + ", ".join("`%s` (%s)" % (f, t) for t, f in fields) for name, fields in tstructs.items())
+
+    md = PREAMBLE.format(
+        proto=PROTOCOL_VERSION, line_max=lim["line_max_chars"], max_args=lim["max_args"],
+        arg_max=lim["arg_max_chars"], ring=lim["rx_ring_bytes"], status_table=status_table,
+        telem_ms=lim["telemetry_period_ms"], event_table=event_table,
+        hb_min=lim["heartbeat_timeout_min_ms"], hb_max=lim["heartbeat_timeout_max_ms"],
+        baud_revert=lim["baud_revert_ms"], byte_timeout=lim["binary_byte_timeout_ms"],
+        chunk=lim["binary_chunk_bytes"], send_timeout=lim["motor_queue_send_timeout_ms"],
+        step_wait=lim["step_mode_wait_ms"], status_keys=", ".join("`%s`" % k for k in status_keys),
+        telemetry_structs=telemetry_structs)
+
+    groups = OrderedDict()
+    for name in details:
+        pfx = name.split(":")[0] if ":" in name else "(top level)"
+        groups.setdefault(pfx, []).append(name)
+    for pfx, names in groups.items():
+        md += "### %s\n\n| Command | Min args | Usage | Reply | Errors | Handler |\n|---|---|---|---|---|---|\n" % pfx
+        for name in names:
+            d = details[name]
+            usage = "<br>".join(md_escape(u) for u in d["usage"]) or "—"
+            reply = []
+            if d["ascii_ok"]:
+                reply.append("ASCII: " + ", ".join("`OK %s`" % md_escape(m) for m in d["ascii_ok"]))
+            for j in d["json"]:
+                reply.append("JSON `%s`" % j["command"] + (" keys: " + ", ".join("`%s`" % k for k in j["keys"]) if j["keys"] else ""))
+            errors = "<br>".join("`%s`" % md_escape(e) for e in d["errors"]) or "—"
+            note = " (%s)" % d["note"] if d.get("note") else ""
+            min_args = d["min_args"] if d["min_args"] is not None else "?"
+            md += "| `%s`%s | %s | %s | %s | %s | `%s` %s |\n" % (
+                name, note, min_args, usage, "; ".join(reply) or "`OK <status>`", errors,
+                d["handler"], "(%s)" % d["file"] if d["file"] else "")
+        md += "\n"
+
+    js = {
+        "protocol_version": PROTOCOL_VERSION,
+        "generated_by": "scripts/gen_protocol.py",
+        "limits": lim,
+        "status_codes": codes,
+        "events": {"types": ev_types, "masks": ev_masks},
+        "status_json_keys": status_keys,
+        "telemetry_structs": {k: [{"type": t, "name": f} for t, f in v] for k, v in tstructs.items()},
+        "commands": [
+            {"name": n, "prefix": n.split(":")[0] if ":" in n else "", "handler": d["handler"],
+             "file": d["file"], "min_args": d["min_args"], "usage": d["usage"],
+             "ascii_ok": d["ascii_ok"], "json": d["json"], "errors": d["errors"], "note": d.get("note", "")}
+            for n, d in details.items()],
+        "oob_estop_byte": 0x18,
+    }
+    return md, json.dumps(js, indent=2)
+
+
+def main():
+    commands = parse_catalogue()
+    bodies = handler_bodies()
+    md, js = build(commands, bodies)
+    md_path = os.path.join(DOCS, "PROTOCOL.md")
+    js_path = os.path.join(DOCS, "protocol.json")
+    if "--check" in sys.argv:
+        stale = [p for p, new in ((md_path, md), (js_path, js)) if not os.path.exists(p) or read(p) != new]
+        if stale:
+            print("stale: " + ", ".join(os.path.relpath(p, ROOT) for p in stale))
+            return 1
+        print("protocol docs up to date")
+        return 0
+    with open(md_path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(md)
+    with open(js_path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(js)
+    print("wrote docs/PROTOCOL.md and docs/protocol.json: %d commands" % len(commands))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
