@@ -18,8 +18,9 @@ from PySide6.QtWidgets import (
     QComboBox,
 )
 from PySide6.QtCore import Qt, Slot, Signal
+
+from smc_core import commands as C
 from PySide6.QtGui import QFont
-import re
 
 
 FADER_STYLE = """
@@ -68,7 +69,7 @@ FAULT_DEFS = [
 class ProtectionPanel(QWidget):
     """Panel for powerSTEP01 protection / fault configuration."""
 
-    protection_apply_requested = Signal(list)
+    protection_apply_requested = Signal(list)   # [Request]
     refresh_requested = Signal()
 
     def __init__(self, parent=None):
@@ -279,19 +280,17 @@ class ProtectionPanel(QWidget):
     def _on_apply(self):
         ocd = self._ocd_spin.value()
         stall = self._stall_spin.value()
-        fault_flags = " ".join(
-            "1" if self._fault_checks[key].isChecked() else "0"
-            for key, _, _ in FAULT_DEFS)
+        flags = [self._fault_checks[key].isChecked() for key, _, _ in FAULT_DEFS]
         action = self._fault_action_combo.currentIndex()
         # Keep _dirty=True so intermediate auto-refreshes are blocked.
         # main_window clears dirty when the final APPLY_PROTECTION response
         # arrives, right before triggering the post-apply refresh.
         self.protection_apply_requested.emit([
-            f"DRV:CFG:OCD {ocd}",
-            f"DRV:CFG:STALL {stall}",
-            f"DRV:CFG:FAULT {fault_flags}",
-            f"DRV:CFG:FAULT ACTION {action}",
-            "DRV:CFG:APPLY",
+            C.cfg_ocd(ocd),
+            C.cfg_stall(stall),
+            C.cfg_fault_enables(*flags),
+            C.cfg_fault_action(action),
+            C.cfg_apply(),
         ])
 
     @Slot()
@@ -303,7 +302,7 @@ class ProtectionPanel(QWidget):
     # Data update
     # ========================================================================
 
-    def update_protection_params(self, response: str):
+    def update_protection_params(self, cfg: dict):
         """Parse protection fields from MCONFIG response.
 
         Skipped if the user has unsaved edits (dirty flag set).
@@ -321,37 +320,18 @@ class ProtectionPanel(QWidget):
         self._fault_action_combo.blockSignals(True)
 
         try:
-            # OCD threshold (hex)
-            ocd_match = re.search(r'OCD_TH=([0-9A-Fa-f]+)', response)
-            if ocd_match:
-                val = int(ocd_match.group(1), 16)
-                self._ocd_spin.setValue(val)
-                self._ocd_slider.setValue(val)
-
-            # Stall threshold (hex)
-            stall_match = re.search(r'STALL_TH=([0-9A-Fa-f]+)', response)
-            if stall_match:
-                val = int(stall_match.group(1), 16)
-                self._stall_spin.setValue(val)
-                self._stall_slider.setValue(val)
-
-            # Fault enable flags
-            fault_match = re.search(
-                r'Faults:\s*OCD=(\d+)\s+TH_SD=(\d+)\s+TH_W=(\d+)\s+'
-                r'UVLO=(\d+)\s+STALL_A=(\d+)\s+STALL_B=(\d+)\s+CMD=(\d+)',
-                response)
-            if fault_match:
-                keys = [key for key, _, _ in FAULT_DEFS]
-                for i, key in enumerate(keys):
-                    self._fault_checks[key].setChecked(
-                        fault_match.group(i + 1) != "0")
-
-            # Fault action
-            action_match = re.search(r'Action:\s*(\w+)', response)
-            if action_match:
-                idx = {"HardStop": 0, "HardHiZ": 1, "SoftStop": 2}.get(
-                    action_match.group(1), 0)
-                self._fault_action_combo.setCurrentIndex(idx)
+            # Values from the DRV:CFG? view (smc_core.views.motor_config)
+            if "ocd_th" in cfg:
+                self._ocd_spin.setValue(cfg["ocd_th"])
+                self._ocd_slider.setValue(cfg["ocd_th"])
+            if "stall_th" in cfg:
+                self._stall_spin.setValue(cfg["stall_th"])
+                self._stall_slider.setValue(cfg["stall_th"])
+            for key, enabled in cfg.get("faults", {}).items():
+                if key in self._fault_checks:
+                    self._fault_checks[key].setChecked(enabled)
+            if "action_index" in cfg:
+                self._fault_action_combo.setCurrentIndex(cfg["action_index"])
 
             # Update mA labels (signals are blocked so the slots didn't fire)
             self._update_ocd_label()

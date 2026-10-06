@@ -38,6 +38,7 @@ from smc_gui.rle_codec import encode_rle_rgb565
 from smc_gui.image_loader import LCD_WIDTH, LCD_HEIGHT
 from smc_gui.bridge import BoardBridge
 from smc_core import commands as C
+from smc_core import views as V
 from smc_core.board import Board, BoardConfig, EstopResult, Liveness
 from smc_core.codec import Response
 from smc_core.transport.base import ITransport
@@ -62,6 +63,20 @@ def upload_precondition(data: dict) -> tuple:
     if not hiz:
         return False, "motor must be in Hi-Z (send MOT:DIS first)"
     return True, "idle, Hi-Z"
+
+
+# Replies that need more than the generic status-bar note, by command name
+_ESTOP = C.syst_estop().name
+_REPLY_TAG = {
+    C.fault_clear().name: "CLEAR_FAULT",
+    C.fault_force().name: "CLEAR_FAULT",
+    C.control_mode("OPEN_LOOP").name: "SET_CTRL_MODE",
+    C.trim_gains(0, 0).name: "APPLY_TRIM",
+    C.trim_limits(0, 0).name: "APPLY_TRIM",
+    C.trim_max_pct(1).name: "APPLY_TRIM",
+    C.trim_save().name: "APPLY_TRIM",
+    C.trim_reset().name: "APPLY_TRIM",
+}
 
 
 class MainWindow(QMainWindow):
@@ -282,7 +297,7 @@ class MainWindow(QMainWindow):
 
         # Dashboard clear fault button
         self._telemetry_panel.clear_fault_requested.connect(
-            lambda: self._send_command("SYST:FAULT:CLEAR"))
+            lambda: self._send_command(C.fault_clear()))
 
         # Window signals
         self.connected.connect(self._on_connected)
@@ -434,26 +449,18 @@ class MainWindow(QMainWindow):
         """Re-query trim gains so the motion panel reflects applied changes."""
         self._call(C.trim_query(), "REFRESH_TRIM_CONFIG")
 
-    @Slot(str)
-    def _send_command(self, command: str):
-        """A panel's command line (until step 4 the panels still emit text)."""
+    @Slot(object)
+    def _send_command(self, command):
+        """A panel's Request (or a typed line from a console, validated by the core)."""
         try:
-            req = C.from_line(command)
+            req = command if isinstance(command, C.Request) else C.from_line(command)
         except C.CommandError as e:
             self._status_bar.showMessage(f"Refused: {e}", 5000)
             return
-        if req.name in ("SYST:FAULT:CLEAR", "SYST:FAULT:FORCE"):
-            tag = "CLEAR_FAULT"
-        elif req.name == "CTRL:MODE":
-            tag = "SET_CTRL_MODE"
-        elif req.name.startswith("CTRL:TRIM:"):
-            tag = "APPLY_TRIM"
-        elif req.name == "SYST:ESTOP":
+        if req.name == _ESTOP:
             self._on_estop_requested()      # never through the FIFO (S-1)
             return
-        else:
-            tag = "GENERIC"
-        self._call(req, tag)
+        self._call(req, _REPLY_TAG.get(req.name, "GENERIC"))
 
     @Slot()
     def _on_estop_requested(self):
@@ -491,62 +498,50 @@ class MainWindow(QMainWindow):
         else:
             self._status_bar.showMessage("UI responsive again, heartbeats resumed", 5000)
 
-    @Slot(str)
-    def _send_live_command(self, command: str):
+    @Slot(object)
+    def _send_live_command(self, req: C.Request):
         """Coalesced live command (latest-wins, ahead of the FIFO)."""
-        if self._bridge is None:
-            return
-        try:
-            self._bridge.latest("live", C.from_line(command))
-        except C.CommandError as e:
-            self._status_bar.showMessage(f"Refused: {e}", 5000)
+        if self._bridge is not None:
+            self._bridge.latest("live", req)
 
-    def _on_sysid_tagged_command(self, command: str, tag_name: str):
-        """Send a tagged command from the SysIdPanel."""
-        try:
-            self._call(C.from_line(command), tag_name)
-        except C.CommandError as e:
-            self._status_bar.showMessage(f"Refused: {e}", 5000)
+    def _on_sysid_tagged_command(self, req: C.Request, tag_name: str):
+        """A tagged Request from the SysIdPanel."""
+        self._call(req, tag_name)
 
     @Slot()
     def _on_refresh_params(self):
         """Refresh driver parameters and encoder status."""
         self._queue_refresh()
 
-    def _call_lines(self, commands: list, tag: str, last_tag: Optional[str] = None):
-        for i, cmd in enumerate(commands):
-            try:
-                req = C.from_line(cmd)
-            except C.CommandError as e:
-                self._status_bar.showMessage(f"Refused: {e}", 5000)
-                return
-            self._call(req, last_tag if (last_tag and i == len(commands) - 1) else tag)
+    def _call_all(self, requests: list, tag: str, last_tag: Optional[str] = None):
+        for i, req in enumerate(requests):
+            self._call(req, last_tag if (last_tag and i == len(requests) - 1) else tag)
 
-    @Slot(str)
-    def _on_kval_apply(self, cmd_str: str):
+    @Slot(object)
+    def _on_kval_apply(self, req: C.Request):
         """KVAL + DRV:CFG:APPLY: update the config and push it to the driver."""
-        self._call_lines([cmd_str, "DRV:CFG:APPLY"], "APPLY_KVAL")
+        self._call_all([req, C.cfg_apply()], "APPLY_KVAL")
 
     @Slot(list)
-    def _on_param_apply(self, commands: list):
-        """Several parameter commands (ACCEL, DECEL, MAXSPD)."""
-        self._call_lines(commands, "APPLY_PARAMS")
+    def _on_param_apply(self, requests: list):
+        """Several parameter requests (DRV:CFG:MOTION, DRV:CFG:APPLY)."""
+        self._call_all(requests, "APPLY_PARAMS")
 
     @Slot(list)
-    def _on_protection_apply(self, commands: list):
+    def _on_protection_apply(self, requests: list):
         """OCD, STALL, FAULT, APPLY: only the final APPLY is tagged APPLY_PROTECTION,
         which clears the dirty flag and refreshes."""
-        self._call_lines(commands, "GENERIC", last_tag="APPLY_PROTECTION")
+        self._call_all(requests, "GENERIC", last_tag="APPLY_PROTECTION")
 
-    @Slot(str)
-    def _on_stepmode_apply(self, cmd_str: str):
+    @Slot(object)
+    def _on_stepmode_apply(self, req: C.Request):
         """DRV:CFG:STEPMODE + DRV:CFG:APPLY."""
-        self._call_lines([cmd_str, "DRV:CFG:APPLY"], "APPLY_PARAMS")
+        self._call_all([req, C.cfg_apply()], "APPLY_PARAMS")
 
-    @Slot(str)
-    def _on_enc_filter_scpi(self, command: str):
-        """Encoder filter command from the telemetry panel."""
-        self._call_lines([command], "APPLY_ENC_FILTER")
+    @Slot(object)
+    def _on_enc_filter_scpi(self, req: C.Request):
+        """Encoder filter request from the telemetry panel."""
+        self._call(req, "APPLY_ENC_FILTER")
 
     # Rows per band for chunked bitmap transfer.  Each band is a separate
     # UI:DISP:BITMAP:RLE command so heartbeats flow between bands.
@@ -709,18 +704,20 @@ class MainWindow(QMainWindow):
             return
 
         if tag == "REFRESH_MOTOR_DEBUG":
-            self._driver_panel.update_driver_params(response.raw)
-            self._telemetry_panel.show_raw_response("MOTOR_DEBUG", response.raw)
+            dbg = V.motor_debug(response)
+            self._driver_panel.update_driver_params(dbg)
+            self._telemetry_panel.show_raw_response("MOTOR_DEBUG", dbg["text"])
             self._status_bar.showMessage("Parameters refreshed", 2000)
 
         elif tag == "REFRESH_ENC":
-            self._telemetry_panel.update_encoder_data(response.raw)
+            self._telemetry_panel.update_encoder_data(V.encoder(response))
 
         elif tag == "REFRESH_MCONFIG":
-            self._telemetry_panel.update_motor_config(response.raw)
-            self._protection_panel.update_protection_params(response.raw)
-            self._stepmode_panel.update_step_mode(response.raw)
-            self._motion_panel.update_mconfig(response.raw)
+            cfg = V.motor_config(response)
+            self._telemetry_panel.update_motor_config(cfg)
+            self._protection_panel.update_protection_params(cfg)
+            self._stepmode_panel.update_step_mode(cfg)
+            self._motion_panel.update_mconfig(cfg)
 
         elif tag == "SET_FORMAT":
             self._status_bar.showMessage("Format set", 2000)
@@ -813,11 +810,11 @@ class MainWindow(QMainWindow):
 
         elif tag == "SYSID_STATUS":
             self._sysid_panel.on_sysid_status_response(
-                response.success, response.data or response.raw)
+                response.success, V.sysid_status(response))
 
         elif tag == "SYSID_DATA":
             self._sysid_panel.on_sysid_data_response(
-                response.success, response.raw)
+                response.success, V.sysid_data(response))
 
         elif tag == "SYSID_ABORT":
             self._status_bar.showMessage("SYSID aborted", 2000)

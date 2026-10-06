@@ -17,14 +17,16 @@ from PySide6.QtWidgets import (
     QTabWidget,
 )
 from PySide6.QtCore import Qt, Slot, Signal
+
+from smc_core import commands as C
+from smc_core import units as U
 from PySide6.QtGui import QFont
 import pyqtgraph as pg
-import re
 
 
 # powerSTEP01 register <-> physical unit conversion factors
-ACC_DEC_FACTOR = 14.5519    # steps/s per raw ACC/DEC register unit
-MAXSPD_FACTOR = 15.2588     # steps/s per raw MAXSPD register unit
+ACC_DEC_FACTOR = U.ACC_DEC_FACTOR    # steps/s^2 per raw ACC/DEC register unit
+MAXSPD_FACTOR = U.MAXSPD_FACTOR      # steps/s per raw MAXSPD register unit
 
 FADER_STYLE = """
     QSlider::groove:vertical {
@@ -57,8 +59,8 @@ class DriverPanel(QWidget):
     """Panel for driver KVAL and motion parameter configuration."""
 
     refresh_requested = Signal()
-    kval_apply_requested = Signal(str)
-    param_apply_requested = Signal(list)
+    kval_apply_requested = Signal(object)     # Request
+    param_apply_requested = Signal(list)      # [Request]
     maxspd_changed = Signal(int)
 
     def __init__(self, parent=None):
@@ -644,50 +646,37 @@ class DriverPanel(QWidget):
 
     @Slot()
     def _on_apply_kval(self):
-        h = round(self._kval_hold_slider.value() / 100 * 255)
-        r = round(self._kval_run_slider.value() / 100 * 255)
-        a = round(self._kval_acc_slider.value() / 100 * 255)
-        d = round(self._kval_dec_slider.value() / 100 * 255)
-        self.kval_apply_requested.emit(
-            f"DRV:CFG:KVAL {h:02X} {r:02X} {a:02X} {d:02X}")
+        self.kval_apply_requested.emit(C.cfg_kval(
+            U.kval_from_percent(self._kval_hold_slider.value()),
+            U.kval_from_percent(self._kval_run_slider.value()),
+            U.kval_from_percent(self._kval_acc_slider.value()),
+            U.kval_from_percent(self._kval_dec_slider.value())))
 
     @Slot()
     def _on_apply_params(self):
-        acc_raw = max(1, round(self._acc_spin.value() / ACC_DEC_FACTOR))
-        dec_raw = max(1, round(self._dec_spin.value() / ACC_DEC_FACTOR))
-        maxspd_raw = max(1, round(self._maxspd_spin.value() / MAXSPD_FACTOR))
         self.param_apply_requested.emit([
-            f"DRV:CFG:MOTION {acc_raw} {dec_raw} {maxspd_raw}",
-            "DRV:CFG:APPLY",
+            C.cfg_motion(U.acc_raw_from_sps2(self._acc_spin.value()),
+                         U.acc_raw_from_sps2(self._dec_spin.value()),
+                         U.maxspd_raw_from_sps(self._maxspd_spin.value())),
+            C.cfg_apply(),
         ])
 
     @Slot()
     def _on_refresh_clicked(self):
         self.refresh_requested.emit()
 
-    def update_driver_params(self, response: str):
-        """Parse and update from MOTOR_DEBUG response."""
-        kval_match = re.search(
-            r'KVAL:\s*HOLD=([0-9A-Fa-f]+)\s*RUN=([0-9A-Fa-f]+)'
-            r'\s*ACC=([0-9A-Fa-f]+)\s*DEC=([0-9A-Fa-f]+)', response)
-        if kval_match:
-            self._kval_hold_slider.setValue(
-                round(int(kval_match.group(1), 16) / 255 * 100))
-            self._kval_run_slider.setValue(
-                round(int(kval_match.group(2), 16) / 255 * 100))
-            self._kval_acc_slider.setValue(
-                round(int(kval_match.group(3), 16) / 255 * 100))
-            self._kval_dec_slider.setValue(
-                round(int(kval_match.group(4), 16) / 255 * 100))
-
-        motion_match = re.search(r'ACC=(\d+)\s+DEC=(\d+)\s+MAXSPD=(\d+)', response)
-        if motion_match:
-            self._acc_spin.setValue(
-                round(int(motion_match.group(1)) * ACC_DEC_FACTOR))
-            self._dec_spin.setValue(
-                round(int(motion_match.group(2)) * ACC_DEC_FACTOR))
-            self._maxspd_spin.setValue(
-                round(int(motion_match.group(3)) * MAXSPD_FACTOR))
+    def update_driver_params(self, dbg: dict):
+        """Update from the DBG:MOTOR view (smc_core.views.motor_debug)."""
+        if "kval" in dbg:
+            h, r, a, d = dbg["kval"]
+            self._kval_hold_slider.setValue(U.kval_to_percent(h))
+            self._kval_run_slider.setValue(U.kval_to_percent(r))
+            self._kval_acc_slider.setValue(U.kval_to_percent(a))
+            self._kval_dec_slider.setValue(U.kval_to_percent(d))
+        if "acc_raw" in dbg:
+            self._acc_spin.setValue(U.acc_sps2_from_raw(dbg["acc_raw"]))
+            self._dec_spin.setValue(U.acc_sps2_from_raw(dbg["dec_raw"]))
+            self._maxspd_spin.setValue(U.maxspd_sps_from_raw(dbg["maxspd_raw"]))
 
     @Slot()
     def clear(self):

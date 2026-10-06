@@ -76,17 +76,8 @@ class BoardBridge(QObject):
 
 
 def _with_text(req: C.Request, resp: Optional[Response]) -> Optional[Response]:
-    """Give multi-line replies their text form in `raw` (what the text panels read).
-
-    CTRL:SYSID:DATA? in JSON mode carries offset/samples/total as fields; the ASCII
-    header line is restored here for the GUI's download code (step 5 replaces that code
-    with a core scenario).
-    """
+    """Give multi-line replies their text form in `raw` (the raw-data display)."""
     if resp is None or not resp.success or req.reply != C.Reply.LINES:
         return resp
-    text = multiline_text(resp)
-    if req.name == "CTRL:SYSID:DATA?" and "total" in resp.data:
-        text = "SYSID_DATA %s %s %s\n%s" % (resp.data.get("offset", 0), resp.data.get("samples", 0),
-                                            resp.data["total"], text)
-    resp.raw = text
+    resp.raw = multiline_text(resp)
     return resp

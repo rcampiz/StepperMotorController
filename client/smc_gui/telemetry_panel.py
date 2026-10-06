@@ -17,8 +17,9 @@ from PySide6.QtWidgets import (
     QCheckBox,
 )
 from PySide6.QtCore import Qt, Slot, Signal
+
+from smc_core import commands as C
 from PySide6.QtGui import QFont
-import re
 
 
 ENCODER_CPR = 4000  # Counts per revolution (1000 PPR × 4 quadrature)
@@ -28,7 +29,7 @@ class TelemetryPanel(QWidget):
     """Panel for displaying telemetry data."""
 
     clear_fault_requested = Signal()
-    enc_filter_command = Signal(str)  # SCPI command string for encoder filter
+    enc_filter_command = Signal(object)  # Request for the encoder filter
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -357,45 +358,30 @@ class TelemetryPanel(QWidget):
     @Slot()
     def _on_filter_apply(self):
         """Send all filter settings to firmware."""
-        window = self._filt_window_spin.value()
-        self.enc_filter_command.emit(f"CTRL:ENC:FILT:WINDOW {window}")
-        ema_en = 1 if self._filt_ema_check.isChecked() else 0
-        alpha = self._filt_ema_alpha.value()
-        self.enc_filter_command.emit(f"CTRL:ENC:FILT:EMA {ema_en} {alpha}")
-        sma_en = 1 if self._filt_sma_check.isChecked() else 0
-        win = self._filt_sma_window.value()
-        self.enc_filter_command.emit(f"CTRL:ENC:FILT:SMA {sma_en} {win}")
-        pade_en = 1 if self._filt_pade_check.isChecked() else 0
-        pade_gain = self._filt_pade_gain.value()
-        pade_max = self._filt_pade_max.value()
-        self.enc_filter_command.emit(
-            f"CTRL:ENC:FILT:PADE {pade_en} {pade_gain} {pade_max}")
-        bq_en = 1 if self._filt_biquad_check.isChecked() else 0
-        bq_cut = self._filt_biquad_cutoff.value()
-        self.enc_filter_command.emit(f"CTRL:ENC:FILT:BIQUAD {bq_en} {bq_cut}")
-        nt_en = 1 if self._filt_notch_check.isChecked() else 0
-        nt_ctr = self._filt_notch_center.value()
-        nt_q = self._filt_notch_q.value()
-        self.enc_filter_command.emit(
-            f"CTRL:ENC:FILT:NOTCH {nt_en} {nt_ctr} {nt_q}")
-        holt_en = 1 if self._filt_holt_check.isChecked() else 0
-        holt_a = self._filt_holt_alpha.value()
-        holt_b = self._filt_holt_beta.value()
-        self.enc_filter_command.emit(
-            f"CTRL:ENC:FILT:HOLT {holt_en} {holt_a} {holt_b}")
-        rate = self._filt_rate_spin.value()
-        self.enc_filter_command.emit(f"CTRL:ENC:FILT:RATE {rate}")
+        emit = self.enc_filter_command.emit
+        emit(C.enc_filter_window(self._filt_window_spin.value()))
+        emit(C.enc_filter_ema(self._filt_ema_check.isChecked(), self._filt_ema_alpha.value()))
+        emit(C.enc_filter_sma(self._filt_sma_check.isChecked(), self._filt_sma_window.value()))
+        emit(C.enc_filter_pade(self._filt_pade_check.isChecked(), self._filt_pade_gain.value(),
+                               self._filt_pade_max.value()))
+        emit(C.enc_filter_biquad(self._filt_biquad_check.isChecked(),
+                                 self._filt_biquad_cutoff.value()))
+        emit(C.enc_filter_notch(self._filt_notch_check.isChecked(),
+                                self._filt_notch_center.value(), self._filt_notch_q.value()))
+        emit(C.enc_filter_holt(self._filt_holt_check.isChecked(), self._filt_holt_alpha.value(),
+                               self._filt_holt_beta.value()))
+        emit(C.enc_filter_rate(self._filt_rate_spin.value()))
 
     @Slot()
     def _on_filter_save(self):
         """Persist current filter config to flash."""
         self._on_filter_apply()
-        self.enc_filter_command.emit("CTRL:ENC:FILT:SAVE")
+        self.enc_filter_command.emit(C.enc_filter_save())
 
     @Slot()
     def _on_filter_reset(self):
         """Reset filter config to defaults."""
-        self.enc_filter_command.emit("CTRL:ENC:FILT:RESET")
+        self.enc_filter_command.emit(C.enc_filter_reset())
         # Reset local controls to defaults
         self._filt_window_spin.setValue(40)
         self._filt_rate_spin.setValue(1000)
@@ -591,9 +577,9 @@ class TelemetryPanel(QWidget):
         layout.addWidget(self._mconfig_label)
         return group
 
-    def update_motor_config(self, response: str):
-        """Update motor config display from MCONFIG_SHOW response."""
-        self._mconfig_label.setText(response.strip())
+    def update_motor_config(self, cfg: dict):
+        """Show the DRV:CFG? text (smc_core.views.motor_config)."""
+        self._mconfig_label.setText(cfg.get("text", "").strip())
 
     def _create_raw_group(self) -> QGroupBox:
         """Create raw data display group."""
@@ -856,9 +842,12 @@ class TelemetryPanel(QWidget):
         self._filt_holt_alpha.setValue(51)
         self._filt_holt_beta.setValue(13)
 
-    def update_encoder_data(self, raw: str | None, error: str | None = None):
-        """Update encoder display from ENC command response."""
-        if error or raw is None:
+    def update_encoder_data(self, enc: dict | None, error: str | None = None):
+        """Update the encoder display from the CTRL:ENC? view (smc_core.views.encoder).
+
+        Before the refactor this parsed ASCII `count=` text, which never matched the
+        JSON reply the GUI actually receives."""
+        if error or not enc:
             self._encoder_count_label.setText("N/A")
             self._encoder_velocity_label.setText("N/A")
             self._index_indicator.setText("NOT PRESENT")
@@ -868,29 +857,20 @@ class TelemetryPanel(QWidget):
             )
             return
 
-        count_match = re.search(r'count=(-?\d+)', raw)
-        vel_match = re.search(r'vel=(-?\d+)', raw)
-        idx_match = re.search(r'idx=([01])', raw)
-
-        if count_match:
-            self._encoder_count_label.setText(
-                f"{int(count_match.group(1)):,}")
-        if vel_match:
-            self._encoder_velocity_label.setText(
-                f"{int(vel_match.group(1)):,}")
-        if idx_match:
-            if idx_match.group(1) == "1":
-                self._index_indicator.setText("SEEN")
-                self._index_indicator.setStyleSheet(
-                    "background-color: #00aa00; color: white; "
-                    "padding: 2px 8px; border-radius: 3px;"
-                )
-            else:
-                self._index_indicator.setText("NOT SEEN")
-                self._index_indicator.setStyleSheet(
-                    "background-color: #444; color: gray; "
-                    "padding: 2px 8px; border-radius: 3px;"
-                )
+        self._encoder_count_label.setText(f"{enc['count']:,}")
+        self._encoder_velocity_label.setText(f"{enc['velocity']:,}")
+        if enc["index_seen"]:
+            self._index_indicator.setText("SEEN")
+            self._index_indicator.setStyleSheet(
+                "background-color: #00aa00; color: white; "
+                "padding: 2px 8px; border-radius: 3px;"
+            )
+        else:
+            self._index_indicator.setText("NOT SEEN")
+            self._index_indicator.setStyleSheet(
+                "background-color: #444; color: gray; "
+                "padding: 2px 8px; border-radius: 3px;"
+            )
 
     def show_raw_response(self, command: str, response: str):
         """Show raw command/response in the raw data display."""

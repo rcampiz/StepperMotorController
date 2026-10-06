@@ -74,3 +74,31 @@ def test_board_reset_is_shown_and_session_restored(gui):
     fake.reboot()
     assert pump(app, lambda: "BOARD RESET" in w._status_bar.currentMessage())
     assert pump(app, lambda: fake.json and fake.tlm_ms == 100)
+
+
+def test_monitor_mode_uses_the_firmware_name(gui):
+    app, w, fake = gui
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    w._motion_panel._on_mode_changed(1)
+    assert pump(app, lambda: "CTRL:MODE MONITOR" in fake.received)
+
+
+def test_panels_render_core_views(gui):
+    app, w, fake = gui
+    fake.position = 1234
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    w._on_refresh_params()
+    assert pump(app, lambda: w._telemetry_panel._encoder_count_label.text() == "1,234")
+    assert pump(app, lambda: w._driver_panel._kval_hold_slider.value() == 16)   # 0x29 -> 16 %
+    assert pump(app, lambda: w._stepmode_panel._mode_combo.currentIndex() == 3)
+
+
+def test_protection_apply_sends_typed_requests_in_order(gui):
+    app, w, fake = gui
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    w._protection_panel._on_apply()
+    assert pump(app, lambda: "DRV:CFG:APPLY" in fake.received)
+    tail = [l for l in fake.received if l.startswith("DRV:CFG:")][-5:]
+    assert [l.split()[0] for l in tail] == ["DRV:CFG:OCD", "DRV:CFG:STALL", "DRV:CFG:FAULT",
+                                            "DRV:CFG:FAULT", "DRV:CFG:APPLY"]
+    assert tail[3].startswith("DRV:CFG:FAULT ACTION ")

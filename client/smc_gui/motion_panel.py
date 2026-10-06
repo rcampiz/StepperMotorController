@@ -24,10 +24,12 @@ from PySide6.QtWidgets import (
     QScrollArea,
 )
 from PySide6.QtCore import Qt, Signal, Slot
+
+from smc_core import commands as C
+from smc_core import units as U
 from PySide6.QtGui import QFont, QPainter, QColor, QPen, QBrush, QPainterPath
 import pyqtgraph as pg
 import logging
-import re
 
 log = logging.getLogger("motion_panel")
 
@@ -37,9 +39,9 @@ DEFAULT_STEP_MODE = 0        # Full step (conservative default until queried)
 DEFAULT_ENCODER_PPR = 4000
 
 # Unit indices for combo boxes
-SPEED_UNITS = ["RPM", "rev/s", "steps/s"]
-POSITION_UNITS = ["rev", "deg", "steps"]
-ACCEL_UNITS = ["rev/s\u00b2", "steps/s\u00b2"]
+SPEED_UNITS = list(U.SPEED_UNITS)
+POSITION_UNITS = list(U.POSITION_UNITS)
+ACCEL_UNITS = list(U.ACCEL_UNITS)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Signal flow diagram widget
@@ -191,7 +193,7 @@ class MotionPanel(QWidget):
     """Panel for physical-unit motion control."""
 
     # Signals
-    command_requested = Signal(str)
+    command_requested = Signal(object)        # smc_core Request
     config_refresh_requested = Signal()
 
     def __init__(self, parent=None):
@@ -214,68 +216,24 @@ class MotionPanel(QWidget):
     # Unit conversion helpers
     # =========================================================================
 
-    def _speed_to_steps_per_sec(self, value: float, unit_index: int) -> int:
-        """Convert speed in user units to steps/s (full steps).
+    def _geometry(self) -> U.Geometry:
+        return U.Geometry(self._full_steps_per_rev, self._step_mode)
 
-        The firmware RUN command and SPEED register use full steps/s,
-        not microsteps/s.  Use full_steps_per_rev for conversion.
-        """
-        fpr = self._full_steps_per_rev
-        if unit_index == 0:    # RPM
-            return round(value * fpr / 60.0)
-        elif unit_index == 1:  # rev/s
-            return round(value * fpr)
-        else:                  # steps/s
-            return round(value)
+    def _speed_to_steps_per_sec(self, value: float, unit_index: int) -> int:
+        """User speed -> full steps/s (smc_core.units)."""
+        return U.speed_to_sps(value, unit_index, self._geometry())
 
     def _position_to_microsteps(self, value: float, unit_index: int) -> int:
-        """Convert position in user units to microsteps."""
-        mpr = self._microsteps_per_rev
-        if unit_index == 0:    # rev
-            return round(value * mpr)
-        elif unit_index == 1:  # deg
-            return round(value / 360.0 * mpr)
-        else:                  # steps
-            return round(value)
+        return U.position_to_microsteps(value, unit_index, self._geometry())
 
-    def _accel_to_steps_per_sec_sq(self, value: float,
-                                    unit_index: int) -> int:
-        """Convert acceleration in user units to steps/s^2 (full steps).
-
-        ACC/DEC registers use full steps/s^2 (same as SPEED register).
-        """
-        fpr = self._full_steps_per_rev
-        if unit_index == 0:    # rev/s^2
-            return round(value * fpr)
-        else:                  # steps/s^2
-            return round(value)
+    def _accel_to_steps_per_sec_sq(self, value: float, unit_index: int) -> int:
+        return U.accel_to_sps2(value, unit_index, self._geometry())
 
     def _microsteps_to_position(self, usteps: int, unit_index: int) -> float:
-        """Convert microsteps to display position."""
-        mpr = self._microsteps_per_rev
-        if mpr == 0:
-            return 0.0
-        if unit_index == 0:    # rev
-            return usteps / mpr
-        elif unit_index == 1:  # deg
-            return usteps / mpr * 360.0
-        else:                  # steps
-            return float(usteps)
+        return U.microsteps_to_position(usteps, unit_index, self._geometry())
 
     def _steps_per_sec_to_speed(self, sps: int, unit_index: int) -> float:
-        """Convert steps/s (full steps) to display speed.
-
-        GET_STATUS speed is in full steps/s — use full_steps_per_rev.
-        """
-        fpr = self._full_steps_per_rev
-        if fpr == 0:
-            return 0.0
-        if unit_index == 0:    # RPM
-            return sps * 60.0 / fpr
-        elif unit_index == 1:  # rev/s
-            return sps / fpr
-        else:                  # steps/s
-            return float(sps)
+        return U.sps_to_speed(sps, unit_index, self._geometry())
 
     # =========================================================================
     # UI Setup
@@ -847,11 +805,11 @@ class MotionPanel(QWidget):
                  speed_sps, self._full_steps_per_rev, direction)
         if speed_sps <= 0:
             return
-        self.command_requested.emit(f"MOT:RUN {speed_sps} {direction}")
+        self.command_requested.emit(C.mot_run(speed_sps, direction))
 
     @Slot()
     def _on_stop(self):
-        self.command_requested.emit("MOT:STOP")
+        self.command_requested.emit(C.mot_stop())
 
     def _on_move(self, direction: int):
         usteps = self._position_to_microsteps(
@@ -860,11 +818,8 @@ class MotionPanel(QWidget):
             return
         speed_sps = self._speed_to_steps_per_sec(
             self._run_speed.value(), self._run_unit.currentIndex())
-        if speed_sps > 0:
-            self.command_requested.emit(
-                f"MOT:MOVE {usteps} {direction} {speed_sps}")
-        else:
-            self.command_requested.emit(f"MOT:MOVE {usteps} {direction}")
+        self.command_requested.emit(
+            C.mot_move(usteps, direction, speed_sps if speed_sps > 0 else None))
 
     @Slot()
     def _on_goto(self):
@@ -872,10 +827,7 @@ class MotionPanel(QWidget):
             self._goto_value.value(), self._goto_unit.currentIndex())
         speed_sps = self._speed_to_steps_per_sec(
             self._run_speed.value(), self._run_unit.currentIndex())
-        if speed_sps > 0:
-            self.command_requested.emit(f"MOT:GOTO {usteps} {speed_sps}")
-        else:
-            self.command_requested.emit(f"MOT:GOTO {usteps}")
+        self.command_requested.emit(C.mot_goto(usteps, speed_sps if speed_sps > 0 else None))
 
     @Slot()
     def _on_config_apply(self):
@@ -888,14 +840,14 @@ class MotionPanel(QWidget):
             self._cfg_maxspd.value(), self._cfg_maxspd_unit.currentIndex())
 
         # Use MOT:CFG:* commands which accept physical units (steps/s, steps/s^2)
-        self.command_requested.emit(f"MOT:CFG:ACCEL {acc_sps2}")
-        self.command_requested.emit(f"MOT:CFG:DECEL {dec_sps2}")
-        self.command_requested.emit(f"MOT:CFG:MAXSPD {maxspd_sps}")
+        self.command_requested.emit(C.mot_cfg_accel(acc_sps2))
+        self.command_requested.emit(C.mot_cfg_decel(dec_sps2))
+        self.command_requested.emit(C.mot_cfg_maxspd(maxspd_sps))
 
     @Slot()
     def _on_delay_apply(self):
         ms = self._delay_spin.value()
-        self.command_requested.emit(f"SYST:DELAY {ms}")
+        self.command_requested.emit(C.transport_delay(ms))
 
     @Slot()
     def _on_delay_auto(self):
@@ -911,32 +863,33 @@ class MotionPanel(QWidget):
 
     def _on_mode_changed(self, index: int):
         """Send CTRL:MODE command when user changes mode selector."""
-        modes = ["OPEN_LOOP", "CLOSED_LOOP_MONITOR", "SPEED_TRIM"]
+        # The firmware's names (parseControlMode); "CLOSED_LOOP_MONITOR" was refused
+        modes = ["OPEN_LOOP", "MONITOR", "SPEED_TRIM"]
         if 0 <= index < len(modes):
             self._mode_change_pending = True  # Block telemetry from reverting combo
-            self.command_requested.emit(f"CTRL:MODE {modes[index]}")
+            self.command_requested.emit(C.control_mode(modes[index]))
 
     @Slot()
     def _on_trim_apply(self):
         """Send trim gains + limits to firmware."""
         kp = self._pid_kp.value()
         ki = self._pid_ki.value()
-        self.command_requested.emit(f"CTRL:TRIM:GAINS {kp:.2f} {ki:.2f}")
+        self.command_requested.emit(C.trim_gains(kp, ki))
         out_limit = self._pid_out_limit.value()
         i_limit = self._pid_i_limit.value()
-        self.command_requested.emit(f"CTRL:TRIM:LIMITS {out_limit} {i_limit}")
+        self.command_requested.emit(C.trim_limits(out_limit, i_limit))
         max_pct = self._trim_max_pct.value()
-        self.command_requested.emit(f"CTRL:TRIM:MAXPCT {max_pct}")
+        self.command_requested.emit(C.trim_max_pct(max_pct))
 
     @Slot()
     def _on_trim_save(self):
         """Persist trim gains to MCU flash."""
-        self.command_requested.emit("CTRL:TRIM:SAVE")
+        self.command_requested.emit(C.trim_save())
 
     @Slot()
     def _on_trim_reset(self):
         """Reset trim integrator."""
-        self.command_requested.emit("CTRL:TRIM:RESET")
+        self.command_requested.emit(C.trim_reset())
 
     # =========================================================================
     # Data update slots (called from main_window)
@@ -1151,7 +1104,7 @@ class MotionPanel(QWidget):
             self._mode_combo.blockSignals(False)
             self._flow_diagram.set_mode("OPEN_LOOP")
 
-    def update_mconfig(self, response: str):
+    def update_mconfig(self, cfg: dict):
         """Parse motor config from MCONFIG raw text response.
 
         This fires early during the connect refresh cycle, giving us the
@@ -1160,12 +1113,10 @@ class MotionPanel(QWidget):
             StepMode: 1 (1/2)
             ACC=15 DEC=15 MAXSPD=79
         """
-        # Parse step mode
-        sm = re.search(r'StepMode:\s*(\d+)\s*\(1/(\d+)\)', response)
-        if sm:
-            self._step_mode = int(sm.group(1))
+        if "step_mode" in cfg:
+            self._step_mode = cfg["step_mode"]
             log.info("MCONFIG step_mode=%d (1/%s), usteps/rev=%d",
-                     self._step_mode, sm.group(2), self._microsteps_per_rev)
+                     self._step_mode, cfg.get("microsteps"), self._microsteps_per_rev)
 
         # Update config info label and profile
         self._config_label.setText(

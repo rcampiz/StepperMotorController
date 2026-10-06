@@ -12,6 +12,9 @@ from PySide6.QtWidgets import (
     QTabWidget, QScrollArea, QSplitter, QTextEdit,
 )
 from PySide6.QtCore import Signal, Slot, QTimer, Qt
+
+from smc_core import commands as C
+from smc_core.views import SYSID_DONE, SysIdChunk
 from PySide6.QtGui import QFont
 from dataclasses import dataclass, field
 from typing import Optional
@@ -567,8 +570,8 @@ def compute_bode_data(tf_data: dict, f_min: float = 0.01,
 class SysIdPanel(QWidget):
     """System Identification panel for automated trim tuning."""
 
-    command_requested = Signal(str)
-    tagged_command_requested = Signal(str, str)  # (command, tag_name)
+    command_requested = Signal(object)        # Request
+    tagged_command_requested = Signal(object, str)  # (Request, tag_name)
     gains_applied = Signal()  # emitted after Apply to Trim, so motion panel can refresh
 
     def __init__(self, parent=None):
@@ -903,21 +906,17 @@ class SysIdPanel(QWidget):
 
         dir_val = 1 if test.forward else 0
         if test.type == "step":
-            cmd = (f"CTRL:SYSID:STEP {test.speed} {dir_val} "
-                   f"{test.duration_ms} {test.settle_ms}")
+            cmd = C.sysid_step(test.speed, dir_val, test.duration_ms, test.settle_ms)
         elif test.type == "ramp":
-            cmd = (f"CTRL:SYSID:RAMP {test.start_speed} {test.speed} "
-                   f"{dir_val} {test.duration_ms} {test.settle_ms}")
+            cmd = C.sysid_ramp(test.start_speed, test.speed, dir_val, test.duration_ms,
+                               test.settle_ms)
         elif test.type == "sine":
-            cmd = (f"CTRL:SYSID:SINE {test.start_speed} {test.speed} "
-                   f"{test.frequency_mhz} {dir_val} "
-                   f"{test.duration_ms} {test.settle_ms}")
+            cmd = C.sysid_sine(test.start_speed, test.speed, test.frequency_mhz, dir_val,
+                               test.duration_ms, test.settle_ms)
         elif test.type == "trapezoid":
-            cmd = (f"CTRL:SYSID:TRAPEZOID {test.speed} {dir_val} "
-                   f"{test.duration_ms} {test.settle_ms}")
+            cmd = C.sysid_trapezoid(test.speed, dir_val, test.duration_ms, test.settle_ms)
         elif test.type == "rectangle":
-            cmd = (f"CTRL:SYSID:RECT {test.speed} {dir_val} "
-                   f"{test.duration_ms} {test.settle_ms}")
+            cmd = C.sysid_rect(test.speed, dir_val, test.duration_ms, test.settle_ms)
         else:
             log.error(f"Unknown test type: {test.type}")
             self._current_idx += 1
@@ -931,7 +930,7 @@ class SysIdPanel(QWidget):
 
     def _abort_tests(self):
         self._poll_timer.stop()
-        self.tagged_command_requested.emit("CTRL:SYSID:ABORT", "SYSID_ABORT")
+        self.tagged_command_requested.emit(C.sysid_abort(), "SYSID_ABORT")
         self._running = False
         self._update_ui_idle()
         if self._current_idx < len(self._tests):
@@ -939,8 +938,7 @@ class SysIdPanel(QWidget):
         self._progress.setFormat("Aborted")
 
     def _poll_status(self):
-        self.tagged_command_requested.emit(
-            "CTRL:SYSID:STATUS?", "SYSID_STATUS")
+        self.tagged_command_requested.emit(C.sysid_status(), "SYSID_STATUS")
 
     def _update_table_status(self, idx: int, status: str):
         if idx < self._test_table.rowCount():
@@ -958,8 +956,8 @@ class SysIdPanel(QWidget):
             return
 
         # Parse phase from response
-        phase = self._parse_phase(data)
-        if phase == 4:  # DONE
+        phase = data.get("phase", -1) if isinstance(data, dict) else -1
+        if phase == SYSID_DONE:
             self._poll_timer.stop()
             self._update_table_status(self._current_idx, "Downloading...")
             self._start_download()
@@ -969,17 +967,7 @@ class SysIdPanel(QWidget):
             return
         self._process_data_chunk(raw_data)
 
-    def _parse_phase(self, data) -> int:
-        """Extract phase from status response."""
-        if isinstance(data, dict) and "phase" in data:
-            return int(data["phase"])
-        if isinstance(data, str):
-            for part in data.split():
-                if part.startswith("phase="):
-                    return int(part.split("=")[1])
-        return -1
 
-    # ── Data download ──
 
     def _start_download(self):
         self._download_offset = 0
@@ -990,67 +978,23 @@ class SysIdPanel(QWidget):
     def _request_data_chunk(self):
         chunk_size = 40
         self.tagged_command_requested.emit(
-            f"CTRL:SYSID:DATA? {self._download_offset} {chunk_size}",
-            "SYSID_DATA")
+            C.sysid_data(self._download_offset, chunk_size), "SYSID_DATA")
 
-    def _process_data_chunk(self, raw_data):
-        """Parse CSV data from SYSID:DATA? response."""
-        if isinstance(raw_data, str):
-            lines = raw_data.strip().split("\n")
-        elif isinstance(raw_data, list):
-            lines = raw_data
-        elif hasattr(raw_data, "raw") and isinstance(raw_data.raw, str):
-            lines = raw_data.raw.strip().split("\n")
-        else:
-            lines = str(raw_data).strip().split("\n")
-
-        # Parse header: "SYSID_DATA <offset> <count> <total>"
-        header_parsed = False
-        for line in lines:
-            line = line.strip()
-            if not line or line == "END":
-                continue
-            if line.startswith("SYSID_DATA"):
-                parts = line.split()
-                if len(parts) >= 4:
-                    self._download_total = int(parts[3])
-                header_parsed = True
-                continue
-            if line.startswith("OK "):
-                # Skip OK prefix in ASCII mode
-                line = line[3:].strip()
-                if line.startswith("SYSID_DATA"):
-                    parts = line.split()
-                    if len(parts) >= 4:
-                        self._download_total = int(parts[3])
-                    header_parsed = True
-                    continue
-
-            # Parse CSV: time_ms,setpoint_tps,actual_tps,pos_error
-            parts = line.split(",")
-            if len(parts) >= 4:
-                try:
-                    sample = SysIdSample(
-                        time_ms=int(parts[0]),
-                        setpoint_tps=int(parts[1]),
-                        actual_tps=int(parts[2]),
-                        pos_error=int(parts[3]),
-                    )
-                    self._download_samples.append(sample)
-                except ValueError:
-                    continue
-
+    def _process_data_chunk(self, chunk: SysIdChunk):
+        """One CTRL:SYSID:DATA? chunk (smc_core.views.sysid_data)."""
+        if chunk.total >= 0:
+            self._download_total = chunk.total
+        for t_ms, setpoint, actual, err in chunk.samples:
+            self._download_samples.append(SysIdSample(
+                time_ms=t_ms, setpoint_tps=setpoint, actual_tps=actual, pos_error=err))
         self._download_offset = len(self._download_samples)
 
-        # Check if we have all samples
-        if (self._download_total > 0 and
-                self._download_offset >= self._download_total):
+        if self._download_total > 0 and self._download_offset >= self._download_total:
             self._on_test_data_complete()
-        elif self._download_total > 0:
-            # Request next chunk
+        elif self._download_total > 0 and chunk.samples:
             self._request_data_chunk()
-        elif header_parsed:
-            # Got header but total=0 — empty test
+        else:
+            # total 0 (empty test) or a chunk that brought nothing: stop here
             self._on_test_data_complete()
 
     def _on_test_data_complete(self):
@@ -1534,13 +1478,11 @@ class SysIdPanel(QWidget):
         if not hasattr(self, "_rec_Kp"):
             return
         Kp, Ki = self._rec_Kp, self._rec_Ki
-        self.command_requested.emit(
-            f"CTRL:TRIM:GAINS {Kp:.4f} {Ki:.4f}")
+        self.command_requested.emit(C.trim_gains(Kp, Ki, decimals=4))
         # Trigger a refresh of the motion panel's trim controls after firmware processes
         QTimer.singleShot(200, self.gains_applied.emit)
 
     def _apply_and_save(self):
         self._apply_gains()
         # Small delay then save
-        QTimer.singleShot(300, lambda: self.command_requested.emit(
-            "CTRL:TRIM:SAVE"))
+        QTimer.singleShot(300, lambda: self.command_requested.emit(C.trim_save()))

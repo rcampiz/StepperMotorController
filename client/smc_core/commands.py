@@ -276,7 +276,7 @@ def status() -> Request: return request("DIAG:STAT?")
 # ---------------------------------------------------------------------------
 # CTRL: control mode, encoder, supervisor, trim, system identification
 # ---------------------------------------------------------------------------
-CONTROL_MODES = ("OPEN_LOOP", "MONITOR", "PID")
+CONTROL_MODES = ("OPEN_LOOP", "MONITOR", "SPEED_TRIM", "PID")   # parseControlMode
 
 @builds("CTRL:MODE")
 def control_mode(mode: str) -> Request:

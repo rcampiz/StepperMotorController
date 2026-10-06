@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QGroupBox,
 )
 from PySide6.QtCore import Qt, Signal, Slot, QTimer
+
+from smc_core import commands as C
 from PySide6.QtGui import QFont
 import logging
 import time
@@ -65,8 +67,8 @@ class MotorControlPanel(QWidget):
     """Panel for motor control."""
 
     # Signal emitted when a command should be sent
-    command_requested = Signal(str)
-    live_command_requested = Signal(str)  # Coalesced: latest-wins, no queue
+    command_requested = Signal(object)        # smc_core Request
+    live_command_requested = Signal(object)  # Request, coalesced: latest-wins, no queue
     estop_requested = Signal()            # Fast path: bypasses the command queue
 
     # Minimum jog duration (ms) — ensures each tap produces visible motion
@@ -576,8 +578,7 @@ class MotorControlPanel(QWidget):
         # Live speed update: coalesced (latest-wins, no queue backup)
         if self._run_direction is not None:
             rpm = self._rpm_spin.value()
-            self.live_command_requested.emit(
-                f"MOT:RUN {rpm:.1f} RPM {self._run_direction}")
+            self.live_command_requested.emit(C.mot_run_rpm(rpm, self._run_direction))
 
     def _on_speed_rpm_changed(self, val):
         """Sync steps/s spinbox when RPM changes."""
@@ -666,7 +667,7 @@ class MotorControlPanel(QWidget):
         self._jog_start_time = time.monotonic()
         log.debug("Jog START: RUN %.1f RPM dir=%d (min %dms)",
                   rpm, direction, self.MIN_JOG_DURATION_MS)
-        self.command_requested.emit(f"MOT:RUN {rpm:.1f} RPM {direction}")
+        self.command_requested.emit(C.mot_run_rpm(rpm, direction))
         self._jog_timer.start(self.MIN_JOG_DURATION_MS)
 
     def _stop_jog(self):
@@ -684,7 +685,7 @@ class MotorControlPanel(QWidget):
         else:
             log.debug("Jog release at %.0fms — sending STOP now", elapsed_ms)
             self._jog_active = False
-            self.command_requested.emit("MOT:STOP")
+            self.command_requested.emit(C.mot_stop())
 
     def _on_jog_timer_expired(self):
         """Minimum jog duration elapsed."""
@@ -695,7 +696,7 @@ class MotorControlPanel(QWidget):
             self._jog_active = False
             log.debug("Jog timer expired at %.0fms — sending deferred STOP",
                       elapsed_ms)
-            self.command_requested.emit("MOT:STOP")
+            self.command_requested.emit(C.mot_stop())
         else:
             log.debug("Jog timer expired at %.0fms — button still held",
                       elapsed_ms)
@@ -704,74 +705,62 @@ class MotorControlPanel(QWidget):
     def _on_stop(self):
         """Stop motion."""
         self._run_direction = None
-        self.command_requested.emit("MOT:STOP")
+        self.command_requested.emit(C.mot_stop())
 
     def _on_move(self, direction: int):
         """Execute relative move at the current speed fader value."""
         speed = self._speed_spin.value()
         rev = self._rev_spin.value()
-        if speed > 0:
-            self.command_requested.emit(f"MOT:MOVE {rev:.4f} REV {direction} {speed}")
-        else:
-            self.command_requested.emit(f"MOT:MOVE {rev:.4f} REV {direction}")
+        self.command_requested.emit(C.mot_move_rev(rev, direction, speed if speed > 0 else None))
 
     @Slot()
     def _on_goto(self):
         """Execute absolute move at the current speed fader value."""
         speed = self._speed_spin.value()
         rev = self._goto_rev.value()
-        if speed > 0:
-            self.command_requested.emit(f"MOT:GOTO {rev:.4f} REV {speed}")
-        else:
-            self.command_requested.emit(f"MOT:GOTO {rev:.4f} REV")
+        self.command_requested.emit(C.mot_goto_rev(rev, speed if speed > 0 else None))
 
     @Slot()
     def _on_home(self):
         """Go to home position at the current speed fader value."""
         speed = self._speed_spin.value()
-        if speed > 0:
-            self.command_requested.emit(f"MOT:HOME {speed}")
-        else:
-            self.command_requested.emit("MOT:HOME")
+        self.command_requested.emit(C.mot_home(speed if speed > 0 else None))
 
     @Slot()
     def _on_zero(self):
         """Reset motor ABS_POS to zero."""
-        self.command_requested.emit("MOT:ZERO")
+        self.command_requested.emit(C.mot_zero())
 
     @Slot()
     def _on_zero_encoder(self):
         """Reset encoder count to zero."""
-        self.command_requested.emit("CTRL:ENC:ZERO")
+        self.command_requested.emit(C.encoder_zero())
 
     @Slot()
     def _on_zero_all(self):
         """Reset both motor position and encoder count."""
-        self.command_requested.emit("SYST:ZERO")
+        self.command_requested.emit(C.zero_all())
 
     def _on_run(self, direction: int):
         """Start continuous run."""
         self._run_direction = direction
         rpm = self._rpm_spin.value()
-        self.command_requested.emit(f"MOT:RUN {rpm:.1f} RPM {direction}")
+        self.command_requested.emit(C.mot_run_rpm(rpm, direction))
 
     @Slot()
     def _on_hold_toggle(self):
         """Toggle between hold (enable) and release (Hi-Z)."""
-        if self._motor_enabled:
-            self.command_requested.emit("MOT:DIS")
-        else:
-            self.command_requested.emit("MOT:EN")
+        self.command_requested.emit(C.mot_disable() if self._motor_enabled else C.mot_enable())
 
     @Slot()
     def _on_enable(self):
         """Enable motor outputs."""
-        self.command_requested.emit("MOT:EN")
+        self.command_requested.emit(C.mot_enable())
 
     @Slot()
     def _on_disable(self):
         """Disable motor outputs."""
-        self.command_requested.emit("MOT:DIS")
+        self.command_requested.emit(C.mot_disable())
 
     @Slot()
     def _on_estop(self):
@@ -795,9 +784,9 @@ class MotorControlPanel(QWidget):
     @Slot()
     def _on_clear_fault(self):
         """Clear fault state."""
-        self.command_requested.emit("SYST:FAULT:CLEAR")
+        self.command_requested.emit(C.fault_clear())
 
     @Slot()
     def _on_force_clear_fault(self):
         """Force clear fault state, bypassing hardware fault check."""
-        self.command_requested.emit("SYST:FAULT:FORCE")
+        self.command_requested.emit(C.fault_force())

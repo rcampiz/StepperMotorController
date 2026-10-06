@@ -15,8 +15,9 @@ from PySide6.QtWidgets import (
     QComboBox,
 )
 from PySide6.QtCore import Qt, Slot, Signal
+
+from smc_core import commands as C
 from PySide6.QtGui import QFont
-import re
 
 
 # (register value, display label, denominator)
@@ -35,7 +36,7 @@ STEP_MODES = [
 class StepModePanel(QWidget):
     """Panel for powerSTEP01 microstep resolution configuration."""
 
-    stepmode_apply_requested = Signal(str)  # command string
+    stepmode_apply_requested = Signal(object)  # Request
     refresh_requested = Signal()
 
     def __init__(self, parent=None):
@@ -126,14 +127,14 @@ class StepModePanel(QWidget):
     @Slot()
     def _on_apply(self):
         reg_val = self._mode_combo.currentIndex()
-        self.stepmode_apply_requested.emit(f"DRV:CFG:STEPMODE {reg_val}")
+        self.stepmode_apply_requested.emit(C.cfg_step_mode(reg_val))
 
     @Slot()
     def _on_refresh(self):
         self._dirty = False
         self.refresh_requested.emit()
 
-    def update_step_mode(self, response: str):
+    def update_step_mode(self, cfg: dict):
         """Parse step mode from MCONFIG response.
 
         Looks for 'StepMode: <n> (1/<d>)' in the MCONFIG output.
@@ -142,12 +143,10 @@ class StepModePanel(QWidget):
         if self._dirty:
             return
 
-        match = re.search(r'StepMode:\s*(\d+)\s*\(1/(\d+)\)', response)
-        if not match:
+        if "step_mode" not in cfg:
             return
-
-        reg_val = int(match.group(1))
-        denom = int(match.group(2))
+        reg_val = cfg["step_mode"]
+        denom = cfg.get("microsteps", 1 << reg_val)
 
         self._mode_combo.blockSignals(True)
         try:
