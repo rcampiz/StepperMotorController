@@ -45,8 +45,9 @@ add_compile_options(
 set(CMAKE_C_FLAGS_DEBUG   "-Og -g -gdwarf-2")
 set(CMAKE_CXX_FLAGS_DEBUG "-Og -g -gdwarf-2")
 set(CMAKE_ASM_FLAGS_DEBUG "-g -gdwarf-2")
-set(CMAKE_C_FLAGS_RELEASE   "-O2")
-set(CMAKE_CXX_FLAGS_RELEASE "-O2")
+# Release is warning-clean and stays that way (F13): a new warning fails the build.
+set(CMAKE_C_FLAGS_RELEASE   "-O2 -Werror")
+set(CMAKE_CXX_FLAGS_RELEASE "-O2 -Werror")
 
 set(LINKER_SCRIPT ${CMAKE_SOURCE_DIR}/server/foundation/F_platform/startup/STM32F401RETx_FLASH.ld)
 add_link_options(

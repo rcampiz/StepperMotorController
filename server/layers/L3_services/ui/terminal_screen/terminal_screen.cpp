@@ -59,8 +59,7 @@ void TerminalScreen::println(const char* text)
     }
 
     // Copy text to current head position
-    strncpy(m_lines[m_headIndex], text, TERM_LINE_LENGTH - 1);
-    m_lines[m_headIndex][TERM_LINE_LENGTH - 1] = '\0';
+    snprintf(m_lines[m_headIndex], TERM_LINE_LENGTH, "%s", text);   // bounded (F13)
 
     // Advance head (circular buffer)
     m_headIndex = (m_headIndex + 1) % TERM_MAX_LINES;

@@ -85,8 +85,8 @@ void CommandParser::process() {
           // Update dispatch statistics (ring buffer of recent command names)
           m_dispatchStats.totalCommands++;
           uint8_t ri = m_dispatchStats.recentHead;
-          strncpy(m_dispatchStats.recentCmds[ri], cmd.cmd, 23);
-          m_dispatchStats.recentCmds[ri][23] = '\0';
+          snprintf(m_dispatchStats.recentCmds[ri], sizeof(m_dispatchStats.recentCmds[ri]),
+                   "%s", cmd.cmd);   // bounded, always terminated (F13)
           m_dispatchStats.recentHead = (ri + 1) % DispatchStats::RECENT_SIZE;
           if (m_dispatchStats.recentCount < DispatchStats::RECENT_SIZE)
             m_dispatchStats.recentCount++;

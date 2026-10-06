@@ -395,8 +395,7 @@ void ArchScreen::renderFlow(Services::ICanvas& lcd)
             if (layer < NUM_LAYERS && !layerInfo[layer].active) {
                 layerInfo[layer].taskId = entry.taskId;
                 layerInfo[layer].method = entry.method;
-                strncpy(layerInfo[layer].detail, entry.detail, Trace::DETAIL_SIZE - 1);
-                layerInfo[layer].detail[Trace::DETAIL_SIZE - 1] = '\0';
+                snprintf(layerInfo[layer].detail, Trace::DETAIL_SIZE, "%s", entry.detail);   // F13
                 layerInfo[layer].active = true;
             }
 
@@ -750,8 +749,7 @@ void ArchScreen::renderTasks(Services::ICanvas& lcd)
         uint8_t layer = boundaryToLayer(entry.boundary);
         if (layer < NUM_LAYERS && !layerInfo[layer].active) {
             layerInfo[layer].method = entry.method;
-            strncpy(layerInfo[layer].detail, entry.detail, Trace::DETAIL_SIZE - 1);
-            layerInfo[layer].detail[Trace::DETAIL_SIZE - 1] = '\0';
+            snprintf(layerInfo[layer].detail, Trace::DETAIL_SIZE, "%s", entry.detail);   // F13
             layerInfo[layer].active = true;
         }
 
