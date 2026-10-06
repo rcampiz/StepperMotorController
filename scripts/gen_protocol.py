@@ -150,7 +150,7 @@ def describe(handler, bodies, sub=None, inline_text=""):
     begins = re.findall(r'm_sink\.begin\([^,]+,\s*(?:"([^"]+)"|(\w+))', body)
     if begins:   # F12: terminated multi-line reply
         ascii_ok = [a for a in ascii_ok if a != "<plain lines>"]
-        ascii_ok.append("<lines> then `OK <n>`")
+        ascii_ok.append("<lines> then OK <n>")
     json_cmds = []
     for name, var in begins:
         extra = sorted(set(re.findall(r'\\"(\w+)\\":', body)))
@@ -300,8 +300,14 @@ Event types and `SYST:EVT:EN <mask>` bits:
 
 {event_table}
 
-`seq` is a per-boot monotonic event counter; a gap means events were dropped (the queue
-holds 8).
+`seq` (JSON events only; the ASCII event line carries no sequence number) is a per-boot
+counter that starts at 1 and increments once per event line *sent*, so a gap between two
+received events means the link lost a line. Events that never reach the wire are counted
+instead: the motor event queue holds 8 entries and `SYST:EVT:STAT?` reports `sent`,
+`lost_critical`, `lost_info`, `last_seq` and `depth` (ASCII: `EVENT_STATUS mask=<n> sent=<n>
+lost_critical=<n> lost_info=<n> last_seq=<n> depth=<n>`). A client that must know whether it
+missed a fault compares `last_seq` with the last `seq` it received and watches
+`lost_critical`; both counters reset at boot (`!RESET`).
 
 ## 4. Timing rules
 
@@ -344,7 +350,7 @@ verify state instead).
 6. (done) JSON telemetry push with the `DIAG:STAT?` schema: `SYST:TLM:RATE <ms>` (0 = off).
 7. (done) Multi-line replies end with `OK <n>` (ASCII) or carry a `lines` array (JSON);
    `CTRL:SYSID:DATA?` adds `total`.
-8. Dropped-event counter in `SYST:EVT:STAT?`.
+8. (done) Dropped-event counter in `SYST:EVT:STAT?` (`lost_critical`, `lost_info`; `seq` semantics above).
 9. `SYST:HELP?` generated from the dispatch tables.
 10. Base64 flash upload (`UI:FLASH:UPLOAD:B64 <slot> <offset> <len> <b64>`) and
     `UI:DISP:BITMAP:RLE:B64`; the raw binary variants are removed (0x18 rule).
@@ -418,7 +424,8 @@ def build(commands, bodies):
             usage = "<br>".join(md_escape(u) for u in d["usage"]) or "—"
             reply = []
             if d["ascii_ok"]:
-                reply.append("ASCII: " + ", ".join("`OK %s`" % md_escape(m) for m in d["ascii_ok"]))
+                reply.append("ASCII: " + ", ".join(
+                    ("`%s`" if m.startswith("<lines>") else "`OK %s`") % md_escape(m) for m in d["ascii_ok"]))
             for j in d["json"]:
                 reply.append("JSON `%s`" % j["command"] + (" keys: " + ", ".join("`%s`" % k for k in j["keys"]) if j["keys"] else ""))
             errors = "<br>".join("`%s`" % md_escape(e) for e in d["errors"]) or "—"

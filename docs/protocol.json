@@ -941,7 +941,7 @@
       "min_args": 0,
       "usage": [],
       "ascii_ok": [
-        "<lines> then `OK <n>`"
+        "<lines> then OK <n>"
       ],
       "json": [
         {
@@ -1146,7 +1146,7 @@
       "usage": [],
       "ascii_ok": [
         "<debug service output>",
-        "<lines> then `OK <n>`"
+        "<lines> then OK <n>"
       ],
       "json": [
         {
@@ -1411,7 +1411,7 @@
       "min_args": 0,
       "usage": [],
       "ascii_ok": [
-        "<lines> then `OK <n>`"
+        "<lines> then OK <n>"
       ],
       "json": [
         {
@@ -1993,7 +1993,7 @@
         "FLASH_DUMP <slot> [offset] [len]\n  if (cmd.argCount < 1) {\n    respondErr("
       ],
       "ascii_ok": [
-        "<lines> then `OK <n>`"
+        "<lines> then OK <n>"
       ],
       "json": [
         {
@@ -2097,7 +2097,7 @@
       "usage": [],
       "ascii_ok": [
         "<debug service output>",
-        "<lines> then `OK <n>`"
+        "<lines> then OK <n>"
       ],
       "json": [
         {
@@ -2147,7 +2147,7 @@
       "min_args": 0,
       "usage": [],
       "ascii_ok": [
-        "<lines> then `OK <n>`"
+        "<lines> then OK <n>"
       ],
       "json": [
         {
@@ -2393,7 +2393,7 @@
       "min_args": 0,
       "usage": [],
       "ascii_ok": [
-        "<lines> then `OK <n>`"
+        "<lines> then OK <n>"
       ],
       "json": [
         {

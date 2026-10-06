@@ -87,8 +87,14 @@ Event types and `SYST:EVT:EN <mask>` bits:
 | `FOLLOW_RECOVERY` | 6 | 6 |
 | `FOLLOW_RECOVERED` | 7 | 7 |
 
-`seq` is a per-boot monotonic event counter; a gap means events were dropped (the queue
-holds 8).
+`seq` (JSON events only; the ASCII event line carries no sequence number) is a per-boot
+counter that starts at 1 and increments once per event line *sent*, so a gap between two
+received events means the link lost a line. Events that never reach the wire are counted
+instead: the motor event queue holds 8 entries and `SYST:EVT:STAT?` reports `sent`,
+`lost_critical`, `lost_info`, `last_seq` and `depth` (ASCII: `EVENT_STATUS mask=<n> sent=<n>
+lost_critical=<n> lost_info=<n> last_seq=<n> depth=<n>`). A client that must know whether it
+missed a fault compares `last_seq` with the last `seq` it received and watches
+`lost_critical`; both counters reset at boot (`!RESET`).
 
 ## 4. Timing rules
 
@@ -131,7 +137,7 @@ verify state instead).
 6. (done) JSON telemetry push with the `DIAG:STAT?` schema: `SYST:TLM:RATE <ms>` (0 = off).
 7. (done) Multi-line replies end with `OK <n>` (ASCII) or carry a `lines` array (JSON);
    `CTRL:SYSID:DATA?` adds `total`.
-8. Dropped-event counter in `SYST:EVT:STAT?`.
+8. (done) Dropped-event counter in `SYST:EVT:STAT?` (`lost_critical`, `lost_info`; `seq` semantics above).
 9. `SYST:HELP?` generated from the dispatch tables.
 10. Base64 flash upload (`UI:FLASH:UPLOAD:B64 <slot> <offset> <len> <b64>`) and
     `UI:DISP:BITMAP:RLE:B64`; the raw binary variants are removed (0x18 rule).
@@ -199,7 +205,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `SYST:ECHO?` | 0 | — | JSON `ECHO` keys: `echo` | — | `cmdEchoQuery` (system_handlers.cpp) |
 | `SYST:HB:STAT?` | 0 | — | ASCII: `OK <plain lines>`; JSON `GET_HEARTBEAT_STATUS` keys: `enabled`, `last_seq`, `remaining_ms`, `timed_out`, `timeout_ms` | — | `cmdGetHeartbeatStatus` (safety_handlers.cpp) |
 | `SYST:TLM:RATE?` | 0 | — | ASCII: `OK <plain lines>`; JSON `TLM_RATE` keys: `enabled`, `period_ms` | — | `cmdTelemetryRateQuery` (system_handlers.cpp) |
-| `SYST:VER?` | 0 | — | ASCII: `OK <lines> then `OK <n>``; JSON `VERSION` keys: `count`, `lines` | — | `cmdVersion` (system_handlers.cpp) |
+| `SYST:VER?` | 0 | — | ASCII: `<lines> then OK <n>`; JSON `VERSION` keys: `count`, `lines` | — | `cmdVersion` (system_handlers.cpp) |
 | `SYST:EVT:DIS` | 0 | — | ASCII: `OK ` | — | `cmdEventDisable` (system_handlers.cpp) |
 | `SYST:EVT:STAT?` | 0 | — | ASCII: `OK <plain lines>` | — | `cmdEventStatus` (system_handlers.cpp) |
 | `SYST:ZERO` | 0 | — | ASCII: `OK <status> or ALL_ZEROED` | — | `cmdZeroAll` (motion_handlers.cpp) |
@@ -226,7 +232,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 
 | Command | Min args | Usage | Reply | Errors | Handler |
 |---|---|---|---|---|---|
-| `CTRL:ENC:DBG?` (special case in dispatcher) | 0 | — | ASCII: `OK <debug service output>`, `OK <lines> then `OK <n>``; JSON `ENC_DEBUG` keys: `count`, `lines` | — | `ENC_DEBUG`  |
+| `CTRL:ENC:DBG?` (special case in dispatcher) | 0 | — | ASCII: `OK <debug service output>`, `<lines> then OK <n>`; JSON `ENC_DEBUG` keys: `count`, `lines` | — | `ENC_DEBUG`  |
 | `CTRL:MODE` | 1 | CTRL:MODE OPEN_LOOP\|MONITOR\|PID | `OK <status>` | `Unknown mode (OPEN_LOOP, MONITOR, SPEED_TRIM)` | `cmdSetMode` (control_handlers.cpp) |
 | `CTRL:ENC:FILT` | 1 | — | ASCII: `OK NONE`, `OK <formatted text>` | `EMA alpha must be 0-255`<br>`EMA requires alpha (0-255)`<br>`SMA requires window size (2-32)`<br>`SMA window must be 2-32`<br>`Unknown filter type or alpha out of range (0-255)` | `cmdEncFilter` (encoder_handlers.cpp) |
 | `CTRL:ENC:FILT?` | 1 | — | ASCII: `OK NONE`, `OK <formatted text>` | `EMA alpha must be 0-255`<br>`EMA requires alpha (0-255)`<br>`SMA requires window size (2-32)`<br>`SMA window must be 2-32`<br>`Unknown filter type or alpha out of range (0-255)` | `cmdEncFilter` (encoder_handlers.cpp) |
@@ -239,7 +245,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `CTRL:SYSID:SINE` | 4 | CTRL:SYSID:SINE <baseline> <amplitude> <freq_mHz> <dir>  | ASCII: `OK SYSID sine started` | `SYSID already running`<br>`freq_mHz must be 1-5000 (0.001-5.0 Hz)`<br>`speed must be 0-15625 sps` | `cmdSysIdSine` (control_handlers.cpp) |
 | `CTRL:SYSID:TRAPEZOID` | 2 | CTRL:SYSID:TRAPEZOID <speed_sps> <dir> [dur_ms] [settle_ms] | ASCII: `OK SYSID trapezoid started` | `SYSID already running`<br>`speed_sps must be 1-15625` | `cmdSysIdTrapezoid` (control_handlers.cpp) |
 | `CTRL:SYSID:RECT` | 2 | CTRL:SYSID:RECT <speed_sps> <dir> [dur_ms] [settle_ms] | ASCII: `OK SYSID rect started` | `SYSID already running`<br>`speed_sps must be 1-15625` | `cmdSysIdRect` (control_handlers.cpp) |
-| `CTRL:SYSID:DATA?` | 0 | — | ASCII: `OK <lines> then `OK <n>``; JSON `SYSID_DATA` keys: `count`, `lines`, `offset`, `samples`, `total` | `No data ready (test not DONE)`<br>`offset past end` | `cmdSysIdData` (control_handlers.cpp) |
+| `CTRL:SYSID:DATA?` | 0 | — | ASCII: `<lines> then OK <n>`; JSON `SYSID_DATA` keys: `count`, `lines`, `offset`, `samples`, `total` | `No data ready (test not DONE)`<br>`offset past end` | `cmdSysIdData` (control_handlers.cpp) |
 | `CTRL:MODE?` | 0 | — | ASCII: `OK <formatted text>` | — | `cmdGetMode` (control_handlers.cpp) |
 | `CTRL:ENC:STAT?` | 0 | — | ASCII: `OK <formatted text>` | — | `cmdGetEncoderStatus` (encoder_handlers.cpp) |
 | `CTRL:ENC?` | 0 | — | ASCII: `OK <formatted text>`; JSON `ENC` keys: `count`, `index_period_us`, `index_seen`, `index_tick`, `revolutions`, `velocity` | `Encoder not available` | `cmdEncoder` (encoder_handlers.cpp) |
@@ -319,7 +325,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
     respondErr( | ASCII: `OK <plain lines>` | `Compressed size too large`<br>`Flash erase failed`<br>`Flash not available`<br>`Flash program failed`<br>`Flash program failed (final page)`<br>`Invalid compressed size`<br>`Slot out of range` | `cmdFlashUploadRle` (display_handlers.cpp) |
 | `UI:FLASH:DUMP` | 1 | FLASH_DUMP <slot> [offset] [len]<br>FLASH_DUMP <slot> [offset] [len]
   if (cmd.argCount < 1) {
-    respondErr( | ASCII: `OK <lines> then `OK <n>``; JSON `FLASH_DUMP` keys: `count`, `len`, `lines`, `offset`, `slot` | `Flash not available`<br>`Flash read failed`<br>`Offset+len exceeds image size`<br>`Slot out of range` | `cmdFlashDump` (display_handlers.cpp) |
+    respondErr( | ASCII: `<lines> then OK <n>`; JSON `FLASH_DUMP` keys: `count`, `len`, `lines`, `offset`, `slot` | `Flash not available`<br>`Flash read failed`<br>`Offset+len exceeds image size`<br>`Slot out of range` | `cmdFlashDump` (display_handlers.cpp) |
 | `UI:FLASH:INFO` | 0 | — | ASCII: `OK <formatted text>` | `Flash not available` | `cmdFlashInfo` (display_handlers.cpp) |
 | `UI:FLASH:ERASE_ALL` | 0 | — | ASCII: `OK All image slots erased` | `Flash erase failed`<br>`Flash not available` | `cmdFlashEraseAll` (display_handlers.cpp) |
 | `UI:FLASH:TEST` | 0 | — | `OK <status>` | `Flash not available` | `cmdFlashTest` (display_handlers.cpp) |
@@ -330,10 +336,10 @@ usage error. "Handler" is the firmware function, for cross-reference.
 
 | Command | Min args | Usage | Reply | Errors | Handler |
 |---|---|---|---|---|---|
-| `DBG:MOTOR` (special case in dispatcher) | 0 | — | ASCII: `OK <debug service output>`, `OK <lines> then `OK <n>``; JSON `MOTOR_DEBUG` keys: `count`, `lines` | — | `MOTOR_DEBUG`  |
+| `DBG:MOTOR` (special case in dispatcher) | 0 | — | ASCII: `OK <debug service output>`, `<lines> then OK <n>`; JSON `MOTOR_DEBUG` keys: `count`, `lines` | — | `MOTOR_DEBUG`  |
 | `DBG:UNLOCK` (special case in dispatcher) | 0 | — | ASCII: `OK <status> or DBG unlocked` | — | `debugUnlock`  |
 | `DBG:LOCK` (special case in dispatcher) | 0 | — | ASCII: `OK <status> or DBG locked` | — | `debugLock`  |
-| `DBG:TRACE:DUMP` | 0 | — | ASCII: `OK <lines> then `OK <n>``; JSON `TRACE_DUMP` keys: `count`, `entries`, `lines` | — | `cmdTraceDump` (system_handlers.cpp) |
+| `DBG:TRACE:DUMP` | 0 | — | ASCII: `<lines> then OK <n>`; JSON `TRACE_DUMP` keys: `count`, `entries`, `lines` | — | `cmdTraceDump` (system_handlers.cpp) |
 | `DBG:TRACE:RESET` | 0 | — | ASCII: `OK Trace cleared` | — | `cmdTraceReset` (system_handlers.cpp) |
 
 ### DRV
@@ -367,7 +373,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `DRV:STEP_MODE` | 1 | DRV:STEP_MODE <0-7> | ASCII: `OK <formatted text>`; JSON `DRV:STEP_MODE` keys: `microstep_ratio`, `microsteps_per_rev`, `step_mode` | `MOTOR_BUSY: Motor must be idle to change microstep mode`<br>`Step mode must be 0-7`<br>`VERIFY_FAILED: STEP_MODE readback mismatch` | `cmdDrvStepMode` (driver_handlers.cpp) |
 | `DRV:FULL_STEPS` | 1 | DRV:FULL_STEPS <steps_per_rev> | ASCII: `OK <formatted text>`; JSON `DRV:FULL_STEPS` keys: `full_steps_per_rev`, `microsteps_per_rev` | `Full steps/rev must be 1-10000` | `cmdDrvFullSteps` (driver_handlers.cpp) |
 | `DRV:ENC_PPR` | 1 | DRV:ENC_PPR <pulses_per_rev> | ASCII: `OK <formatted text>`; JSON `DRV:ENC_PPR` keys: `encoder_ppr` | `Encoder PPR must be 1-65535` | `cmdDrvEncoderPPR` (driver_handlers.cpp) |
-| `DRV:CFG?` | 0 | — | ASCII: `OK <lines> then `OK <n>``; JSON `MCONFIG` keys: `count`, `lines` | — | `cmdMotorConfigShow` (config_handlers.cpp) |
+| `DRV:CFG?` | 0 | — | ASCII: `<lines> then OK <n>`; JSON `MCONFIG` keys: `count`, `lines` | — | `cmdMotorConfigShow` (config_handlers.cpp) |
 | `DRV:CFG:SAVE` | 0 | — | ASCII: `OK Config saved to flash` | `Flash write failed` | `cmdMotorConfigSave` (config_handlers.cpp) |
 | `DRV:CFG:LOAD` | 0 | — | ASCII: `OK Config loaded from flash` | `No valid config in flash` | `cmdMotorConfigLoad` (config_handlers.cpp) |
 | `DRV:CFG:RESET` | 0 | — | ASCII: `OK Factory defaults restored and saved` | `Flash write failed` | `cmdMotorConfigReset` (config_handlers.cpp) |
