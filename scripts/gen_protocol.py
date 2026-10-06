@@ -244,9 +244,12 @@ carries the same catalogue for code generation and conformance tests. Protocol v
 
 ## 1. Transport and framing
 
-- Byte stream over the ST-LINK virtual COM port: USART2, 8N1, **115200** baud by default
-  (`SYST:BAUD` can select 230400/460800/921600; the stock ST-LINK V2-1 drops bytes above
-  115200 during bulk transfers, so clients should stay at 115200 on that adapter).
+- Byte stream over the ST-LINK virtual COM port: USART2, 8N1, **115200** baud by default.
+  `SYST:BAUD` can select 230400/460800/921600 (with the revert rule of section 4), but the
+  stock ST-LINK V2-1 VCP drops bytes above 115200 during bulk transfers (bitmap and flash
+  uploads), so clients stay at 115200 on that adapter and offer nothing below it (the
+  firmware accepts no rate below 115200). A different USB-serial adapter, or several boards
+  on separate CDC links, must be verified per adapter before a client raises the rate.
 - A command is one line: printable ASCII (0x20..0x7E), terminated by CR, LF or CRLF.
   Maximum **{line_max} characters** per line, **{max_args} arguments** of at most **{arg_max}
   characters** each, separated by spaces. The command word is upper-cased by the parser;

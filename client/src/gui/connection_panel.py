@@ -66,9 +66,12 @@ class ConnectionPanel(QWidget):
         inner.addWidget(baud_label)
 
         self._baud_combo = QComboBox()
-        self._baud_combo.addItems(["9600", "19200", "38400", "57600", "115200", "230400", "460800", "921600"])
+        # Only rates the firmware accepts (SYST:BAUD). Stay at 115200 on the ST-LINK VCP:
+        # it drops bytes above that during bulk transfers (PROTOCOL.md section 1).
+        self._baud_combo.addItems(["115200", "230400", "460800", "921600"])
         self._baud_combo.setCurrentText("115200")
-        self._baud_combo.setToolTip("Serial baud rate")
+        self._baud_combo.setToolTip("Serial baud rate (keep 115200 on the ST-LINK VCP; "
+                                    "verify faster rates per adapter)")
         inner.addWidget(self._baud_combo)
 
         inner.addSpacing(20)
