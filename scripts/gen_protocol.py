@@ -206,6 +206,8 @@ def limits():
         "arg_max_chars": int(re.search(r'char args\[MAX_ARGS\]\[(\d+)\]', cp).group(1)) - 1,
         "rx_ring_bytes": int(re.search(r'RingBuffer<(\d+)> m_rxBuffer', uh).group(1)),
         "telemetry_period_ms": const(cs, "TELEMETRY_PERIOD_MS"),
+        "telemetry_period_min_ms": const(cs, "TELEMETRY_PERIOD_MIN_MS"),
+        "telemetry_period_max_ms": const(cs, "TELEMETRY_PERIOD_MAX_MS"),
         "heartbeat_timeout_min_ms": const(cs, "HEARTBEAT_TIMEOUT_MIN_MS"),
         "heartbeat_timeout_max_ms": const(cs, "HEARTBEAT_TIMEOUT_MAX_MS"),
         "baud_revert_ms": int(re.search(r'm_baudRevertDeadline = m_dispatcher\.getTickMs\(\) \+ (\d+)', sh).group(1)),
@@ -282,7 +284,7 @@ receive-ring overflow), `DBG_LOCKED` (bring-up command before `DBG:UNLOCK`), `MO
 | Line | When | ASCII | JSON |
 |---|---|---|---|
 | Event | motor fault/stall edges, motion done, following supervisor | `!<TYPE> status=0x<hex4> [detail=<text>]` | `{{"kind":"event","type":"<TYPE>","seq":<n>,"ts_ms":<n>,"data":{{"status":<n>[,"detail":"<text>"]}}}}` |
-| Telemetry push | every {telem_ms} ms **when enabled** (no command enables it today; protocol 2 adds a host-settable rate) | `TELEM: pos=<i> spd=<u> enc=<i> vel=<i>` | same ASCII line |
+| Telemetry push | every `SYST:TLM:RATE <ms>` ms ({tlm_min}..{tlm_max}, 0 = off; off at boot; the ack returns the clamped value) | `TELEM: pos=<i> spd=<u> enc=<i> vel=<i>` | `{{"kind":"telemetry","data":{{...}}}}` where `data` is byte-for-byte the `DIAG:STAT?` `data` object (section 8), so a client receiving pushes never polls |
 | Joystick | board joystick in LOCAL UI mode | `EVENT JOY <LEFT\\|RIGHT\\|UP\\|DOWN\\|CENTER> pressed\\|released` | same |
 | Banner | power-up and Comms start | 5 lines starting with a blank line and `====` | same |
 
@@ -330,8 +332,8 @@ verify state instead).
 2. (done) `*IDN?` -> `SMC,NUCLEO-F401RE-IHM03A1,<serial>,<fw>,<proto>` from `protocol_version.hpp`.
 3. (done) Echo off by default in JSON mode; `SYST:ECHO ON|OFF`.
 4. (done) Error codes in both formats; `CHECKSUM` arrives with the checksum feature.
-5. JSON-escaped strings everywhere.
-6. JSON telemetry push with the `DIAG:STAT?` schema: `SYST:TLM:RATE <ms>` (0 = off).
+5. (done) JSON-escaped strings everywhere.
+6. (done) JSON telemetry push with the `DIAG:STAT?` schema: `SYST:TLM:RATE <ms>` (0 = off).
 7. Multi-line replies end with `OK <n>` (ASCII) or carry a `lines` array (JSON);
    `CTRL:SYSID:DATA?` adds `total`.
 8. Dropped-event counter in `SYST:EVT:STAT?`.
@@ -389,7 +391,8 @@ def build(commands, bodies):
     md = PREAMBLE.format(
         proto=PROTOCOL_VERSION, line_max=lim["line_max_chars"], max_args=lim["max_args"],
         arg_max=lim["arg_max_chars"], ring=lim["rx_ring_bytes"], status_table=status_table,
-        telem_ms=lim["telemetry_period_ms"], event_table=event_table,
+        tlm_min=lim["telemetry_period_min_ms"], tlm_max=lim["telemetry_period_max_ms"],
+        event_table=event_table,
         hb_min=lim["heartbeat_timeout_min_ms"], hb_max=lim["heartbeat_timeout_max_ms"],
         baud_revert=lim["baud_revert_ms"], byte_timeout=lim["binary_byte_timeout_ms"],
         chunk=lim["binary_chunk_bytes"], send_timeout=lim["motor_queue_send_timeout_ms"],

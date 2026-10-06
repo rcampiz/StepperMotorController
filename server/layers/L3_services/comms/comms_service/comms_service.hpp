@@ -26,7 +26,9 @@ class CommsService : public ICommsService,
                      public ISafetyActions,
                      public IDispatchStats {
 public:
-    static constexpr uint32_t TELEMETRY_PERIOD_MS = 100;
+    static constexpr uint32_t TELEMETRY_PERIOD_MS = 100;       // default when enabled without a rate
+    static constexpr uint32_t TELEMETRY_PERIOD_MIN_MS = 20;    // SYST:TLM:RATE clamp (F9)
+    static constexpr uint32_t TELEMETRY_PERIOD_MAX_MS = 5000;
     static constexpr uint32_t HEARTBEAT_TIMEOUT_MIN_MS = 100;
     static constexpr uint32_t HEARTBEAT_TIMEOUT_MAX_MS = 5000;
 
@@ -55,12 +57,18 @@ public:
     void getStats(DispatchStats& out) override;
 
     void enableTelemetry(bool enable);
-    bool isTelemetryEnabled() const { return m_telemetryEnabled; }
+    bool isTelemetryEnabled() const { return m_telemetryPeriodMs > 0; }
+    /// F9: push period in ms (clamped to MIN..MAX), 0 = off. Returns the accepted value.
+    uint32_t setTelemetryPeriod(uint32_t ms);
+    uint32_t getTelemetryPeriod() const { return m_telemetryPeriodMs; }
     uint32_t getLastEventSeq() const { return m_eventSeq; }
     bool commsTimedOut() const { return m_commsTimedOut; }
 
     /// Plain-function accessor for SystemDispatch::setEventSeqFn.
     static uint32_t lastEventSeqStatic();
+    /// Plain-function accessors for SystemDispatch::setTelemetryFns.
+    static uint32_t setTelemetryPeriodStatic(uint32_t ms);
+    static uint32_t getTelemetryPeriodStatic();
 
 private:
     static void joyEventCallback(const UI::JoyEvent& event);
@@ -73,7 +81,7 @@ private:
     TelemetryStore*              m_telemetry = nullptr;
     IMotorTaskControl*           m_motorCtrl = nullptr;
 
-    bool     m_telemetryEnabled = false;
+    uint32_t m_telemetryPeriodMs = 0;     // 0 = off (boot default)
     uint32_t m_lastTelemetryTime = 0;
     uint32_t m_heartbeatTimeoutMs = 0;   // 0 = disabled
     uint32_t m_lastHeartbeatMs = 0;

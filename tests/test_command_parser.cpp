@@ -303,3 +303,49 @@ TEST(ping_round_trips_the_sequence_number) {
     EXPECT_TRUE(out.find("\"command\":\"PING\"") != std::string::npos);
     EXPECT_TRUE(out.find("\"seq\":5") != std::string::npos);
 }
+
+// --- F9: host-settable telemetry push with the DIAG:STAT? schema ---------------------
+TEST(telemetry_rate_command_reaches_l3_and_replies_in_both_formats) {
+    BoundRig r;
+    std::string out = r.run("SYST:TLM:RATE 50");
+    EXPECT_TRUE(r.l3.system.calls.back() == "setTelemetryPeriod");
+    EXPECT_TRUE(out.find("OK TLM_RATE 0") != std::string::npos);    // the fake accepts nothing
+    out = r.run("SYST:TLM:RATE?");
+    EXPECT_TRUE(r.l3.system.calls.back() == "getTelemetryPeriod");
+    EXPECT_TRUE(out.find("OK 0\r\n") != std::string::npos);
+    out = r.run("SYST:TLM:RATE");
+    EXPECT_TRUE(out.find("ERROR USAGE Usage: SYST:TLM:RATE <ms>") != std::string::npos);
+    r.run("FMT JSON");
+    out = r.run("SYST:TLM:RATE 50");
+    EXPECT_TRUE(out.find("\"command\":\"TLM_RATE\"") != std::string::npos);
+    EXPECT_TRUE(out.find("\"requested\":50") != std::string::npos);
+    EXPECT_TRUE(out.find("\"accepted\":0") != std::string::npos);
+    EXPECT_TRUE(out.find("\"enabled\":false") != std::string::npos);
+    out = r.run("SYST:TLM:RATE?");
+    EXPECT_TRUE(out.find("\"period_ms\":0") != std::string::npos);
+}
+
+TEST(json_telemetry_push_carries_exactly_the_diag_stat_data_object) {
+    BoundRig r;
+    r.run("FMT JSON");
+    std::string stat = r.run("DIAG:STAT?");
+    Protocol::TelemetrySnapshot snap{};                 // same (zero) snapshot the fake hands out
+    r.transport.out.clear();
+    r.proc.emitTelemetry(snap);
+    std::string tlm = r.transport.out;
+    const std::string sh = Protocol::STATUS_JSON_HEAD;
+    const std::string th = Protocol::TELEMETRY_JSON_HEAD;
+    EXPECT_TRUE(stat.compare(0, sh.size(), sh) == 0);
+    EXPECT_TRUE(tlm.compare(0, th.size(), th) == 0);
+    EXPECT_EQ(stat.substr(sh.size()), tlm.substr(th.size()));
+    EXPECT_TRUE(tlm.find("\"kind\":\"telemetry\"") == 1);
+    EXPECT_TRUE(tlm.find("\"rx_overflow_lines\":") != std::string::npos);
+}
+
+TEST(ascii_mode_keeps_the_short_telem_line) {
+    BoundRig r;
+    Protocol::TelemetrySnapshot snap{};
+    snap.motor.position = 7;
+    r.proc.emitTelemetry(snap);
+    EXPECT_STREQ(r.transport.out.c_str(), "TELEM: pos=7 spd=0 enc=0 vel=0\r\n");
+}

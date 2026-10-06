@@ -70,7 +70,7 @@ receive-ring overflow), `DBG_LOCKED` (bring-up command before `DBG:UNLOCK`), `MO
 | Line | When | ASCII | JSON |
 |---|---|---|---|
 | Event | motor fault/stall edges, motion done, following supervisor | `!<TYPE> status=0x<hex4> [detail=<text>]` | `{"kind":"event","type":"<TYPE>","seq":<n>,"ts_ms":<n>,"data":{"status":<n>[,"detail":"<text>"]}}` |
-| Telemetry push | every 100 ms **when enabled** (no command enables it today; protocol 2 adds a host-settable rate) | `TELEM: pos=<i> spd=<u> enc=<i> vel=<i>` | same ASCII line |
+| Telemetry push | every `SYST:TLM:RATE <ms>` ms (20..5000, 0 = off; off at boot; the ack returns the clamped value) | `TELEM: pos=<i> spd=<u> enc=<i> vel=<i>` | `{"kind":"telemetry","data":{...}}` where `data` is byte-for-byte the `DIAG:STAT?` `data` object (section 8), so a client receiving pushes never polls |
 | Joystick | board joystick in LOCAL UI mode | `EVENT JOY <LEFT\|RIGHT\|UP\|DOWN\|CENTER> pressed\|released` | same |
 | Banner | power-up and Comms start | 5 lines starting with a blank line and `====` | same |
 
@@ -127,8 +127,8 @@ verify state instead).
 2. (done) `*IDN?` -> `SMC,NUCLEO-F401RE-IHM03A1,<serial>,<fw>,<proto>` from `protocol_version.hpp`.
 3. (done) Echo off by default in JSON mode; `SYST:ECHO ON|OFF`.
 4. (done) Error codes in both formats; `CHECKSUM` arrives with the checksum feature.
-5. JSON-escaped strings everywhere.
-6. JSON telemetry push with the `DIAG:STAT?` schema: `SYST:TLM:RATE <ms>` (0 = off).
+5. (done) JSON-escaped strings everywhere.
+6. (done) JSON telemetry push with the `DIAG:STAT?` schema: `SYST:TLM:RATE <ms>` (0 = off).
 7. Multi-line replies end with `OK <n>` (ASCII) or carry a `lines` array (JSON);
    `CTRL:SYSID:DATA?` adds `total`.
 8. Dropped-event counter in `SYST:EVT:STAT?`.
@@ -140,7 +140,7 @@ verify state instead).
 
 ## 8. `DIAG:STAT?` JSON fields
 
-Top level `data`: `status`, `command`, `data`, `state`, `tick`, `queue_depth`, `motor`, `position`, `speed`, `busy`, `hi_z`, `direction`, `mot_status`, `status_reg`, `cmd_err`, `ocd`, `thermal_sd`, `thermal_warn`, `uvlo`, `stall_a`, `stall_b`, `encoder`, `count`, `velocity`, `index_seen`, `revolutions`, `index_period_us`, `vel_quality`, `control`, `following_error`, `setpoint`, `mode`, `tracking`, `trim_out`, `p`, `i`, `d`, `sup_state`, `tier`, `vel_error`, `retries`, `base_spd`, `trim_spd`, `final_spd`, `trim_frozen`, `vel_quality`, `heartbeat`, `enabled`, `timeout_ms`, `remaining_ms`, `timed_out`, `system`, `uptime_ticks`, `free_heap`, `rx_overflows`, `rx_overflow_lines`, `mode`, `encoder_status`, `error`.
+Top level `data`: `state`, `tick`, `queue_depth`, `motor`, `position`, `speed`, `busy`, `hi_z`, `direction`, `mot_status`, `status_reg`, `cmd_err`, `ocd`, `thermal_sd`, `thermal_warn`, `uvlo`, `stall_a`, `stall_b`, `encoder`, `count`, `velocity`, `index_seen`, `revolutions`, `index_period_us`, `vel_quality`, `control`, `following_error`, `setpoint`, `mode`, `tracking`, `trim_out`, `p`, `i`, `d`, `sup_state`, `tier`, `vel_error`, `retries`, `base_spd`, `trim_spd`, `final_spd`, `trim_frozen`, `vel_quality`, `heartbeat`, `enabled`, `timeout_ms`, `remaining_ms`, `timed_out`, `system`, `uptime_ticks`, `free_heap`, `rx_overflows`, `rx_overflow_lines`, `mode`, `encoder_status`, `error`.
 
 Telemetry structures behind it (`harness/pins/telemetry_types.hpp`):
 
@@ -190,6 +190,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `SYST:HB` | 0 | — | ASCII: `OK <plain lines>`; JSON `HEARTBEAT` keys: `boot`, `mcu_tick`, `remaining_ms`, `seq` | — | `cmdHeartbeat` (safety_handlers.cpp) |
 | `SYST:ECHO` | 1 | SYST:ECHO <ON\|OFF> | `OK <status>` | — | `cmdEcho` (system_handlers.cpp) |
 | `SYST:HB:TIMEOUT` | 1 | SET_HEARTBEAT <timeout_ms> | ASCII: `OK <plain lines>`; JSON `SET_HEARTBEAT` keys: `accepted`, `enabled`, `requested` | — | `cmdSetHeartbeat` (safety_handlers.cpp) |
+| `SYST:TLM:RATE` | 1 | SYST:TLM:RATE <ms> | ASCII: `OK <plain lines>`; JSON `TLM_RATE` keys: `accepted`, `enabled`, `requested` | — | `cmdTelemetryRate` (system_handlers.cpp) |
 | `SYST:BAUD` | 1 | SET_BAUD <115200\|230400\|460800\|921600> | ASCII: `OK <plain lines>`; JSON `SET_BAUD` keys: `baud` | `Supported: 115200, 230400, 460800, 921600` | `cmdSetBaud` (system_handlers.cpp) |
 | `SYST:EVT:EN` | 0 | — | ASCII: `OK <formatted text>` | `Invalid mask (0-255)` | `cmdEventEnable` (system_handlers.cpp) |
 | `SYST:DELAY` | 1 | SYST:DELAY <ms> | ASCII: `OK <formatted text>`; JSON `SYST:DELAY` keys: `transport_delay_ms` | `Delay must be 0-1000 ms` | `cmdSystDelay` (system_handlers.cpp) |
@@ -197,6 +198,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `SYST:TICK?` | 0 | — | ASCII: `OK <plain lines>`; JSON `GET_TICK` keys: `tick` | — | `cmdGetTick` (system_handlers.cpp) |
 | `SYST:ECHO?` | 0 | — | JSON `ECHO` keys: `echo` | — | `cmdEchoQuery` (system_handlers.cpp) |
 | `SYST:HB:STAT?` | 0 | — | ASCII: `OK <plain lines>`; JSON `GET_HEARTBEAT_STATUS` keys: `enabled`, `last_seq`, `remaining_ms`, `timed_out`, `timeout_ms` | — | `cmdGetHeartbeatStatus` (safety_handlers.cpp) |
+| `SYST:TLM:RATE?` | 0 | — | ASCII: `OK <plain lines>`; JSON `TLM_RATE` keys: `enabled`, `period_ms` | — | `cmdTelemetryRateQuery` (system_handlers.cpp) |
 | `SYST:VER?` | 0 | — | ASCII: `OK <plain lines>` | — | `cmdVersion` (system_handlers.cpp) |
 | `SYST:EVT:DIS` | 0 | — | ASCII: `OK ` | — | `cmdEventDisable` (system_handlers.cpp) |
 | `SYST:EVT:STAT?` | 0 | — | ASCII: `OK <plain lines>` | — | `cmdEventStatus` (system_handlers.cpp) |

@@ -53,6 +53,8 @@ bool initCommsSubsystem(const CommsServiceDeps& deps,
     g_commsService.init(l2l3.processor, clock, motion.stepper.event, g_commandQueue,
                         g_telemetryStore, &UI::g_uiMode, deps.motorCtrl);
     setDispatchEventSeqFn(&CommsService::lastEventSeqStatic);
+    setDispatchTelemetryFns(&CommsService::setTelemetryPeriodStatic,
+                            &CommsService::getTelemetryPeriodStatic);
 
     result.commsService = &g_commsService;
     return true;

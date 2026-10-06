@@ -38,9 +38,14 @@ struct StatusJsonView {
     uint32_t rxOverflowLines = 0;    ///< lines refused because of an overflow (F1)
 };
 
-/// Format {"status":"ok","command":"GET_STATUS","data":{...}} into buf. Returns the
-/// would-be length (never writes past bufSize-1). Caller must check `< bufSize`.
+/// Envelope heads: the DIAG:STAT? reply and the F9 telemetry push share one `data` object.
+constexpr const char* STATUS_JSON_HEAD    = "{\"status\":\"ok\",\"command\":\"GET_STATUS\",\"data\":";
+constexpr const char* TELEMETRY_JSON_HEAD = "{\"kind\":\"telemetry\",\"data\":";
+
+/// Format <head>{...}} into buf. Returns the would-be length (never writes past
+/// bufSize-1). Caller must check `< bufSize`.
 int renderStatusJson(char* buf, size_t bufSize,
-                     const TelemetrySnapshot& snap, const StatusJsonView& v);
+                     const TelemetrySnapshot& snap, const StatusJsonView& v,
+                     const char* head = STATUS_JSON_HEAD);
 
 } // namespace Protocol

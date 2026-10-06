@@ -44,9 +44,10 @@ for fname, iface, member in IFACES:
         # strip default arguments from the override signature
         args = re.sub(r'\s*=\s*[^,)]+', '', args)
         body = "calls.push_back(\"%s\");" % name
-        # non-const reference parameters are out-params: value-initialise them so callers never read garbage
+        # non-const reference parameters are out-params: value-initialise them so callers never read
+        # garbage (skipped for interface types I*, which are abstract)
         for am in re.finditer(r'([\w:]+(?:<[^>]*>)?)\s*&\s*(\w+)', args):
-            if am.group(1) in SCALARS and not re.search(r'const\s+' + re.escape(am.group(1)) + r'\s*&\s*' + am.group(2), args):
+            if not re.match(r'(?:\w+::)*I[A-Z]', am.group(1)) and not re.search(r'const\s+' + re.escape(am.group(1)) + r'\s*&\s*' + am.group(2), args):
                 body += " %s = %s{};" % (am.group(2), am.group(1))
         if ret == "void":
             out.append("    void %s(%s) %s override { %s }" % (name, args, const, body))

@@ -29,5 +29,6 @@ struct DispatchDeps {
 const Harness::L3Dispatchers* initDispatches(const DispatchDeps& deps);
 
 void setDispatchEventSeqFn(uint32_t (*fn)());
+void setDispatchTelemetryFns(uint32_t (*set)(uint32_t), uint32_t (*get)());
 
 } // namespace Services

@@ -26,6 +26,8 @@
 
 namespace Protocol {
 
+struct StatusJsonView;   // status_json.hpp
+
 // Import types moved to Harness:: that are used throughout CommandParser
 using Harness::ServiceStatus;
 using Harness::statusToString;
@@ -282,6 +284,12 @@ private:
   void cmdHeartbeat(const ParsedCommand &cmd);
   void cmdSetHeartbeat(const ParsedCommand &cmd);
   void cmdGetHeartbeatStatus();
+
+  // Telemetry push (F9)
+  void cmdTelemetryRate(const ParsedCommand &cmd);
+  void cmdTelemetryRateQuery();
+  /// Fill the DIAG:STAT? view (shared by the JSON telemetry push)
+  void fillStatusView(const TelemetrySnapshot &snap, StatusJsonView &v);
 
   // Utility command handlers
   void cmdVersion();

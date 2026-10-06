@@ -93,6 +93,24 @@ TEST(heartbeat_received_resets_the_watchdog) {
     EXPECT_TRUE(en); EXPECT_EQ(seq, 7u); EXPECT_EQ(rem, 50u); EXPECT_FALSE(out);
 }
 
+TEST(telemetry_period_is_clamped_and_zero_turns_it_off) {          // F9
+    Rig r;
+    EXPECT_FALSE(r.svc.isTelemetryEnabled());                          // off at boot
+    EXPECT_EQ(r.svc.setTelemetryPeriod(5), Services::CommsService::TELEMETRY_PERIOD_MIN_MS);
+    EXPECT_EQ(r.svc.setTelemetryPeriod(99999), Services::CommsService::TELEMETRY_PERIOD_MAX_MS);
+    EXPECT_EQ(r.svc.setTelemetryPeriod(250), 250u);
+    EXPECT_EQ(r.svc.getTelemetryPeriod(), 250u);
+    EXPECT_TRUE(r.svc.isTelemetryEnabled());
+    r.clock.now += 240; r.svc.tick();
+    EXPECT_EQ(r.proc.telemetryLines, 0);
+    r.clock.now += 20;  r.svc.tick();
+    EXPECT_EQ(r.proc.telemetryLines, 1);
+    EXPECT_EQ(r.svc.setTelemetryPeriod(0), 0u);
+    EXPECT_FALSE(r.svc.isTelemetryEnabled());
+    r.clock.now += 1000; r.svc.tick();
+    EXPECT_EQ(r.proc.telemetryLines, 1);
+}
+
 TEST(telemetry_publishes_every_100ms_when_enabled) {
     Rig r;
     r.svc.tick();

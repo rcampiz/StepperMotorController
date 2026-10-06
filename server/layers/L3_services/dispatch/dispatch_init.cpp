@@ -62,4 +62,9 @@ void setDispatchEventSeqFn(uint32_t (*fn)())
     s_systemDisp.setEventSeqFn(fn);
 }
 
+void setDispatchTelemetryFns(uint32_t (*set)(uint32_t), uint32_t (*get)())
+{
+    s_systemDisp.setTelemetryFns(set, get);
+}
+
 } // namespace Services

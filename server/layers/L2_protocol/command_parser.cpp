@@ -7,6 +7,7 @@
 #include "harness/trace/interface_trace.hpp"
 #include "harness/pins/protocol_version.hpp"
 #include "L2_protocol/command_parser_internal.hpp"   // jsonEscape, i64toa
+#include "L2_protocol/status_json.hpp"
 #include "F_platform/boundary/boot_id.hpp"
 #include <ctype.h>
 #include <stdio.h>
@@ -284,6 +285,7 @@ void CommandParser::dispatchSystem(const char *suffix,
       {"HB", &CommandParser::cmdHeartbeat},
       {"ECHO", &CommandParser::cmdEcho},
       {"HB:TIMEOUT", &CommandParser::cmdSetHeartbeat},
+      {"TLM:RATE", &CommandParser::cmdTelemetryRate},
       {"BAUD", &CommandParser::cmdSetBaud},
       {"EVT:EN", &CommandParser::cmdEventEnable},
       {"DELAY", &CommandParser::cmdSystDelay},
@@ -293,6 +295,7 @@ void CommandParser::dispatchSystem(const char *suffix,
       {"TICK?", &CommandParser::cmdGetTick},
       {"ECHO?", &CommandParser::cmdEchoQuery},
       {"HB:STAT?", &CommandParser::cmdGetHeartbeatStatus},
+      {"TLM:RATE?", &CommandParser::cmdTelemetryRateQuery},
       {"VER?", &CommandParser::cmdVersion},
       {"EVT:DIS", &CommandParser::cmdEventDisable},
       {"EVT:STAT?", &CommandParser::cmdEventStatus},
@@ -661,6 +664,18 @@ void i32ToStr(int32_t val, char *buf) {
 } // namespace
 
 void CommandParser::emitTelemetry(const Protocol::TelemetrySnapshot &snap) {
+  if (m_format == ResponseFormat::JSON) {
+    // F9: {"kind":"telemetry","data":{...}} with exactly the DIAG:STAT? data object,
+    // so a client that receives pushes never needs to poll. Never send a truncated line.
+    StatusJsonView v;
+    fillStatusView(snap, v);
+    char buf[STATUS_JSON_BUF];
+    int n = renderStatusJson(buf, sizeof(buf), snap, v, TELEMETRY_JSON_HEAD);
+    if (n >= 0 && n < static_cast<int>(sizeof(buf))) {
+      m_transport.println(buf);
+    }
+    return;
+  }
   char buf[16];
   m_transport.print("TELEM: pos=");
   i32ToStr(snap.motor.position, buf);

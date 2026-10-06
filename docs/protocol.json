@@ -7,6 +7,8 @@
     "arg_max_chars": 31,
     "rx_ring_bytes": 1024,
     "telemetry_period_ms": 100,
+    "telemetry_period_min_ms": 20,
+    "telemetry_period_max_ms": 5000,
     "heartbeat_timeout_min_ms": 100,
     "heartbeat_timeout_max_ms": 5000,
     "baud_revert_ms": 2000,
@@ -161,9 +163,6 @@
     ]
   },
   "status_json_keys": [
-    "status",
-    "command",
-    "data",
     "state",
     "tick",
     "queue_depth",
@@ -743,6 +742,31 @@
       "note": ""
     },
     {
+      "name": "SYST:TLM:RATE",
+      "prefix": "SYST",
+      "handler": "cmdTelemetryRate",
+      "file": "system_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "SYST:TLM:RATE <ms>"
+      ],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [
+        {
+          "command": "TLM_RATE",
+          "keys": [
+            "accepted",
+            "enabled",
+            "requested"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
       "name": "SYST:BAUD",
       "prefix": "SYST",
       "handler": "cmdSetBaud",
@@ -881,6 +905,28 @@
             "remaining_ms",
             "timed_out",
             "timeout_ms"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "SYST:TLM:RATE?",
+      "prefix": "SYST",
+      "handler": "cmdTelemetryRateQuery",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [
+        {
+          "command": "TLM_RATE",
+          "keys": [
+            "enabled",
+            "period_ms"
           ]
         }
       ],

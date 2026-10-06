@@ -109,7 +109,7 @@ struct FakeEncoderDispatcher : Services::IEncoderDispatcher {
     bool isEncoderAvailable()  override { calls.push_back("isEncoderAvailable"); return bool{}; }
     EncoderSnapshot getEncoderSnapshot()  override { calls.push_back("getEncoderSnapshot"); return EncoderSnapshot{}; }
     void encoderResetCount()  override { calls.push_back("encoderResetCount"); }
-    void encFilterGetConfig(EncFilterParams& out)  override { calls.push_back("encFilterGetConfig"); }
+    void encFilterGetConfig(EncFilterParams& out)  override { calls.push_back("encFilterGetConfig"); out = EncFilterParams{}; }
     void encFilterSetConfig(const EncFilterParams& cfg)  override { calls.push_back("encFilterSetConfig"); }
     void encFilterSetLegacy(uint8_t type, uint8_t param)  override { calls.push_back("encFilterSetLegacy"); }
     void configSetEncFilter(uint8_t type, uint8_t alpha)  override { calls.push_back("configSetEncFilter"); }
@@ -121,7 +121,7 @@ struct FakeMotorDriverDispatcher : Services::IMotorDriverDispatcher {
     mutable std::vector<std::string> calls;
     void motorReinit()  override { calls.push_back("motorReinit"); }
     bool motorApplyConfig()  override { calls.push_back("motorApplyConfig"); return bool{}; }
-    bool motorGetDebugInfo(Harness::MotorDebugParams& out)  override { calls.push_back("motorGetDebugInfo"); return bool{}; }
+    bool motorGetDebugInfo(Harness::MotorDebugParams& out)  override { calls.push_back("motorGetDebugInfo"); out = Harness::MotorDebugParams{}; return bool{}; }
     bool motorSetStepModeSafe(uint8_t mode, uint8_t& readback)  override { calls.push_back("motorSetStepModeSafe"); readback = uint8_t{}; return bool{}; }
     FaultEnableFlags getFaultEnable()  override { calls.push_back("getFaultEnable"); return FaultEnableFlags{}; }
 };
@@ -160,7 +160,7 @@ struct FakeSystemDispatcher : Services::ISystemDispatcher {
     mutable std::vector<std::string> calls;
     uint32_t getTickUs()  override { calls.push_back("getTickUs"); return uint32_t{}; }
     uint32_t getTickMs()  override { calls.push_back("getTickMs"); return uint32_t{}; }
-    void getTelemetry(Protocol::TelemetrySnapshot& out)  override { calls.push_back("getTelemetry"); }
+    void getTelemetry(Protocol::TelemetrySnapshot& out)  override { calls.push_back("getTelemetry"); out = Protocol::TelemetrySnapshot{}; }
     void setTransportDelay(uint32_t ms)  override { calls.push_back("setTransportDelay"); }
     uint32_t getTransportDelay()  override { calls.push_back("getTransportDelay"); return uint32_t{}; }
     void getDeviceInfo(uint16_t& deviceId, uint8_t& role)  override { calls.push_back("getDeviceInfo"); deviceId = uint16_t{}; role = uint8_t{}; }
@@ -170,12 +170,14 @@ struct FakeSystemDispatcher : Services::ISystemDispatcher {
     void disableEvents()  override { calls.push_back("disableEvents"); }
     EventStats getEventStats()  override { calls.push_back("getEventStats"); return EventStats{}; }
     uint32_t getLastEventSeq()  override { calls.push_back("getLastEventSeq"); return uint32_t{}; }
+    uint32_t setTelemetryPeriod(uint32_t ms)  override { calls.push_back("setTelemetryPeriod"); return uint32_t{}; }
+    uint32_t getTelemetryPeriod()  override { calls.push_back("getTelemetryPeriod"); return uint32_t{}; }
 };
 
 struct FakeTraceDispatcher : Services::ITraceDispatcher {
     mutable std::vector<std::string> calls;
     uint32_t traceGetCount()  override { calls.push_back("traceGetCount"); return uint32_t{}; }
-    bool traceGetEntry(uint32_t index, TraceEntryData& out)  override { calls.push_back("traceGetEntry"); return bool{}; }
+    bool traceGetEntry(uint32_t index, TraceEntryData& out)  override { calls.push_back("traceGetEntry"); out = TraceEntryData{}; return bool{}; }
     void traceReset()  override { calls.push_back("traceReset"); }
     void traceRecordEntry(const char* tag, uint32_t arg0)  override { calls.push_back("traceRecordEntry"); }
     void traceRecordExit(const char* tag, uint32_t arg0)  override { calls.push_back("traceRecordExit"); }

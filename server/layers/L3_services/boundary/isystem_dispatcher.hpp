@@ -43,6 +43,10 @@ public:
 
     // Comms diagnostics
     virtual uint32_t getLastEventSeq() = 0;
+
+    // Telemetry push (F9): period in ms, 0 = off. Returns the accepted (clamped) period.
+    virtual uint32_t setTelemetryPeriod(uint32_t ms) = 0;
+    virtual uint32_t getTelemetryPeriod() = 0;
 };
 
 } // namespace Services

@@ -71,13 +71,14 @@ void CommandParser::cmdGetTick() {
 // F4: DIAG:STAT? JSON render (pure; worst-case length is host-tested)
 // ---------------------------------------------------------------------------
 int renderStatusJson(char* buf, size_t bufSize,
-                     const TelemetrySnapshot& snap, const StatusJsonView& v) {
+                     const TelemetrySnapshot& snap, const StatusJsonView& v,
+                     const char* head) {
   // newlib-nano: no %lld — pre-format int64_t as string
   char encCountStr[24];
   i64toa(snap.encoder.count, encCountStr, sizeof(encCountStr));
   return snprintf(
       buf, bufSize,
-        "{\"status\":\"ok\",\"command\":\"GET_STATUS\",\"data\":"
+        "%s"
         "{\"state\":\"%s\",\"tick\":%lu,\"queue_depth\":%u,"
         "\"motor\":{\"position\":%ld,\"speed\":%lu,\"busy\":%s,\"hi_z\":%s,"
         "\"direction\":%d,\"mot_status\":%u,\"status_reg\":\"%04X\","
@@ -96,7 +97,7 @@ int renderStatusJson(char* buf, size_t bufSize,
         "\"system\":{\"uptime_ticks\":%lu,\"free_heap\":%lu,"
       "\"rx_overflows\":%lu,\"rx_overflow_lines\":%lu},"
       "\"mode\":\"%s\",\"encoder_status\":\"%s\",\"error\":%s}}",
-        v.stateStr, static_cast<unsigned long>(v.tick),
+        head, v.stateStr, static_cast<unsigned long>(v.tick),
         static_cast<unsigned>(v.queueDepth),
         static_cast<long>(snap.motor.position),
         static_cast<unsigned long>(snap.motor.speed),
@@ -135,64 +136,67 @@ int renderStatusJson(char* buf, size_t bufSize,
       v.modeStr, v.encStatusStr, v.anyError ? "true" : "false");
 }
 
-void CommandParser::cmdGetStatus() {
-  uint32_t tick = m_dispatcher.getTickUs();
-  const char *stateStr = controllerStateToString(m_dispatcher.getControllerState());
-  uint32_t queueDepth = m_dispatcher.getQueueDepth();
-  const char *modeStr = controlModeToString(m_dispatcher.getControlMode());
-  const char *encStatusStr = encoderStatusToString(m_dispatcher.getEncoderStatus());
+// Everything DIAG:STAT? reports beyond the snapshot; shared with the F9 telemetry push so
+// both carry exactly the same `data` object.
+void CommandParser::fillStatusView(const TelemetrySnapshot &snap, StatusJsonView &v) {
+  v.tick = m_dispatcher.getTickUs();
+  v.stateStr = controllerStateToString(m_dispatcher.getControllerState());
+  v.queueDepth = m_dispatcher.getQueueDepth();
+  v.modeStr = controlModeToString(m_dispatcher.getControlMode());
+  v.encStatusStr = encoderStatusToString(m_dispatcher.getEncoderStatus());
 
-  // Get actual position and velocity from motor telemetry
+  // Parse status register for direction and error flags
+  uint16_t sr = snap.motor.statusReg;
+  int direction = (sr & (1 << 4)) ? 1 : 0; // bit 4: 1=FWD
+  unsigned motStat = (sr >> 5) & 0x3;      // bits 5-6
+  bool cmdErr = (sr & (1 << 7)) != 0;      // bit 7
+  bool uvlo = !(sr & (1 << 9));            // bit 9 (active low)
+  // Bits 11-12: TH_STATUS 2-bit field
+  // 00=Normal, 01=Warning, 10=Bridge shutdown, 11=Device shutdown
+  uint8_t thStatus = (sr >> 11) & 0x3;
+  bool thermalWarn = (thStatus >= 1);
+  bool thermalSD = (thStatus >= 2);
+  bool ocd = !(sr & (1 << 13));    // bit 13 (active low)
+  bool stallA = !(sr & (1 << 14)); // bit 14 (active low)
+  bool stallB = !(sr & (1 << 15)); // bit 15 (active low)
+
+  // Filter faults against ALARM_EN config — only report faults the user
+  // has enabled. STATUS register always reflects raw hardware state, but
+  // disabled faults (e.g. OCD noise) should not cause GUI error state.
+  auto fe = m_dispatcher.getFaultEnable();
+  bool ocdEn = ocd && fe.ocd;
+  bool thermalSDEn = thermalSD && fe.thermalSD;
+  bool thermalWarnEn = thermalWarn && fe.thermalWarn;
+  bool uvloEn = uvlo && fe.uvlo;
+  bool stallAEn = stallA && fe.stallA && snap.motor.speed > 0;
+  bool stallBEn = stallB && fe.stallB && snap.motor.speed > 0;
+  bool cmdErrEn = cmdErr && fe.cmdErr;
+  bool anyError = cmdErrEn || uvloEn || thermalSDEn || thermalWarnEn ||
+                  stallAEn || stallBEn || ocdEn;
+
+  // Get heartbeat watchdog status
+  auto hb = m_dispatcher.safetyGetHeartbeatStatus();
+
+  v.direction = direction; v.motStat = motStat; v.statusReg = sr;
+  v.cmdErr = cmdErrEn; v.ocd = ocdEn; v.thermalSD = thermalSDEn; v.thermalWarn = thermalWarnEn;
+  v.uvlo = uvloEn; v.stallA = stallAEn; v.stallB = stallBEn;
+  v.hbEnabled = hb.enabled; v.hbTimeoutMs = hb.timeoutMs;
+  v.hbRemainingMs = hb.remainingMs; v.hbTimedOut = hb.timedOut;
+  v.anyError = anyError;
+  v.uptimeTicks = snap.system.uptimeTicks; v.freeHeap = snap.system.freeHeap;
+  v.rxOverflows = m_transport.rxOverflowCount();
+  v.rxOverflowLines = m_dispatchStats.rxOverflowLines;
+}
+
+void CommandParser::cmdGetStatus() {
   TelemetrySnapshot snap;
   m_dispatcher.getTelemetry(snap);
+  StatusJsonView v;
+  fillStatusView(snap, v);
 
   if (m_format == ResponseFormat::JSON) {
-    // Parse status register for direction and error flags
-    uint16_t sr = snap.motor.statusReg;
-    int direction = (sr & (1 << 4)) ? 1 : 0; // bit 4: 1=FWD
-    unsigned motStat = (sr >> 5) & 0x3;      // bits 5-6
-    bool cmdErr = (sr & (1 << 7)) != 0;      // bit 7
-    bool uvlo = !(sr & (1 << 9));            // bit 9 (active low)
-    // Bits 11-12: TH_STATUS 2-bit field
-    // 00=Normal, 01=Warning, 10=Bridge shutdown, 11=Device shutdown
-    uint8_t thStatus = (sr >> 11) & 0x3;
-    bool thermalWarn = (thStatus >= 1);
-    bool thermalSD = (thStatus >= 2);
-    bool ocd = !(sr & (1 << 13));    // bit 13 (active low)
-    bool stallA = !(sr & (1 << 14)); // bit 14 (active low)
-    bool stallB = !(sr & (1 << 15)); // bit 15 (active low)
-
-    // Filter faults against ALARM_EN config — only report faults the user
-    // has enabled. STATUS register always reflects raw hardware state, but
-    // disabled faults (e.g. OCD noise) should not cause GUI error state.
-    auto fe = m_dispatcher.getFaultEnable();
-    bool ocdEn = ocd && fe.ocd;
-    bool thermalSDEn = thermalSD && fe.thermalSD;
-    bool thermalWarnEn = thermalWarn && fe.thermalWarn;
-    bool uvloEn = uvlo && fe.uvlo;
-    bool stallAEn = stallA && fe.stallA && snap.motor.speed > 0;
-    bool stallBEn = stallB && fe.stallB && snap.motor.speed > 0;
-    bool cmdErrEn = cmdErr && fe.cmdErr;
-    bool anyError = cmdErrEn || uvloEn || thermalSDEn || thermalWarnEn ||
-                    stallAEn || stallBEn || ocdEn;
-
-    // Get heartbeat watchdog status
-    auto hb = m_dispatcher.safetyGetHeartbeatStatus();
-
     // F4: render through a pure function whose worst-case length is host-tested;
     // never send a truncated JSON line.
-    StatusJsonView v;
-    v.stateStr = stateStr; v.tick = tick; v.queueDepth = queueDepth;
-    v.direction = direction; v.motStat = motStat; v.statusReg = sr;
-    v.cmdErr = cmdErrEn; v.ocd = ocdEn; v.thermalSD = thermalSDEn; v.thermalWarn = thermalWarnEn;
-    v.uvlo = uvloEn; v.stallA = stallAEn; v.stallB = stallBEn;
-    v.hbEnabled = hb.enabled; v.hbTimeoutMs = hb.timeoutMs;
-    v.hbRemainingMs = hb.remainingMs; v.hbTimedOut = hb.timedOut;
-    v.modeStr = modeStr; v.encStatusStr = encStatusStr; v.anyError = anyError;
-    v.uptimeTicks = snap.system.uptimeTicks; v.freeHeap = snap.system.freeHeap;
-    v.rxOverflows = m_transport.rxOverflowCount();
-    v.rxOverflowLines = m_dispatchStats.rxOverflowLines;
-
     char buf[STATUS_JSON_BUF];
     int n = renderStatusJson(buf, sizeof(buf), snap, v);
     if (n < 0 || n >= static_cast<int>(sizeof(buf))) {
@@ -204,11 +208,48 @@ void CommandParser::cmdGetStatus() {
     // ASCII format: STATUS <state> <tick> <queue_depth> <mode> <encoder_status>
     // <position> <velocity>
     char buf[96];
-    snprintf(buf, sizeof(buf), "STATUS %s %lu %u %s %s %ld %lu", stateStr,
-             static_cast<unsigned long>(tick),
-             static_cast<unsigned>(queueDepth), modeStr, encStatusStr,
+    snprintf(buf, sizeof(buf), "STATUS %s %lu %u %s %s %ld %lu", v.stateStr,
+             static_cast<unsigned long>(v.tick),
+             static_cast<unsigned>(v.queueDepth), v.modeStr, v.encStatusStr,
              static_cast<long>(snap.motor.position),
              static_cast<unsigned long>(snap.motor.speed));
+    m_transport.println(buf);
+  }
+}
+
+// SYST:TLM:RATE <ms> / SYST:TLM:RATE? — JSON telemetry push period (F9). 0 = off.
+void CommandParser::cmdTelemetryRate(const ParsedCommand &cmd) {
+  if (cmd.argCount < 1) {
+    respondErr("Usage: SYST:TLM:RATE <ms>");
+    return;
+  }
+  auto requested = static_cast<uint32_t>(atol(cmd.args[0]));
+  uint32_t accepted = m_dispatcher.setTelemetryPeriod(requested);
+  if (m_format == ResponseFormat::JSON) {
+    char buf[96];
+    snprintf(buf, sizeof(buf),
+             "{\"requested\":%lu,\"accepted\":%lu,\"enabled\":%s}",
+             static_cast<unsigned long>(requested),
+             static_cast<unsigned long>(accepted),
+             (accepted > 0) ? "true" : "false");
+    respondJsonOk("TLM_RATE", buf);
+  } else {
+    char buf[48];
+    snprintf(buf, sizeof(buf), "OK TLM_RATE %lu", static_cast<unsigned long>(accepted));
+    m_transport.println(buf);
+  }
+}
+
+void CommandParser::cmdTelemetryRateQuery() {
+  uint32_t period = m_dispatcher.getTelemetryPeriod();
+  if (m_format == ResponseFormat::JSON) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "{\"period_ms\":%lu,\"enabled\":%s}",
+             static_cast<unsigned long>(period), (period > 0) ? "true" : "false");
+    respondJsonOk("TLM_RATE", buf);
+  } else {
+    char buf[32];
+    snprintf(buf, sizeof(buf), "OK %lu", static_cast<unsigned long>(period));
     m_transport.println(buf);
   }
 }

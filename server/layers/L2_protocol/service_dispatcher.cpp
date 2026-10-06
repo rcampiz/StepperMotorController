@@ -494,6 +494,14 @@ uint32_t ServiceDispatcher::getLastEventSeq() {
     return m_system->getLastEventSeq();
 }
 
+uint32_t ServiceDispatcher::setTelemetryPeriod(uint32_t ms) {
+    return m_system->setTelemetryPeriod(ms);
+}
+
+uint32_t ServiceDispatcher::getTelemetryPeriod() {
+    return m_system->getTelemetryPeriod();
+}
+
 // ── ITraceDispatcher ────────────────────────────────────────────────
 
 uint32_t ServiceDispatcher::traceGetCount() {

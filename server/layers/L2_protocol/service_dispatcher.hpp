@@ -166,6 +166,8 @@ public:
     void disableEvents() override;
     EventStats getEventStats() override;
     uint32_t getLastEventSeq() override;
+    uint32_t setTelemetryPeriod(uint32_t ms) override;
+    uint32_t getTelemetryPeriod() override;
 
     // ITraceDispatcher
     uint32_t traceGetCount() override;

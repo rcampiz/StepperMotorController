@@ -51,9 +51,9 @@ void CommsService::tick()
     m_processor->checkBaudRevert();
 
     // Publish periodic telemetry if enabled
-    if (m_telemetryEnabled && m_telemetry != nullptr) {
+    if (m_telemetryPeriodMs > 0 && m_telemetry != nullptr) {
         uint32_t now = m_clock->getTickMs();
-        if ((now - m_lastTelemetryTime) >= TELEMETRY_PERIOD_MS) {
+        if ((now - m_lastTelemetryTime) >= m_telemetryPeriodMs) {
             m_lastTelemetryTime = now;
             m_processor->emitTelemetry(m_telemetry->getSnapshot());
         }
@@ -157,10 +157,32 @@ void CommsService::getStats(DispatchStats& out)
 
 void CommsService::enableTelemetry(bool enable)
 {
-    m_telemetryEnabled = enable;
-    if (enable && m_clock != nullptr) {
+    setTelemetryPeriod(enable ? TELEMETRY_PERIOD_MS : 0);
+}
+
+uint32_t CommsService::setTelemetryPeriod(uint32_t ms)
+{
+    if (ms == 0) {
+        m_telemetryPeriodMs = 0;
+        return 0;
+    }
+    if (ms < TELEMETRY_PERIOD_MIN_MS) ms = TELEMETRY_PERIOD_MIN_MS;
+    if (ms > TELEMETRY_PERIOD_MAX_MS) ms = TELEMETRY_PERIOD_MAX_MS;
+    m_telemetryPeriodMs = ms;
+    if (m_clock != nullptr) {
         m_lastTelemetryTime = m_clock->getTickMs();
     }
+    return ms;
+}
+
+uint32_t CommsService::setTelemetryPeriodStatic(uint32_t ms)
+{
+    return (s_self != nullptr) ? s_self->setTelemetryPeriod(ms) : 0;
+}
+
+uint32_t CommsService::getTelemetryPeriodStatic()
+{
+    return (s_self != nullptr) ? s_self->m_telemetryPeriodMs : 0;
 }
 
 uint32_t CommsService::lastEventSeqStatic()

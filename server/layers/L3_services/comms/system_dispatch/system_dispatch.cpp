@@ -62,6 +62,14 @@ uint32_t SystemDispatch::getLastEventSeq() {
     return (m_eventSeqFn != nullptr) ? m_eventSeqFn() : 0;
 }
 
+uint32_t SystemDispatch::setTelemetryPeriod(uint32_t ms) {
+    return (m_tlmSetFn != nullptr) ? m_tlmSetFn(ms) : 0;
+}
+
+uint32_t SystemDispatch::getTelemetryPeriod() {
+    return (m_tlmGetFn != nullptr) ? m_tlmGetFn() : 0;
+}
+
 } // namespace Services
 
 void Services::SystemDispatch::getTelemetry(Protocol::TelemetrySnapshot& out)

@@ -5,7 +5,7 @@
  * Timing uses IClock harness pin + L3 TickTimer/TimingService.
  * Device config uses L3 DeviceConfigManager.
  * Events use motion.stepper.event.
- * Event sequence uses injected function pointer.
+ * Event sequence and telemetry period use injected function pointers (CommsService).
  */
 
 #pragma once
@@ -19,6 +19,8 @@ namespace Services {
 class SystemDispatch : public Services::ISystemDispatcher {
 public:
     using EventSeqFn = uint32_t(*)();
+    using TelemetrySetFn = uint32_t(*)(uint32_t);
+    using TelemetryGetFn = uint32_t(*)();
 
     SystemDispatch() = default;
     SystemDispatch(Platform::IClock* clock, EventSeqFn eventSeqFn)
@@ -26,6 +28,7 @@ public:
 
     void setClock(Platform::IClock* c) { m_clock = c; }
     void setEventSeqFn(EventSeqFn fn) { m_eventSeqFn = fn; }
+    void setTelemetryFns(TelemetrySetFn set, TelemetryGetFn get) { m_tlmSetFn = set; m_tlmGetFn = get; }
 
     uint32_t getTickUs() override;
     uint32_t getTickMs() override;
@@ -39,10 +42,14 @@ public:
     void disableEvents() override;
     EventStats getEventStats() override;
     uint32_t getLastEventSeq() override;
+    uint32_t setTelemetryPeriod(uint32_t ms) override;
+    uint32_t getTelemetryPeriod() override;
 
 private:
     Platform::IClock* m_clock = nullptr;
     EventSeqFn m_eventSeqFn = nullptr;
+    TelemetrySetFn m_tlmSetFn = nullptr;
+    TelemetryGetFn m_tlmGetFn = nullptr;
 };
 
 } // namespace Services
