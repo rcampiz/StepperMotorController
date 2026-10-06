@@ -509,11 +509,11 @@ void ServiceDispatcher::traceReset() {
 }
 
 void ServiceDispatcher::traceRecordEntry(const char* tag, uint32_t arg0) {
-    m_trace->traceRecordEntry(tag, arg0);
+    if (m_trace != nullptr) m_trace->traceRecordEntry(tag, arg0);   // observability only: tolerate unbound (host tests)
 }
 
 void ServiceDispatcher::traceRecordExit(const char* tag, uint32_t arg0) {
-    m_trace->traceRecordExit(tag, arg0);
+    if (m_trace != nullptr) m_trace->traceRecordExit(tag, arg0);
 }
 
 } // namespace Protocol

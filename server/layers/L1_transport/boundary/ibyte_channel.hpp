@@ -60,6 +60,10 @@ public:
      * @return true if supported and applied
      */
     virtual bool setBaudRate(uint32_t baudRate) { (void)baudRate; return false; }
+
+    /// Bytes dropped because the RX ring was full, since init (monotonic). F1.1: the
+    /// parser discards any line during which this changed.
+    virtual uint32_t rxOverflowCount() const { return 0; }
 };
 
 } // namespace Transport

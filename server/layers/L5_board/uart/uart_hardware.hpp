@@ -174,6 +174,7 @@ public:
     // --- Debug accessors ---
 
     bool hasOverflowed() const { return m_rxBuffer.hasOverflowed(); }
+    uint32_t rxOverflowCount() const override { return m_rxBuffer.getOverflowCount(); }
     uint32_t getOverflowCount() const { return m_rxBuffer.getOverflowCount(); }
     void clearOverflow() { m_rxBuffer.clearOverflow(); }
 
@@ -186,7 +187,7 @@ private:
     uint32_t       m_apbClockHz;
     uint32_t       m_baudRate;
     uint8_t        m_irqPriority;
-    RingBuffer<256> m_rxBuffer;
+    RingBuffer<1024> m_rxBuffer;   // F1.2: 89 ms of host traffic at 115200 baud (was 256 B = 22 ms)
     Platform::ITaskNotifier* m_wakeNotifier = nullptr;   // optional ISR -> Comms task wake
     Platform::TaskHandle     m_wakeTask = nullptr;
 

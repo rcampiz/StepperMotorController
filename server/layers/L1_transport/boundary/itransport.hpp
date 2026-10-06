@@ -83,6 +83,9 @@ public:
    * @return true if supported and applied, false if not supported
    */
   virtual bool setBaudRate(uint32_t baudRate) { (void)baudRate; return false; }
+
+  /// RX bytes dropped by the byte channel since init (0 if the channel cannot tell).
+  virtual uint32_t rxOverflowCount() const { return 0; }
 };
 
 } // namespace Transport

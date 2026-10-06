@@ -29,6 +29,8 @@ struct FakeTransport : Transport::ITransport {
     size_t print(const char* s) override { out += s; return std::string(s).size(); }
     size_t println(const char* s) override { out += s; out += "\r\n"; return std::string(s).size() + 2; }
     void flush() override {}
+    uint32_t overflows = 0;
+    uint32_t rxOverflowCount() const override { return overflows; }
 };
 
 struct Rig {
@@ -99,6 +101,8 @@ TEST(status_json_worst_case_fits_the_buffer_with_margin) {
     v.hbEnabled = true; v.hbTimeoutMs = UINT32_MAX; v.hbRemainingMs = UINT32_MAX; v.hbTimedOut = true;
     v.modeStr = "CLOSED_LOOP_MONITOR_XXXX"; v.encStatusStr = "NOT_READY_XXXXXXXXXXXXXX";
     v.anyError = true;
+    v.uptimeTicks = UINT32_MAX; v.freeHeap = UINT32_MAX;
+    v.rxOverflows = UINT32_MAX; v.rxOverflowLines = UINT32_MAX;
 
     char buf[Protocol::STATUS_JSON_BUF];
     int n = Protocol::renderStatusJson(buf, sizeof(buf), snap, v);
@@ -120,4 +124,34 @@ TEST(status_json_reports_truncation_instead_of_sending_garbage) {
     char small[200];
     int n = Protocol::renderStatusJson(small, sizeof(small), snap, v);
     EXPECT_TRUE(n >= static_cast<int>(sizeof(small)));   // caller must refuse to send
+}
+
+// --- F1.1: a line that spanned an RX overflow is refused, the next clean line is parsed ---
+TEST(line_spanning_an_rx_overflow_is_discarded) {
+    Rig r;
+    r.transport.in = "FM";                 // first half of "FMT?" arrives ...
+    r.proc.process();
+    r.transport.overflows = 1;             // ... the ring overflowed (a byte was lost) ...
+    r.transport.in = "T?\n";              // ... the rest arrives
+    r.proc.process();
+    EXPECT_TRUE(r.transport.out.find("ERROR RX_OVERFLOW") != std::string::npos);
+    EXPECT_TRUE(r.transport.out.find("OK ASCII") == std::string::npos);
+    EXPECT_EQ(r.parser.getDispatchStats().rxOverflowLines, 1u);
+
+    r.transport.out.clear();
+    r.transport.in = "FMT?\n";            // clean line after the overflow: parsed normally
+    r.proc.process();
+    EXPECT_TRUE(r.transport.out.find("OK ASCII") != std::string::npos);
+    EXPECT_EQ(r.parser.getDispatchStats().rxOverflowLines, 1u);
+}
+
+TEST(overflow_between_lines_is_attributed_to_the_next_line) {
+    Rig r;
+    r.transport.in = "FMT?\n";
+    r.proc.process();
+    r.transport.out.clear();
+    r.transport.overflows = 7;             // bytes lost while the host was mid-way through a line
+    r.transport.in = "T 1\n";             // what survived of "SYST:HB:TIMEOUT 1" (say)
+    r.proc.process();
+    EXPECT_TRUE(r.transport.out.find("ERROR RX_OVERFLOW") != std::string::npos);
 }

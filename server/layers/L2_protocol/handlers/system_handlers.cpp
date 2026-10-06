@@ -91,7 +91,9 @@ int renderStatusJson(char* buf, size_t bufSize,
         "\"trim_frozen\":%u,\"vel_quality\":%u},"
         "\"heartbeat\":{\"enabled\":%s,\"timeout_ms\":%lu,"
         "\"remaining_ms\":%lu,\"timed_out\":%s},"
-        "\"mode\":\"%s\",\"encoder_status\":\"%s\",\"error\":%s}}",
+        "\"system\":{\"uptime_ticks\":%lu,\"free_heap\":%lu,"
+      "\"rx_overflows\":%lu,\"rx_overflow_lines\":%lu},"
+      "\"mode\":\"%s\",\"encoder_status\":\"%s\",\"error\":%s}}",
         v.stateStr, static_cast<unsigned long>(v.tick),
         static_cast<unsigned>(v.queueDepth),
         static_cast<long>(snap.motor.position),
@@ -126,7 +128,9 @@ int renderStatusJson(char* buf, size_t bufSize,
         static_cast<unsigned>(snap.control.velQuality),
         v.hbEnabled ? "true" : "false", static_cast<unsigned long>(v.hbTimeoutMs),
         static_cast<unsigned long>(v.hbRemainingMs), v.hbTimedOut ? "true" : "false",
-        v.modeStr, v.encStatusStr, v.anyError ? "true" : "false");
+        static_cast<unsigned long>(v.uptimeTicks), static_cast<unsigned long>(v.freeHeap),
+      static_cast<unsigned long>(v.rxOverflows), static_cast<unsigned long>(v.rxOverflowLines),
+      v.modeStr, v.encStatusStr, v.anyError ? "true" : "false");
 }
 
 void CommandParser::cmdGetStatus() {
@@ -183,6 +187,9 @@ void CommandParser::cmdGetStatus() {
     v.hbEnabled = hb.enabled; v.hbTimeoutMs = hb.timeoutMs;
     v.hbRemainingMs = hb.remainingMs; v.hbTimedOut = hb.timedOut;
     v.modeStr = modeStr; v.encStatusStr = encStatusStr; v.anyError = anyError;
+    v.uptimeTicks = snap.system.uptimeTicks; v.freeHeap = snap.system.freeHeap;
+    v.rxOverflows = m_transport.rxOverflowCount();
+    v.rxOverflowLines = m_dispatchStats.rxOverflowLines;
 
     char buf[STATUS_JSON_BUF];
     int n = renderStatusJson(buf, sizeof(buf), snap, v);

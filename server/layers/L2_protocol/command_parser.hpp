@@ -93,6 +93,7 @@ struct DispatchStats {
   uint32_t totalCommands;     // Commands parsed and dispatched
   uint32_t unknownCommands;   // Unrecognized command/namespace
   uint32_t parseErrors;       // Lines that failed to parse
+  uint32_t rxOverflowLines;   // Lines refused because the RX ring overflowed during them (F1.1)
   // Ring buffer of recent command names
   static constexpr uint8_t RECENT_SIZE = 8;
   char     recentCmds[RECENT_SIZE][24];
@@ -309,6 +310,7 @@ private:
 
   // Dispatch statistics
   DispatchStats m_dispatchStats = {};
+  uint32_t m_lineOverflowBase = 0;   ///< rxOverflowCount() when the current line started (F1.1)
 
   // Baud auto-revert state
   uint32_t m_baudRevertRate = 0;     // 0 = no pending revert

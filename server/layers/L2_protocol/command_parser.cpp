@@ -78,6 +78,17 @@ void CommandParser::process() {
     if (byte == '\r' || byte == '\n') {
       if (m_bufIndex > 0) {
         m_transport.println("");     // echo newline
+        // F1.1: a byte dropped by a full RX ring can turn this line into a different
+        // valid command. If the ring overflowed since the previous line ended, refuse
+        // the whole line rather than parse it.
+        const uint32_t overflowsNow = m_transport.rxOverflowCount();
+        if (overflowsNow != m_lineOverflowBase) {
+          m_lineOverflowBase = overflowsNow;
+          m_bufIndex = 0;
+          m_dispatchStats.rxOverflowLines++;
+          respondErr("RX_OVERFLOW");
+          continue;
+        }
         m_buffer[m_bufIndex] = '\0'; // null-terminate
         ParsedCommand cmd = parse(m_buffer);
         if (cmd.valid) {
@@ -637,6 +648,7 @@ void CommandParser::getDispatchStats(Harness::DispatchStats &out) const {
   out.totalCommands = m_dispatchStats.totalCommands;
   out.unknownCommands = m_dispatchStats.unknownCommands;
   out.parseErrors = m_dispatchStats.parseErrors;
+  out.rxOverflowLines = m_dispatchStats.rxOverflowLines;
   out.recentCount = m_dispatchStats.recentCount;
   // Copy recent commands (most recent first)
   for (uint8_t i = 0; i < m_dispatchStats.recentCount && i < 8; i++) {

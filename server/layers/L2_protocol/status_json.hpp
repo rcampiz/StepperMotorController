@@ -32,6 +32,10 @@ struct StatusJsonView {
     const char* modeStr = "";
     const char* encStatusStr = "";
     bool anyError = false;
+    uint32_t uptimeTicks = 0;
+    uint32_t freeHeap = 0;
+    uint32_t rxOverflows = 0;        ///< bytes dropped by the RX ring (F1)
+    uint32_t rxOverflowLines = 0;    ///< lines refused because of an overflow (F1)
 };
 
 /// Format {"status":"ok","command":"GET_STATUS","data":{...}} into buf. Returns the
