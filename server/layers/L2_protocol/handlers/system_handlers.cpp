@@ -257,6 +257,31 @@ void CommandParser::cmdVersion() {
   m_transport.println(buf);
 }
 
+// SYST:ECHO ON|OFF / SYST:ECHO? — terminal echo of received characters (F7)
+void CommandParser::cmdEcho(const ParsedCommand &cmd) {
+  if (cmd.argCount < 1) {
+    respondErr("Usage: SYST:ECHO <ON|OFF>");
+    return;
+  }
+  if (strcmp(cmd.args[0], "ON") == 0 || strcmp(cmd.args[0], "on") == 0) {
+    m_echo = true;
+  } else if (strcmp(cmd.args[0], "OFF") == 0 || strcmp(cmd.args[0], "off") == 0) {
+    m_echo = false;
+  } else {
+    respondErr("Usage: SYST:ECHO <ON|OFF>");
+    return;
+  }
+  cmdEchoQuery();
+}
+
+void CommandParser::cmdEchoQuery() {
+  if (m_format == ResponseFormat::JSON) {
+    respondJsonOk("ECHO", m_echo ? "{\"echo\":true}" : "{\"echo\":false}");
+  } else {
+    respondOk(m_echo ? "ON" : "OFF");
+  }
+}
+
 void CommandParser::cmdSetFormat(const ParsedCommand &cmd) {
   if (cmd.argCount < 1) {
     respondErr("Usage: SET_FORMAT <ASCII|JSON>");
@@ -267,11 +292,13 @@ void CommandParser::cmdSetFormat(const ParsedCommand &cmd) {
 
   if (strcmp(formatStr, "JSON") == 0 || strcmp(formatStr, "json") == 0) {
     m_format = ResponseFormat::JSON;
+    m_echo = false;   // F7: machine mode, no terminal echo
     // Respond in the NEW format (JSON)
     respondJsonOk("SET_FORMAT", "{\"format\":\"JSON\"}");
   } else if (strcmp(formatStr, "ASCII") == 0 ||
              strcmp(formatStr, "ascii") == 0) {
     m_format = ResponseFormat::ASCII;
+    m_echo = true;
     // Respond in the NEW format (ASCII)
     m_transport.println("OK ASCII");
   } else {

@@ -72,14 +72,14 @@ void CommandParser::process() {
     if (byte == '\b' || byte == 127) {
       if (m_bufIndex > 0) {
         m_bufIndex--;
-        m_transport.print("\b \b");
+        if (m_echo) m_transport.print("\b \b");
       }
       continue;
     }
     // CR or LF: end of line — parse and dispatch the buffered command
     if (byte == '\r' || byte == '\n') {
       if (m_bufIndex > 0) {
-        m_transport.println("");     // echo newline
+        if (m_echo) m_transport.println("");     // echo newline
         // F1.1: a byte dropped by a full RX ring can turn this line into a different
         // valid command. If the ring overflowed since the previous line ended, refuse
         // the whole line rather than parse it.
@@ -112,8 +112,10 @@ void CommandParser::process() {
     // Printable ASCII: accumulate into buffer and echo back
     if (byte >= 32 && byte < 127 && m_bufIndex < CMD_BUFFER_SIZE - 1) {
       m_buffer[m_bufIndex++] = static_cast<char>(byte);
-      char echo[2] = {static_cast<char>(byte), '\0'};
-      m_transport.print(echo);
+      if (m_echo) {
+        char echo[2] = {static_cast<char>(byte), '\0'};
+        m_transport.print(echo);
+      }
     }
   }
 }
@@ -276,6 +278,7 @@ void CommandParser::dispatchSystem(const char *suffix,
   }
   static const CmdEntry t1[] = {
       {"HB", &CommandParser::cmdHeartbeat},
+      {"ECHO", &CommandParser::cmdEcho},
       {"HB:TIMEOUT", &CommandParser::cmdSetHeartbeat},
       {"BAUD", &CommandParser::cmdSetBaud},
       {"EVT:EN", &CommandParser::cmdEventEnable},
@@ -284,6 +287,7 @@ void CommandParser::dispatchSystem(const char *suffix,
   static const CmdEntry0 t0[] = {
       {"ESTOP", &CommandParser::cmdEstop},
       {"TICK?", &CommandParser::cmdGetTick},
+      {"ECHO?", &CommandParser::cmdEchoQuery},
       {"HB:STAT?", &CommandParser::cmdGetHeartbeatStatus},
       {"VER?", &CommandParser::cmdVersion},
       {"EVT:DIS", &CommandParser::cmdEventDisable},

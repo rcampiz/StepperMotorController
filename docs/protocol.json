@@ -691,6 +691,20 @@
       "note": ""
     },
     {
+      "name": "SYST:ECHO",
+      "prefix": "SYST",
+      "handler": "cmdEcho",
+      "file": "system_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "SYST:ECHO <ON|OFF>"
+      ],
+      "ascii_ok": [],
+      "json": [],
+      "errors": [],
+      "note": ""
+    },
+    {
       "name": "SYST:HB:TIMEOUT",
       "prefix": "SYST",
       "handler": "cmdSetHeartbeat",
@@ -810,6 +824,25 @@
           "command": "GET_TICK",
           "keys": [
             "tick"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": ""
+    },
+    {
+      "name": "SYST:ECHO?",
+      "prefix": "SYST",
+      "handler": "cmdEchoQuery",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [],
+      "json": [
+        {
+          "command": "ECHO",
+          "keys": [
+            "echo"
           ]
         }
       ],

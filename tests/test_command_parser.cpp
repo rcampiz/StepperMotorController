@@ -171,3 +171,39 @@ TEST(overflow_between_lines_is_attributed_to_the_next_line) {
     r.proc.process();
     EXPECT_TRUE(r.transport.out.find("ERROR RX_OVERFLOW") != std::string::npos);
 }
+
+// --- F7: echo is a terminal convenience; off in JSON mode, switchable ----------------
+TEST(echo_is_on_by_default_and_off_after_fmt_json) {
+    Rig r;
+    r.transport.in = "FMT?\n";
+    r.proc.process();
+    EXPECT_TRUE(r.transport.out.find("FMT?\r\n") != std::string::npos);     // echoed
+    r.transport.out.clear();
+    r.transport.in = "FMT JSON\n";
+    r.proc.process();
+    r.transport.out.clear();
+    r.transport.in = "FMT?\n";
+    r.proc.process();
+    EXPECT_TRUE(r.transport.out.find("FMT?\r\n") == std::string::npos);     // no echo
+    EXPECT_TRUE(r.transport.out.find("\"format\":\"JSON\"") != std::string::npos);
+}
+
+TEST(syst_echo_switches_echo_in_either_mode) {
+    Rig r;
+    r.transport.in = "SYST:ECHO OFF\n";
+    r.proc.process();
+    EXPECT_TRUE(r.transport.out.find("OK OFF") != std::string::npos);
+    r.transport.out.clear();
+    r.transport.in = "SYST:ECHO?\n";
+    r.proc.process();
+    EXPECT_TRUE(r.transport.out.find("SYST:ECHO?\r\n") == std::string::npos);
+    EXPECT_TRUE(r.transport.out.find("OK OFF") != std::string::npos);
+    r.transport.out.clear();
+    r.transport.in = "SYST:ECHO ON\n";
+    r.proc.process();
+    EXPECT_TRUE(r.transport.out.find("OK ON") != std::string::npos);
+    r.transport.out.clear();
+    r.transport.in = "SYST:ECHO?\n";
+    r.proc.process();
+    EXPECT_TRUE(r.transport.out.find("SYST:ECHO?\r\n") != std::string::npos);
+}

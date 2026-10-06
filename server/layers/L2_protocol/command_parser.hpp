@@ -213,6 +213,7 @@ private:
   char m_buffer[CMD_BUFFER_SIZE];
   size_t m_bufIndex;
   ResponseFormat m_format;       // Current response format (ASCII or JSON)
+  bool m_echo = true;            // F7: terminal echo; off by default in JSON mode, SYST:ECHO ON|OFF
   char m_currentCmd[32];         // Current command being processed (for JSON echo)
 
   /**
@@ -294,6 +295,8 @@ private:
   void cmdGetDeviceId();
   void cmdGetRole();
   void cmdIdn();
+  void cmdEcho(const ParsedCommand &cmd);
+  void cmdEchoQuery();
   void cmdSetDeviceId(const ParsedCommand &cmd);
   void cmdSetRole(const ParsedCommand &cmd);
 
