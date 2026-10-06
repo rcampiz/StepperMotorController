@@ -61,37 +61,36 @@ struct Rig {
 TEST(locked_by_default_rejects_known_commands_without_executing) {
     Rig r;
     EXPECT_FALSE(r.svc.debugIsUnlocked());
-    EXPECT_TRUE(r.svc.debugDispatch("SPI_DEBUG", r.argv, 0, r.sink));   // claimed
+    EXPECT_TRUE(r.svc.debugDispatch("SPI_DEBUG", r.argv, 0, r.sink) == Services::DebugDispatchResult::Locked);
     EXPECT_TRUE(r.access.executed.empty());
-    EXPECT_TRUE(r.sink.out.find("locked") != std::string::npos);
+    EXPECT_TRUE(r.sink.out.empty());   // the parser formats ERROR DBG_LOCKED
 }
 
 TEST(read_only_dumps_bypass_the_lock) {
     Rig r;
     EXPECT_FALSE(r.svc.debugIsUnlocked());
-    EXPECT_TRUE(r.svc.debugDispatch("MOTOR_DEBUG", r.argv, 0, r.sink));   // handled in L3
+    EXPECT_TRUE(r.svc.debugDispatch("MOTOR_DEBUG", r.argv, 0, r.sink) == Services::DebugDispatchResult::Handled);   // handled in L3
     EXPECT_TRUE(r.sink.out.find("STATUS=0003") != std::string::npos);
     EXPECT_TRUE(r.sink.out.find("locked") == std::string::npos);
     r.access.executed.clear(); r.sink.out.clear();
-    EXPECT_TRUE(r.svc.debugDispatch("ENC_DEBUG", r.argv, 0, r.sink));     // forwarded to L4
+    EXPECT_TRUE(r.svc.debugDispatch("ENC_DEBUG", r.argv, 0, r.sink) == Services::DebugDispatchResult::Handled);     // forwarded to L4
     EXPECT_EQ(r.access.executed.size(), 1u);
     EXPECT_STREQ(r.access.executed[0].c_str(), "ENC_DEBUG");
     r.sink.out.clear();
-    EXPECT_TRUE(r.svc.debugDispatch("SPI_STOP", r.argv, 0, r.sink));      // still gated
-    EXPECT_TRUE(r.sink.out.find("locked") != std::string::npos);
+    EXPECT_TRUE(r.svc.debugDispatch("SPI_STOP", r.argv, 0, r.sink) == Services::DebugDispatchResult::Locked);   // still gated
     EXPECT_FALSE(r.motor.paused);
 }
 
 TEST(unknown_commands_are_not_claimed_even_when_locked) {
     Rig r;
-    EXPECT_FALSE(r.svc.debugDispatch("MOT:RUN", r.argv, 0, r.sink));
+    EXPECT_TRUE(r.svc.debugDispatch("MOT:RUN", r.argv, 0, r.sink) == Services::DebugDispatchResult::NotClaimed);
     EXPECT_TRUE(r.sink.out.empty());
 }
 
 TEST(unlock_forwards_raw_commands_to_l4) {
     Rig r;
     EXPECT_EQ(r.svc.debugUnlock(), Harness::ServiceStatus::Ok);
-    EXPECT_TRUE(r.svc.debugDispatch("SPI_DEBUG", r.argv, 0, r.sink));
+    EXPECT_TRUE(r.svc.debugDispatch("SPI_DEBUG", r.argv, 0, r.sink) == Services::DebugDispatchResult::Handled);
     EXPECT_EQ(r.access.executed.size(), 1u);
     EXPECT_STREQ(r.access.executed[0].c_str(), "SPI_DEBUG");
     r.svc.debugLock();
@@ -100,18 +99,18 @@ TEST(unlock_forwards_raw_commands_to_l4) {
 
 TEST(spi_stop_pauses_the_motor_task_by_flag_before_touching_hardware) {
     Rig r; r.svc.debugUnlock();
-    r.svc.debugDispatch("SPI_STOP", r.argv, 0, r.sink);
+    (void)r.svc.debugDispatch("SPI_STOP", r.argv, 0, r.sink);
     EXPECT_TRUE(r.motor.paused);
     EXPECT_STREQ(r.motor.log[0].c_str(), "pause");
     EXPECT_STREQ(r.access.executed.back().c_str(), "SPI_STOP");
-    r.svc.debugDispatch("SPI_START", r.argv, 0, r.sink);
+    (void)r.svc.debugDispatch("SPI_START", r.argv, 0, r.sink);
     EXPECT_FALSE(r.motor.paused);
     EXPECT_STREQ(r.motor.log.back().c_str(), "resume");
 }
 
 TEST(lcd_disable_disables_the_display_by_flag_and_reinits_the_motor) {
     Rig r; r.svc.debugUnlock();
-    r.svc.debugDispatch("LCD_DISABLE", r.argv, 0, r.sink);
+    (void)r.svc.debugDispatch("LCD_DISABLE", r.argv, 0, r.sink);
     EXPECT_FALSE(r.display.enabled);
     EXPECT_EQ(r.motor.reinits, 1);
     EXPECT_STREQ(r.access.executed.back().c_str(), "LCD_DISABLE");
@@ -119,7 +118,7 @@ TEST(lcd_disable_disables_the_display_by_flag_and_reinits_the_motor) {
 
 TEST(motor_debug_formats_controller_info) {
     Rig r; r.svc.debugUnlock();
-    r.svc.debugDispatch("MOTOR_DEBUG", r.argv, 0, r.sink);
+    (void)r.svc.debugDispatch("MOTOR_DEBUG", r.argv, 0, r.sink);
     EXPECT_TRUE(r.sink.out.find("STATUS=0003") != std::string::npos);
     EXPECT_TRUE(r.sink.out.find("POS=-5") != std::string::npos);
     EXPECT_TRUE(r.access.executed.empty());   // handled in L3, not forwarded

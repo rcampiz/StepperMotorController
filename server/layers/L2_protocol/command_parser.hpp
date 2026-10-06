@@ -29,6 +29,7 @@ namespace Protocol {
 // Import types moved to Harness:: that are used throughout CommandParser
 using Harness::ServiceStatus;
 using Harness::statusToString;
+using Harness::statusToCode;
 using Protocol::ICommandDispatcher;
 
 // Maximum command line length
@@ -131,7 +132,8 @@ public:
    * @brief Send error response (format-aware)
    * @param msg Error message
    */
-  void respondErr(const char *msg);
+  void respondErr(const char *msg);               ///< code: USAGE for "Usage:" text, else ERROR
+  void respondErr(const char *code, const char *msg);   ///< explicit code (F6)
 
   /**
    * @brief Send multi-line data response

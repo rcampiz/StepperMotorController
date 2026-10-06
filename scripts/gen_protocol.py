@@ -167,8 +167,10 @@ def status_codes():
     text = read(os.path.join(SERVER, "harness", "pins", "dispatch_result.hpp"))
     enum = re.search(r'enum class ServiceStatus[^{]*\{(.*?)\};', text, re.S).group(1)
     names = [n for n in re.findall(r'^\s*(\w+)\s*,?', enum, re.M) if n]
-    strings = dict(re.findall(r'case ServiceStatus::(\w+):\s*return "([^"]*)"', text))
-    return [{"status": n, "message": strings.get(n, "")} for n in names]
+    blocks = re.split(r'inline const char\* status', text)
+    strings = dict(re.findall(r'case ServiceStatus::(\w+):\s*return "([^"]*)"', blocks[1] if len(blocks) > 1 else text))
+    codes = dict(re.findall(r'case ServiceStatus::(\w+):\s*return "([^"]*)"', blocks[2] if len(blocks) > 2 else ""))
+    return [{"status": n, "message": strings.get(n, ""), "code": codes.get(n, n)} for n in names]
 
 
 def events():
@@ -238,9 +240,8 @@ carries the same catalogue for code generation and conformance tests. Protocol v
   Maximum **{line_max} characters** per line, **{max_args} arguments** of at most **{arg_max}
   characters** each, separated by spaces. The command word is upper-cased by the parser;
   arguments are case-sensitive. Backspace (0x08/0x7F) erases the last buffered character.
-- **Echo:** the firmware echoes every printable byte it accepts and prints a newline when
-  the line completes. A client must therefore expect its own command text back before the
-  reply (protocol 2 switches echo off in JSON mode).
+- **Echo:** in ASCII mode the firmware echoes every printable byte it accepts and prints a
+  newline when the line completes; `FMT JSON` switches echo off, `SYST:ECHO ON|OFF` overrides.
 - **Receive ring:** {ring} bytes. If the ring overflows while a line is being received, the
   line is discarded when its terminator arrives and the reply is `ERROR RX_OVERFLOW`
   (never a parse of a line with missing bytes). Overflow counters are in
@@ -261,15 +262,18 @@ ASCII when the board resets).
 | Kind | ASCII | JSON |
 |---|---|---|
 | success | `OK <message>` (message may be empty) | `{{"status":"ok","command":"<name>","data":{{...}}}}`; `data` is `{{"message":"..."}}` when the handler only has text |
-| error | `ERROR <message>` | `{{"status":"error","command":"<name>","code":"<code>","message":"<message>"}}` ; `code` is `ERROR` except `DRV:STEP_MODE` (`MOTOR_BUSY`, `VERIFY_FAILED`) |
+| error | `ERROR <CODE> <message>` (split on the first two spaces) | `{{"status":"error","command":"<name>","code":"<CODE>","message":"<message>"}}` |
 | multi-line data (`DBG:MOTOR`, `DRV:CFG?`, `CTRL:ENC?`, `CTRL:SYSID:DATA?`, `DBG:TRACE:DUMP`, `SYST:VER?`) | plain lines, no terminator (protocol 2 adds `OK <n>`) | same plain lines |
 | binary READY (bitmap/flash upload) | `OK READY <bytes>` then the host sends exactly `<bytes>` raw bytes [+ CRC32 LE] then one final OK/ERROR | same |
 
 `command` in JSON is the handler's canonical name (e.g. `GET_STATUS`, `HEARTBEAT`), not
 necessarily the SCPI text typed; the catalogue below lists it.
 
-Service errors use these messages (`ServiceStatus` -> text); protocol 2 also puts the
-enumerator name in `code`:
+`CODE` is one of: `UNKNOWN_CMD` (prefix or suffix not in the catalogue), `USAGE` (missing or
+malformed arguments; the message is the usage string), `RX_OVERFLOW` (the line spanned a
+receive-ring overflow), `DBG_LOCKED` (bring-up command before `DBG:UNLOCK`), `MOTOR_BUSY` /
+`VERIFY_FAILED` (`DRV:STEP_MODE`), `ERROR` (a validation message without a finer code), or a
+`ServiceStatus` name from the table below (the message is the text column):
 
 {status_table}
 
@@ -321,13 +325,11 @@ verify state instead).
 
 ## 7. Planned protocol 2 (one version bump, lands with the firmware protocol pass)
 
-1. `!RESET boot=<random32> fw=<semver> proto=2 build=<hash>` as the first line at boot
-   and on Comms start; the boot id is repeated in every heartbeat ack so a client detects
-   a reset per board.
-2. `*IDN?` -> `STMicro,SMC,<serial>,<fw>,<proto>` from one `PROTOCOL_VERSION` constant.
-3. Echo off by default in JSON mode; `SYST:ECHO ON|OFF`.
-4. Real error codes: `UNKNOWN_CMD`, `USAGE`, `QUEUE_FULL`, `INVALID_STATE`, `FAULT`,
-   `DBG_LOCKED`, `RX_OVERFLOW`, `CHECKSUM` (+ the `ServiceStatus` names above).
+1. (done) `!RESET boot=<id> fw=<semver> proto=<n> build=<hash>` as the first line at boot
+   and on Comms start; the boot id is repeated in every heartbeat ack (`boot`).
+2. (done) `*IDN?` -> `SMC,NUCLEO-F401RE-IHM03A1,<serial>,<fw>,<proto>` from `protocol_version.hpp`.
+3. (done) Echo off by default in JSON mode; `SYST:ECHO ON|OFF`.
+4. (done) Error codes in both formats; `CHECKSUM` arrives with the checksum feature.
 5. JSON-escaped strings everywhere.
 6. JSON telemetry push with the `DIAG:STAT?` schema: `SYST:TLM:RATE <ms>` (0 = off).
 7. Multi-line replies end with `OK <n>` (ASCII) or carry a `lines` array (JSON);

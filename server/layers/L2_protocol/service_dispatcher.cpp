@@ -543,7 +543,7 @@ void ServiceDispatcher::getTelemetry(Protocol::TelemetrySnapshot& out) {
 Harness::ServiceStatus ServiceDispatcher::debugUnlock() { return m_debug->debugUnlock(); }
 Harness::ServiceStatus ServiceDispatcher::debugLock()   { return m_debug->debugLock(); }
 bool ServiceDispatcher::debugIsUnlocked() const         { return m_debug->debugIsUnlocked(); }
-bool ServiceDispatcher::debugDispatch(const char* cmd, const char* const* args, uint8_t argCount,
+Services::DebugDispatchResult ServiceDispatcher::debugDispatch(const char* cmd, const char* const* args, uint8_t argCount,
                                       Harness::IResponseSink& out) {
     return m_debug->debugDispatch(cmd, args, argCount, out);
 }

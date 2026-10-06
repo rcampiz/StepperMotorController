@@ -48,25 +48,25 @@ bool DebugService::isTaskAwareCommand(const char* cmd) const
            strcmp(cmd, "LCD_DISABLE") == 0 || strcmp(cmd, "MOTOR_DEBUG") == 0;
 }
 
-bool DebugService::debugDispatch(const char* cmd, const char* const* args, uint8_t argCount,
+DebugDispatchResult DebugService::debugDispatch(const char* cmd, const char* const* args, uint8_t argCount,
                                  Harness::IResponseSink& out)
 {
     const bool known = isTaskAwareCommand(cmd) ||
                        (m_access != nullptr && m_access->knowsCommand(cmd));
     if (!known) {
-        return false;
+        return DebugDispatchResult::NotClaimed;
     }
     if (!m_unlocked && !isReadOnlyCommand(cmd)) {
-        out.writeLine("ERROR DBG locked (send DBG:UNLOCK)");
-        return true;
+        return DebugDispatchResult::Locked;   // the parser replies ERROR DBG_LOCKED
     }
 
-    if (strcmp(cmd, "SPI_STOP") == 0)    { cmdSpiStop(args, argCount, out);    return true; }
-    if (strcmp(cmd, "SPI_START") == 0)   { cmdSpiStart(args, argCount, out);   return true; }
-    if (strcmp(cmd, "LCD_DISABLE") == 0) { cmdLcdDisable(args, argCount, out); return true; }
-    if (strcmp(cmd, "MOTOR_DEBUG") == 0) { cmdMotorDebug(out);                 return true; }
+    if (strcmp(cmd, "SPI_STOP") == 0)    { cmdSpiStop(args, argCount, out); return DebugDispatchResult::Handled; }
+    if (strcmp(cmd, "SPI_START") == 0)   { cmdSpiStart(args, argCount, out); return DebugDispatchResult::Handled; }
+    if (strcmp(cmd, "LCD_DISABLE") == 0) { cmdLcdDisable(args, argCount, out); return DebugDispatchResult::Handled; }
+    if (strcmp(cmd, "MOTOR_DEBUG") == 0) { cmdMotorDebug(out); return DebugDispatchResult::Handled; }
 
-    return (m_access != nullptr) && m_access->rawCommand(cmd, args, argCount, out);
+    return (m_access != nullptr && m_access->rawCommand(cmd, args, argCount, out))
+               ? DebugDispatchResult::Handled : DebugDispatchResult::NotClaimed;
 }
 
 int DebugService::debugFormatSpi2Diag(char* buf, size_t bufSize)

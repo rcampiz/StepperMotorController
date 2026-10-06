@@ -26,55 +26,68 @@
   "status_codes": [
     {
       "status": "Ok",
-      "message": "OK"
+      "message": "OK",
+      "code": "OK"
     },
     {
       "status": "InvalidParam",
-      "message": "Invalid parameter"
+      "message": "Invalid parameter",
+      "code": "INVALID_PARAM"
     },
     {
       "status": "OutOfRange",
-      "message": "Value out of range"
+      "message": "Value out of range",
+      "code": "OUT_OF_RANGE"
     },
     {
       "status": "Fault",
-      "message": "Motor fault active"
+      "message": "Motor fault active",
+      "code": "FAULT"
     },
     {
       "status": "FaultActive",
-      "message": "Hardware faults still present"
+      "message": "Hardware faults still present",
+      "code": "FAULT_ACTIVE"
     },
     {
       "status": "QueueFull",
-      "message": "Queue full"
+      "message": "Queue full",
+      "code": "QUEUE_FULL"
     },
     {
       "status": "QueueEmpty",
-      "message": "Queue empty"
+      "message": "Queue empty",
+      "code": "QUEUE_EMPTY"
     },
     {
       "status": "InvalidState",
-      "message": "Invalid state for operation"
+      "message": "Invalid state for operation",
+      "code": "INVALID_STATE"
     },
     {
       "status": "InvalidCommand",
-      "message": "Invalid command"
+      "message": "Invalid command",
+      "code": "INVALID_COMMAND"
     },
     {
       "status": "TimeoutExpired",
-      "message": "Timeout expired"
+      "message": "Timeout expired",
+      "code": "TIMEOUT_EXPIRED"
     },
     {
       "status": "FlashError",
-      "message": "Flash write failed"
+      "message": "Flash write failed",
+      "code": "FLASH_ERROR"
     },
     {
       "status": "EncoderRequired",
-      "message": "Encoder required"
+      "message": "Encoder required",
+      "code": "ENCODER_REQUIRED"
     },
     {
       "status": "NotEnabled",
-      "message": "Motor not enabled"
+      "message": "Motor not enabled",
+      "code": "NOT_ENABLED"
     }
   ],
   "events": {

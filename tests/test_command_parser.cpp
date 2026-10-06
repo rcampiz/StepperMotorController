@@ -207,3 +207,32 @@ TEST(syst_echo_switches_echo_in_either_mode) {
     r.proc.process();
     EXPECT_TRUE(r.transport.out.find("SYST:ECHO?\r\n") != std::string::npos);
 }
+
+// --- F6: machine-readable error codes in JSON ---------------------------------------
+TEST(json_errors_carry_codes_for_unknown_usage_and_overflow) {
+    Rig r;
+    r.transport.in = "FMT JSON\n";
+    r.proc.process();
+    r.transport.out.clear();
+    r.transport.in = "NOPE:X\n";
+    r.proc.process();
+    EXPECT_TRUE(r.transport.out.find("\"code\":\"UNKNOWN_CMD\"") != std::string::npos);
+    r.transport.out.clear();
+    r.transport.in = "SYST:ECHO\n";                      // missing argument -> usage
+    r.proc.process();
+    EXPECT_TRUE(r.transport.out.find("\"code\":\"USAGE\"") != std::string::npos);
+    r.transport.out.clear();
+    r.transport.in = "FM";
+    r.proc.process();
+    r.transport.overflows = 3;
+    r.transport.in = "T?\n";
+    r.proc.process();
+    EXPECT_TRUE(r.transport.out.find("\"code\":\"RX_OVERFLOW\"") != std::string::npos);
+}
+
+TEST(status_codes_are_enumerator_names) {
+    EXPECT_STREQ(Harness::statusToCode(Harness::ServiceStatus::QueueFull), "QUEUE_FULL");
+    EXPECT_STREQ(Harness::statusToCode(Harness::ServiceStatus::InvalidState), "INVALID_STATE");
+    EXPECT_STREQ(Harness::statusToCode(Harness::ServiceStatus::Fault), "FAULT");
+    EXPECT_STREQ(Harness::statusToCode(Harness::ServiceStatus::Ok), "OK");
+}

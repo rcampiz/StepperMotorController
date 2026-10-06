@@ -176,7 +176,7 @@ public:
     Harness::ServiceStatus debugUnlock() override;
     Harness::ServiceStatus debugLock() override;
     bool debugIsUnlocked() const override;
-    bool debugDispatch(const char* cmd, const char* const* args, uint8_t argCount,
+    Services::DebugDispatchResult debugDispatch(const char* cmd, const char* const* args, uint8_t argCount,
                        Harness::IResponseSink& out) override;
     int debugFormatSpi2Diag(char* buf, size_t bufSize) override;
 

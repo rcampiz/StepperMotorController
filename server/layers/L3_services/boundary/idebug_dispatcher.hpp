@@ -15,6 +15,9 @@
 
 namespace Services {
 
+/// Outcome of a bring-up command dispatch (F6: the parser turns Locked into ERROR DBG_LOCKED).
+enum class DebugDispatchResult : uint8_t { NotClaimed, Handled, Locked };
+
 class IDebugDispatcher {
 public:
     virtual ~IDebugDispatcher() = default;
@@ -25,7 +28,7 @@ public:
 
     /// Returns true when `cmd` is a debug command (handled, or rejected because locked —
     /// in which case the rejection text has already been written to `out`).
-    virtual bool debugDispatch(const char* cmd, const char* const* args, uint8_t argCount,
+    virtual DebugDispatchResult debugDispatch(const char* cmd, const char* const* args, uint8_t argCount,
                                Harness::IResponseSink& out) = 0;
 
     /// Diagnostic text for the SPI2 bus (used by the SPI2 status query). Returns bytes written.

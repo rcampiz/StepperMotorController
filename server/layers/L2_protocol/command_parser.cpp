@@ -88,7 +88,7 @@ void CommandParser::process() {
           m_lineOverflowBase = overflowsNow;
           m_bufIndex = 0;
           m_dispatchStats.rxOverflowLines++;
-          respondErr("RX_OVERFLOW");
+          respondErr("RX_OVERFLOW", "RX ring overflowed during this line");
           continue;
         }
         m_buffer[m_bufIndex] = '\0'; // null-terminate
@@ -204,7 +204,7 @@ void CommandParser::dispatch(const ParsedCommand &cmd) {
       }
     if (!found) {
       m_dispatchStats.unknownCommands++;
-      respondErr("Unknown namespace prefix");
+      respondErr("UNKNOWN_CMD", "Unknown namespace prefix");
     }
   } else {
     // No colon → top-level commands (*IDN?, FMT) or hardware debug commands
@@ -219,9 +219,12 @@ void CommandParser::dispatch(const ParsedCommand &cmd) {
       const char *argPtrs[MAX_ARGS];
       for (uint8_t i = 0; i < cmd.argCount; i++)
         argPtrs[i] = cmd.args[i];
-      if (!m_dispatcher.debugDispatch(cmd.cmd, argPtrs, cmd.argCount, m_sink)) {
+      const auto dr = m_dispatcher.debugDispatch(cmd.cmd, argPtrs, cmd.argCount, m_sink);
+      if (dr == Services::DebugDispatchResult::Locked) {
+        respondErr("DBG_LOCKED", "send DBG:UNLOCK first");
+      } else if (dr == Services::DebugDispatchResult::NotClaimed) {
         m_dispatchStats.unknownCommands++;
-        respondErr("Unknown command");
+        respondErr("UNKNOWN_CMD", "Unknown command");
       }
     }
   }
@@ -257,7 +260,7 @@ void CommandParser::dispatchMotion(const char *suffix,
     return;
   if (dispatch0(suffix, t0, NCMD(t0)))
     return;
-  respondErr("Unknown MOT command");
+  respondErr("UNKNOWN_CMD", "Unknown MOT command");
 }
 
 // SYST:* — System commands (estop, heartbeat, baud, events, fault clear, tick)
@@ -273,7 +276,7 @@ void CommandParser::dispatchSystem(const char *suffix,
     };
     if (dispatch0(suffix + 6, ft, NCMD(ft)))
       return;
-    respondErr("Unknown SYST:FAULT command");
+    respondErr("UNKNOWN_CMD", "Unknown SYST:FAULT command");
     return;
   }
   static const CmdEntry t1[] = {
@@ -299,7 +302,7 @@ void CommandParser::dispatchSystem(const char *suffix,
     return;
   if (dispatch0(suffix, t0, NCMD(t0)))
     return;
-  respondErr("Unknown SYST command");
+  respondErr("UNKNOWN_CMD", "Unknown SYST command");
 }
 
 // SYNC:* — Multi-controller synchronization (queue, arm, start, clear)
@@ -317,7 +320,7 @@ void CommandParser::dispatchSync(const char *suffix, const ParsedCommand &cmd) {
     return;
   if (dispatch0(suffix, t0, NCMD(t0)))
     return;
-  respondErr("Unknown SYNC command");
+  respondErr("UNKNOWN_CMD", "Unknown SYNC command");
 }
 
 // DIAG:* — Diagnostics (ping for latency, status query)
@@ -328,7 +331,7 @@ void CommandParser::dispatchDiag(const char *suffix, const ParsedCommand &cmd) {
     return;
   if (dispatch0(suffix, t0, NCMD(t0)))
     return;
-  respondErr("Unknown DIAG command");
+  respondErr("UNKNOWN_CMD", "Unknown DIAG command");
 }
 
 // CTRL:* — Control mode, encoder, following error supervisor, speed-trim PI,
@@ -338,7 +341,8 @@ void CommandParser::dispatchCtrl(const char *suffix, const ParsedCommand &cmd) {
   // Special: ENC:DBG? — delegate to debug command handler (different interface)
   if (strcmp(suffix, "ENC:DBG?") == 0) {
     const char *noArgs[] = {nullptr};
-    m_dispatcher.debugDispatch("ENC_DEBUG", noArgs, 0, m_sink);
+    if (m_dispatcher.debugDispatch("ENC_DEBUG", noArgs, 0, m_sink) == Services::DebugDispatchResult::Locked)
+      respondErr("DBG_LOCKED", "send DBG:UNLOCK first");
     return;
   }
   // Special: ENC:FILT sub-dispatch (different handler signature)
@@ -381,7 +385,7 @@ void CommandParser::dispatchCtrl(const char *suffix, const ParsedCommand &cmd) {
     return;
   if (dispatch0(suffix, t0, NCMD(t0)))
     return;
-  respondErr("Unknown CTRL command");
+  respondErr("UNKNOWN_CMD", "Unknown CTRL command");
 }
 
 // DEV:* — Device identification (device ID, role for multi-controller setups)
@@ -399,7 +403,7 @@ void CommandParser::dispatchDevice(const char *suffix,
     return;
   if (dispatch0(suffix, t0, NCMD(t0)))
     return;
-  respondErr("Unknown DEV command");
+  respondErr("UNKNOWN_CMD", "Unknown DEV command");
 }
 
 // UI:* — LCD display rendering and flash image storage
@@ -419,7 +423,7 @@ void CommandParser::dispatchUI(const char *suffix, const ParsedCommand &cmd) {
     };
     if (dispatch1(suffix + 5, dt, NCMD(dt), cmd))
       return;
-    respondErr("Unknown UI:DISP command");
+    respondErr("UNKNOWN_CMD", "Unknown UI:DISP command");
     return;
   }
   // UI:FLASH:* — NOR flash image upload/show/erase
@@ -439,7 +443,7 @@ void CommandParser::dispatchUI(const char *suffix, const ParsedCommand &cmd) {
       return;
     if (dispatch0(suffix + 6, ft0, NCMD(ft0)))
       return;
-    respondErr("Unknown UI:FLASH command");
+    respondErr("UNKNOWN_CMD", "Unknown UI:FLASH command");
     return;
   }
   static const CmdEntry t1[] = {{"MODE", &CommandParser::cmdUIMode}};
@@ -448,7 +452,7 @@ void CommandParser::dispatchUI(const char *suffix, const ParsedCommand &cmd) {
     return;
   if (dispatch0(suffix, t0, NCMD(t0)))
     return;
-  respondErr("Unknown UI command");
+  respondErr("UNKNOWN_CMD", "Unknown UI command");
 }
 
 // DBG:* — Debug/trace commands (trace dump/reset, motor debug)
@@ -458,7 +462,8 @@ void CommandParser::dispatchDebug(const char *suffix,
   // DBG:MOTOR — delegate to bringup debug handler
   if (strcmp(suffix, "MOTOR") == 0) {
     const char *noArgs[] = {nullptr};
-    m_dispatcher.debugDispatch("MOTOR_DEBUG", noArgs, 0, m_sink);
+    if (m_dispatcher.debugDispatch("MOTOR_DEBUG", noArgs, 0, m_sink) == Services::DebugDispatchResult::Locked)
+      respondErr("DBG_LOCKED", "send DBG:UNLOCK first");
     return;
   }
   // DBG:UNLOCK / DBG:LOCK — gate for every bring-up command
@@ -476,7 +481,7 @@ void CommandParser::dispatchDebug(const char *suffix,
   };
   if (dispatch0(suffix, t0, NCMD(t0)))
     return;
-  respondErr("Unknown DBG command");
+  respondErr("UNKNOWN_CMD", "Unknown DBG command");
 }
 
 // DRV:* — Low-level driver config (KVAL, OCD, stall, step mode, encoder PPR,
@@ -514,7 +519,7 @@ void CommandParser::dispatchDriver(const char *suffix,
     return;
   if (dispatch0(suffix, t0, NCMD(t0)))
     return;
-  respondErr("Unknown DRV command");
+  respondErr("UNKNOWN_CMD", "Unknown DRV command");
 }
 
 // --- Response helpers ---
@@ -543,11 +548,19 @@ void CommandParser::respondOk(const char *msg) {
 // Send error response. In ASCII mode: "ERROR <msg>". In JSON mode: structured
 // error.
 void CommandParser::respondErr(const char *msg) {
+  respondErr(strncmp(msg, "Usage:", 6) == 0 ? "USAGE" : "ERROR", msg);
+}
+
+// F6: every error carries a machine-readable code: ASCII "ERROR <CODE> <message>",
+// JSON "code":"<CODE>". Clients split the ASCII form on the first two spaces.
+void CommandParser::respondErr(const char *code, const char *msg) {
   ITRACE(Harness::ITrace::L2_TELEMETRY, "[L2>L1]", "respond", "err");
   if (m_format == ResponseFormat::JSON)
-    respondJsonErr(m_currentCmd, "ERROR", msg);
+    respondJsonErr(m_currentCmd, code, msg);
   else {
     m_transport.print("ERROR ");
+    m_transport.print(code);
+    m_transport.print(" ");
     m_transport.println(msg);
   }
 }
@@ -588,7 +601,7 @@ void CommandParser::respondStatus(ServiceStatus r, const char *okMsg) {
   if (r == ServiceStatus::Ok)
     respondOk(okMsg);
   else
-    respondErr(statusToString(r));
+    respondErr(statusToCode(r), statusToString(r));
 }
 
 // --- ICommandProcessor interface ---

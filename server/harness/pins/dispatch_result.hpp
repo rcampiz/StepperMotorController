@@ -51,4 +51,26 @@ inline const char* statusToString(ServiceStatus s) {
     }
 }
 
+/**
+ * @brief Machine-readable code for a ServiceStatus (JSON "code" field, F6).
+ */
+inline const char* statusToCode(ServiceStatus s) {
+    switch (s) {
+        case ServiceStatus::Ok:               return "OK";
+        case ServiceStatus::InvalidParam:     return "INVALID_PARAM";
+        case ServiceStatus::OutOfRange:       return "OUT_OF_RANGE";
+        case ServiceStatus::Fault:            return "FAULT";
+        case ServiceStatus::FaultActive:      return "FAULT_ACTIVE";
+        case ServiceStatus::QueueFull:        return "QUEUE_FULL";
+        case ServiceStatus::QueueEmpty:       return "QUEUE_EMPTY";
+        case ServiceStatus::InvalidState:     return "INVALID_STATE";
+        case ServiceStatus::InvalidCommand:   return "INVALID_COMMAND";
+        case ServiceStatus::TimeoutExpired:   return "TIMEOUT_EXPIRED";
+        case ServiceStatus::FlashError:       return "FLASH_ERROR";
+        case ServiceStatus::EncoderRequired:  return "ENCODER_REQUIRED";
+        case ServiceStatus::NotEnabled:       return "NOT_ENABLED";
+        default:                              return "ERROR";
+    }
+}
+
 } // namespace Harness
