@@ -16,6 +16,7 @@ from transport.interface import ITransport, TransportError
 # Framing and parsing live in the shared core (client refactor step 1).
 from smc_core.framing import FrameKind, classify
 from smc_core.codec import ProtocolError, Response, parse_response
+from smc_core import commands as C
 
 
 # Protocol 2 (F12): an ASCII multi-line reply ends with `OK <n>` (n = lines sent)
@@ -147,14 +148,14 @@ class MotorClient:
         Returns:
             Response from the device.
         """
-        resp = self.send_command(f"FMT {fmt.value}")
+        resp = self.send_command(C.fmt(fmt == ResponseFormat.JSON).line)
         if resp.success:
             self._format = fmt
         return resp
 
     def get_format(self) -> Response:
         """Query current response format from device."""
-        return self.send_command("FMT?")
+        return self.send_command(C.fmt_query().line)
 
     def send_command(
         self,
@@ -293,15 +294,15 @@ class MotorClient:
 
     def ping(self, seq: int = 0) -> Response:
         """Send PING command for latency measurement."""
-        return self.send_command(f"DIAG:PING {seq}")
+        return self.send_command(C.ping(seq).line)
 
     def get_tick(self) -> Response:
         """Get current MCU tick counter."""
-        return self.send_command("SYST:TICK?")
+        return self.send_command(C.tick().line)
 
     def get_status(self) -> Response:
         """Get full device status."""
-        return self.send_command("DIAG:STAT?")
+        return self.send_command(C.status().line)
 
     def move(self, steps: int, direction: int) -> Response:
         """
@@ -311,7 +312,7 @@ class MotorClient:
             steps: Number of steps (0-2097151).
             direction: 0 for reverse, 1 for forward.
         """
-        return self.send_command(f"MOT:MOVE {steps} {direction}")
+        return self.send_command(C.mot_move(steps, direction).line)
 
     def goto(self, position: int) -> Response:
         """
@@ -320,7 +321,7 @@ class MotorClient:
         Args:
             position: Target position (-2097152 to 2097151).
         """
-        return self.send_command(f"MOT:GOTO {position}")
+        return self.send_command(C.mot_goto(position).line)
 
     def run(self, speed: int, direction: int) -> Response:
         """
@@ -330,16 +331,15 @@ class MotorClient:
             speed: Speed in steps/sec (0-15625).
             direction: 0 for reverse, 1 for forward.
         """
-        return self.send_command(f"MOT:RUN {speed} {direction}")
+        return self.send_command(C.mot_run(speed, direction).line)
 
     def stop(self, hard: bool = False) -> Response:
         """Stop motion."""
-        cmd = "MOT:STOP hard" if hard else "MOT:STOP"
-        return self.send_command(cmd)
+        return self.send_command(C.mot_stop(hard).line)
 
     def estop(self) -> Response:
         """Emergency stop through the normal command path (queued, with reply)."""
-        return self.send_command("SYST:ESTOP")
+        return self.send_command(C.syst_estop().line)
 
     # ------------------------------------------------------------------
     # ESTOP fast path
@@ -431,31 +431,31 @@ class MotorClient:
 
     def home(self) -> Response:
         """Go to home position."""
-        return self.send_command("MOT:HOME")
+        return self.send_command(C.mot_home().line)
 
     def zero(self) -> Response:
         """Set current position as zero."""
-        return self.send_command("MOT:ZERO")
+        return self.send_command(C.mot_zero().line)
 
     def enable(self) -> Response:
         """Enable motor outputs."""
-        return self.send_command("MOT:EN")
+        return self.send_command(C.mot_enable().line)
 
     def disable(self) -> Response:
         """Disable motor outputs (Hi-Z)."""
-        return self.send_command("MOT:DIS")
+        return self.send_command(C.mot_disable().line)
 
     def get_encoder(self) -> Response:
         """Get encoder state."""
-        return self.send_command("CTRL:ENC?")
+        return self.send_command(C.encoder().line)
 
     def get_version(self) -> Response:
         """Get firmware version."""
-        return self.send_command("SYST:VER?")
+        return self.send_command_multiline(C.version().line)
 
     def get_help(self) -> Response:
         """Get help text."""
-        return self.send_command("SYST:HELP?", timeout_ms=5000)
+        return self.send_command_multiline(C.help_lines().line, timeout_ms=5000, max_lines=200)
 
     # -------------------------------------------------------------------------
     # Heartbeat commands
@@ -463,15 +463,15 @@ class MotorClient:
 
     def heartbeat(self, seq: int = 0) -> Response:
         """Send HEARTBEAT command to reset watchdog timer."""
-        return self.send_command(f"SYST:HB {seq}")
+        return self.send_command(C.heartbeat(seq).line)
 
     def set_heartbeat(self, timeout_ms: int) -> Response:
         """Configure heartbeat watchdog timeout (0=disable, clamped to [100,5000])."""
-        return self.send_command(f"SYST:HB:TIMEOUT {timeout_ms}")
+        return self.send_command(C.heartbeat_timeout(timeout_ms).line)
 
     def get_heartbeat_status(self) -> Response:
         """Query heartbeat watchdog status."""
-        return self.send_command("SYST:HB:STAT?")
+        return self.send_command(C.heartbeat_status().line)
 
     # -------------------------------------------------------------------------
     # Display / Bitmap Streaming
@@ -565,7 +565,7 @@ class MotorClient:
 
         # Send SET_BAUD at current baud rate
         try:
-            resp = self.send_command(f"SYST:BAUD {baud}")
+            resp = self.send_command(C.baud(baud).line)
         except Exception:
             return False
 
@@ -583,7 +583,7 @@ class MotorClient:
 
         # Verify with PING at new baud rate
         try:
-            verify = self.send_command("DIAG:PING 99", timeout_ms=1000)
+            verify = self.send_command(C.ping(99).line, timeout_ms=1000)
             if verify.success:
                 return True
         except Exception:
@@ -599,15 +599,15 @@ class MotorClient:
 
     def flash_info(self) -> Response:
         """Query NOR flash info (capacity, slot count)."""
-        return self.send_command("UI:FLASH:INFO")
+        return self.send_command(C.flash_info().line)
 
     def flash_show(self, slot: int) -> Response:
         """Display an image stored in flash slot on the LCD."""
-        return self.send_command(f"UI:FLASH:SHOW {slot}")
+        return self.send_command(C.flash_show(slot).line)
 
     def flash_erase_all(self, timeout_ms: int = 60000) -> Response:
         """Erase all flash image slots. Can take several seconds."""
-        return self.send_command("UI:FLASH:ERASE_ALL", timeout_ms=timeout_ms)
+        return self.send_command(C.flash_erase_all().line, timeout_ms=timeout_ms)
 
     def flash_upload(self, slot: int, data: bytes,
                      timeout_ms: Optional[int] = None,
@@ -687,9 +687,7 @@ class MotorClient:
             rotation_dir: -1 (CCW), 0 (none), 1 (CW).
             has_translation: Whether translational motion is active.
         """
-        return self.send_command(
-            f"UI:DISP:INDICATOR {angle} {rotation_dir} {int(has_translation)}"
-        )
+        return self.send_command(C.disp_indicator(angle, rotation_dir, has_translation).line)
 
     def disp_bitmap_rle(self, x: int, y: int, w: int, h: int,
                         rle_data: bytes,

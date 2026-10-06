@@ -402,7 +402,9 @@
         }
       ],
       "errors": [],
-      "note": "top-level (no prefix)"
+      "note": "top-level (no prefix)",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "FMT",
@@ -427,7 +429,9 @@
       "errors": [
         "Invalid format. Use ASCII or JSON."
       ],
-      "note": "top-level (no prefix)"
+      "note": "top-level (no prefix)",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "FMT?",
@@ -448,7 +452,9 @@
         }
       ],
       "errors": [],
-      "note": "top-level (no prefix)"
+      "note": "top-level (no prefix)",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "MOT:MOVE",
@@ -469,7 +475,9 @@
         "speed out of range (1-15625 steps/s)",
         "steps out of range (0-2097151)"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "MOT:GOTO",
@@ -488,7 +496,9 @@
         "position out of range (-2097152 to 2097151)",
         "speed out of range (1-15625 steps/s)"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "MOT:RUN",
@@ -508,7 +518,9 @@
         "dir must be 0 or 1",
         "speed out of range (0-15625 steps/s)"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "MOT:STOP",
@@ -522,7 +534,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "MOT:HOME",
@@ -538,7 +552,9 @@
       "errors": [
         "speed out of range (1-15625 steps/s)"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "MOT:CFG:ACCEL",
@@ -556,7 +572,9 @@
       "errors": [
         "accel must be positive"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "MOT:CFG:DECEL",
@@ -574,7 +592,9 @@
       "errors": [
         "decel must be positive"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "MOT:CFG:MAXSPD",
@@ -592,7 +612,9 @@
       "errors": [
         "maxspd must be positive"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "MOT:EN",
@@ -606,7 +628,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "MOT:DIS",
@@ -620,7 +644,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "MOT:ZERO",
@@ -634,7 +660,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYST:FAULT:CLEAR",
@@ -648,7 +676,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYST:FAULT:FORCE",
@@ -662,7 +692,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYST:FAULT:STAT?",
@@ -676,7 +708,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYST:HB",
@@ -700,7 +734,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYST:ECHO",
@@ -714,7 +750,9 @@
       "ascii_ok": [],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYST:HB:TIMEOUT",
@@ -739,7 +777,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYST:TLM:RATE",
@@ -764,7 +804,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYST:BAUD",
@@ -789,7 +831,9 @@
       "errors": [
         "Supported: 115200, 230400, 460800, 921600"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYST:EVT:EN",
@@ -805,7 +849,9 @@
       "errors": [
         "Invalid mask (0-255)"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYST:DELAY",
@@ -830,7 +876,9 @@
       "errors": [
         "Delay must be 0-1000 ms"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYST:ESTOP",
@@ -844,7 +892,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYST:TICK?",
@@ -865,7 +915,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYST:ECHO?",
@@ -884,7 +936,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYST:HB:STAT?",
@@ -909,7 +963,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYST:TLM:RATE?",
@@ -931,7 +987,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYST:VER?",
@@ -953,7 +1011,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": true,
+      "binary": false
     },
     {
       "name": "SYST:HELP?",
@@ -975,7 +1035,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": true,
+      "binary": false
     },
     {
       "name": "SYST:EVT:DIS",
@@ -989,7 +1051,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYST:EVT:STAT?",
@@ -1003,7 +1067,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYST:ZERO",
@@ -1017,7 +1083,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYST:DELAY?",
@@ -1038,7 +1106,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYNC:QUEUE",
@@ -1061,7 +1131,9 @@
         "speed out of range (0-15625 steps/s)",
         "steps out of range (0-2097151)"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYNC:START:AT",
@@ -1077,7 +1149,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYNC:ARM",
@@ -1091,7 +1165,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYNC:START",
@@ -1105,7 +1181,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "SYNC:CLEAR",
@@ -1119,7 +1197,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DIAG:PING",
@@ -1143,7 +1223,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DIAG:STAT?",
@@ -1157,7 +1239,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:ENC:DBG?",
@@ -1180,7 +1264,9 @@
         }
       ],
       "errors": [],
-      "note": "special case in dispatcher"
+      "note": "special case in dispatcher",
+      "multiline": true,
+      "binary": false
     },
     {
       "name": "CTRL:MODE",
@@ -1196,7 +1282,9 @@
       "errors": [
         "Unknown mode (OPEN_LOOP, MONITOR, SPEED_TRIM)"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:ENC:FILT",
@@ -1217,7 +1305,9 @@
         "SMA window must be 2-32",
         "Unknown filter type or alpha out of range (0-255)"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:ENC:FILT?",
@@ -1238,7 +1328,9 @@
         "SMA window must be 2-32",
         "Unknown filter type or alpha out of range (0-255)"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:FOLLOW:THRESH",
@@ -1254,7 +1346,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:TRIM:GAINS",
@@ -1278,7 +1372,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:TRIM:LIMITS",
@@ -1302,7 +1398,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:TRIM:MAXPCT",
@@ -1327,7 +1425,9 @@
       "errors": [
         "maxPct must be 1-50"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:SYSID:STEP",
@@ -1346,7 +1446,9 @@
         "SYSID already running",
         "speed_sps must be 1-15625"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:SYSID:RAMP",
@@ -1365,7 +1467,9 @@
         "SYSID already running",
         "speed must be 0-15625 sps"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:SYSID:SINE",
@@ -1385,7 +1489,9 @@
         "freq_mHz must be 1-5000 (0.001-5.0 Hz)",
         "speed must be 0-15625 sps"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:SYSID:TRAPEZOID",
@@ -1404,7 +1510,9 @@
         "SYSID already running",
         "speed_sps must be 1-15625"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:SYSID:RECT",
@@ -1423,7 +1531,9 @@
         "SYSID already running",
         "speed_sps must be 1-15625"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:SYSID:DATA?",
@@ -1451,7 +1561,9 @@
         "No data ready (test not DONE)",
         "offset past end"
       ],
-      "note": ""
+      "note": "",
+      "multiline": true,
+      "binary": false
     },
     {
       "name": "CTRL:MODE?",
@@ -1465,7 +1577,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:ENC:STAT?",
@@ -1479,7 +1593,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:ENC?",
@@ -1507,7 +1623,9 @@
       "errors": [
         "Encoder not available"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:ENC:ZERO",
@@ -1521,7 +1639,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:FOLLOW?",
@@ -1550,7 +1670,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:FOLLOW:THRESH?",
@@ -1576,7 +1698,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:FOLLOW:SAVE",
@@ -1592,7 +1716,9 @@
       "errors": [
         "Flash write failed"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:FOLLOW:CLEAR",
@@ -1608,7 +1734,9 @@
       "errors": [
         "No fault to clear"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:TRIM?",
@@ -1639,7 +1767,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:TRIM:RESET",
@@ -1653,7 +1783,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:TRIM:SAVE",
@@ -1669,7 +1801,9 @@
       "errors": [
         "Flash write failed"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:SYSID:STATUS?",
@@ -1691,7 +1825,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:SYSID:ABORT",
@@ -1705,7 +1841,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DEV:ID",
@@ -1723,7 +1861,9 @@
       "errors": [
         "Flash write failed"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DEV:ROLE",
@@ -1739,7 +1879,9 @@
       "errors": [
         "Unknown role (FL, FR, RL, RR, NONE)"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DEV:ID?",
@@ -1753,7 +1895,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DEV:ROLE?",
@@ -1773,7 +1917,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "UI:DISP:CLEAR",
@@ -1789,7 +1935,9 @@
       "errors": [
         "Not in REMOTE mode"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "UI:DISP:TEXT",
@@ -1807,7 +1955,9 @@
       "errors": [
         "Not in REMOTE mode"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "UI:DISP:RECT",
@@ -1825,7 +1975,9 @@
       "errors": [
         "Not in REMOTE mode"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "UI:DISP:LINE",
@@ -1843,7 +1995,9 @@
       "errors": [
         "Not in REMOTE mode"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "UI:DISP:BITMAP",
@@ -1866,7 +2020,9 @@
         "Not in REMOTE mode",
         "Position out of bounds"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": true
     },
     {
       "name": "UI:DISP:BITMAP:B64",
@@ -1885,7 +2041,9 @@
         "Bitmap too large. Max 512 bytes decoded.",
         "Not in REMOTE mode"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "UI:DISP:BITMAP:RLE",
@@ -1909,7 +2067,9 @@
         "Not in REMOTE mode",
         "Position out of bounds"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": true
     },
     {
       "name": "UI:DISP:INDICATOR",
@@ -1930,7 +2090,9 @@
         "Invalid rotation_dir",
         "Not in REMOTE mode"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "UI:FLASH:UPLOAD",
@@ -1951,7 +2113,9 @@
         "Flash program failed",
         "Slot out of range"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": true
     },
     {
       "name": "UI:FLASH:SHOW",
@@ -1970,7 +2134,9 @@
         "LCD streaming failed",
         "Slot out of range"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "UI:FLASH:UPLOAD:RLE",
@@ -1994,7 +2160,9 @@
         "Invalid compressed size",
         "Slot out of range"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": true
     },
     {
       "name": "UI:FLASH:DUMP",
@@ -2026,7 +2194,9 @@
         "Offset+len exceeds image size",
         "Slot out of range"
       ],
-      "note": ""
+      "note": "",
+      "multiline": true,
+      "binary": false
     },
     {
       "name": "UI:FLASH:INFO",
@@ -2042,7 +2212,9 @@
       "errors": [
         "Flash not available"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "UI:FLASH:ERASE_ALL",
@@ -2059,7 +2231,9 @@
         "Flash erase failed",
         "Flash not available"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "UI:FLASH:TEST",
@@ -2073,7 +2247,9 @@
       "errors": [
         "Flash not available"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "UI:MODE",
@@ -2087,7 +2263,9 @@
       "errors": [
         "Unknown mode (use LOCAL or REMOTE)"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "UI:MODE?",
@@ -2099,7 +2277,9 @@
       "ascii_ok": [],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DBG:MOTOR",
@@ -2122,7 +2302,9 @@
         }
       ],
       "errors": [],
-      "note": "special case in dispatcher"
+      "note": "special case in dispatcher",
+      "multiline": true,
+      "binary": false
     },
     {
       "name": "DBG:UNLOCK",
@@ -2136,7 +2318,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": "special case in dispatcher"
+      "note": "special case in dispatcher",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DBG:LOCK",
@@ -2150,7 +2334,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": "special case in dispatcher"
+      "note": "special case in dispatcher",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DBG:TRACE:DUMP",
@@ -2173,7 +2359,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": true,
+      "binary": false
     },
     {
       "name": "DBG:TRACE:RESET",
@@ -2187,7 +2375,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DRV:REINIT",
@@ -2201,7 +2391,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": "special case in dispatcher"
+      "note": "special case in dispatcher",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DRV:CFG:KVAL",
@@ -2218,7 +2410,9 @@
       ],
       "json": [],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DRV:CFG:OCD",
@@ -2237,7 +2431,9 @@
       "errors": [
         "OCD threshold must be 0-31"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DRV:CFG:STALL",
@@ -2256,7 +2452,9 @@
       "errors": [
         "Stall threshold must be 0-31"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DRV:CFG:FAULT",
@@ -2277,7 +2475,9 @@
       "errors": [
         "Action must be 0=HardStop, 1=HardHiZ, 2=SoftStop"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DRV:CFG:MOTION",
@@ -2296,7 +2496,9 @@
         "ACC/DEC must be 0-4095",
         "MAXSPD must be 0-1023"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DRV:CFG:STEPMODE",
@@ -2315,7 +2517,9 @@
       "errors": [
         "Invalid mode. Use 0-7 or microstep count (8/16/32/64/128)"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DRV:STEP_MODE",
@@ -2344,7 +2548,9 @@
         "Step mode must be 0-7",
         "VERIFY_FAILED: STEP_MODE readback mismatch"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DRV:FULL_STEPS",
@@ -2370,7 +2576,9 @@
       "errors": [
         "Full steps/rev must be 1-10000"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DRV:ENC_PPR",
@@ -2395,7 +2603,9 @@
       "errors": [
         "Encoder PPR must be 1-65535"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DRV:CFG?",
@@ -2417,7 +2627,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": true,
+      "binary": false
     },
     {
       "name": "DRV:CFG:SAVE",
@@ -2433,7 +2645,9 @@
       "errors": [
         "Flash write failed"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DRV:CFG:LOAD",
@@ -2449,7 +2663,9 @@
       "errors": [
         "No valid config in flash"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DRV:CFG:RESET",
@@ -2465,7 +2681,9 @@
       "errors": [
         "Flash write failed"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DRV:CFG:APPLY",
@@ -2483,7 +2701,9 @@
         "Applied but flash write failed",
         "Failed to apply config to motor"
       ],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DRV:STEP_MODE?",
@@ -2506,7 +2726,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DRV:FULL_STEPS?",
@@ -2528,7 +2750,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "DRV:ENC_PPR?",
@@ -2549,7 +2773,9 @@
         }
       ],
       "errors": [],
-      "note": ""
+      "note": "",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:ENC:FILT:WINDOW",
@@ -2566,7 +2792,9 @@
         "WINDOW requires ms (1-255)",
         "Window must be 1-255 ms"
       ],
-      "note": "sub-command"
+      "note": "sub-command",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:ENC:FILT:EMA",
@@ -2583,7 +2811,9 @@
         "EMA alpha must be 0-255",
         "EMA requires 0|1 [alpha]"
       ],
-      "note": "sub-command"
+      "note": "sub-command",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:ENC:FILT:SMA",
@@ -2600,7 +2830,9 @@
         "SMA requires 0|1 [window]",
         "SMA window must be 0-32"
       ],
-      "note": "sub-command"
+      "note": "sub-command",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:ENC:FILT:PADE",
@@ -2618,7 +2850,9 @@
         "MaxCorr must be 1-255 tps",
         "PADE requires 0|1 [gain% 1-100] [maxCorr 1-255]"
       ],
-      "note": "sub-command"
+      "note": "sub-command",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:ENC:FILT:BIQUAD",
@@ -2635,7 +2869,9 @@
         "BIQUAD requires 0|1 [cutoff 1-50 Hz]",
         "Cutoff must be 1-50 Hz"
       ],
-      "note": "sub-command"
+      "note": "sub-command",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:ENC:FILT:NOTCH",
@@ -2653,7 +2889,9 @@
         "NOTCH requires 0|1 [center 1-50 Hz] [Q*10 1-100]",
         "Q*10 must be 1-100"
       ],
-      "note": "sub-command"
+      "note": "sub-command",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:ENC:FILT:HOLT",
@@ -2671,7 +2909,9 @@
         "Beta must be 0-255",
         "HOLT requires 0|1 [alpha 0-255] [beta 0-255]"
       ],
-      "note": "sub-command"
+      "note": "sub-command",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:ENC:FILT:RATE",
@@ -2688,7 +2928,9 @@
         "RATE requires hz (100-10000)",
         "Rate must be 100-10000 Hz"
       ],
-      "note": "sub-command"
+      "note": "sub-command",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:ENC:FILT:SAVE",
@@ -2704,7 +2946,9 @@
       "errors": [
         "Flash write failed"
       ],
-      "note": "sub-command"
+      "note": "sub-command",
+      "multiline": false,
+      "binary": false
     },
     {
       "name": "CTRL:ENC:FILT:RESET",
@@ -2720,7 +2964,9 @@
       "errors": [
         "Unknown ENC:FILT sub-command"
       ],
-      "note": "sub-command"
+      "note": "sub-command",
+      "multiline": false,
+      "binary": false
     }
   ],
   "oob_estop_byte": 24
