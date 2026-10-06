@@ -35,6 +35,8 @@ it matters, the proposed fix (also drawable), and status. Items are ordered by r
 | NEW: `DEV:ID` / `DEV:ROLE` crash (null lock) | **open**: `g_deviceConfig.init()` is never called since `f874dd5`; setters dereference a null `m_lock`. Blocks per-corner identity (docs/review/LINK_BUDGET.md, finding 1) | — |
 | NEW: config apply stalls the MCU ~1-2 s | **open**: `DRV:CFG:APPLY` and every *:SAVE erase the 128 KB internal sector 7 from flash-resident code. Client mitigation: watchdog widened to 5 s around these commands (LINK_BUDGET.md, finding 2) | — |
 | NEW: upload CR/LF drain can eat a payload byte | **open**, latent (LINK_BUDGET.md, finding 3) | — |
+| NEW: encoder velocity units | **open**: `EncoderService` reports counts per sample (delta / window samples), never scaled to per second, but system ID logs it as `actual_tps` beside a setpoint in ticks/s and the speed-trim and following supervisor take it as ticks/s: a factor of the sample rate (1000) apart. Found on the virtual Nucleo; confirm on hardware by reading `DIAG:STAT?` encoder velocity at a known `MOT:RUN` speed | — |
+| NEW: status snapshot lags an ESTOP by up to 50 ms | **documented**: `motor.hi_z` in `DIAG:STAT?` is refreshed by the Motor task every 50 ms; the client re-reads for up to 300 ms before calling an ESTOP unconfirmed | client |
 | Client S-5 (watchdog default) | **done**: 500 ms default, heartbeat 100 ms, telemetry 200 ms, all visible settings; image bands 5 rows | client step 6 |
 
 ## 1. SPI1 is held for an entire remote bitmap; ESTOP cannot interrupt it

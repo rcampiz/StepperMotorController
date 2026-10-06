@@ -44,8 +44,8 @@ def _open(args, heartbeat: bool) -> Board:
         args._sim = FakeBoard(transport)
         name = "sim"
     else:
-        from smc_core.transport.serial import VcpTransport
-        transport = VcpTransport(port=args.port, baudrate=args.baud)
+        from smc_core.transport import open_transport
+        transport = open_transport(args.port, args.baud)
         name = args.port or "auto"
     live = Liveness(max_age_s=0.25)
     live.touch()
@@ -177,7 +177,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     def board_args(p):
         g = p.add_mutually_exclusive_group(required=True)
-        g.add_argument("--port", help="serial port (COM6, /dev/ttyACM0)")
+        g.add_argument("--port", help="serial port (COM6, /dev/ttyACM0) or tcp://HOST:PORT "
+                                      "(virtual Nucleo)")
         g.add_argument("--sim", action="store_true", help="in-process fake board")
         p.add_argument("--baud", type=int, default=115200)
         p.add_argument("--hb-timeout", type=int, default=BoardConfig.heartbeat_timeout_ms,

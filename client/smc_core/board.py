@@ -67,6 +67,10 @@ class BoardConfig:
     clear_fault_on_connect: bool = False      # the GUI's historical behaviour
     reply_timeout_ms: int = 2000
     oob_estop: bool = True                    # send 0x18 before SYST:ESTOP (ignored before Phase 4)
+    # The status snapshot is refreshed by the Motor task every 50 ms, so the first read
+    # after an ESTOP can still show the bridges on. Re-read for this long before declaring
+    # the stop unconfirmed (found on the virtual Nucleo).
+    estop_confirm_window_s: float = 0.3
     stream_chunk: int = 256                   # bytes per drained write in uploads
     reconnect_s: float = 0.0                  # >0: reopen the transport after link loss
     flight_recorder_lines: int = 500
@@ -80,6 +84,7 @@ class EstopResult:
     t_write: float               # board clock when the stop bytes were written
     t_confirmed: Optional[float] = None
     status: Dict[str, Any] = field(default_factory=dict)
+    reads: int = 0               # status reads it took (snapshot refresh lag)
 
 
 @dataclass
@@ -598,13 +603,20 @@ class Board:
         ticket._finish(self._confirm_estop(t_write, dropped))
 
     def _confirm_estop(self, t_write: float, dropped: int) -> EstopResult:
-        resp = self._execute(C.status().tagged("estop-confirm"), "estop")
-        if resp.success:
-            self.last_status = resp.data
-            ok, detail = self.estop_confirmed(resp.data)
-        else:
-            ok, detail = False, f"no status read-back: {resp.error_message}"
-        result = EstopResult(ok, detail, dropped, t_write, self._clock(), resp.data or {})
+        deadline = time.monotonic() + self.config.estop_confirm_window_s
+        reads = 0
+        while True:
+            resp = self._execute(C.status().tagged("estop-confirm"), "estop")
+            reads += 1
+            if resp.success:
+                self.last_status = resp.data
+                ok, detail = self.estop_confirmed(resp.data)
+            else:
+                ok, detail = False, f"no status read-back: {resp.error_message}"
+            if ok or time.monotonic() >= deadline or not self._link_up:
+                break
+            time.sleep(0.02)
+        result = EstopResult(ok, detail, dropped, t_write, self._clock(), resp.data or {}, reads)
         log.warning("%s: ESTOP %s (%s), %d queued dropped", self.name,
                     "confirmed" if ok else "NOT CONFIRMED", detail, dropped)
         self._emit("estop", result)

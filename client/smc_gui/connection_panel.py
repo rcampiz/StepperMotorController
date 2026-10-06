@@ -20,6 +20,8 @@ from PySide6.QtCore import Signal, Slot
 from smc_core.transport.serial import VcpTransport
 from smc_core.board import BoardConfig
 
+VNUCLEO_DEFAULT = "tcp://127.0.0.1:5761"
+
 
 class ConnectionPanel(QWidget):
     """Panel for connection settings and control."""
@@ -51,7 +53,8 @@ class ConnectionPanel(QWidget):
 
         self._port_combo = QComboBox()
         self._port_combo.setMinimumWidth(120)
-        self._port_combo.setToolTip("Select serial port")
+        self._port_combo.setEditable(True)        # type tcp://HOST:PORT for a virtual Nucleo
+        self._port_combo.setToolTip("Serial port, or tcp://HOST:PORT for a virtual Nucleo")
         inner.addWidget(self._port_combo)
 
         # Refresh button
@@ -131,11 +134,6 @@ class ConnectionPanel(QWidget):
         inner.addStretch()
 
     @property
-    def selected_port(self) -> str:
-        """Get selected port name."""
-        return self._port_combo.currentText()
-
-    @property
     def baudrate(self) -> int:
         """Get selected baud rate."""
         return int(self._baud_combo.currentText())
@@ -205,6 +203,9 @@ class ConnectionPanel(QWidget):
 
             self._port_combo.addItem(display, device)
 
+        # Virtual Nucleo on its default port (sim/README.md)
+        self._port_combo.addItem(f"{VNUCLEO_DEFAULT} - virtual Nucleo", VNUCLEO_DEFAULT)
+
         # Restore selection if possible
         if current:
             idx = self._port_combo.findData(current)
@@ -219,9 +220,12 @@ class ConnectionPanel(QWidget):
 
     @property
     def selected_port(self) -> str:
-        """Get currently selected port device name."""
-        # Get the data (device name) not the display text
-        return self._port_combo.currentData() or self._port_combo.currentText()
+        """Selected port: the item's device name, or what the user typed."""
+        text = self._port_combo.currentText().strip()
+        idx = self._port_combo.currentIndex()
+        if idx >= 0 and text == self._port_combo.itemText(idx):
+            return self._port_combo.itemData(idx) or text
+        return text.split(" - ")[0]
 
     @Slot()
     def _on_connect_clicked(self):

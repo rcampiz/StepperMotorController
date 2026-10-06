@@ -1,0 +1,18 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 21, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "vnucleo",
+      "displayName": "Virtual Nucleo (native g++, host OS)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../build-vnucleo",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_CXX_COMPILER": "g++",
+        "CMAKE_C_COMPILER": "gcc"
+      }
+    }
+  ],
+  "buildPresets": [ { "name": "vnucleo", "configurePreset": "vnucleo" } ]
+}

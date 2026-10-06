@@ -319,8 +319,8 @@ class MainWindow(QMainWindow):
         if not port:
             QMessageBox.warning(self, "Connection Error", "Please select a port.")
             return
-        from smc_core.transport.serial import VcpTransport
-        transport = VcpTransport(port=port, baudrate=self._connection_panel.baudrate)
+        from smc_core.transport import open_transport
+        transport = open_transport(port, self._connection_panel.baudrate)
         self.attach_transport(transport, port)
 
     def attach_transport(self, transport: ITransport, label: str) -> bool:

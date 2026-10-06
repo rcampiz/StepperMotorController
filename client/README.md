@@ -5,7 +5,8 @@ One shared core and two thin frontends (CLIENT_REVIEW section 9). Python 3.11+.
 ```
 client/
   smc_core/            the core: pure Python + pyserial, no Qt
-    transport/         ITransport; serial (VCP), rtt (J-Link), memory (tests, simulator)
+    transport/         ITransport; serial (VCP), tcp (virtual Nucleo), rtt (J-Link), memory;
+                       open_transport("COM6" | "/dev/ttyACM0" | "tcp://HOST:PORT")
     framing.py         classify(line) -> Frame (response/event/telemetry/reset/banner/...)
     codec.py           Response, Event, ResetInfo, Identity, HeartbeatAck, parse_*()
     protocol_spec.py   GENERATED from the firmware parser (scripts/gen_protocol.py)
@@ -30,6 +31,7 @@ From `client/` (Windows: `.venv\Scripts\python.exe`; or `pip install -e .[gui,de
 ```
 python -m smc_gui                 # GUI, pick the port in the window
 python -m smc_gui --sim           # GUI against the in-process fake board
+python -m smc_cli info --port tcp://127.0.0.1:5761   # a virtual Nucleo (sim/README.md)
 python -m smc_cli ports
 python -m smc_cli info --port COM6
 python -m smc_cli send --port COM6 MOT:EN

@@ -112,7 +112,9 @@ def normalized_tx(tx: List[str]) -> List[str]:
 
 def comparable(result: "ScenarioResult") -> Dict[str, Any]:
     """What must be identical when two frontends run the same scenario."""
-    timing = ("confirm_ms", "held_ms", "traceback")
+    # timing values and measured physics (sysid samples on a real or virtual board) differ
+    # run to run; the sample count does not
+    timing = ("confirm_ms", "held_ms", "traceback", "samples")
     return {"name": result.name, "ok": result.ok, "error": result.error,
             "checks": [(c.name, c.ok) for c in result.checks],
             "measurements": {k: v for k, v in result.measurements.items() if k not in timing},
