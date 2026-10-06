@@ -53,9 +53,9 @@ void CommandParser::cmdDispText(const ParsedCommand &cmd) {
     return;
   }
 
-  // Usage: DISP_TEXT <x> <y> <fg> <bg> <text>
+  // Usage: UI:DISP:TEXT <x> <y> <fg> <bg> <text>
   if (cmd.argCount < 5) {
-    respondErr("Usage: DISP_TEXT <x> <y> <fg> <bg> <text>");
+    respondErr("Usage: UI:DISP:TEXT <x> <y> <fg> <bg> <text>");
     return;
   }
 
@@ -76,9 +76,9 @@ void CommandParser::cmdDispRect(const ParsedCommand &cmd) {
     return;
   }
 
-  // Usage: DISP_RECT <x> <y> <w> <h> <color> [fill]
+  // Usage: UI:DISP:RECT <x> <y> <w> <h> <color> [fill]
   if (cmd.argCount < 5) {
-    respondErr("Usage: DISP_RECT <x> <y> <w> <h> <color> [fill]");
+    respondErr("Usage: UI:DISP:RECT <x> <y> <w> <h> <color> [fill]");
     return;
   }
 
@@ -100,9 +100,9 @@ void CommandParser::cmdDispLine(const ParsedCommand &cmd) {
     return;
   }
 
-  // Usage: DISP_LINE <x1> <y1> <x2> <y2> <color>
+  // Usage: UI:DISP:LINE <x1> <y1> <x2> <y2> <color>
   if (cmd.argCount < 5) {
-    respondErr("Usage: DISP_LINE <x1> <y1> <x2> <y2> <color>");
+    respondErr("Usage: UI:DISP:LINE <x1> <y1> <x2> <y2> <color>");
     return;
   }
 
@@ -123,12 +123,12 @@ void CommandParser::cmdDispBitmap(const ParsedCommand &cmd) {
     return;
   }
 
-  // Usage: DISP_BITMAP <x> <y> <w> <h> [CRC]
+  // Usage: UI:DISP:BITMAP <x> <y> <w> <h> [CRC]
   bool useCrc = hasCrcFlag(cmd);
   uint32_t minArgs = useCrc ? 5 : 4;
 
   if (cmd.argCount < minArgs) {
-    respondErr("Usage: DISP_BITMAP <x> <y> <w> <h> [CRC]");
+    respondErr("Usage: UI:DISP:BITMAP <x> <y> <w> <h> [CRC]");
     return;
   }
 
@@ -231,9 +231,9 @@ void CommandParser::cmdDispBitmapB64(const ParsedCommand &cmd) {
     return;
   }
 
-  // Usage: DISP_BITMAP_B64 <x> <y> <w> <h> <base64_data>
+  // Usage: UI:DISP:BITMAP:B64 <x> <y> <w> <h> <base64_data>
   if (cmd.argCount < 5) {
-    respondErr("Usage: DISP_BITMAP_B64 <x> <y> <w> <h> <base64_data>");
+    respondErr("Usage: UI:DISP:BITMAP:B64 <x> <y> <w> <h> <base64_data>");
     return;
   }
 
@@ -330,7 +330,7 @@ void CommandParser::cmdDispIndicator(const ParsedCommand &cmd) {
   }
 
   if (cmd.argCount < 3) {
-    respondErr("Usage: DISP_INDICATOR <angle> <rot_dir> <has_trans>");
+    respondErr("Usage: UI:DISP:INDICATOR <angle> <rot_dir> <has_trans>");
     return;
   }
 
@@ -362,13 +362,13 @@ void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
     return;
   }
 
-  // Usage: DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes> [CRC]
+  // Usage: UI:DISP:BITMAP:RLE <x> <y> <w> <h> <compressed_bytes> [CRC]
   bool useCrc = hasCrcFlag(cmd);
   uint32_t minArgs = useCrc ? 6 : 5;
 
   if (cmd.argCount < minArgs) {
     respondErr(
-        "Usage: DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes> [CRC]");
+        "Usage: UI:DISP:BITMAP:RLE <x> <y> <w> <h> <compressed_bytes> [CRC]");
     return;
   }
 
@@ -577,12 +577,12 @@ void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
     return;
   }
 
-  // Usage: FLASH_UPLOAD <slot> [CRC]
+  // Usage: UI:FLASH:UPLOAD <slot> [CRC]
   bool useCrc = hasCrcFlag(cmd);
   uint32_t minArgs = useCrc ? 2 : 1;
 
   if (cmd.argCount < minArgs) {
-    respondErr("Usage: FLASH_UPLOAD <slot> [CRC]");
+    respondErr("Usage: UI:FLASH:UPLOAD <slot> [CRC]");
     return;
   }
 
@@ -681,12 +681,12 @@ void CommandParser::cmdFlashUploadRle(const ParsedCommand &cmd) {
     return;
   }
 
-  // Usage: FLASH_UPLOAD_RLE <slot> <compressed_bytes> [CRC]
+  // Usage: UI:FLASH:UPLOAD:RLE <slot> <compressed_bytes> [CRC]
   bool useCrc = hasCrcFlag(cmd);
   uint32_t minArgs = useCrc ? 3 : 2; // slot, comp_bytes [, CRC]
 
   if (cmd.argCount < minArgs) {
-    respondErr("Usage: FLASH_UPLOAD_RLE <slot> <compressed_bytes> [CRC]");
+    respondErr("Usage: UI:FLASH:UPLOAD:RLE <slot> <compressed_bytes> [CRC]");
     return;
   }
 
@@ -876,7 +876,7 @@ void CommandParser::cmdFlashShow(const ParsedCommand &cmd) {
   }
 
   if (cmd.argCount < 1) {
-    respondErr("Usage: FLASH_SHOW <slot>");
+    respondErr("Usage: UI:FLASH:SHOW <slot>");
     return;
   }
 
@@ -986,9 +986,9 @@ void CommandParser::cmdFlashDump(const ParsedCommand &cmd) {
     return;
   }
 
-  // Usage: FLASH_DUMP <slot> [offset] [len]
+  // Usage: UI:FLASH:DUMP <slot> [offset] [len]
   if (cmd.argCount < 1) {
-    respondErr("Usage: FLASH_DUMP <slot> [offset] [len]");
+    respondErr("Usage: UI:FLASH:DUMP <slot> [offset] [len]");
     return;
   }
 

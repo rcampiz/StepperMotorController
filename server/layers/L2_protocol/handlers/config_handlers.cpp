@@ -108,9 +108,9 @@ void CommandParser::cmdMotorConfigReset() {
 }
 
 void CommandParser::cmdMotorConfigKval(const ParsedCommand &cmd) {
-  // Usage: MCONFIG_KVAL <hold> <run> <acc> <dec>
+  // Usage: DRV:CFG:KVAL <hold> <run> <acc> <dec>
   if (cmd.argCount < 4) {
-    respondErr("Usage: MCONFIG_KVAL <hold> <run> <acc> <dec> (hex 00-FF)");
+    respondErr("Usage: DRV:CFG:KVAL <hold> <run> <acc> <dec> (hex 00-FF)");
     return;
   }
 
@@ -129,9 +129,9 @@ void CommandParser::cmdMotorConfigKval(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdMotorConfigOcd(const ParsedCommand &cmd) {
-  // Usage: MCONFIG_OCD <threshold>
+  // Usage: DRV:CFG:OCD <threshold>
   if (cmd.argCount < 1) {
-    respondErr("Usage: MCONFIG_OCD <threshold> (0-31, ~375mA/step)");
+    respondErr("Usage: DRV:CFG:OCD <threshold> (0-31, ~375mA/step)");
     return;
   }
 
@@ -149,10 +149,10 @@ void CommandParser::cmdMotorConfigOcd(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdMotorConfigStall(const ParsedCommand &cmd) {
-  // Usage: MCONFIG_STALL <threshold>
+  // Usage: DRV:CFG:STALL <threshold>
   // powerSTEP01 STALL_TH is 5-bit (0-31), NOT 7-bit like L6470
   if (cmd.argCount < 1) {
-    respondErr("Usage: MCONFIG_STALL <threshold> (0-31, ~31.25mV/step BEMF)");
+    respondErr("Usage: DRV:CFG:STALL <threshold> (0-31, ~31.25mV/step BEMF)");
     return;
   }
 
@@ -170,11 +170,11 @@ void CommandParser::cmdMotorConfigStall(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdMotorConfigFault(const ParsedCommand &cmd) {
-  // Usage: MCONFIG_FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd>
+  // Usage: DRV:CFG:FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd>
   //        MCONFIG_FAULT ACTION <0|1|2>
   if (cmd.argCount < 1) {
     respondErr(
-        "Usage: MCONFIG_FAULT <ocd> <th_sd> <th_w> <uvlo> <sta> <stb> <cmd>\n"
+        "Usage: DRV:CFG:FAULT <ocd> <th_sd> <th_w> <uvlo> <sta> <stb> <cmd>\n"
         "   or: MCONFIG_FAULT ACTION <0=HardStop|1=HardHiZ|2=SoftStop>");
     return;
   }
@@ -183,7 +183,7 @@ void CommandParser::cmdMotorConfigFault(const ParsedCommand &cmd) {
   if (strcmp(cmd.args[0], "ACTION") == 0 ||
       strcmp(cmd.args[0], "action") == 0) {
     if (cmd.argCount < 2) {
-      respondErr("Usage: MCONFIG_FAULT ACTION <0|1|2>");
+      respondErr("Usage: DRV:CFG:FAULT ACTION <0|1|2>");
       return;
     }
     auto action = static_cast<uint8_t>(strtoul(cmd.args[1], nullptr, 10));
@@ -222,9 +222,9 @@ void CommandParser::cmdMotorConfigFault(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdMotorConfigMotion(const ParsedCommand &cmd) {
-  // Usage: MCONFIG_MOTION <acc> <dec> <maxspd>
+  // Usage: DRV:CFG:MOTION <acc> <dec> <maxspd>
   if (cmd.argCount < 3) {
-    respondErr("Usage: MCONFIG_MOTION <acc> <dec> <maxspd>");
+    respondErr("Usage: DRV:CFG:MOTION <acc> <dec> <maxspd>");
     return;
   }
 
@@ -252,11 +252,11 @@ void CommandParser::cmdMotorConfigMotion(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdMotorConfigStepMode(const ParsedCommand &cmd) {
-  // Usage: MCONFIG_STEPMODE <mode>
+  // Usage: DRV:CFG:STEPMODE <mode>
   // mode: 0=full, 1=half, 2=1/4, 3=1/8, 4=1/16, 5=1/32, 6=1/64, 7=1/128
   // Also accepts microstep counts: 1,2,4,8,16,32,64,128
   if (cmd.argCount < 1) {
-    respondErr("Usage: MCONFIG_STEPMODE <mode> (0-7 or 1/2/4/8/16/32/64/128)");
+    respondErr("Usage: DRV:CFG:STEPMODE <mode> (0-7 or 1/2/4/8/16/32/64/128)");
     return;
   }
 

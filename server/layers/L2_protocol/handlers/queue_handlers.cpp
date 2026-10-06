@@ -9,7 +9,7 @@ namespace Protocol {
 
 void CommandParser::cmdQueue(const ParsedCommand &cmd) {
   if (cmd.argCount < 1) {
-    respondErr("Usage: QUEUE <cmd> [args...]");
+    respondErr("Usage: SYNC:QUEUE <cmd> [args...]");
     return;
   }
 
@@ -19,7 +19,7 @@ void CommandParser::cmdQueue(const ParsedCommand &cmd) {
 
   if (strcmp(subCmd, "MOVE") == 0 || strcmp(subCmd, "move") == 0) {
     if (cmd.argCount < 3) {
-      respondErr("Usage: QUEUE MOVE <steps> <dir>");
+      respondErr("Usage: SYNC:QUEUE MOVE <steps> <dir>");
       return;
     }
     auto steps = static_cast<int32_t>(atol(cmd.args[1]));
@@ -35,7 +35,7 @@ void CommandParser::cmdQueue(const ParsedCommand &cmd) {
     r = m_dispatcher.queueMove((dir == 0) ? -steps : steps);
   } else if (strcmp(subCmd, "GOTO") == 0 || strcmp(subCmd, "goto") == 0) {
     if (cmd.argCount < 2) {
-      respondErr("Usage: QUEUE GOTO <position>");
+      respondErr("Usage: SYNC:QUEUE GOTO <position>");
       return;
     }
     auto position = static_cast<int32_t>(atol(cmd.args[1]));
@@ -46,7 +46,7 @@ void CommandParser::cmdQueue(const ParsedCommand &cmd) {
     r = m_dispatcher.queueGoTo(position);
   } else if (strcmp(subCmd, "RUN") == 0 || strcmp(subCmd, "run") == 0) {
     if (cmd.argCount < 3) {
-      respondErr("Usage: QUEUE RUN <speed> <dir>");
+      respondErr("Usage: SYNC:QUEUE RUN <speed> <dir>");
       return;
     }
     auto speed = static_cast<int32_t>(atol(cmd.args[1]));
@@ -93,7 +93,7 @@ void CommandParser::cmdStart() {
 
 void CommandParser::cmdStartAt(const ParsedCommand &cmd) {
   if (cmd.argCount < 1) {
-    respondErr("Usage: START_AT <tick>");
+    respondErr("Usage: SYNC:START:AT <tick>");
     return;
   }
 

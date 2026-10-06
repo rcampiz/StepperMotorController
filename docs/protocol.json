@@ -411,7 +411,7 @@
       "file": "system_handlers.cpp",
       "min_args": 1,
       "usage": [
-        "SET_FORMAT <ASCII|JSON>"
+        "FMT <ASCII|JSON>"
       ],
       "ascii_ok": [
         "<plain lines>"
@@ -457,8 +457,8 @@
       "file": "motion_handlers.cpp",
       "min_args": 2,
       "usage": [
-        "MOVE <rev> REV <dir> [speed]",
-        "MOVE <steps> <dir> [speed] | MOVE <rev> REV <dir> [speed]"
+        "MOT:MOVE <rev> REV <dir> [speed]",
+        "MOT:MOVE <steps> <dir> [speed] | MOT:MOVE <rev> REV <dir> [speed]"
       ],
       "ascii_ok": [
         "<status> or "
@@ -478,7 +478,7 @@
       "file": "motion_handlers.cpp",
       "min_args": 1,
       "usage": [
-        "GOTO <pos> [speed] | GOTO <rev> REV [speed]"
+        "MOT:GOTO <pos> [speed] | MOT:GOTO <rev> REV [speed]"
       ],
       "ascii_ok": [
         "<status> or "
@@ -497,8 +497,8 @@
       "file": "motion_handlers.cpp",
       "min_args": 2,
       "usage": [
-        "RUN <rpm> RPM <dir>",
-        "RUN <speed> <dir> | RUN <rpm> RPM <dir>"
+        "MOT:RUN <rpm> RPM <dir>",
+        "MOT:RUN <speed> <dir> | MOT:RUN <rpm> RPM <dir>"
       ],
       "ascii_ok": [
         "<status> or "
@@ -723,7 +723,7 @@
       "file": "safety_handlers.cpp",
       "min_args": 1,
       "usage": [
-        "SET_HEARTBEAT <timeout_ms>"
+        "SYST:HB:TIMEOUT <timeout_ms>"
       ],
       "ascii_ok": [
         "<plain lines>"
@@ -773,7 +773,7 @@
       "file": "system_handlers.cpp",
       "min_args": 1,
       "usage": [
-        "SET_BAUD <115200|230400|460800|921600>"
+        "SYST:BAUD <115200|230400|460800|921600>"
       ],
       "ascii_ok": [
         "<plain lines>"
@@ -1047,10 +1047,10 @@
       "file": "queue_handlers.cpp",
       "min_args": 1,
       "usage": [
-        "QUEUE <cmd> [args...]",
-        "QUEUE GOTO <position>",
-        "QUEUE MOVE <steps> <dir>",
-        "QUEUE RUN <speed> <dir>"
+        "SYNC:QUEUE <cmd> [args...]",
+        "SYNC:QUEUE GOTO <position>",
+        "SYNC:QUEUE MOVE <steps> <dir>",
+        "SYNC:QUEUE RUN <speed> <dir>"
       ],
       "ascii_ok": [],
       "json": [],
@@ -1070,7 +1070,7 @@
       "file": "queue_handlers.cpp",
       "min_args": 1,
       "usage": [
-        "START_AT <tick>"
+        "SYNC:START:AT <tick>"
       ],
       "ascii_ok": [
         "<status> or RUNNING"
@@ -1714,7 +1714,7 @@
       "file": "system_handlers.cpp",
       "min_args": 1,
       "usage": [
-        "SET_DEVICE_ID <id>"
+        "DEV:ID <id>"
       ],
       "ascii_ok": [
         "ID saved"
@@ -1732,7 +1732,7 @@
       "file": "system_handlers.cpp",
       "min_args": 1,
       "usage": [
-        "SET_ROLE <FL|FR|RL|RR|NONE>"
+        "DEV:ROLE <FL|FR|RL|RR|NONE>"
       ],
       "ascii_ok": [],
       "json": [],
@@ -1798,7 +1798,7 @@
       "file": "display_handlers.cpp",
       "min_args": 5,
       "usage": [
-        "DISP_TEXT <x> <y> <fg> <bg> <text>"
+        "UI:DISP:TEXT <x> <y> <fg> <bg> <text>"
       ],
       "ascii_ok": [
         ""
@@ -1816,7 +1816,7 @@
       "file": "display_handlers.cpp",
       "min_args": 5,
       "usage": [
-        "DISP_RECT <x> <y> <w> <h> <color> [fill]"
+        "UI:DISP:RECT <x> <y> <w> <h> <color> [fill]"
       ],
       "ascii_ok": [
         ""
@@ -1834,7 +1834,7 @@
       "file": "display_handlers.cpp",
       "min_args": 5,
       "usage": [
-        "DISP_LINE <x1> <y1> <x2> <y2> <color>"
+        "UI:DISP:LINE <x1> <y1> <x2> <y2> <color>"
       ],
       "ascii_ok": [
         ""
@@ -1852,7 +1852,7 @@
       "file": "display_handlers.cpp",
       "min_args": 0,
       "usage": [
-        "DISP_BITMAP <x> <y> <w> <h> [CRC]"
+        "UI:DISP:BITMAP <x> <y> <w> <h> [CRC]"
       ],
       "ascii_ok": [
         "",
@@ -1875,7 +1875,7 @@
       "file": "display_handlers.cpp",
       "min_args": 5,
       "usage": [
-        "DISP_BITMAP_B64 <x> <y> <w> <h> <base64_data>"
+        "UI:DISP:BITMAP:B64 <x> <y> <w> <h> <base64_data>"
       ],
       "ascii_ok": [
         ""
@@ -1894,7 +1894,7 @@
       "file": "display_handlers.cpp",
       "min_args": 0,
       "usage": [
-        "DISP_BITMAP_RLE <x> <y> <w> <h> <compressed_bytes> [CRC]"
+        "UI:DISP:BITMAP:RLE <x> <y> <w> <h> <compressed_bytes> [CRC]"
       ],
       "ascii_ok": [
         "",
@@ -1918,7 +1918,7 @@
       "file": "display_handlers.cpp",
       "min_args": 3,
       "usage": [
-        "DISP_INDICATOR <angle> <rot_dir> <has_trans>"
+        "UI:DISP:INDICATOR <angle> <rot_dir> <has_trans>"
       ],
       "ascii_ok": [
         ""
@@ -1939,7 +1939,7 @@
       "file": "display_handlers.cpp",
       "min_args": 0,
       "usage": [
-        "FLASH_UPLOAD <slot> [CRC]"
+        "UI:FLASH:UPLOAD <slot> [CRC]"
       ],
       "ascii_ok": [
         "<plain lines>"
@@ -1960,7 +1960,7 @@
       "file": "display_handlers.cpp",
       "min_args": 1,
       "usage": [
-        "FLASH_SHOW <slot>"
+        "UI:FLASH:SHOW <slot>"
       ],
       "ascii_ok": [],
       "json": [],
@@ -1979,7 +1979,7 @@
       "file": "display_handlers.cpp",
       "min_args": 0,
       "usage": [
-        "FLASH_UPLOAD_RLE <slot> <compressed_bytes> [CRC]"
+        "UI:FLASH:UPLOAD:RLE <slot> <compressed_bytes> [CRC]"
       ],
       "ascii_ok": [
         "<plain lines>"
@@ -2003,7 +2003,7 @@
       "file": "display_handlers.cpp",
       "min_args": 1,
       "usage": [
-        "FLASH_DUMP <slot> [offset] [len]"
+        "UI:FLASH:DUMP <slot> [offset] [len]"
       ],
       "ascii_ok": [
         "<lines> then OK <n>"
@@ -2210,8 +2210,8 @@
       "file": "config_handlers.cpp",
       "min_args": 4,
       "usage": [
-        "MCONFIG_KVAL <hold> <run> <acc> <dec>",
-        "MCONFIG_KVAL <hold> <run> <acc> <dec> (hex 00-FF)"
+        "DRV:CFG:KVAL <hold> <run> <acc> <dec>",
+        "DRV:CFG:KVAL <hold> <run> <acc> <dec> (hex 00-FF)"
       ],
       "ascii_ok": [
         "<formatted text>"
@@ -2227,8 +2227,8 @@
       "file": "config_handlers.cpp",
       "min_args": 1,
       "usage": [
-        "MCONFIG_OCD <threshold>",
-        "MCONFIG_OCD <threshold> (0-31, ~375mA/step)"
+        "DRV:CFG:OCD <threshold>",
+        "DRV:CFG:OCD <threshold> (0-31, ~375mA/step)"
       ],
       "ascii_ok": [
         "<formatted text>"
@@ -2246,8 +2246,8 @@
       "file": "config_handlers.cpp",
       "min_args": 1,
       "usage": [
-        "MCONFIG_STALL <threshold>",
-        "MCONFIG_STALL <threshold> (0-31, ~31.25mV/step BEMF)"
+        "DRV:CFG:STALL <threshold>",
+        "DRV:CFG:STALL <threshold> (0-31, ~31.25mV/step BEMF)"
       ],
       "ascii_ok": [
         "<formatted text>"
@@ -2265,9 +2265,9 @@
       "file": "config_handlers.cpp",
       "min_args": 1,
       "usage": [
-        "MCONFIG_FAULT <ocd> <th_sd> <th_w> <uvlo> <sta> <stb> <cmd>\\n",
-        "MCONFIG_FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd>",
-        "MCONFIG_FAULT ACTION <0|1|2>"
+        "DRV:CFG:FAULT <ocd> <th_sd> <th_w> <uvlo> <sta> <stb> <cmd>\\n",
+        "DRV:CFG:FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd>",
+        "DRV:CFG:FAULT ACTION <0|1|2>"
       ],
       "ascii_ok": [
         "Fault enables set (not saved)",
@@ -2286,7 +2286,7 @@
       "file": "config_handlers.cpp",
       "min_args": 3,
       "usage": [
-        "MCONFIG_MOTION <acc> <dec> <maxspd>"
+        "DRV:CFG:MOTION <acc> <dec> <maxspd>"
       ],
       "ascii_ok": [
         "<formatted text>"
@@ -2305,8 +2305,8 @@
       "file": "config_handlers.cpp",
       "min_args": 1,
       "usage": [
-        "MCONFIG_STEPMODE <mode>",
-        "MCONFIG_STEPMODE <mode> (0-7 or 1/2/4/8/16/32/64/128)"
+        "DRV:CFG:STEPMODE <mode>",
+        "DRV:CFG:STEPMODE <mode> (0-7 or 1/2/4/8/16/32/64/128)"
       ],
       "ascii_ok": [
         "<formatted text>"

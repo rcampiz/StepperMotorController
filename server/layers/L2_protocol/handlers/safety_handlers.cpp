@@ -58,7 +58,7 @@ void CommandParser::cmdHeartbeat(const ParsedCommand &cmd) {
 
 void CommandParser::cmdSetHeartbeat(const ParsedCommand &cmd) {
   if (cmd.argCount < 1) {
-    respondErr("Usage: SET_HEARTBEAT <timeout_ms>");
+    respondErr("Usage: SYST:HB:TIMEOUT <timeout_ms>");
     return;
   }
 

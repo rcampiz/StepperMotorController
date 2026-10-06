@@ -341,7 +341,7 @@ void CommandParser::cmdEchoQuery() {
 
 void CommandParser::cmdSetFormat(const ParsedCommand &cmd) {
   if (cmd.argCount < 1) {
-    respondErr("Usage: SET_FORMAT <ASCII|JSON>");
+    respondErr("Usage: FMT <ASCII|JSON>");
     return;
   }
 
@@ -373,7 +373,7 @@ void CommandParser::cmdGetFormat() {
 
 void CommandParser::cmdSetBaud(const ParsedCommand &cmd) {
   if (cmd.argCount < 1) {
-    respondErr("Usage: SET_BAUD <115200|230400|460800|921600>");
+    respondErr("Usage: SYST:BAUD <115200|230400|460800|921600>");
     return;
   }
 
@@ -440,7 +440,7 @@ void CommandParser::cmdGetDeviceId() {
 
 void CommandParser::cmdSetDeviceId(const ParsedCommand &cmd) {
   if (cmd.argCount < 1) {
-    respondErr("Usage: SET_DEVICE_ID <id>");
+    respondErr("Usage: DEV:ID <id>");
     return;
   }
 
@@ -470,7 +470,7 @@ void CommandParser::cmdGetRole() {
 
 void CommandParser::cmdSetRole(const ParsedCommand &cmd) {
   if (cmd.argCount < 1) {
-    respondErr("Usage: SET_ROLE <FL|FR|RL|RR|NONE>");
+    respondErr("Usage: DEV:ROLE <FL|FR|RL|RR|NONE>");
     return;
   }
 

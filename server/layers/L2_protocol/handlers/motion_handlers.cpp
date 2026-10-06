@@ -10,7 +10,7 @@ namespace Protocol {
 void CommandParser::cmdMove(const ParsedCommand &cmd) {
   if (cmd.argCount < 2) {
     respondErr(
-        "Usage: MOVE <steps> <dir> [speed] | MOVE <rev> REV <dir> [speed]");
+        "Usage: MOT:MOVE <steps> <dir> [speed] | MOT:MOVE <rev> REV <dir> [speed]");
     return;
   }
 
@@ -21,7 +21,7 @@ void CommandParser::cmdMove(const ParsedCommand &cmd) {
 
   if (isRev) {
     if (cmd.argCount < 3) {
-      respondErr("Usage: MOVE <rev> REV <dir> [speed]");
+      respondErr("Usage: MOT:MOVE <rev> REV <dir> [speed]");
       return;
     }
     double rev = atof(cmd.args[0]);
@@ -69,7 +69,7 @@ void CommandParser::cmdMove(const ParsedCommand &cmd) {
 
 void CommandParser::cmdGoTo(const ParsedCommand &cmd) {
   if (cmd.argCount < 1) {
-    respondErr("Usage: GOTO <pos> [speed] | GOTO <rev> REV [speed]");
+    respondErr("Usage: MOT:GOTO <pos> [speed] | MOT:GOTO <rev> REV [speed]");
     return;
   }
 
@@ -114,7 +114,7 @@ void CommandParser::cmdGoTo(const ParsedCommand &cmd) {
 
 void CommandParser::cmdRun(const ParsedCommand &cmd) {
   if (cmd.argCount < 2) {
-    respondErr("Usage: RUN <speed> <dir> | RUN <rpm> RPM <dir>");
+    respondErr("Usage: MOT:RUN <speed> <dir> | MOT:RUN <rpm> RPM <dir>");
     return;
   }
 
@@ -125,7 +125,7 @@ void CommandParser::cmdRun(const ParsedCommand &cmd) {
 
   if (isRpm) {
     if (cmd.argCount < 3) {
-      respondErr("Usage: RUN <rpm> RPM <dir>");
+      respondErr("Usage: MOT:RUN <rpm> RPM <dir>");
       return;
     }
     double rpm = atof(cmd.args[0]);
