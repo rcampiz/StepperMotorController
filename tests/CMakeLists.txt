@@ -28,7 +28,7 @@ target_include_directories(smc_test_env INTERFACE
 )
 target_compile_options(smc_test_env INTERFACE -Wall -Wextra -g -O0)
 # Host builds never trace; taps are not compiled.
-target_compile_definitions(smc_test_env INTERFACE SMC_HOST_TEST=1)
+target_compile_definitions(smc_test_env INTERFACE SMC_HOST_TEST=1 GIT_HASH="host")
 
 # smc_add_test(<name> <test source> [production sources...])
 function(smc_add_test name src)
@@ -59,7 +59,8 @@ smc_add_test(test_command_parser test_command_parser.cpp
     ${SERVER}/layers/L2_protocol/service_dispatcher.cpp
     ${SERVER}/layers/L2_protocol/event_codec.cpp
     ${L2_HANDLER_SOURCES}
-    ${SERVER}/harness/pins/async_event.cpp)
+    ${SERVER}/harness/pins/async_event.cpp
+    stubs/boot_id_stub.cpp)
 
 # --- Step 6: H_L2_L3 â€” DBG:UNLOCK gate, task suspend via Platform, raw commands via L4.
 smc_add_test(test_debug_service test_debug_service.cpp

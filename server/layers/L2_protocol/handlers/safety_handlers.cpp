@@ -4,6 +4,7 @@
  */
 
 #include "L2_protocol/command_parser_internal.hpp"
+#include "F_platform/boundary/boot_id.hpp"
 
 namespace Protocol {
 
@@ -39,16 +40,18 @@ void CommandParser::cmdHeartbeat(const ParsedCommand &cmd) {
   if (m_format == ResponseFormat::JSON) {
     char buf[128];
     snprintf(
-        buf, sizeof(buf), "{\"seq\":%lu,\"mcu_tick\":%lu,\"remaining_ms\":%lu}",
+        buf, sizeof(buf), "{\"seq\":%lu,\"mcu_tick\":%lu,\"remaining_ms\":%lu,\"boot\":%lu}",
         static_cast<unsigned long>(seq), static_cast<unsigned long>(mcu_tick),
-        static_cast<unsigned long>(hb.remainingMs));
+        static_cast<unsigned long>(hb.remainingMs),
+        static_cast<unsigned long>(Platform::bootId()));
     respondJsonOk("HEARTBEAT", buf);
   } else {
     char buf[64];
-    snprintf(buf, sizeof(buf), "HEARTBEAT_ACK %lu %lu %lu",
+    snprintf(buf, sizeof(buf), "HEARTBEAT_ACK %lu %lu %lu %08lX",
              static_cast<unsigned long>(seq),
              static_cast<unsigned long>(mcu_tick),
-             static_cast<unsigned long>(hb.remainingMs));
+             static_cast<unsigned long>(hb.remainingMs),
+             static_cast<unsigned long>(Platform::bootId()));
     m_transport.println(buf);
   }
 }

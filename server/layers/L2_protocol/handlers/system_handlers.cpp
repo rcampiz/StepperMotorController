@@ -5,6 +5,8 @@
 
 #include "L2_protocol/command_parser_internal.hpp"
 #include "L2_protocol/status_json.hpp"
+#include "harness/pins/protocol_version.hpp"
+#include "F_platform/boundary/boot_id.hpp"
 #include "harness/pins/async_event.hpp"
 
 namespace Protocol {
@@ -211,10 +213,33 @@ void CommandParser::cmdGetStatus() {
   }
 }
 
+// *IDN? — SCPI identification: <vendor>,<model>,<serial>,<fw>,<proto> (F17)
+void CommandParser::cmdIdn() {
+  char buf[96];
+  if (m_format == ResponseFormat::JSON) {
+    snprintf(buf, sizeof(buf),
+             "{\"vendor\":\"%s\",\"model\":\"%s\",\"serial\":\"%s\",\"fw\":\"%s\",\"proto\":%u}",
+             Harness::IDN_VENDOR, Harness::IDN_MODEL, Platform::deviceSerial(),
+             Harness::FW_VERSION, static_cast<unsigned>(Harness::PROTOCOL_VERSION));
+    respondJsonOk("IDN", buf);
+  } else {
+    snprintf(buf, sizeof(buf), "%s,%s,%s,%s,%u", Harness::IDN_VENDOR, Harness::IDN_MODEL,
+             Platform::deviceSerial(), Harness::FW_VERSION,
+             static_cast<unsigned>(Harness::PROTOCOL_VERSION));
+    respondOk(buf);
+  }
+}
+
 void CommandParser::cmdVersion() {
-  m_transport.println("Stepper Motor Controller v0.3.0");
-  m_transport.println("Build: " __DATE__ " " __TIME__);
-  m_transport.println("Protocol: ARM/START sync v1");
+  char line[80];
+  snprintf(line, sizeof(line), "Stepper Motor Controller v%s", Harness::FW_VERSION);
+  m_transport.println(line);
+  snprintf(line, sizeof(line), "Build: %s (" __DATE__ " " __TIME__ ")", Harness::BUILD_HASH);
+  m_transport.println(line);
+  snprintf(line, sizeof(line), "Protocol: %u (boot %08lX)",
+           static_cast<unsigned>(Harness::PROTOCOL_VERSION),
+           static_cast<unsigned long>(Platform::bootId()));
+  m_transport.println(line);
 
   // Show device identification
   char buf[48];

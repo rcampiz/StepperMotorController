@@ -21,15 +21,15 @@ Enforced by `scripts/check_includes.py --strict` and `scripts/check_harness_defs
 - **L4 Drivers** â€” Device drivers over Board pin bundles: powerSTEP01, ST7789, NOR flash, joystick, quadrature encoder (+ index ISR), config store, debug access. (21 files)
 - **L5 Board** â€” Register/peripheral access: clocks, GPIO, SPI1/SPI2, USART2 + RTT byte channels, TIM4, TIM3+DMA sampler, EXTI, TE sync, internal flash, bring-up commands. (35 files)
 - **TASKS Task sheet (Scheduler::)** â€” Four RTOS task loops that only wait, then call one L3 entry point; owns priorities, periods, stack sizes, task handles and the task-init contracts the composition root calls. (16 files)
-- **PLATFORM Platform (power net)** â€” RTOS-neutral primitives any sheet may use: clock, microsecond clock, locks, queues, scheduler, task stats, critical section, task notifier; FreeRTOS implementations, startup. (49 files)
-- **HARNESS Harness** â€” Harness definitions (defs/), connect() functions (the only place taps are applied), shared POD pins, traced taps, interface trace. (57 files)
+- **PLATFORM Platform (power net)** â€” RTOS-neutral primitives any sheet may use: clock, microsecond clock, locks, queues, scheduler, task stats, critical section, task notifier; FreeRTOS implementations, startup. (51 files)
+- **HARNESS Harness** â€” Harness definitions (defs/), connect() functions (the only place taps are applied), shared POD pins, traced taps, interface trace. (58 files)
 - **SYSTEM Composition root** â€” main.cpp + system_init.cpp: phase sequencing, Platform resources, RTOS task creation over the L3 services. (3 files)
 
 ## Global nets
 
 Two header sets are wired like power rails: any sheet may include them directly, no harness row describes them.
 
-- **PLATFORM Platform power net** (`server/foundation/F_platform/boundary`) â€” rule 4: RTOS-neutral primitives (clock, us clock, locks, queues, scheduler, task stats, critical section, notifier) usable by any sheet without a harness. Direct includers: HARNESS 9, L3 15, L4 1, L5 1, PLATFORM 5, TASKS 12.
+- **PLATFORM Platform power net** (`server/foundation/F_platform/boundary`) â€” rule 4: RTOS-neutral primitives (clock, us clock, locks, queues, scheduler, task stats, critical section, notifier) usable by any sheet without a harness. Direct includers: HARNESS 9, L2 3, L3 15, L4 1, L5 1, PLATFORM 6, TASKS 12.
 - **TRACE Interface trace net** (`server/harness/trace`) â€” second global net: ITRACE()/ITrace::log and the trace sink may be included by any sheet; compiled to no-ops unless ENABLE_INTERFACE_TRACE (firmware-debug); sink = L3 trace ring via Trace::initTraceSink. Direct includers: HARNESS 6, L2 2, L3 7.
 
 ## Harnesses

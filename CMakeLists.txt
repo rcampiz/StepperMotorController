@@ -84,8 +84,18 @@ include_directories(
     ${EXT}/X_middlewares/SEGGER/SystemView
 )
 
+# Short git hash for the !RESET line and *IDN? (F17); "nogit" outside a checkout
+execute_process(COMMAND git rev-parse --short=12 HEAD
+                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                OUTPUT_VARIABLE SMC_GIT_HASH OUTPUT_STRIP_TRAILING_WHITESPACE
+                ERROR_QUIET RESULT_VARIABLE _git_rc)
+if(NOT _git_rc EQUAL 0 OR SMC_GIT_HASH STREQUAL "")
+    set(SMC_GIT_HASH "nogit")
+endif()
+
 add_compile_definitions(
     STM32F401xE
+    GIT_HASH="${SMC_GIT_HASH}"
     __FPU_PRESENT=1
     __FPU_USED=1
     ENABLE_SEGGER_SYSTEMVIEW

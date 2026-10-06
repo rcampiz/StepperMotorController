@@ -293,6 +293,7 @@ private:
   // Device identification command handlers
   void cmdGetDeviceId();
   void cmdGetRole();
+  void cmdIdn();
   void cmdSetDeviceId(const ParsedCommand &cmd);
   void cmdSetRole(const ParsedCommand &cmd);
 

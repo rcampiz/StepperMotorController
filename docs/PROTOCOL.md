@@ -160,7 +160,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 
 | Command | Min args | Usage | Reply | Errors | Handler |
 |---|---|---|---|---|---|
-| `*IDN?` (top-level (no prefix)) | 0 | — | ASCII: `OK <plain lines>` | — | `cmdVersion` (system_handlers.cpp) |
+| `*IDN?` (top-level (no prefix)) | 0 | — | ASCII: `OK <formatted text>`; JSON `IDN` keys: `fw`, `model`, `proto`, `serial`, `vendor` | — | `cmdIdn` (system_handlers.cpp) |
 | `FMT` (top-level (no prefix)) | 1 | SET_FORMAT <ASCII\|JSON> | ASCII: `OK <plain lines>`; JSON `SET_FORMAT` keys: `format` | `Invalid format. Use ASCII or JSON.` | `cmdSetFormat` (system_handlers.cpp) |
 | `FMT?` (top-level (no prefix)) | 0 | — | ASCII: `OK <plain lines>`; JSON `GET_FORMAT` keys: `format` | — | `cmdGetFormat` (system_handlers.cpp) |
 
@@ -187,7 +187,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `SYST:FAULT:CLEAR` | 0 | — | ASCII: `OK IDLE` | — | `cmdClearFault` (safety_handlers.cpp) |
 | `SYST:FAULT:FORCE` | 0 | — | ASCII: `OK <status> or IDLE` | — | `cmdForceClearFault` (safety_handlers.cpp) |
 | `SYST:FAULT:STAT?` | 0 | — | ASCII: `OK <plain lines>` | — | `cmdGetStatus` (system_handlers.cpp) |
-| `SYST:HB` | 0 | — | ASCII: `OK <plain lines>`; JSON `HEARTBEAT` keys: `mcu_tick`, `remaining_ms`, `seq` | — | `cmdHeartbeat` (safety_handlers.cpp) |
+| `SYST:HB` | 0 | — | ASCII: `OK <plain lines>`; JSON `HEARTBEAT` keys: `boot`, `mcu_tick`, `remaining_ms`, `seq` | — | `cmdHeartbeat` (safety_handlers.cpp) |
 | `SYST:HB:TIMEOUT` | 1 | SET_HEARTBEAT <timeout_ms> | ASCII: `OK <plain lines>`; JSON `SET_HEARTBEAT` keys: `accepted`, `enabled`, `requested` | — | `cmdSetHeartbeat` (safety_handlers.cpp) |
 | `SYST:BAUD` | 1 | SET_BAUD <115200\|230400\|460800\|921600> | ASCII: `OK <plain lines>`; JSON `SET_BAUD` keys: `baud` | `Supported: 115200, 230400, 460800, 921600` | `cmdSetBaud` (system_handlers.cpp) |
 | `SYST:EVT:EN` | 0 | — | ASCII: `OK <formatted text>` | `Invalid mask (0-255)` | `cmdEventEnable` (system_handlers.cpp) |

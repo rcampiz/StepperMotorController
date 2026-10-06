@@ -5,6 +5,8 @@
 #include "L2_protocol/command_parser.hpp"
 #include "L2_protocol/event_codec.hpp"
 #include "harness/trace/interface_trace.hpp"
+#include "harness/pins/protocol_version.hpp"
+#include "F_platform/boundary/boot_id.hpp"
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
@@ -205,7 +207,7 @@ void CommandParser::dispatch(const ParsedCommand &cmd) {
   } else {
     // No colon → top-level commands (*IDN?, FMT) or hardware debug commands
     if (strcmp(cmd.cmd, "*IDN?") == 0)
-      cmdVersion();
+      cmdIdn();
     else if (strcmp(cmd.cmd, "FMT") == 0)
       cmdSetFormat(cmd);
     else if (strcmp(cmd.cmd, "FMT?") == 0)
@@ -596,11 +598,19 @@ void CommandParser::emitEvent(const AsyncEvent &evt, uint32_t seq, uint32_t ts_m
 }
 
 void CommandParser::emitBanner() {
+  // F17: one machine-readable line first, so a client detects a (re)boot per board
+  char reset[96];
+  snprintf(reset, sizeof(reset), "!RESET boot=%08lX fw=%s proto=%u build=%s",
+           static_cast<unsigned long>(Platform::bootId()), Harness::FW_VERSION,
+           static_cast<unsigned>(Harness::PROTOCOL_VERSION), Harness::BUILD_HASH);
+  m_transport.println(reset);
+  char title[48];
+  snprintf(title, sizeof(title), "   Stepper Motor Controller v%s", Harness::FW_VERSION);
   m_transport.println("");
   m_transport.println("========================================");
-  m_transport.println("   Stepper Motor Controller v0.1.0");
+  m_transport.println(title);
   m_transport.println("========================================");
-  m_transport.println("Type 'HELP' for available commands");
+  m_transport.println("Type 'SYST:HELP?' for available commands");
   m_transport.println("");
 }
 

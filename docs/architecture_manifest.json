@@ -325,6 +325,7 @@
       "name": "Platform (power net)",
       "responsibility": "RTOS-neutral primitives any sheet may use: clock, microsecond clock, locks, queues, scheduler, task stats, critical section, task notifier; FreeRTOS implementations, startup.",
       "files": [
+        "server/foundation/F_platform/boundary/boot_id.hpp",
         "server/foundation/F_platform/boundary/iclock.hpp",
         "server/foundation/F_platform/boundary/icritical_section.hpp",
         "server/foundation/F_platform/boundary/ilock.hpp",
@@ -333,6 +334,7 @@
         "server/foundation/F_platform/boundary/ischeduler.hpp",
         "server/foundation/F_platform/boundary/itask_notifier.hpp",
         "server/foundation/F_platform/boundary/itask_stats.hpp",
+        "server/foundation/F_platform/hw/boot_id.cpp",
         "server/foundation/F_platform/hw/early_debug.hpp",
         "server/foundation/F_platform/hw/early_debug_board.cpp",
         "server/foundation/F_platform/hw/early_debug_board.hpp",
@@ -424,6 +426,7 @@
         "server/harness/pins/motor_debug_params.hpp",
         "server/harness/pins/motor_driver_init.hpp",
         "server/harness/pins/platform_board.hpp",
+        "server/harness/pins/protocol_version.hpp",
         "server/harness/pins/seq_snapshot.hpp",
         "server/harness/pins/spi_init.hpp",
         "server/harness/pins/telemetry_types.hpp",
@@ -511,10 +514,11 @@
       "rule": "rule 4: RTOS-neutral primitives (clock, us clock, locks, queues, scheduler, task stats, critical section, notifier) usable by any sheet without a harness",
       "direct_includers": {
         "HARNESS": 9,
+        "L2": 3,
         "L3": 15,
         "L4": 1,
         "L5": 1,
-        "PLATFORM": 5,
+        "PLATFORM": 6,
         "TASKS": 12
       }
     },

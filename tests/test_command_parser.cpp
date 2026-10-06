@@ -48,6 +48,22 @@ TEST(banner_is_emitted_by_l2_not_by_the_task) {
     EXPECT_TRUE(r.transport.out.find("HELP") != std::string::npos);
 }
 
+// --- F17: machine-readable reset line and identification -----------------------
+TEST(banner_starts_with_a_reset_line_carrying_boot_id_fw_and_proto) {
+    Rig r;
+    r.proc.emitBanner();
+    EXPECT_TRUE(r.transport.out.rfind("!RESET boot=B007CAFE fw=", 0) == 0);
+    EXPECT_TRUE(r.transport.out.find(" proto=") != std::string::npos);
+    EXPECT_TRUE(r.transport.out.find(" build=host") != std::string::npos);
+}
+
+TEST(idn_reports_vendor_model_serial_fw_proto) {
+    Rig r;
+    r.transport.in = "*IDN?\n";
+    r.proc.process();
+    EXPECT_TRUE(r.transport.out.find("OK SMC,NUCLEO-F401RE-IHM03A1,HOST0001,") != std::string::npos);
+}
+
 TEST(telemetry_line_formats_signed_values) {
     Rig r;
     Protocol::TelemetrySnapshot snap{};

@@ -370,14 +370,25 @@
     {
       "name": "*IDN?",
       "prefix": "",
-      "handler": "cmdVersion",
+      "handler": "cmdIdn",
       "file": "system_handlers.cpp",
       "min_args": 0,
       "usage": [],
       "ascii_ok": [
-        "<plain lines>"
+        "<formatted text>"
       ],
-      "json": [],
+      "json": [
+        {
+          "command": "IDN",
+          "keys": [
+            "fw",
+            "model",
+            "proto",
+            "serial",
+            "vendor"
+          ]
+        }
+      ],
       "errors": [],
       "note": "top-level (no prefix)"
     },
@@ -669,6 +680,7 @@
         {
           "command": "HEARTBEAT",
           "keys": [
+            "boot",
             "mcu_tick",
             "remaining_ms",
             "seq"
