@@ -14,6 +14,7 @@
  *   FreeRTOS tasks           -> std::thread running vMotorTask / vCommsTask / vEncoderTask
  *
  *   vnucleo [--port 5761] [--bind 127.0.0.1] [--serial VN000001] [--state DIR]
+ *           [--motion-log FILE]
  *
  * Differences from the board (none touch the protocol):
  *   - g_deviceConfig is initialised here; the firmware's composition root never does
@@ -93,6 +94,7 @@ int main(int argc, char** argv) {
         else if (a == "--bind") bind = next();
         else if (a == "--serial") Sim::g_serial = next().substr(0, 8);
         else if (a == "--state") state = next();
+        else if (a == "--motion-log") Sim::FakePowerStep::openMotionLog(next().c_str());
         else { usage(); return a == "--help" || a == "-h" ? 0 : 2; }
     }
     std::random_device rd;

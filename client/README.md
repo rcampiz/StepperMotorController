@@ -16,6 +16,9 @@ client/
     board.py           Board: the link's threads, session, heartbeat, ESTOP, reset handling
     scenarios/         named tests (bringup, estop_latency, heartbeat_loss, step_mode_readback, sysid)
     runner.py          run / submit scenarios; JSON-lines results
+    kinematics.py      mecanum inverse/forward, motor speed scaling (pure functions)
+    fleet.py           Fleet: four boards as one base (identity, base ESTOP, one-lost policy,
+                       clock sync, synchronised start, merged telemetry)
     sim.py             FakeBoard: a small protocol-2 responder for tests and --sim
   smc_gui/             PySide6 frontend; bridge.py is the only Qt <-> core seam
   smc_cli/             `smc` command line (Raspberry Pi, bench)
@@ -40,6 +43,9 @@ python -m smc_cli estop --port COM6
 python -m smc_cli test list
 python -m smc_cli test run --port COM6 bringup --out results.jsonl
 python -m smc_cli test run --sim sysid -p type='"step"' -p speed=800
+python -m smc_cli fleet check --config fleet.json      # docs/MULTI_BOARD.md
+python -m smc_cli fleet drive --config fleet.json --vx 0.2 --seconds 2
+python -m smc_cli fleet estop --config fleet.json
 python -m pytest -q tests
 ```
 

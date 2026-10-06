@@ -8,6 +8,9 @@ smc: the command-line frontend (Raspberry Pi and bench). Same core as the GUI.
     smc estop     (--port P | --sim)            fast-path ESTOP and its confirmation
     smc test list
     smc test run NAME (--port P | --sim) [-p key=value ...] [--out results.jsonl]
+    smc fleet check  --config fleet.json        open four boards, verify corners, show a frame
+    smc fleet estop  --config fleet.json        stop the whole base (all writes, then confirms)
+    smc fleet drive  --config fleet.json --vx 0.2 [--vy 0] [--wz 0] [--seconds 2]
 
 The CLI is a frontend like the GUI (CLIENT_REVIEW section 9): it builds Requests
 with smc_core.commands, runs scenarios through smc_core.runner and prints plain
@@ -171,6 +174,70 @@ def cmd_test_run(args) -> int:
         board.close()
 
 
+def _fleet(args):
+    from smc_core import kinematics as K
+    from smc_core.fleet import Fleet, FleetConfig
+    with open(args.config, encoding="utf-8") as fh:
+        cfg = json.load(fh)
+    geo = K.Geometry(**cfg.get("geometry", {}))
+    board = BoardConfig(**cfg.get("board", {}))
+    fleet = Fleet(FleetConfig(addresses=cfg["addresses"], serials=cfg.get("serials", {}),
+                              geometry=geo, board=board))
+    fleet.open()
+    fleet.subscribe("fault", lambda role, why: _out({"fault": role, "why": why}))
+    return fleet
+
+
+def _fleet_loop(fleet, seconds: float) -> None:
+    """The coordinator's control loop: prove liveness, keep going until `seconds` pass."""
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        fleet.liveness.touch()
+        time.sleep(0.02)
+
+
+def cmd_fleet_check(args) -> int:
+    fleet = _fleet(args)
+    try:
+        _fleet_loop(fleet, 0.6)
+        fr = fleet.frame()
+        _out({"boards": {r: {"serial": b.identity.serial, "fw": b.identity.fw,
+                             "state": fr.boards.get(r, (0, {}))[1].get("state")}
+                         for r, b in fleet.boards.items()},
+              "telemetry_spread_ms": round(fr.spread_s * 1000, 1)})
+        return 0
+    finally:
+        fleet.close(estop=False)
+
+
+def cmd_fleet_estop(args) -> int:
+    fleet = _fleet(args)
+    try:
+        r = fleet.estop()
+        _out({"confirmed": r.confirmed, "write_skew_ms": round(r.write_skew_ms, 3),
+              "boards": {k: (v.detail if v else None) for k, v in r.results.items()},
+              "errors": r.errors})
+        return 0 if r.confirmed else 2
+    finally:
+        fleet.close(estop=False)
+
+
+def cmd_fleet_drive(args) -> int:
+    from smc_core import kinematics as K
+    fleet = _fleet(args)
+    try:
+        fleet.rearm()
+        scale = fleet.drive(K.Twist(args.vx, args.vy, args.wz))
+        _fleet_loop(fleet, args.seconds)
+        t = fleet.measured_twist()
+        fleet.stop()
+        _fleet_loop(fleet, 0.3)
+        _out({"scale": scale, "measured": t.__dict__ if t else None})
+        return 0
+    finally:
+        fleet.close()
+
+
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="smc", description=__doc__.split("\n\n")[0])
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -204,6 +271,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--full", action="store_true", help="print the whole result")
     p.add_argument("--timeout", type=float, default=120.0)
     p.set_defaults(fn=cmd_test_run)
+    fl = sub.add_parser("fleet").add_subparsers(dest="fcmd", required=True)
+    for name, fn in (("check", cmd_fleet_check), ("estop", cmd_fleet_estop), ("drive", cmd_fleet_drive)):
+        p = fl.add_parser(name)
+        p.add_argument("--config", required=True, help="fleet JSON (docs/multi_board/fleet.example.json)")
+        if name == "drive":
+            p.add_argument("--vx", type=float, default=0.0, help="m/s forward")
+            p.add_argument("--vy", type=float, default=0.0, help="m/s left")
+            p.add_argument("--wz", type=float, default=0.0, help="rad/s counter-clockwise")
+            p.add_argument("--seconds", type=float, default=2.0)
+        p.set_defaults(fn=fn)
     return ap
 
 

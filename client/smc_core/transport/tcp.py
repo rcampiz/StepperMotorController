@@ -4,6 +4,10 @@ through a serial-to-TCP bridge. Address form: tcp://HOST:PORT.
 
 Differences from the serial transport: there is no driver output queue to purge, so
 send_priority() is an ordinary write under the same lock, and out_waiting() is 0.
+
+Threading: only the Board's reader thread receives. The socket stays blocking (with a
+per-call timeout) for its whole life; no other thread changes its mode, and the shared
+receive buffer is guarded by a lock so flush_input() from the worker is safe.
 """
 
 import socket
@@ -30,6 +34,7 @@ class TcpTransport(ITransport):
         self._timeout = connect_timeout_s
         self._sock: Optional[socket.socket] = None
         self._buf = bytearray()
+        self._buf_lock = threading.Lock()
         self._write_lock = threading.RLock()
 
     def open(self) -> bool:
@@ -41,25 +46,28 @@ class TcpTransport(ITransport):
             raise ConnectionError(f"cannot connect to {self._url}: {e}") from None
         s.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
         self._sock = s
-        self._buf.clear()
+        with self._buf_lock:
+            self._buf.clear()
         return True
 
     def close(self) -> None:
-        if self._sock is not None:
+        s, self._sock = self._sock, None
+        if s is not None:
             try:
-                self._sock.close()
+                s.close()
             except OSError:
                 pass
-        self._sock = None
-        self._buf.clear()
+        with self._buf_lock:
+            self._buf.clear()
 
     def is_connected(self) -> bool:
         return self._sock is not None
 
     def _need(self) -> socket.socket:
-        if self._sock is None:
+        s = self._sock
+        if s is None:
             raise TransportError("Not connected")
-        return self._sock
+        return s
 
     def send(self, data: bytes) -> int:
         s = self._need()
@@ -87,47 +95,49 @@ class TcpTransport(ITransport):
         s.settimeout(max(0.001, timeout_s))
         try:
             chunk = s.recv(4096)
-        except socket.timeout:
+        except (socket.timeout, BlockingIOError, InterruptedError):
             return False
         except OSError as e:
             raise TransportError(f"receive failed: {e}") from None
         if not chunk:
             raise TransportError("connection closed by the board")
-        self._buf += chunk
+        with self._buf_lock:
+            self._buf += chunk
         return True
 
     def recv(self, max_bytes: int = 1024, timeout_ms: int = 1000) -> bytes:
-        if not self._buf:
+        with self._buf_lock:
+            empty = not self._buf
+        if empty:
             self._fill(timeout_ms / 1000.0)
-        out = bytes(self._buf[:max_bytes])
-        del self._buf[:max_bytes]
+        with self._buf_lock:
+            out = bytes(self._buf[:max_bytes])
+            del self._buf[:max_bytes]
         return out
 
     def recv_line(self, timeout_ms: int = 1000) -> Optional[str]:
         deadline = time.monotonic() + timeout_ms / 1000.0
-        while b"\n" not in self._buf:
+        while True:
+            with self._buf_lock:
+                i = self._buf.find(b"\n")
+                if i >= 0:
+                    raw = bytes(self._buf[:i])
+                    del self._buf[:i + 1]
+                    return raw.rstrip(b"\r").decode("utf-8", errors="replace")
             left = deadline - time.monotonic()
             if left <= 0:
                 return None
             self._fill(left)
-        i = self._buf.index(b"\n")
-        raw = bytes(self._buf[:i])
-        del self._buf[:i + 1]
-        return raw.rstrip(b"\r").decode("utf-8", errors="replace")
 
     def available(self) -> int:
-        return len(self._buf)
+        with self._buf_lock:
+            return len(self._buf)
 
     def flush_input(self) -> None:
-        self._buf.clear()
-        if self._sock is None:
-            return
-        self._sock.settimeout(0.0)
-        try:
-            while self._sock.recv(4096):
-                pass
-        except (BlockingIOError, socket.timeout, OSError):
-            pass
+        """Drop buffered bytes. Bytes still in the kernel arrive later as ordinary lines,
+        which the framing classifies like any other; the socket itself is not touched."""
+        with self._buf_lock:
+            self._buf.clear()
 
     def flush_output(self) -> None:
         pass

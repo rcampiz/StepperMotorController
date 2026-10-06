@@ -39,15 +39,19 @@ def _wait_listening(port: int, timeout: float = 5.0) -> None:
 
 
 @contextmanager
-def boards(count: int = 1, serial_base: int = 1):
-    """Yield a list of (url, Popen) for `count` fresh boards; stops them afterwards."""
+def boards(count: int = 1, serial_base: int = 1, log_dir: str = None):
+    """Yield a list of (url, Popen) for `count` fresh boards; stops them afterwards.
+    With log_dir, board n writes its motion log to log_dir/VN00000n.log."""
     require()
     procs = []
     try:
         for i in range(count):
             port = free_port()
-            p = subprocess.Popen([EXE, "--port", str(port), "--serial", "VN%06d" % (serial_base + i)],
-                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            serial = "VN%06d" % (serial_base + i)
+            args = [EXE, "--port", str(port), "--serial", serial]
+            if log_dir:
+                args += ["--motion-log", os.path.join(log_dir, serial + ".log")]
+            p = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             procs.append((f"tcp://127.0.0.1:{port}", p))
             _wait_listening(port)
         # The probe connection above is a client too; let the board see it close.
@@ -58,3 +62,13 @@ def boards(count: int = 1, serial_base: int = 1):
             if p.poll() is None:
                 p.kill()
                 p.wait(5)
+
+
+def motion_log(log_dir: str, serial: str):
+    """[(steady_ns, event, value)] written by one board's fake powerSTEP01."""
+    path = os.path.join(log_dir, serial + ".log")
+    if not os.path.exists(path):
+        return []
+    with open(path, encoding="utf-8") as fh:
+        rows = [line.split() for line in fh if line.strip()]
+    return [(int(t), ev, int(v)) for t, ev, v in rows]

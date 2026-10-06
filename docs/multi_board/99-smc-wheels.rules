@@ -1,0 +1,11 @@
+# /etc/udev/rules.d/99-smc-wheels.rules  (Raspberry Pi coordinator, docs/MULTI_BOARD.md section 1)
+#
+# One stable name per corner, keyed on each NUCLEO's ST-LINK USB serial number, so the
+# corner does not depend on which USB socket or enumeration order the board gets.
+# Find a board's serial with:   udevadm info -a -n /dev/ttyACM0 | grep '{serial}' | head -1
+# ST-LINK/V2-1 is 0483:374b (NUCLEO-F401RE). Then: sudo udevadm control --reload && sudo udevadm trigger
+#
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374b", ATTRS{serial}=="REPLACE_FL_STLINK_SERIAL", SYMLINK+="smc-FL", MODE="0660", GROUP="dialout"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374b", ATTRS{serial}=="REPLACE_FR_STLINK_SERIAL", SYMLINK+="smc-FR", MODE="0660", GROUP="dialout"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374b", ATTRS{serial}=="REPLACE_RL_STLINK_SERIAL", SYMLINK+="smc-RL", MODE="0660", GROUP="dialout"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="374b", ATTRS{serial}=="REPLACE_RR_STLINK_SERIAL", SYMLINK+="smc-RR", MODE="0660", GROUP="dialout"

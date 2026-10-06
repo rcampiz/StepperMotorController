@@ -47,6 +47,10 @@ public:
     bool isBusy() override;
     bool flagActive() override { return false; }
 
+    /// Optional log of every motion command on the machine-wide monotonic clock
+    /// (steady_clock ns), so start skew between board processes can be measured.
+    static void openMotionLog(const char* path);
+
     /// Microstep position (for the fake encoder) and microsteps per full step.
     double positionMicrosteps();
     int microstepsPerFullStep();
@@ -55,6 +59,7 @@ private:
     enum class Mode { Idle, Run, Position, Stopping };
     void resetRegisters();
     void update();                       // integrate to now (call with m_ held)
+    static void logMotion(const char* what, long long value);
     double vmax() const { return regs_[Drivers::MotorReg::MAX_SPEED] * MAXSPD_LSB; }
     double acc() const { return std::max(1.0, regs_[Drivers::MotorReg::ACC] * ACC_LSB); }
     double dec() const { return std::max(1.0, regs_[Drivers::MotorReg::DEC] * ACC_LSB); }

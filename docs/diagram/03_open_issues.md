@@ -37,6 +37,7 @@ it matters, the proposed fix (also drawable), and status. Items are ordered by r
 | NEW: upload CR/LF drain can eat a payload byte | **open**, latent (LINK_BUDGET.md, finding 3) | — |
 | NEW: encoder velocity units | **open**: `EncoderService` reports counts per sample (delta / window samples), never scaled to per second, but system ID logs it as `actual_tps` beside a setpoint in ticks/s and the speed-trim and following supervisor take it as ticks/s: a factor of the sample rate (1000) apart. Found on the virtual Nucleo; confirm on hardware by reading `DIAG:STAT?` encoder velocity at a known `MOT:RUN` speed | — |
 | NEW: status snapshot lags an ESTOP by up to 50 ms | **documented**: `motor.hi_z` in `DIAG:STAT?` is refreshed by the Motor task every 50 ms; the client re-reads for up to 300 ms before calling an ESTOP unconfirmed | client |
+| NEW: `SYNC:START:AT` blocks the Comms task | **open**: `CommandQueue::startAt` sleeps then spins until the start tick; no command (ESTOP included) is parsed and the watchdog is not evaluated meanwhile. The fleet keeps delays at 150 ms; fix: arm a timer, start from the Motor task (docs/MULTI_BOARD.md sections 2 and 7) | — |
 | Client S-5 (watchdog default) | **done**: 500 ms default, heartbeat 100 ms, telemetry 200 ms, all visible settings; image bands 5 rows | client step 6 |
 
 ## 1. SPI1 is held for an entire remote bitmap; ESTOP cannot interrupt it

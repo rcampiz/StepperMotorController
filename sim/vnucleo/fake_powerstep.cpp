@@ -6,11 +6,31 @@
 #include "host_platform.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <cstdio>
 
 using Drivers::MotorReg::ABS_POS;
 using Drivers::MotorReg::SPEED;
 
 namespace Sim {
+
+namespace {
+std::FILE* g_motionLog = nullptr;
+std::mutex g_motionLogMutex;
+}
+
+void FakePowerStep::openMotionLog(const char* path) {
+    g_motionLog = std::fopen(path, "w");
+}
+
+void FakePowerStep::logMotion(const char* what, long long value) {
+    if (g_motionLog == nullptr) return;
+    const long long ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count();
+    std::lock_guard<std::mutex> lk(g_motionLogMutex);
+    std::fprintf(g_motionLog, "%lld %s %lld\n", ns, what, value);
+    std::fflush(g_motionLog);
+}
 
 void FakePowerStep::resetRegisters() {
     // powerSTEP01 power-on defaults (voltage mode)
@@ -101,6 +121,7 @@ void FakePowerStep::init() {
 
 void FakePowerStep::run(bool forward, uint32_t speed) {
     std::lock_guard<std::recursive_mutex> lk(m_);
+    logMotion("run", forward ? static_cast<long long>(speed) : -static_cast<long long>(speed));
     update();
     const double fs = std::min(speed / SPEED_LSB, vmax());
     targetV_ = forward ? fs : -fs;
@@ -111,6 +132,7 @@ void FakePowerStep::run(bool forward, uint32_t speed) {
 
 void FakePowerStep::move(bool forward, uint32_t steps) {
     std::lock_guard<std::recursive_mutex> lk(m_);
+    logMotion("move", forward ? static_cast<long long>(steps) : -static_cast<long long>(steps));
     update();
     targetPos_ = pos_ + (forward ? 1.0 : -1.0) * static_cast<double>(steps);
     mode_ = Mode::Position;
@@ -120,6 +142,7 @@ void FakePowerStep::move(bool forward, uint32_t steps) {
 
 void FakePowerStep::goTo(int32_t position) {
     std::lock_guard<std::recursive_mutex> lk(m_);
+    logMotion("goto", position);
     update();
     int32_t p = position & 0x3FFFFF;
     if (p & 0x200000) p -= 0x400000;
@@ -131,6 +154,7 @@ void FakePowerStep::goTo(int32_t position) {
 
 void FakePowerStep::softStop() {
     std::lock_guard<std::recursive_mutex> lk(m_);
+    logMotion("softstop", 0);
     update();
     if (mode_ != Mode::Idle) mode_ = Mode::Stopping;
     hiZAfterStop_ = false;
@@ -138,6 +162,7 @@ void FakePowerStep::softStop() {
 
 void FakePowerStep::hardStop() {
     std::lock_guard<std::recursive_mutex> lk(m_);
+    logMotion("hardstop", 0);
     update();
     v_ = 0.0;
     mode_ = Mode::Idle;
@@ -145,6 +170,7 @@ void FakePowerStep::hardStop() {
 
 void FakePowerStep::softHiZ() {
     std::lock_guard<std::recursive_mutex> lk(m_);
+    logMotion("softhiz", 0);
     update();
     if (mode_ == Mode::Idle) {
         hiZ_ = true;
@@ -156,6 +182,7 @@ void FakePowerStep::softHiZ() {
 
 void FakePowerStep::hardHiZ() {
     std::lock_guard<std::recursive_mutex> lk(m_);
+    logMotion("hardhiz", 0);
     update();
     v_ = 0.0;
     mode_ = Mode::Idle;

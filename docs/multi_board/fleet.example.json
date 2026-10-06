@@ -1,0 +1,27 @@
+{
+  "addresses": {
+    "FL": "/dev/smc-FL",
+    "FR": "/dev/smc-FR",
+    "RL": "/dev/smc-RL",
+    "RR": "/dev/smc-RR"
+  },
+  "serials": {
+    "FL": "PUT-IDN-SERIAL-HERE",
+    "FR": "PUT-IDN-SERIAL-HERE",
+    "RL": "PUT-IDN-SERIAL-HERE",
+    "RR": "PUT-IDN-SERIAL-HERE"
+  },
+  "geometry": {
+    "wheel_radius_m": 0.048,
+    "half_wheelbase_m": 0.15,
+    "half_track_m": 0.17,
+    "gear_ratio": 1.0,
+    "full_steps_per_rev": 200,
+    "max_motor_sps": 1000.0,
+    "inverted": {"FL": false, "FR": true, "RL": false, "RR": true}
+  },
+  "board": {
+    "heartbeat_timeout_ms": 500,
+    "telemetry_period_ms": 200
+  }
+}
