@@ -157,7 +157,7 @@ L3 → L4 → L5 via the connect functions, plus SYSTEM → TASKS for task creat
 The *runtime call* direction is TASKS → L3 → L4 → L5 and L2 ⇄ L3 for commands.
 L3 never calls into the task sheet.
 
-## 5. RTOS objects (all static, created in `F_platform/rtos/platform_init.cpp`)
+## 5. RTOS objects (all static, created in `F_platform/rtos/platform_init.cpp`; since F11 every kernel object and task stack is statically allocated and the FreeRTOS heap is gone)
 
 | Object | Type | Used by |
 |---|---|---|
@@ -174,7 +174,7 @@ Lock-free cross-task state (no RTOS object): `MotorService` atomics (ESTOP latch
 stop/clear pending, debug pause, step-mode result slot), `DisplayService::m_enabled`,
 `EncoderService::m_ackedIndexPulses`, and the `SeqSnapshot<IndexSnapshot>` in `Drivers::Encoder`.
 
-FreeRTOS config: V11.1, ARM_CM4F port, heap_4, tick 1 kHz, `configUSE_TIMERS 0`,
+FreeRTOS config: V11.1, ARM_CM4F port, no heap (static allocation, 4096-word stack pool), tick 1 kHz, `configUSE_TIMERS 0`,
 `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY 5`, `configASSERT` defined unconditionally,
 `configCHECK_FOR_STACK_OVERFLOW 2`. Hooks in `rtos/freertos_hooks.cpp`.
 
@@ -310,8 +310,8 @@ paths to `ITransport`, pins forwarders, trace as an undocumented net, `TaskHandl
 - Firmware: CMake presets `firmware-debug` (`-Og -g`, `ENABLE_INTERFACE_TRACE=ON`) and
   `firmware-release` (`-O2`, trace off; link fixed in `b21e275`). Output
   `build/StepperMotorController.{elf,hex,bin}` and `build-release/`.
-  Last measured: debug text 201,136 / data 2,004 / bss 50,384; release text 212,144 /
-  data 1,924 / bss 50,312 bytes.
+  Last measured (after the 2026-10-06 fix-now batch, heap-free build): debug text 201,468 /
+  data 2,004 / bss 43,460; release text 212,380 / data 1,924 / bss 44,920 bytes.
 - Target `arch-check` runs `check_includes.py --strict` (rules 1–5), `check_harness_defs.py
   --strict` (8 rules incl. no forwarders, taps only under `harness/`), `gen_architecture.py
   --check`. All pass as of this file.

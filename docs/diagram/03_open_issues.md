@@ -4,6 +4,23 @@ Source of truth: commit `c9a35e5` on `master`, 2026-10-05. Each item gives: wher
 code, the mechanism to draw (usually a timeline or sequence), the quantified impact, why
 it matters, the proposed fix (also drawable), and status. Items are ordered by risk.
 
+
+## Status after the 2026-10-06 fix-now batch
+
+| Item | State | Commit |
+|---|---|---|
+| 10 Heap use in the SPI manager | **closed**: static storage, placement new; the whole firmware is heap-free (`configSUPPORT_DYNAMIC_ALLOCATION 0`, heap_4 removed; tasks/queues/mutexes static) | F11 |
+| 4 Encoder stack | still an estimate; the task now runs from a 4096-word static pool (3968 used) and `free_heap` telemetry reports the pool's unused bytes | F11 |
+| 3 Unlocked Comms-task calls into the controller | open (Phase 4 step 4) | — |
+| 6 Two ESTOP state holders | open (Phase 4 step 2 makes the MotorService latch the single source) | — |
+| 12 Platform files define `Harness::` functions | open (scheduled with the protocol pass) | — |
+| Server review F1.1/F1.2 | **done**: lines spanning an RX overflow are refused (`ERROR RX_OVERFLOW`), ring 256 -> 1024 B, counters in `DIAG:STAT?.system` | F1 |
+| Server review F3 | **done**: read-only debug dumps bypass `DBG:UNLOCK` | F3 |
+| Server review F4 | **done**: guarded, host-tested `DIAG:STAT?` render (1280-byte buffer, worst case asserted) | F4 |
+| Server review F13 | **done**: bounded copies; release build is `-Werror` | F13 |
+| Server review F15 | **done**: `DEV:ROLE?` has its own handler | F15 |
+| Client review A1–A7 | **done** on the existing GUI (fast-path ESTOP with purge and confirmation, dead-man heartbeat, no watchdog disarm, heartbeat-timeout display, scripts moved) | client hotfixes |
+
 ## 1. SPI1 is held for an entire remote bitmap; ESTOP cannot interrupt it
 
 **Where**: `L2_protocol/handlers/display_handlers.cpp::cmdDispBitmap` (also the RLE and
@@ -182,7 +199,7 @@ if `debugPrint` is used after phase 4.
 
 **Status**: documented; no change proposed.
 
-## 10. Heap use in the SPI manager
+## 10. Heap use in the SPI manager (closed by F11, kept for history)
 
 **Where**: `L5_board/spi/spi_manager.hpp::SPIManager::init` does `new SPIHardware(...)` twice.
 
