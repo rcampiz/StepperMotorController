@@ -36,7 +36,7 @@ def test_connect_populates_panels_and_telemetry_flows(gui):
     app, w, fake = gui
     assert pump(app, lambda: w._motor_panel.isEnabled())
     assert pump(app, lambda: bool(w._board.last_status))
-    assert fake.json and fake.tlm_ms == 100 and fake.hb_timeout_ms >= 2000
+    assert fake.json and fake.tlm_ms == 200 and fake.hb_timeout_ms == 500
     assert pump(app, lambda: "DRV:CFG?" in fake.received and "CTRL:TRIM?" in fake.received)
     assert "DIAG:STAT?" not in fake.received                 # pushed, never polled
     assert "SYST:FAULT:CLEAR" in fake.received               # historical connect behaviour
@@ -73,7 +73,7 @@ def test_board_reset_is_shown_and_session_restored(gui):
     assert pump(app, lambda: w._board is not None and w._board.session_ready)
     fake.reboot()
     assert pump(app, lambda: "BOARD RESET" in w._status_bar.currentMessage())
-    assert pump(app, lambda: fake.json and fake.tlm_ms == 100)
+    assert pump(app, lambda: fake.json and fake.tlm_ms == 200)
 
 
 def test_monitor_mode_uses_the_firmware_name(gui):

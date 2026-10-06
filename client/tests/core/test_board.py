@@ -261,3 +261,21 @@ def test_ascii_multiline_reply_is_collected_until_ok_n(rig):
     assert resp.data["count"] == 7 and resp.lines[-1].startswith("StepMode:")
     err = rig.board.request(C.debug_raw("PS01_DIAG"))
     assert not err.success and err.error_code == "UNKNOWN_CMD"
+
+
+def test_watchdog_is_widened_around_flash_writes_and_restored(rig):
+    rig.open()
+    rig.board.request(C.cfg_apply())
+    seen = rig.fake.received
+    i = seen.index("DRV:CFG:APPLY")
+    assert seen[i - 1] == "SYST:HB:TIMEOUT 5000"           # widened, never 0
+    assert seen[i + 1] == "SYST:HB:TIMEOUT 500"            # restored to the configured value
+    assert all(l != "SYST:HB:TIMEOUT 0" for l in seen)
+    rig.board.request(C.mot_enable())                      # ordinary commands are untouched
+    assert rig.fake.received[-1] == "MOT:EN" and rig.fake.received[-2] != "SYST:HB:TIMEOUT 5000"
+
+
+def test_defaults_follow_the_link_budget():
+    cfg = BoardConfig()
+    assert (cfg.heartbeat_timeout_ms, cfg.heartbeat_period_s, cfg.telemetry_period_ms) == (500, 0.1, 200)
+    assert cfg.persist_watchdog_ms == 5000

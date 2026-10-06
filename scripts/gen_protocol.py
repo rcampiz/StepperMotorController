@@ -170,9 +170,12 @@ def describe(handler, bodies, sub=None, inline_text=""):
     errors = sorted(set(e for e in re.findall(r'respondErr\("([^"]*)"\)', body) if not e.startswith("Usage")))
     multiline = any(a.startswith("<lines>") for a in ascii_ok)
     binary = '"OK READY' in body
+    # writes flash (motor config: internal sector 7, 128 KB, erase ~1-2 s with the CPU stalled)
+    persists = bool(re.search(r'configSaveToFlash\(|configFactoryReset\(|\bsetDeviceId\(|'
+                              r'\bsetRole\(', body))
     return {"file": fname, "usage": usage, "min_args": min(argc) if argc else 0,
             "ascii_ok": ascii_ok, "json": json_cmds, "errors": errors,
-            "multiline": multiline, "binary": binary}
+            "multiline": multiline, "binary": binary, "persists": persists}
 
 
 # ---------------------------------------------------------------------------
@@ -469,7 +472,7 @@ def build(commands, bodies):
             {"name": n, "prefix": n.split(":")[0] if ":" in n else "", "handler": d["handler"],
              "file": d["file"], "min_args": d["min_args"], "usage": d["usage"],
              "ascii_ok": d["ascii_ok"], "json": d["json"], "errors": d["errors"], "note": d.get("note", ""),
-             "multiline": d["multiline"], "binary": d["binary"]}
+             "multiline": d["multiline"], "binary": d["binary"], "persists": d["persists"]}
             for n, d in details.items()],
         "oob_estop_byte": 0x18,
     }
@@ -520,14 +523,16 @@ def client_spec(js_text):
            "    json_command: str     # `command` field of the JSON reply ('' when the reply is text)",
            "    multiline: bool       # reply is lines + OK <n> (ASCII) / one envelope with `lines` (JSON)",
            "    binary: bool          # OK READY <n> handshake, then raw bytes",
+           "    persists: bool = False  # writes flash: the motor config sector erase blocks the MCU ~1-2 s",
            "",
            "",
            "COMMANDS: Dict[str, CommandSpec] = {"]
     for c in js["commands"]:
         usage = max(c["usage"], key=len).replace("\\n", " ").strip() if c["usage"] else ""
         jc = c["json"][0]["command"] if c["json"] else ""
-        out.append("    %r: CommandSpec(%r, %r, %d, %r, %r, %r, %r)," % (
-            c["name"], c["name"], c["handler"], c["min_args"], usage, jc, c["multiline"], c["binary"]))
+        out.append("    %r: CommandSpec(%r, %r, %d, %r, %r, %r, %r, %r)," % (
+            c["name"], c["name"], c["handler"], c["min_args"], usage, jc, c["multiline"], c["binary"],
+            c["persists"]))
     out.append("}")
     out.append("")
     out.append("ERROR_CODES: Tuple[str, ...] = (")

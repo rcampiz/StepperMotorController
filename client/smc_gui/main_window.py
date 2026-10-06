@@ -330,8 +330,8 @@ class MainWindow(QMainWindow):
         config = BoardConfig(
             heartbeat=hb,
             heartbeat_period_s=period_ms / 1000.0,
-            heartbeat_timeout_ms=max(2000, period_ms * 6),
-            telemetry_period_ms=100,
+            heartbeat_timeout_ms=max(self._connection_panel.watchdog_ms, 3 * period_ms),
+            telemetry_period_ms=self._connection_panel.telemetry_ms,
             clear_fault_on_connect=True,      # a comms-timeout ESTOP from the last session
         )
         self._liveness.max_age_s = max(0.2, 4 * period_ms / 1000.0)
@@ -560,10 +560,11 @@ class MainWindow(QMainWindow):
         """Encoder filter request from the telemetry panel."""
         self._call(req, "APPLY_ENC_FILTER")
 
-    # Rows per band for chunked bitmap transfer.  Each band is a separate
-    # UI:DISP:BITMAP:RLE command so heartbeats flow between bands.
-    # 20 rows x 240px x 2 bytes = 9600 raw bytes per band.
-    BITMAP_BAND_ROWS = 20
+    # Rows per band for chunked bitmap transfer. Each band is a separate
+    # UI:DISP:BITMAP:RLE command and the Comms task cannot be fed while it receives one,
+    # so a band must fit well inside the watchdog: 5 rows x 240 px x 2 bytes = 2400 raw
+    # bytes, at most ~2.4 KB RLE, ~0.21 s at 115200 baud (20 rows took ~0.84 s).
+    BITMAP_BAND_ROWS = 5
 
     @Slot(bytes, bytes)
     def _on_image_send_requested(self, rgb565_data, rle_data):

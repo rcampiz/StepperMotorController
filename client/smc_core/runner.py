@@ -19,7 +19,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional
 from .board import Board, Cancelled, JobContext, Ticket
 from .scenarios import REGISTRY, ScenarioContext, ScenarioFailed, ScenarioResult, ScenarioSpec
 
-BOARD_TRAFFIC = {"heartbeat", "setup", "resync"}
+BOARD_TRAFFIC = {"heartbeat", "setup", "resync", "watchdog"}
 
 
 def list_scenarios() -> List[ScenarioSpec]:

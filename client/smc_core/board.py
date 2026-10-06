@@ -40,7 +40,7 @@ from .codec import (Event, Identity, ProtocolError, ResetInfo, Response, parse_e
                     parse_heartbeat_ack, parse_idn, parse_joystick, parse_reset,
                     parse_response, parse_telemetry)
 from .framing import FrameKind, classify
-from .protocol_spec import OOB_ESTOP_BYTE, PROTOCOL_VERSION
+from .protocol_spec import COMMANDS, LIMITS, OOB_ESTOP_BYTE, PROTOCOL_VERSION
 from .transport.base import ITransport, TransportError
 
 log = logging.getLogger("smc_core.board")
@@ -55,10 +55,14 @@ MULTILINE_END = "OK "          # ASCII: "OK <n>" closes a multi-line reply
 @dataclass
 class BoardConfig:
     heartbeat: bool = True
-    heartbeat_period_s: float = 0.050
-    heartbeat_timeout_ms: int = 2000          # firmware watchdog (S-5 revisits the default)
+    heartbeat_period_s: float = 0.100         # 10 Hz: 5 periods inside the default watchdog
+    heartbeat_timeout_ms: int = 500           # firmware watchdog (S-5; see docs/review/LINK_BUDGET.md)
     heartbeat_misses_for_loss: int = 3
-    telemetry_period_ms: int = 100            # SYST:TLM:RATE; 0 = no telemetry
+    telemetry_period_ms: int = 200            # SYST:TLM:RATE; 0 = no telemetry (5 Hz: link budget)
+    # Commands that write internal flash stall the MCU ~1-2 s (128 KB sector erase). The
+    # board widens the watchdog to this value around them and restores it after; it never
+    # disarms it. 0 = do not widen.
+    persist_watchdog_ms: int = LIMITS["heartbeat_timeout_max_ms"]
     events: bool = True                       # SYST:EVT:EN at session start
     clear_fault_on_connect: bool = False      # the GUI's historical behaviour
     reply_timeout_ms: int = 2000
@@ -743,6 +747,22 @@ class Board:
     # One request on the wire (worker thread only)
     # ------------------------------------------------------------------
     def _execute(self, req: C.Request, txkind: str) -> Response:
+        spec = COMMANDS.get(req.name)
+        if (spec is not None and spec.persists and self.config.heartbeat
+                and 0 < self.config.heartbeat_timeout_ms < self.config.persist_watchdog_ms
+                and self._session_ready.is_set()):
+            return self._execute_widened(req, txkind)
+        return self._execute_one(req, txkind)
+
+    def _execute_widened(self, req: C.Request, txkind: str) -> Response:
+        """Watchdog widened around a flash write (never disarmed), then restored and fed."""
+        self._execute_one(C.heartbeat_timeout(self.config.persist_watchdog_ms), "watchdog")
+        try:
+            return self._execute_one(req, txkind)
+        finally:
+            self._execute_one(C.heartbeat_timeout(self.config.heartbeat_timeout_ms), "watchdog")
+
+    def _execute_one(self, req: C.Request, txkind: str) -> Response:
         if not self._link_up:
             return Response(False, req.name, {}, "LINK", "link down")
         timeout = (req.timeout_ms or self.config.reply_timeout_ms) / 1000.0

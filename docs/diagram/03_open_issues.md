@@ -32,6 +32,10 @@ it matters, the proposed fix (also drawable), and status. Items are ordered by r
 | Server review F14 | **done**: adapter limitation documented in PROTOCOL.md; GUI offers 115200 and above only | P10 |
 | Protocol version | **2** in `harness/pins/protocol_version.hpp`; the generator reads it; `docs/PROTOCOL.md` section 7 lists the changes and what Phase 4 still reserves | P11 |
 | Server review F2, F16, item 10/11 of PROTOCOL.md §7 | open (Phase 4: `SYST:HB:TIMEOUT 0` only in Hi-Z, debugPrint guard, base64 uploads with the 0x18 rule) | — |
+| NEW: `DEV:ID` / `DEV:ROLE` crash (null lock) | **open**: `g_deviceConfig.init()` is never called since `f874dd5`; setters dereference a null `m_lock`. Blocks per-corner identity (docs/review/LINK_BUDGET.md, finding 1) | — |
+| NEW: config apply stalls the MCU ~1-2 s | **open**: `DRV:CFG:APPLY` and every *:SAVE erase the 128 KB internal sector 7 from flash-resident code. Client mitigation: watchdog widened to 5 s around these commands (LINK_BUDGET.md, finding 2) | — |
+| NEW: upload CR/LF drain can eat a payload byte | **open**, latent (LINK_BUDGET.md, finding 3) | — |
+| Client S-5 (watchdog default) | **done**: 500 ms default, heartbeat 100 ms, telemetry 200 ms, all visible settings; image bands 5 rows | client step 6 |
 
 ## 1. SPI1 is held for an entire remote bitmap; ESTOP cannot interrupt it
 

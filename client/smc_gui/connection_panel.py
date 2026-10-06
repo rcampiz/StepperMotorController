@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, Slot
 
 from smc_core.transport.serial import VcpTransport
+from smc_core.board import BoardConfig
 
 
 class ConnectionPanel(QWidget):
@@ -100,10 +101,32 @@ class ConnectionPanel(QWidget):
 
         self._hb_period_spin = QSpinBox()
         self._hb_period_spin.setRange(10, 200)
-        self._hb_period_spin.setValue(50)
+        self._hb_period_spin.setValue(int(BoardConfig.heartbeat_period_s * 1000))
         self._hb_period_spin.setSuffix(" ms")
         self._hb_period_spin.setToolTip("Heartbeat send interval (10-200 ms)")
         inner.addWidget(self._hb_period_spin)
+
+        inner.addWidget(QLabel("Watchdog:"))
+        self._wd_spin = QSpinBox()
+        self._wd_spin.setRange(100, 5000)
+        self._wd_spin.setSingleStep(100)
+        self._wd_spin.setValue(BoardConfig.heartbeat_timeout_ms)
+        self._wd_spin.setSuffix(" ms")
+        self._wd_spin.setToolTip(
+            "Firmware stops the motor this long after the last heartbeat (S-5). "
+            "Widened automatically to 5 s around flash-writing commands.")
+        inner.addWidget(self._wd_spin)
+
+        inner.addWidget(QLabel("Telemetry:"))
+        self._tlm_spin = QSpinBox()
+        self._tlm_spin.setRange(20, 5000)
+        self._tlm_spin.setSingleStep(50)
+        self._tlm_spin.setValue(BoardConfig.telemetry_period_ms)
+        self._tlm_spin.setSuffix(" ms")
+        self._tlm_spin.setToolTip(
+            "Telemetry push period. One status line is ~900 bytes: 100 ms uses ~78 % of "
+            "115200 baud on its own (docs/review/LINK_BUDGET.md).")
+        inner.addWidget(self._tlm_spin)
 
         inner.addStretch()
 
@@ -126,6 +149,16 @@ class ConnectionPanel(QWidget):
     def heartbeat_period_ms(self) -> int:
         """Heartbeat period in milliseconds."""
         return self._hb_period_spin.value()
+
+    @property
+    def watchdog_ms(self) -> int:
+        """Firmware heartbeat watchdog timeout in milliseconds."""
+        return self._wd_spin.value()
+
+    @property
+    def telemetry_ms(self) -> int:
+        """Telemetry push period in milliseconds."""
+        return self._tlm_spin.value()
 
     def set_connected(self, connected: bool):
         """Update connection state."""

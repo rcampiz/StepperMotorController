@@ -180,8 +180,10 @@ def build_parser() -> argparse.ArgumentParser:
         g.add_argument("--port", help="serial port (COM6, /dev/ttyACM0)")
         g.add_argument("--sim", action="store_true", help="in-process fake board")
         p.add_argument("--baud", type=int, default=115200)
-        p.add_argument("--hb-timeout", type=int, default=2000, help="firmware watchdog ms")
-        p.add_argument("--tlm-ms", type=int, default=100, help="telemetry push period ms")
+        p.add_argument("--hb-timeout", type=int, default=BoardConfig.heartbeat_timeout_ms,
+                       help="firmware watchdog ms")
+        p.add_argument("--tlm-ms", type=int, default=BoardConfig.telemetry_period_ms,
+                       help="telemetry push period ms")
         p.add_argument("--connect-timeout", type=float, default=5.0)
 
     sub.add_parser("ports").set_defaults(fn=cmd_ports)
