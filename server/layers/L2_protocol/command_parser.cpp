@@ -6,6 +6,7 @@
 #include "L2_protocol/event_codec.hpp"
 #include "harness/trace/interface_trace.hpp"
 #include "harness/pins/protocol_version.hpp"
+#include "L2_protocol/command_parser_internal.hpp"   // jsonEscape, i64toa
 #include "F_platform/boundary/boot_id.hpp"
 #include <ctype.h>
 #include <stdio.h>
@@ -533,8 +534,10 @@ void CommandParser::respondOk(const char *msg) {
   ITRACE(Harness::ITrace::L2_TELEMETRY, "[L2>L1]", "respond", "ok");
   if (m_format == ResponseFormat::JSON) {
     if (msg && msg[0] != '\0') {
+      char esc[160];
+      jsonEscape(msg, esc, sizeof(esc));   // F5: never emit unescaped text inside JSON
       char buf[192];
-      snprintf(buf, sizeof(buf), "{\"message\":\"%s\"}", msg);
+      snprintf(buf, sizeof(buf), "{\"message\":\"%s\"}", esc);
       respondJsonOk(m_currentCmd, buf);
     } else {
       respondJsonOk(m_currentCmd, nullptr);
@@ -573,6 +576,9 @@ void CommandParser::respondData(const char **lines, size_t count) {
 
 // Emit JSON success: {"status":"ok","command":"<cmd>","data":<json>}
 void CommandParser::respondJsonOk(const char *command, const char *dataJson) {
+  char cmdEsc[48];
+  jsonEscape(command, cmdEsc, sizeof(cmdEsc));
+  command = cmdEsc;
   char buf[1024];
   if (dataJson && dataJson[0] != '\0')
     snprintf(buf, sizeof(buf),
@@ -588,7 +594,13 @@ void CommandParser::respondJsonOk(const char *command, const char *dataJson) {
 // {"status":"error","command":"<cmd>","code":"<code>","message":"<msg>"}
 void CommandParser::respondJsonErr(const char *command, const char *code,
                                    const char *message) {
-  char buf[256];
+  char cmdEsc[48];
+  char msgEsc[160];
+  jsonEscape(command, cmdEsc, sizeof(cmdEsc));
+  jsonEscape(message, msgEsc, sizeof(msgEsc));
+  command = cmdEsc;
+  message = msgEsc;
+  char buf[320];   // 48 + 32 + 160 + envelope, no truncation possible
   snprintf(buf, sizeof(buf),
            "{\"status\":\"error\",\"command\":\"%s\",\"code\":\"%s\","
            "\"message\":\"%s\"}",

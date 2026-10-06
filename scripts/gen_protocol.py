@@ -376,8 +376,8 @@ def build(commands, bodies):
     tstructs, status_keys = telemetry_fields()
     lim = limits()
 
-    status_table = "| ServiceStatus | ASCII / JSON message |\n|---|---|\n" + "\n".join(
-        "| `%s` | %s |" % (c["status"], md_escape(c["message"]) or "(not mapped)") for c in codes)
+    status_table = "| ServiceStatus | CODE | message |\n|---|---|---|\n" + "\n".join(
+        "| `%s` | `%s` | %s |" % (c["status"], c["code"], md_escape(c["message"]) or "(not mapped)") for c in codes)
     alias = {"FAULT_CLEAR": "FAULT_CLR", "STALL_CLEAR": "STALL_CLR"}
     bit_of = {m["mask"]: m["bit"] for m in ev_masks}
     event_table = "| Type | id | `SYST:EVT:EN` mask bit |\n|---|---|---|\n" + "\n".join(

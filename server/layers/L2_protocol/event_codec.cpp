@@ -6,6 +6,7 @@
 #include "L2_protocol/event_codec.hpp"
 #include "harness/defs/harness_l1_l2.hpp"
 #include "harness/trace/interface_trace.hpp"
+#include "L2_protocol/command_parser_internal.hpp"
 #include <stdio.h>
 
 // Shared helpers (eventTypeToString etc.) moved to
@@ -91,6 +92,7 @@ void formatAscii(Transport::ITransport& transport, const AsyncEvent& evt, uint32
 void formatJson(Transport::ITransport& transport, const AsyncEvent& evt, uint32_t seq, uint32_t ts_ms) {
     char buf[256];
     char detail[16];
+    char detailEsc[32];   // F5: escaped copy for the JSON literal
     const char* typeName = eventTypeToString(evt.type);
     ITRACE(Harness::ITrace::L2_TELEMETRY, "[L2>L1]", "event", typeName);
 
@@ -105,7 +107,7 @@ void formatJson(Transport::ITransport& transport, const AsyncEvent& evt, uint32_
                 static_cast<unsigned long>(seq),
                 static_cast<unsigned long>(ts_ms),
                 static_cast<unsigned>(evt.statusReg),
-                detail);
+                (jsonEscape(detail, detailEsc, sizeof(detailEsc)), detailEsc));
             break;
 
         case EventType::STALL:
@@ -118,7 +120,7 @@ void formatJson(Transport::ITransport& transport, const AsyncEvent& evt, uint32_
                 static_cast<unsigned long>(seq),
                 static_cast<unsigned long>(ts_ms),
                 static_cast<unsigned>(evt.statusReg),
-                detail);
+                (jsonEscape(detail, detailEsc, sizeof(detailEsc)), detailEsc));
             break;
 
         case EventType::MOTION_DONE:

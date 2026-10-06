@@ -49,21 +49,21 @@ receive-ring overflow), `DBG_LOCKED` (bring-up command before `DBG:UNLOCK`), `MO
 `VERIFY_FAILED` (`DRV:STEP_MODE`), `ERROR` (a validation message without a finer code), or a
 `ServiceStatus` name from the table below (the message is the text column):
 
-| ServiceStatus | ASCII / JSON message |
-|---|---|
-| `Ok` | OK |
-| `InvalidParam` | Invalid parameter |
-| `OutOfRange` | Value out of range |
-| `Fault` | Motor fault active |
-| `FaultActive` | Hardware faults still present |
-| `QueueFull` | Queue full |
-| `QueueEmpty` | Queue empty |
-| `InvalidState` | Invalid state for operation |
-| `InvalidCommand` | Invalid command |
-| `TimeoutExpired` | Timeout expired |
-| `FlashError` | Flash write failed |
-| `EncoderRequired` | Encoder required |
-| `NotEnabled` | Motor not enabled |
+| ServiceStatus | CODE | message |
+|---|---|---|
+| `Ok` | `OK` | OK |
+| `InvalidParam` | `INVALID_PARAM` | Invalid parameter |
+| `OutOfRange` | `OUT_OF_RANGE` | Value out of range |
+| `Fault` | `FAULT` | Motor fault active |
+| `FaultActive` | `FAULT_ACTIVE` | Hardware faults still present |
+| `QueueFull` | `QUEUE_FULL` | Queue full |
+| `QueueEmpty` | `QUEUE_EMPTY` | Queue empty |
+| `InvalidState` | `INVALID_STATE` | Invalid state for operation |
+| `InvalidCommand` | `INVALID_COMMAND` | Invalid command |
+| `TimeoutExpired` | `TIMEOUT_EXPIRED` | Timeout expired |
+| `FlashError` | `FLASH_ERROR` | Flash write failed |
+| `EncoderRequired` | `ENCODER_REQUIRED` | Encoder required |
+| `NotEnabled` | `NOT_ENABLED` | Motor not enabled |
 
 ## 3. Asynchronous lines (may arrive at any time between replies)
 

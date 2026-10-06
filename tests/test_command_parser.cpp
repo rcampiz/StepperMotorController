@@ -6,6 +6,7 @@
 #include "minitest.hpp"
 #include "harness/defs/harness_l1_l2.hpp"
 #include "L2_protocol/command_parser.hpp"
+#include "L2_protocol/command_parser_internal.hpp"
 #include "L2_protocol/service_dispatcher.hpp"
 #include "harness/pins/async_event.hpp"
 #include <string>
@@ -235,4 +236,70 @@ TEST(status_codes_are_enumerator_names) {
     EXPECT_STREQ(Harness::statusToCode(Harness::ServiceStatus::InvalidState), "INVALID_STATE");
     EXPECT_STREQ(Harness::statusToCode(Harness::ServiceStatus::Fault), "FAULT");
     EXPECT_STREQ(Harness::statusToCode(Harness::ServiceStatus::Ok), "OK");
+}
+
+// --- F5: JSON strings are escaped -----------------------------------------------------
+TEST(json_escape_handles_quotes_backslashes_and_control_chars) {
+    char out[64];
+    Protocol::jsonEscape("say \"hi\" \\ tab\tnl\n", out, sizeof(out));
+    EXPECT_STREQ(out, "say \\\"hi\\\" \\\\ tab\\tnl\\n");
+    Protocol::jsonEscape("\x01", out, sizeof(out));
+    EXPECT_STREQ(out, "\\u0001");
+    Protocol::jsonEscape("abcdef", out, 4);            // truncates, always terminated
+    EXPECT_STREQ(out, "abc");
+    EXPECT_EQ(Protocol::jsonEscape(nullptr, out, sizeof(out)), 0u);
+    EXPECT_STREQ(out, "");
+}
+
+TEST(json_error_message_with_quotes_is_still_valid_json) {
+    Rig r;
+    r.transport.in = "FMT JSON\n";
+    r.proc.process();
+    r.transport.out.clear();
+    r.transport.in = "UI:MODE \"x\"\n";                     // argument with quotes -> usage/unknown mode
+    r.proc.process();
+    std::string js = r.transport.out;
+    // naive validity check: an odd number of unescaped quotes would break parsing
+    int quotes = 0;
+    for (size_t i = 0; i < js.size(); ++i) if (js[i] == '"' && (i == 0 || js[i-1] != '\\')) ++quotes;
+    EXPECT_EQ(quotes % 2, 0);
+    EXPECT_TRUE(js.find("\"status\":\"error\"") != std::string::npos);
+}
+
+// --- parser over a fake L3 bundle: commands that reach the dispatchers ----------------
+#include "fakes/fake_dispatchers.hpp"
+
+namespace {
+struct BoundRig {
+    FakeTransport transport;
+    Protocol::ServiceDispatcher dispatcher;
+    FakeL3::Bundle l3;
+    Protocol::CommandParser parser{transport, dispatcher};
+    Protocol::ICommandProcessor& proc = parser;
+    BoundRig() { dispatcher.bind(l3.dispatchers); }
+    std::string run(const char* line) {
+        transport.out.clear();
+        transport.in = std::string(line) + "\n";
+        proc.process();
+        return transport.out;
+    }
+};
+}
+
+TEST(dev_role_query_has_its_own_handler_and_reply) {           // F15
+    BoundRig r;
+    r.run("FMT JSON");
+    std::string out = r.run("DEV:ROLE?");
+    EXPECT_TRUE(out.find("\"command\":\"GET_ROLE\"") != std::string::npos);
+    EXPECT_TRUE(out.find("\"role_id\":0") != std::string::npos);
+    EXPECT_TRUE(out.find("\"role\":\"") != std::string::npos);
+    EXPECT_TRUE(r.l3.system.calls.back() == "getDeviceInfo");
+}
+
+TEST(ping_round_trips_the_sequence_number) {
+    BoundRig r;
+    r.run("FMT JSON");
+    std::string out = r.run("DIAG:PING 5");
+    EXPECT_TRUE(out.find("\"command\":\"PING\"") != std::string::npos);
+    EXPECT_TRUE(out.find("\"seq\":5") != std::string::npos);
 }

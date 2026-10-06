@@ -133,4 +133,42 @@ inline uint8_t parseDisplayMode(const char* s) {
     return 0xFF;
 }
 
+/**
+ * @brief Escape a string for use inside a JSON string literal (F5).
+ *
+ * Escapes backslash, double quote and control characters (\n \r \t, others as \u00XX).
+ * Always NUL-terminates; truncates at outSize-1. Returns the number of characters written.
+ */
+inline size_t jsonEscape(const char* in, char* out, size_t outSize) {
+  static const char hex[] = "0123456789ABCDEF";
+  size_t o = 0;
+  if (outSize == 0) return 0;
+  for (size_t i = 0; in != nullptr && in[i] != '\0'; ++i) {
+    unsigned char c = static_cast<unsigned char>(in[i]);
+    const char* esc = nullptr;
+    char tmp[7];
+    if (c == '"')       esc = "\\\"";
+    else if (c == '\\') esc = "\\\\";
+    else if (c == '\n') esc = "\\n";
+    else if (c == '\r') esc = "\\r";
+    else if (c == '\t') esc = "\\t";
+    else if (c < 0x20) {
+      tmp[0] = '\\'; tmp[1] = 'u'; tmp[2] = '0'; tmp[3] = '0';
+      tmp[4] = hex[(c >> 4) & 0xF]; tmp[5] = hex[c & 0xF]; tmp[6] = '\0';
+      esc = tmp;
+    }
+    if (esc == nullptr) {
+      if (o + 1 >= outSize) break;
+      out[o++] = static_cast<char>(c);
+    } else {
+      size_t n = 0;
+      while (esc[n] != '\0') ++n;
+      if (o + n >= outSize) break;
+      for (size_t k = 0; k < n; ++k) out[o++] = esc[k];
+    }
+  }
+  out[o] = '\0';
+  return o;
+}
+
 } // namespace Protocol
