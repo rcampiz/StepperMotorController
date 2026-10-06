@@ -31,6 +31,7 @@ public:
 
 private:
     bool isTaskAwareCommand(const char* cmd) const;
+    bool isReadOnlyCommand(const char* cmd) const;   ///< dumps that bypass the lock (F3)
     void cmdSpiStop(const char* const* args, uint8_t argc, Harness::IResponseSink& out);
     void cmdSpiStart(const char* const* args, uint8_t argc, Harness::IResponseSink& out);
     void cmdLcdDisable(const char* const* args, uint8_t argc, Harness::IResponseSink& out);

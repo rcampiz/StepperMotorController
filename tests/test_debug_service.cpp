@@ -22,7 +22,8 @@ struct FakeAccess : Drivers::IDebugAccess {
     std::vector<std::string> executed;
     bool knowsCommand(const char* cmd) const override {
         return std::strcmp(cmd, "SPI_DEBUG") == 0 || std::strcmp(cmd, "SPI_STOP") == 0 ||
-               std::strcmp(cmd, "SPI_START") == 0 || std::strcmp(cmd, "LCD_DISABLE") == 0;
+               std::strcmp(cmd, "SPI_START") == 0 || std::strcmp(cmd, "LCD_DISABLE") == 0 ||
+               std::strcmp(cmd, "ENC_DEBUG") == 0;
     }
     bool rawCommand(const char* cmd, const char* const*, uint8_t, Harness::IResponseSink& out) override {
         if (!knowsCommand(cmd)) return false;
@@ -63,6 +64,22 @@ TEST(locked_by_default_rejects_known_commands_without_executing) {
     EXPECT_TRUE(r.svc.debugDispatch("SPI_DEBUG", r.argv, 0, r.sink));   // claimed
     EXPECT_TRUE(r.access.executed.empty());
     EXPECT_TRUE(r.sink.out.find("locked") != std::string::npos);
+}
+
+TEST(read_only_dumps_bypass_the_lock) {
+    Rig r;
+    EXPECT_FALSE(r.svc.debugIsUnlocked());
+    EXPECT_TRUE(r.svc.debugDispatch("MOTOR_DEBUG", r.argv, 0, r.sink));   // handled in L3
+    EXPECT_TRUE(r.sink.out.find("STATUS=0003") != std::string::npos);
+    EXPECT_TRUE(r.sink.out.find("locked") == std::string::npos);
+    r.access.executed.clear(); r.sink.out.clear();
+    EXPECT_TRUE(r.svc.debugDispatch("ENC_DEBUG", r.argv, 0, r.sink));     // forwarded to L4
+    EXPECT_EQ(r.access.executed.size(), 1u);
+    EXPECT_STREQ(r.access.executed[0].c_str(), "ENC_DEBUG");
+    r.sink.out.clear();
+    EXPECT_TRUE(r.svc.debugDispatch("SPI_STOP", r.argv, 0, r.sink));      // still gated
+    EXPECT_TRUE(r.sink.out.find("locked") != std::string::npos);
+    EXPECT_FALSE(r.motor.paused);
 }
 
 TEST(unknown_commands_are_not_claimed_even_when_locked) {

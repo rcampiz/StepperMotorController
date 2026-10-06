@@ -33,6 +33,15 @@ Harness::ServiceStatus DebugService::debugLock()
     return Harness::ServiceStatus::Ok;
 }
 
+/// Read-only register/pin dumps: harmless, so they bypass DBG:UNLOCK (F3). The GUI
+/// refreshes MOTOR_DEBUG on every connect; the encoder/PS01 dumps are diagnostics.
+bool DebugService::isReadOnlyCommand(const char* cmd) const
+{
+    return strcmp(cmd, "MOTOR_DEBUG") == 0 || strcmp(cmd, "ENC_DEBUG") == 0 ||
+           strcmp(cmd, "PS01_DIAG") == 0 || strcmp(cmd, "GPIO_STATE") == 0 ||
+           strcmp(cmd, "GPIO_DUMP") == 0;
+}
+
 bool DebugService::isTaskAwareCommand(const char* cmd) const
 {
     return strcmp(cmd, "SPI_STOP") == 0 || strcmp(cmd, "SPI_START") == 0 ||
@@ -47,7 +56,7 @@ bool DebugService::debugDispatch(const char* cmd, const char* const* args, uint8
     if (!known) {
         return false;
     }
-    if (!m_unlocked) {
+    if (!m_unlocked && !isReadOnlyCommand(cmd)) {
         out.writeLine("ERROR DBG locked (send DBG:UNLOCK)");
         return true;
     }
