@@ -31,7 +31,8 @@ def run(board, name, **params):
 
 def test_registry_lists_the_builtin_scenarios():
     names = [s.name for s in runner.list_scenarios()]
-    assert names == ["bringup", "estop_latency", "heartbeat_loss", "step_mode_readback", "sysid"]
+    assert names == ["bringup", "estop_latency", "heartbeat_loss", "motion_scale", "step_mode_chip",
+                     "step_mode_readback", "sysid", "telemetry_load"]
 
 
 def test_bringup_passes_and_measures_identity(board):
@@ -58,6 +59,26 @@ def test_step_mode_readback_restores_the_original(board):
     r = run(board, "step_mode_readback", modes=[0, 5, 7])
     assert r.ok, r.summary
     assert board._fake.step_mode == 3
+
+
+def test_motion_scale_measures_position_and_encoder(board):
+    r = run(board, "motion_scale", usteps=1600, speed=400, rev=0.5)
+    assert r.ok, (r.summary, r.checks)
+    assert r.measurements["microsteps_per_rev"] == 1600          # 200 x 1/8 on the fake
+    assert r.measurements["encoder_counts_per_rev_dir1"] == 1600.0
+    assert board._fake.hi_z                                      # output left disabled
+
+
+def test_step_mode_chip_follows_config_in_hi_z_and_enabled(board):
+    r = run(board, "step_mode_chip", mode=7)
+    assert r.ok, (r.summary, r.checks)
+    assert board._fake.step_mode == r.measurements["original"]
+
+
+def test_telemetry_load_sees_the_encoder_advance(board):
+    r = run(board, "telemetry_load", period_ms=20, usteps=800, speed=400)
+    assert r.ok, (r.summary, r.checks)
+    assert board._fake.tlm_ms == 100                             # restored to the board config
 
 
 def test_sysid_downloads_every_sample(board):

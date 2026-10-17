@@ -157,6 +157,7 @@ void FakePowerStep::softStop() {
     logMotion("softstop", 0);
     update();
     if (mode_ != Mode::Idle) mode_ = Mode::Stopping;
+    hiZ_ = false;            // as hardStop: SoftStop from Hi-Z energises the bridges
     hiZAfterStop_ = false;
 }
 
@@ -166,6 +167,7 @@ void FakePowerStep::hardStop() {
     update();
     v_ = 0.0;
     mode_ = Mode::Idle;
+    hiZ_ = false;            // a stop command exits Hi-Z (datasheet: the bridges hold the motor)
 }
 
 void FakePowerStep::softHiZ() {
@@ -221,6 +223,12 @@ void FakePowerStep::setParam(uint8_t reg, uint32_t value) {
         int32_t p = value & 0x3FFFFF;
         if (p & 0x200000) p -= 0x400000;
         pos_ = p;
+        return;
+    }
+    if (reg == Drivers::MotorReg::STEP_MODE && !hiZ_) {
+        // STEP_MODE is writable only with the bridges in Hi-Z (datasheet "WH" register);
+        // measured on hardware 2026-10-17: the write is silently ignored otherwise.
+        logMotion("stepmode-ignored", static_cast<long long>(value));
         return;
     }
     if (reg < 32) regs_[reg] = value;

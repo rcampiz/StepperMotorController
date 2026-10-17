@@ -14,7 +14,8 @@ client/
     views.py           typed views of text replies (DBG:MOTOR, DRV:CFG?, CTRL:ENC?, SYSID)
     units.py           motion units and powerSTEP01 register scaling
     board.py           Board: the link's threads, session, heartbeat, ESTOP, reset handling
-    scenarios/         named tests (bringup, estop_latency, heartbeat_loss, step_mode_readback, sysid)
+    scenarios/         named tests: basic.py (bringup, estop_latency, heartbeat_loss, step_mode_readback,
+                       sysid) and motion.py (motion_scale, step_mode_chip, telemetry_load)
     runner.py          run / submit scenarios; JSON-lines results
     kinematics.py      mecanum inverse/forward, motor speed scaling (pure functions)
     fleet.py           Fleet: four boards as one base (identity, base ESTOP, one-lost policy,

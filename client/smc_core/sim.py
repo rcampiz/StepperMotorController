@@ -34,12 +34,14 @@ class FakeBoard:
         self.state = "IDLE"
         self.position = 0
         self.speed = 0
+        self.target = None                    # MOT:MOVE/GOTO in progress: position moves toward it
+        self.move_usteps_per_s = 0.0
         self.hi_z = True
         self.role = "NONE"
         self.dev_id = 0
         self.step_mode = 3
         self.full_steps = 200
-        self.enc_ppr = 1000
+        self.enc_ppr = 1600                   # counts/rev: one count per 1/8 microstep
         self.hb_timeout_ms = 0
         self.last_hb = time.monotonic()
         self.tlm_ms = 0
@@ -105,11 +107,11 @@ class FakeBoard:
             "state": self.state, "tick": int(time.monotonic() * 1e6) & 0xFFFFFFFF,
             "queue_depth": 0,
             "motor": {"position": self.position, "speed": self.speed,
-                      "busy": self.speed != 0, "hi_z": self.hi_z, "direction": 1,
+                      "busy": self.speed != 0 or self.target is not None, "hi_z": self.hi_z, "direction": 1,
                       "mot_status": 0, "status_reg": "7E03", "cmd_err": False, "ocd": False,
                       "thermal_sd": False, "thermal_warn": False, "uvlo": False,
                       "stall_a": False, "stall_b": False},
-            "encoder": {"count": self.position, "velocity": self.speed, "index_seen": False,
+            "encoder": {"count": self._enc_count(), "velocity": self.speed, "index_seen": False,
                         "revolutions": 0, "index_period_us": 0, "vel_quality": 0},
             "control": {"following_error": 0, "setpoint": self.position, "mode": 0,
                         "tracking": False, "trim_out": 0, "p": 0, "i": 0, "d": 0,
@@ -293,16 +295,31 @@ class FakeBoard:
 
     def _c_MOT_MOVE(self, name, args):
         if self._motion_allowed(name):
-            steps = int(float(args[0]) * self.full_steps * 8) if "REV" in args else int(args[0])
+            steps = int(float(args[0]) * self._usteps_per_rev()) if "REV" in args else int(args[0])
             d = int(args[2] if "REV" in args else args[1])
-            self.position += steps if d else -steps
-            self.hi_z = False
+            spd = args[3] if "REV" in args else (args[2] if len(args) > 2 else None)
+            self._start_move(self.position + (steps if d else -steps), spd)
             self._ok(name)
+
+    move_speed_sps = 400                       # MOT:MOVE without a speed: full steps/s
+
+    def _start_move(self, target: int, speed_arg) -> None:
+        """Positioning moves take time: the tick loop walks position to target."""
+        sps = int(float(speed_arg)) if speed_arg not in (None, "") else self.move_speed_sps
+        self.move_usteps_per_s = max(sps, 1) * (1 << self.step_mode)
+        self.target = target
+        self.hi_z = False
+
+    def _usteps_per_rev(self) -> int:
+        return self.full_steps * (1 << self.step_mode)
+
+    def _enc_count(self) -> int:
+        """The encoder follows the motor: enc_ppr counts per revolution."""
+        return round(self.position * self.enc_ppr / self._usteps_per_rev())
 
     def _c_MOT_GOTO(self, name, args):
         if self._motion_allowed(name):
-            self.position = int(float(args[0]))
-            self.hi_z = False
+            self._start_move(int(float(args[0])), args[2] if "REV" in args else (args[1] if len(args) > 1 else None))
             self._ok(name)
 
     def _c_MOT_RUN(self, name, args):
@@ -352,7 +369,7 @@ class FakeBoard:
                                 "Mode: OPEN_LOOP (encoder: READY)"])
 
     def _c_CTRL_ENC_Q(self, name, args):
-        self._ok("ENC", data={"count": self.position, "velocity": self.speed,
+        self._ok("ENC", data={"count": self._enc_count(), "velocity": self.speed,
                               "index_seen": False, "index_tick": 0, "revolutions": 0,
                               "index_period_us": 0})
 
@@ -439,10 +456,17 @@ class FakeBoard:
         return max(0, int(left))
 
     def _tick_loop(self) -> None:
-        next_tlm = time.monotonic()
+        next_tlm = last = time.monotonic()
         while not self._stop.wait(0.005):
             with self._lock:
                 now = time.monotonic()
+                if self.target is not None:
+                    step = max(1, int(self.move_usteps_per_s * (now - last)))
+                    if abs(self.target - self.position) <= step:
+                        self.position, self.target = self.target, None
+                    else:
+                        self.position += step if self.target > self.position else -step
+                last = now
                 if (self.hb_timeout_ms > 0 and self.state != "ESTOP"
                         and (now - self.last_hb) * 1000.0 > self.hb_timeout_ms):
                     self.state, self.speed, self.hi_z = "ESTOP", 0, True   # comms-timeout stop
@@ -453,4 +477,4 @@ class FakeBoard:
                                                     separators=(",", ":")))
                     else:
                         self.t.feed_line("TELEM: pos=%d spd=%d enc=%d vel=%d" % (
-                            self.position, self.speed, self.position, self.speed))
+                            self.position, self.speed, self._enc_count(), self.speed))

@@ -57,6 +57,11 @@ def test_identity_and_protocol(board):
     ("estop_latency", {"rpm": 30.0, "run_s": 0.3}),
     ("heartbeat_loss", {"timeout_ms": 300, "margin_ms": 300}),
     ("sysid", {"type": "step", "speed": 400, "duration_ms": 600, "settle_ms": 150}),
+    ("motion_scale", {"usteps": 25600, "speed": 400, "rev": 0.5}),      # the sim boots at 1/128
+    ("telemetry_load", {"period_ms": 50, "usteps": 25600, "speed": 200}),
+    pytest.param("step_mode_chip", {"mode": 7}, marks=pytest.mark.xfail(
+        strict=True, reason="open issue: DRV:CFG:APPLY writes STEP_MODE outside Hi-Z, which "
+                            "the powerSTEP01 (and the fake) ignore; chip stays at the old mode")),
 ])
 def test_scenarios_pass_on_the_real_firmware_code(board, name, params):
     r = run(board, name, **params)
