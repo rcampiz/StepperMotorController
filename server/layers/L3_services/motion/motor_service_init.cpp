@@ -45,6 +45,7 @@ bool initMotorSubsystem(
 
     // L3 command queue (ARM/START): bounded sends, immediate stop for ESTOP
     g_commandQueue.init(commandQueueLock, clock, g_motorService, &g_motorService);
+    g_motorService.setScheduledStart(&g_commandQueue);   // SYNC:START:AT runs on the Motor task
 
     result.motorService = &g_motorService;
     result.motorCtrl = &g_motorService;

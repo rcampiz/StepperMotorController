@@ -28,7 +28,9 @@ enum class MotorCmdType : uint8_t {
     SetMaxSpeed,    // param1 = max speed value
     SetMark,        // param1 = mark position
     GetStatus,      // Trigger status read and telemetry update
-    SetStepMode     // param1 = STEP_MODE (0..7); handled by MotorService on the Motor task, readback published
+    SetStepMode,    // param1 = STEP_MODE (0..7); handled by MotorService on the Motor task, readback published
+    StartAt         // param1 = TickTimer tick (us, bit-cast); the Motor task waits for it, then flushes the
+                    // armed CommandQueue itself (SYNC:START:AT), so the Comms task never blocks
 };
 
 struct MotorCommand {

@@ -129,55 +129,53 @@ QueueResult CommandQueue::startAt(uint32_t targetTick)
 
     if (m_state != ControllerState::ARMED) {
         result = QueueResult::INVALID_STATE;
-        m_lock->release();
-        return result;
-    }
-
-    // Check if target tick has already passed
-    uint32_t now = TickTimer_GetTick();
-    auto delta = static_cast<int32_t>(targetTick - now);
-
-    if (delta < 0) {
-        // Target tick already passed
-        result = QueueResult::TIMEOUT_EXPIRED;
-        m_lock->release();
-        return result;
-    }
-
-    // Release lock during wait (allows other operations)
-    m_lock->release();
-
-    // For longer waits, sleep for most of it (delta is in microseconds)
-    if (delta > 1000) {
-        m_clock->delayMs(delta / 1000);
-    }
-
-    // Spin-wait for final precision
-    while (static_cast<int32_t>(targetTick - TickTimer_GetTick()) > 0) {
-        // Tight loop for microsecond precision
-    }
-
-    // Re-acquire lock and execute
-    m_lock->acquire();
-
-    // Verify still in ARMED state (could have been cancelled)
-    if (m_state != ControllerState::ARMED) {
-        result = QueueResult::INVALID_STATE;
     }
     else {
-        if (!flushToMotorTask()) {
-            result = QueueResult::MOTOR_QUEUE_FULL;
+        // Validate the instant here; the waiting is the Motor task's job (it owns the
+        // driver and can spin to the microsecond without holding the Comms task).
+        uint32_t now = TickTimer_GetTick();
+        auto delta = static_cast<int32_t>(targetTick - now);
+        if (delta < 0) {
+            result = QueueResult::TIMEOUT_EXPIRED;
         }
-        m_state = ControllerState::RUNNING;
+        else if (static_cast<uint32_t>(delta) > MAX_START_AT_US) {
+            result = QueueResult::INVALID_PARAM;
+        }
+        else {
+            MotorCommand cmd;
+            cmd.type = MotorCmdType::StartAt;
+            cmd.param1 = static_cast<int32_t>(targetTick);
+            cmd.param2 = 0;
+            m_scheduledTick = targetTick;
+            m_scheduled = true;
+            if (!m_sink->sendCommand(cmd, FLUSH_SEND_TIMEOUT_MS)) {
+                m_scheduled = false;
+                result = QueueResult::MOTOR_QUEUE_FULL;
+            }
+        }
     }
 
     m_lock->release();
     return result;
 }
 
+bool CommandQueue::executeScheduledStart()
+{
+    m_lock->acquire();
+    bool ok = false;
+    if (m_scheduled && m_state == ControllerState::ARMED) {
+        ok = flushToMotorTask();
+        m_state = ControllerState::RUNNING;
+    }
+    m_scheduled = false;
+    m_lock->release();
+    return ok;
+}
+
 QueueResult CommandQueue::clearQueue()
 {
     m_lock->acquire();
+    m_scheduled = false;
 
     QueueResult result = QueueResult::OK;
 
@@ -205,6 +203,7 @@ QueueResult CommandQueue::clearQueue()
 
 void CommandQueue::emergencyStop()
 {
+    m_scheduled = false;
     ITRACE(Harness::ITrace::L3_CMD_SINK, "[L3~L3]", "emergencyStop");
 
     // Acquire lock — held briefly, safe for emergency path

@@ -79,3 +79,52 @@ TEST(clear_after_estop_releases_the_latch_exactly_once) {
     EXPECT_EQ(r.q.clearFault(), Services::QueueResult::INVALID_STATE);   // already IDLE
     EXPECT_EQ(r.immediate.clears, 1);
 }
+
+// --- SYNC:START:AT is a message to the Motor task, not a wait on the Comms task ----------
+TEST(start_at_schedules_a_motor_task_message_and_stays_armed) {
+    Rig r;
+    r.q.queueCommand(r.move(100));
+    r.q.arm();
+    EXPECT_EQ(r.q.startAt(1000), Services::QueueResult::OK);          // tick 1000 us, now 0
+    EXPECT_EQ(r.q.getState(), Services::ControllerState::ARMED);        // nothing flushed yet
+    EXPECT_TRUE(r.q.scheduledStartPending());
+    EXPECT_EQ(r.sink.sent.size(), 1u);
+    EXPECT_TRUE(r.sink.sent[0].type == Services::MotorCmdType::StartAt);
+    EXPECT_EQ(static_cast<uint32_t>(r.sink.sent[0].param1), 1000u);
+
+    // Motor task side, at the tick
+    EXPECT_TRUE(r.q.executeScheduledStart());
+    EXPECT_EQ(r.q.getState(), Services::ControllerState::RUNNING);
+    EXPECT_FALSE(r.q.scheduledStartPending());
+    EXPECT_EQ(r.sink.sent.size(), 2u);
+    EXPECT_TRUE(r.sink.sent[1].type == Services::MotorCmdType::Move);
+}
+
+TEST(start_at_rejects_a_past_tick_and_a_far_future_tick_without_scheduling) {
+    Rig r;
+    r.q.queueCommand(r.move(100));
+    r.q.arm();
+    EXPECT_EQ(r.q.startAt(0xFFFFFFF0u), Services::QueueResult::TIMEOUT_EXPIRED);   // -16 us
+    EXPECT_EQ(r.q.startAt(Services::CommandQueue::MAX_START_AT_US + 1), Services::QueueResult::INVALID_PARAM);
+    EXPECT_FALSE(r.q.scheduledStartPending());
+    EXPECT_EQ(r.sink.sent.size(), 0u);
+}
+
+TEST(a_cleared_or_estopped_queue_cancels_the_scheduled_start) {
+    Rig r;
+    r.q.queueCommand(r.move(100));
+    r.q.arm();
+    r.q.startAt(500);
+    r.q.clearQueue();
+    EXPECT_FALSE(r.q.scheduledStartPending());
+    EXPECT_FALSE(r.q.executeScheduledStart());                           // nothing to flush
+    EXPECT_EQ(r.sink.sent.size(), 1u);                                   // only the StartAt
+
+    r.q.queueCommand(r.move(100));
+    r.q.arm();
+    r.q.startAt(500);
+    r.q.emergencyStop();
+    EXPECT_FALSE(r.q.scheduledStartPending());
+    EXPECT_FALSE(r.q.executeScheduledStart());
+    EXPECT_EQ(r.q.getState(), Services::ControllerState::ESTOP);
+}

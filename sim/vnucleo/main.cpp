@@ -139,6 +139,7 @@ int main(int argc, char** argv) {
                                   motorQueue, clock, nullptr, Services::g_telemetryStore);
     Services::g_commandQueue.init(commandQueueLock, clock, Services::g_motorService,
                                   &Services::g_motorService);
+    Services::g_motorService.setScheduledStart(&Services::g_commandQueue);
 
     // initEncoderSubsystem with the fake encoder
     const auto& encCfg = Services::motion.encoder.config;

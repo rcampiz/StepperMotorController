@@ -21,6 +21,7 @@
 #include "L3_services/boundary/imotor_command_sink.hpp"
 #include "L3_services/boundary/iemergency_stop.hpp"
 #include "L3_services/boundary/iimmediate_stop.hpp"
+#include "L3_services/boundary/ischeduled_start.hpp"
 #include "F_platform/boundary/ilock.hpp"
 #include "F_platform/boundary/iclock.hpp"
 #include <stddef.h>
@@ -76,7 +77,7 @@ const char *resultToString(QueueResult result);
  *
  * Singleton that manages the ARM/START synchronization protocol.
  */
-class CommandQueue : public Services::IEmergencyStop {
+class CommandQueue : public Services::IEmergencyStop, public Services::IScheduledStart {
 public:
   static constexpr uint32_t FLUSH_SEND_TIMEOUT_MS = 50;   ///< bounded per-command send on START
   /**
@@ -126,16 +127,25 @@ public:
   QueueResult start();
 
   /**
-   * @brief Schedule execution at specific tick timestamp
+   * @brief Schedule execution at a TickTimer tick (SYNC:START:AT)
    *
-   * Only allowed in ARMED state. If tick has already passed,
-   * returns TIMEOUT_EXPIRED. Otherwise waits until tick
-   * then executes.
+   * Only allowed in ARMED state. Returns TIMEOUT_EXPIRED when the tick has passed and
+   * INVALID_PARAM when it is more than MAX_START_AT_US ahead. Otherwise hands a StartAt
+   * command to the Motor task and returns at once (OK = scheduled); the Motor task waits
+   * for the tick and calls executeScheduledStart(). The Comms task never blocks, so an
+   * ESTOP or the watchdog is handled during the wait.
    *
    * @param targetTick Tick timestamp to start execution
    * @return QueueResult::OK or error code
    */
   QueueResult startAt(uint32_t targetTick);
+
+  /// Longest wait a SYNC:START:AT may ask for (the Motor task stops polling meanwhile).
+  static constexpr uint32_t MAX_START_AT_US = 2000000;
+
+  // IScheduledStart (Motor task context)
+  bool scheduledStartPending() const override { return m_scheduled; }
+  bool executeScheduledStart() override;
 
   /**
    * @brief Clear pending queue and return to IDLE
@@ -189,6 +199,8 @@ private:
 
   // State
   ControllerState m_state;
+  volatile bool m_scheduled = false;   // SYNC:START:AT armed, Motor task will flush
+  uint32_t m_scheduledTick = 0;
 
   // Platform abstractions
   Platform::ILock* m_lock;

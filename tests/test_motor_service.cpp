@@ -192,6 +192,32 @@ TEST(apply_config_writes_step_mode_only_in_hiz_else_via_the_motor_task) {
     Services::motion.stepper.config.setStepMode(original);
 }
 
+namespace {
+struct FakeScheduledStart : Services::IScheduledStart {
+    bool pending = true; int executed = 0;
+    bool scheduledStartPending() const override { return pending; }
+    bool executeScheduledStart() override { ++executed; pending = false; return true; }
+};
+}
+
+TEST(start_at_on_the_motor_task_flushes_at_the_tick_unless_latched) {
+    Rig r;
+    FakeScheduledStart sched;
+    r.svc.setScheduledStart(&sched);
+    // The host TickTimer reads 0: a tick of 0 is "now", so the Motor task flushes at once
+    r.svc.onCommand(cmd(Services::MotorCmdType::StartAt, 0));
+    EXPECT_EQ(sched.executed, 1);
+    EXPECT_FALSE(sched.pending);
+
+    // Latched (ESTOP written from the Comms task): the scheduled start is abandoned
+    sched.pending = true;
+    r.svc.immediateHardHiZ();
+    r.svc.onCommand(cmd(Services::MotorCmdType::StartAt, 0));
+    EXPECT_EQ(sched.executed, 1);
+    r.svc.clearImmediateStop();
+    r.motorTaskPass();
+}
+
 TEST(debug_pause_stops_all_driver_traffic_until_resumed) {
     Rig r;
     r.svc.setDebugPaused(true);

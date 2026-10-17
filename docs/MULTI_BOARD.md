@@ -51,11 +51,13 @@ once. `SYNC:START:AT <tick>` does the same at a given value of the board's micro
 counter (TIM5). The Pi learns each board's offset from `DIAG:PING`, which returns the
 board's receive and transmit ticks (`Fleet.sync_clocks()`, NTP-style, best of 8).
 
-**Firmware finding: `SYNC:START:AT` blocks the Comms task until the start instant**
-(`CommandQueue::startAt`: `delayMs` then a busy spin). While it waits, the board parses
-no command, ESTOP included, and the heartbeat watchdog is not evaluated. The fleet keeps
-the delay at 150 ms, well inside the 500 ms watchdog. The firmware should arm a timer
-and let the Motor task start at the tick instead (section 7).
+**`SYNC:START:AT` runs on the Motor task** (since 2026-10-17). The Comms task validates
+the tick (past: `TIMEOUT_EXPIRED`; more than 2 s ahead: `INVALID_PARAM`), hands a `StartAt`
+command to the Motor task and answers `OK SCHEDULED` at once. The Motor task sleeps in
+1 ms steps until 1.5 ms before the tick, spins the rest, then flushes the armed queue
+itself; it abandons the wait if the ESTOP latch is set or the queue is cleared. The Comms
+task stays free, so an ESTOP or the watchdog is handled during the wait. (It used to
+sleep and spin on the Comms task, which is why the fleet kept the delay at 150 ms.)
 
 **Start skew if the Pi sends `SYNC:START` to four ports in turn (estimate).** The Pi's
 four writes take microseconds. Each board then sees:
@@ -199,18 +201,21 @@ A per-board link budget is unaffected: every wheel has its own USB link.
 ## 7. Firmware changes the four-board base needs (priority order)
 
 1. **Initialise the identity store** so `DEV:ID`/`DEV:ROLE` stop crashing (finding 1).
-   Small change, needed before the stored role can be used as a cross-check.
+   Small change, needed before the stored role can be used as a cross-check. **Done
+   2026-10-17.**
 2. **Phase 4 fast ESTOP** (0x18 in the USART2 ISR, STBY low): makes the fan-out a 1–2 ms
    stop on every wheel, even during uploads.
 3. **Never stall the MCU while driving.** `DRV:CFG:APPLY` and every save erase a 128 KB
    flash sector, about 1–2 s with the CPU likely stalled (finding 2). On a base, that is
-   one wheel frozen while three keep driving. Keep apply in RAM; save only when stopped.
+   one wheel frozen while three keep driving. **Done 2026-10-17**: saves append to a flash
+   journal; the erase runs at boot or only with the motor stopped (`STORE_FULL` otherwise).
 4. **Make `SYNC:START:AT` non-blocking** (section 2), so a timed start never hides an
-   ESTOP or the watchdog.
+   ESTOP or the watchdog. **Done 2026-10-17**: the Motor task waits and flushes.
 5. **External STBY sense:** an input pin on the E-stop loop, so a hardware stop also
    latches the firmware state and is reported as an event.
 6. **Fix the encoder velocity units** (finding 4) before any closed-loop mode is used on
    the base. Otherwise trim and supervision act on velocities 1000 times too small.
+   **Done 2026-10-17**: counts per second.
 7. **Compact telemetry line** (about 80 bytes) for odometry at 20–50 Hz per wheel without
    loading the link.
 

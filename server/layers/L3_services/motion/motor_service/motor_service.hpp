@@ -18,6 +18,7 @@
 #include "L3_services/boundary/imotor_task_control.hpp"
 #include "L3_services/boundary/iimmediate_stop.hpp"
 #include "L3_services/boundary/imotor_control_service.hpp"
+#include "L3_services/boundary/ischeduled_start.hpp"
 #include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include "F_platform/boundary/iqueue.hpp"
 #include "F_platform/boundary/iclock.hpp"
@@ -46,6 +47,9 @@ public:
               Platform::IClock& clock,
               Platform::ITaskStats* taskStats,
               TelemetryStore& telemetry);
+
+    /// SYNC:START:AT target (the CommandQueue); the Motor task flushes it at the tick.
+    void setScheduledStart(IScheduledStart* s) { m_scheduledStart = s; }
 
     // IMotorService (Motor task)
     void onCommand(const MotorCommand& cmd) override;
@@ -91,6 +95,8 @@ private:
     std::atomic<bool>     m_clearPending{false};  ///< Motor task must run MotorController::clearEmergencyStop()
     std::atomic<bool>     m_debugPaused{false};   ///< SPI_STOP/SPI_START: Motor task leaves the driver alone
     uint32_t              m_refused = 0;          ///< commands dropped while latched/paused (Motor task only)
+    IScheduledStart*      m_scheduledStart = nullptr;
+    void handleStartAt(uint32_t targetTick);     ///< Motor task: wait for the tick, then flush the armed queue
 
     // SetStepMode result slot: bit 16 = answered, bit 8 = ok, bits 0..7 = readback
     static constexpr uint32_t STEP_MODE_PENDING  = 0;

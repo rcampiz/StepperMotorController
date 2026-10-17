@@ -232,7 +232,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | Command | Min args | Usage | Reply | Errors | Handler |
 |---|---|---|---|---|---|
 | `SYNC:QUEUE` | 1 | SYNC:QUEUE <cmd> [args...]<br>SYNC:QUEUE GOTO <position><br>SYNC:QUEUE MOVE <steps> <dir><br>SYNC:QUEUE RUN <speed> <dir> | `OK <status>` | `Unknown queue command`<br>`dir must be 0 or 1`<br>`position out of range (-2097152 to 2097151)`<br>`speed out of range (0-15625 steps/s)`<br>`steps out of range (0-2097151)` | `cmdQueue` (queue_handlers.cpp) |
-| `SYNC:START:AT` | 1 | SYNC:START:AT <tick> | ASCII: `OK <status> or RUNNING` | — | `cmdStartAt` (queue_handlers.cpp) |
+| `SYNC:START:AT` | 1 | SYNC:START:AT <tick> | ASCII: `OK <status> or SCHEDULED` | — | `cmdStartAt` (queue_handlers.cpp) |
 | `SYNC:ARM` | 0 | — | ASCII: `OK <status> or ARMED` | — | `cmdArm` (queue_handlers.cpp) |
 | `SYNC:START` | 0 | — | ASCII: `OK <status> or RUNNING` | — | `cmdStart` (queue_handlers.cpp) |
 | `SYNC:CLEAR` | 0 | — | ASCII: `OK <status> or CLEARED` | — | `cmdClearQueue` (queue_handlers.cpp) |

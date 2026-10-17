@@ -244,7 +244,8 @@ void MotorController::processCommand(const MotorCommand& cmd)
             break;
 
         case MotorCmdType::SetStepMode:
-            // Intercepted by MotorService::onCommand (needs the readback slot); never reaches here
+        case MotorCmdType::StartAt:
+            // Intercepted by MotorService::onCommand (readback slot / scheduled start); never reach here
             break;
     }
 }

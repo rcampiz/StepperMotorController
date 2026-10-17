@@ -22,6 +22,7 @@
 #include "L3_services/motion/motor_service/motor_service.hpp"
 #include "L3_services/motion/motor_controller/motor_controller.hpp"
 #include "L3_services/motion/motion.hpp"
+#include "L3_services/infra/tick_timer/tick_timer.hpp"
 
 namespace Services {
 
@@ -84,6 +85,31 @@ void MotorService::handleSetStepMode(uint8_t mode)
     m_stepModeResult.store(STEP_MODE_ANSWERED | (ok ? STEP_MODE_OK : 0u) | readback);
 }
 
+void MotorService::handleStartAt(uint32_t targetTick)
+{
+    // SYNC:START:AT: sleep in 1 ms steps until just before the tick, spin the rest for
+    // microsecond precision, then flush the armed queue. The ESTOP path does not come
+    // through here (immediateHardHiZ writes the driver from the Comms task and sets the
+    // latch), so the wait is abandoned as soon as the latch is set or the start is cancelled.
+    if (m_scheduledStart == nullptr) {
+        return;
+    }
+    while (static_cast<int32_t>(targetTick - TickTimer_GetTick()) > 1500) {
+        if (m_stopLatched.load() || !m_scheduledStart->scheduledStartPending()) {
+            return;
+        }
+        if (m_clock != nullptr) {
+            m_clock->delayMs(1);
+        }
+    }
+    while (static_cast<int32_t>(targetTick - TickTimer_GetTick()) > 0) {
+        // spin: the last 1.5 ms
+    }
+    if (!m_stopLatched.load()) {
+        m_scheduledStart->executeScheduledStart();
+    }
+}
+
 void MotorService::onCommand(const MotorCommand& cmd)
 {
     if (m_controller == nullptr) {
@@ -96,6 +122,10 @@ void MotorService::onCommand(const MotorCommand& cmd)
     }
     if (cmd.type == MotorCmdType::SetStepMode) {
         handleSetStepMode(static_cast<uint8_t>(cmd.param1));
+        return;
+    }
+    if (cmd.type == MotorCmdType::StartAt) {
+        handleStartAt(static_cast<uint32_t>(cmd.param1));
         return;
     }
     if (m_stopLatched.load() && isMotionCommand(cmd.type)) {

@@ -1187,7 +1187,7 @@
         "SYNC:START:AT <tick>"
       ],
       "ascii_ok": [
-        "<status> or RUNNING"
+        "<status> or SCHEDULED"
       ],
       "json": [],
       "errors": [],

@@ -248,8 +248,8 @@ class Fleet:
                        timed: bool = True) -> Dict[str, Response]:
         """Queue one motion per wheel, arm, then start. timed=True uses SYNC:START:AT on a
         common instant (needs sync_clocks); timed=False sends SYNC:START to each port in
-        turn. delay_ms must stay well inside the watchdog: the firmware's Comms task is
-        blocked until the start instant (MULTI_BOARD.md section 2)."""
+        turn. The firmware accepts a start up to 2 s ahead and runs it on its Motor task,
+        so delay_ms no longer competes with the watchdog (MULTI_BOARD.md section 2)."""
         for role, req in requests.items():
             if req.name != "SYNC:QUEUE":
                 raise FleetError(f"{role}: start_together needs SYNC:QUEUE requests, got {req.name}")

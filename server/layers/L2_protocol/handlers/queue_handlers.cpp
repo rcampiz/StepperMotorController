@@ -100,7 +100,7 @@ void CommandParser::cmdStartAt(const ParsedCommand &cmd) {
   uint32_t targetTick =
       static_cast<uint32_t>(strtoul(cmd.args[0], nullptr, 10));
   auto r = m_dispatcher.queueStartAt(targetTick);
-  respondStatus(r, "RUNNING");
+  respondStatus(r, "SCHEDULED");   // the Motor task starts the queue at the tick
 }
 
 void CommandParser::cmdClearQueue() {

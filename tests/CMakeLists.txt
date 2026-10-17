@@ -85,6 +85,7 @@ smc_add_test(test_command_queue test_command_queue.cpp
 
 # --- Phase 3 step 1: ESTOP latch â€” queued motion discarded, motion refused until CLEAR.
 smc_add_test(test_motor_service test_motor_service.cpp
+    ${SERVER}/layers/L3_services/infra/tick_timer/tick_timer.cpp
     ${SERVER}/layers/L3_services/motion/motor_service/motor_service.cpp
     ${SERVER}/layers/L3_services/motion/motor_controller/motor_controller.cpp
     ${SERVER}/layers/L3_services/motion/motion.cpp

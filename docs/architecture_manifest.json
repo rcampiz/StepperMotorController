@@ -84,6 +84,7 @@
         "server/layers/L3_services/boundary/iremote_display.hpp",
         "server/layers/L3_services/boundary/isafety_actions.hpp",
         "server/layers/L3_services/boundary/isafety_dispatcher.hpp",
+        "server/layers/L3_services/boundary/ischeduled_start.hpp",
         "server/layers/L3_services/boundary/isnapshot_writer.hpp",
         "server/layers/L3_services/boundary/isupervisor_trim_dispatcher.hpp",
         "server/layers/L3_services/boundary/isystem_dispatcher.hpp",
