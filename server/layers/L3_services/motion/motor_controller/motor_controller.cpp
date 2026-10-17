@@ -58,9 +58,13 @@ int32_t MotorController::rawSpeedToSetpointTps(uint32_t rawSpeed, bool forward,
 
 void MotorController::applySpeedOverride(uint32_t rawMaxSpeed)
 {
-    m_savedMaxSpeed = m_driver->getParam(MotorReg::MAX_SPEED);
+    // A per-move speed: MAX_SPEED is lowered for this move only. Save the configured value
+    // once; a second override while one is active must not save the overridden value.
+    if (!m_speedOverrideActive) {
+        m_savedMaxSpeed = m_driver->getParam(MotorReg::MAX_SPEED);
+        m_speedOverrideActive = true;
+    }
     m_driver->setParam(MotorReg::MAX_SPEED, rawMaxSpeed);
-    m_speedOverrideActive = true;
 }
 
 void MotorController::restoreSpeedIfOverridden()
@@ -82,6 +86,7 @@ void MotorController::handleRunCommand(const MotorCommand& cmd)
     bool fwd = (cmd.param2 != 0);
     m_lastRunForward = fwd;
     m_continuousRunActive = true;
+    restoreSpeedIfOverridden();          // a run is limited by the configured MAX_SPEED, never by a move's
     m_driver->run(fwd, rawSpeed);
 
     if (mode != ControlMode::OPEN_LOOP) {
@@ -181,6 +186,7 @@ void MotorController::processCommand(const MotorCommand& cmd)
             motion.control.supervisor.goIdle();
             motion.control.trim.reset();
             m_driver->softStop();
+            restoreSpeedIfOverridden();  // a move interrupted by STOP left MAX_SPEED at the move's speed
             break;
 
         case MotorCmdType::HardStop:
@@ -196,6 +202,7 @@ void MotorController::processCommand(const MotorCommand& cmd)
             motion.control.supervisor.goIdle();
             motion.control.trim.reset();
             m_driver->softHiZ();
+            restoreSpeedIfOverridden();
             break;
 
         case MotorCmdType::HardHiZ:
@@ -233,6 +240,7 @@ void MotorController::processCommand(const MotorCommand& cmd)
 
         case MotorCmdType::SetMaxSpeed:
             m_driver->setParam(MotorReg::MAX_SPEED, static_cast<uint32_t>(cmd.param1));
+            m_speedOverrideActive = false;   // the new configured value is the one to keep
             break;
 
         case MotorCmdType::SetMark:
@@ -484,6 +492,7 @@ bool MotorController::applyConfig()
     m_driver->setParam(MotorReg::ACC, cfg.acceleration);
     m_driver->setParam(MotorReg::DEC, cfg.deceleration);
     m_driver->setParam(MotorReg::MAX_SPEED, cfg.maxSpeed);
+    m_speedOverrideActive = false;       // the saved config is the value to keep from here on
     m_driver->setParam(MotorReg::MIN_SPEED, cfg.minSpeed);
     m_driver->setParam(MotorReg::FS_SPD, cfg.fsSpeed);
 

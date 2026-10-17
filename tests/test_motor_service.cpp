@@ -278,6 +278,32 @@ TEST(out_of_band_estop_drops_the_pin_latches_and_clear_reinitialises_the_chip) {
     EXPECT_TRUE(r.drv.running);                          // motion allowed again
 }
 
+TEST(a_move_speed_override_is_restored_on_soft_stop_run_and_nested_moves) {
+    Rig r;
+    auto& maxSpeed = r.drv.params[Drivers::MotorReg::MAX_SPEED];
+    r.svc.onCommand(cmd(Services::MotorCmdType::SetMaxSpeed, 68));
+    EXPECT_EQ(maxSpeed, 68u);
+
+    // move at a lower speed, interrupted by STOP (soft): the configured value comes back
+    r.svc.onCommand(cmd(Services::MotorCmdType::Move, 6400, 7));
+    EXPECT_EQ(maxSpeed, 7u);
+    r.svc.onCommand(cmd(Services::MotorCmdType::SoftStop));
+    EXPECT_EQ(maxSpeed, 68u);
+
+    // a run while a move's override is active runs at the configured maximum
+    r.svc.onCommand(cmd(Services::MotorCmdType::Move, 6400, 7));
+    r.svc.onCommand(cmd(Services::MotorCmdType::Run, 100, 1));
+    EXPECT_EQ(maxSpeed, 68u);
+    r.svc.onCommand(cmd(Services::MotorCmdType::SoftStop));
+
+    // two overrides in a row keep the original, not the first override
+    r.svc.onCommand(cmd(Services::MotorCmdType::Move, 6400, 7));
+    r.svc.onCommand(cmd(Services::MotorCmdType::Move, 6400, 9));
+    EXPECT_EQ(maxSpeed, 9u);
+    r.svc.onCommand(cmd(Services::MotorCmdType::HardStop));
+    EXPECT_EQ(maxSpeed, 68u);
+}
+
 TEST(debug_pause_stops_all_driver_traffic_until_resumed) {
     Rig r;
     r.svc.setDebugPaused(true);
