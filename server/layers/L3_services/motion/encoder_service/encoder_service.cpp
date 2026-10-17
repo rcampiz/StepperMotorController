@@ -75,7 +75,12 @@ void EncoderService::sample()
         uint32_t latestIdx = (writeIdx - 1 + bufSize) % bufSize;
         uint32_t oldIdx = (writeIdx - 1 - windowSamples + bufSize) % bufSize;
         auto delta = static_cast<int16_t>(buf[latestIdx] - buf[oldIdx]);
-        rawVelocity = static_cast<int32_t>(delta) / static_cast<int32_t>(windowSamples);
+        // Counts per second: the window spans windowSamples / sampleRateHz seconds. (It was
+        // counts per sample, a factor sampleRateHz too small for every consumer, which take
+        // ticks/s: sysid, speed trim, following supervisor, the LCD; at 100 steps/s the
+        // ±2 deadband in the processor then read 0.)
+        rawVelocity = static_cast<int32_t>(delta) * static_cast<int32_t>(m_sampleRateHz)
+                    / static_cast<int32_t>(windowSamples);
     }
     m_lastRawVelocity = rawVelocity;
 

@@ -13,7 +13,7 @@ namespace Services {
 /// Encoder state snapshot (mirrors Scheduler::EncoderSnapshot)
 struct EncoderSnapshot {
     int64_t  count;
-    int32_t  velocity;
+    int32_t  velocity;         // counts per second (signed), filtered
     bool     indexSeen;
     uint32_t indexTick;
     int32_t  revolutions;

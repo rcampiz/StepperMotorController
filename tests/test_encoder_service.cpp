@@ -90,11 +90,11 @@ TEST(sample_feeds_only_new_ring_entries_and_computes_window_velocity) {
 
     r.svc.sample();
     EXPECT_EQ(r.proc.fed, 100);                    // entries 0..99
-    EXPECT_EQ(r.svc.lastRawVelocity(), 2);         // (ring[99]-ring[59]) / 40
-    EXPECT_EQ(r.svc.getState().velocity, 20);      // filtered = raw x10
+    EXPECT_EQ(r.svc.lastRawVelocity(), 2000);      // (ring[99]-ring[59]) x 1000 Hz / 40 samples: counts/s
+    EXPECT_EQ(r.svc.getState().velocity, 20000);   // filtered = raw x10
     EXPECT_EQ(r.snapshot().encoder.sampleRateHz, 1000u);
     EXPECT_EQ(r.snapshot().encoder.revolutions, 3);
-    EXPECT_EQ(r.snapshot().encoder.velocity, 20);
+    EXPECT_EQ(r.snapshot().encoder.velocity, 20000);
 
     r.svc.sample();                                // nothing new
     EXPECT_EQ(r.proc.fed, 100);
