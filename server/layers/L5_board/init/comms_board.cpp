@@ -41,3 +41,10 @@ void Harness::setCommsRxWake(Platform::ITaskNotifier* notifier, Platform::TaskHa
         uart->setRxWake(notifier, task);
     }
 }
+
+void Harness::setCommsTxClock(Platform::IClock* clock)
+{
+    if (Board::UartHardware* uart = Board::UartHardware::getInstance()) {
+        uart->setTxClock(clock);
+    }
+}

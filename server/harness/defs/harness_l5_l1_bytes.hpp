@@ -18,6 +18,7 @@
 #include "harness/defs/harness_signal.hpp"
 #include "L1_transport/boundary/ibyte_channel.hpp"
 #include "F_platform/boundary/itask_notifier.hpp"
+#include "F_platform/boundary/iclock.hpp"
 #include "harness/pins/comms_board.hpp"      // CommsChannel + the L5 init contract
 
 namespace Harness {
@@ -28,6 +29,8 @@ struct L5L1ByteHarness {
 
 /// L5 implements: route USART2 RX interrupts to a task notification (nullptr disables).
 void setCommsRxWake(Platform::ITaskNotifier* notifier, Platform::TaskHandle task);
+/// L5 implements: let a task writer sleep (1 ms steps) while the USART2 TX ring is full.
+void setCommsTxClock(Platform::IClock* clock);
 
 constexpr SignalDesc L5L1_SIGNALS[] = {
     { "Transport::IByteChannel", Provider::Lower, Flow::Up, Timing::AsyncFlag, ctx(Ctx::Task | Ctx::ISR),

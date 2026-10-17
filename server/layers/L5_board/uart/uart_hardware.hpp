@@ -18,6 +18,7 @@
 #include "X_vendor/CMSIS/stm32f401xe.h"
 #include "harness/defs/harness_l5_l1_bytes.hpp"
 #include "F_platform/boundary/itask_notifier.hpp"
+#include "F_platform/boundary/iclock.hpp"
 #include "harness/pins/imicrosecond_clock.hpp"
 #include "harness/pins/oob_estop.hpp"
 
@@ -117,17 +118,39 @@ public:
         return count;
     }
 
+    /**
+     * Queue bytes for the TXE interrupt to send (Phase 4 step 2). Returns as soon as the
+     * bytes are in the ring, so a 1 KB status push costs the Comms task microseconds, not
+     * 90 ms of busy-waiting at 115200 (which starved the Encoder task). When the ring is
+     * full the caller sleeps 1 ms at a time while the interrupt drains it; without a clock
+     * (pre-scheduler) it spins.
+     */
     size_t write(const uint8_t* data, size_t len) override {
         for (size_t i = 0; i < len; i++) {
-            while ((m_usart->SR & USART_SR_TXE) == 0) {}
-            m_usart->DR = data[i];
+            while (!m_txBuffer.push(data[i])) {
+                m_usart->CR1 |= USART_CR1_TXEIE;         // make sure the drain is running
+                if (m_txClock != nullptr) {
+                    m_txClock->delayMs(1);               // ~11 bytes leave per ms at 115200
+                }
+            }
         }
+        m_usart->CR1 |= USART_CR1_TXEIE;                 // TXE is already set when DR is idle
         return len;
     }
-
+    /// Wait until every queued byte has left the shift register (before a baud change or
+    /// a binary transfer).
     void flush() override {
+        while (m_txBuffer.available()) {
+            m_usart->CR1 |= USART_CR1_TXEIE;
+            if (m_txClock != nullptr) {
+                m_txClock->delayMs(1);
+            }
+        }
         while ((m_usart->SR & USART_SR_TC) == 0) {}
     }
+    /// Task context sleeps instead of spinning while the TX ring is full (composition root).
+    void setTxClock(Platform::IClock* clock) { m_txClock = clock; }
+    size_t txPending() const { return m_txBuffer.count(); }
 
     uint32_t baudRate() const override { return m_baudRate; }
 
@@ -177,6 +200,16 @@ public:
         if ((m_usart->SR & USART_SR_ORE) != 0) {
             (void)m_usart->DR;
         }
+
+        // Transmit: feed the data register from the ring; stop the interrupt when empty
+        if ((m_usart->CR1 & USART_CR1_TXEIE) != 0 && (m_usart->SR & USART_SR_TXE) != 0) {
+            uint8_t out;
+            if (m_txBuffer.pop(out)) {
+                m_usart->DR = out;
+            } else {
+                m_usart->CR1 &= ~USART_CR1_TXEIE;
+            }
+        }
     }
 
     static UartHardware* getInstance() { return s_instance; }
@@ -209,6 +242,8 @@ private:
     volatile bool  m_oobEnabled = true;
     uint8_t        m_irqPriority;
     RingBuffer<1024> m_rxBuffer;   // F1.2: 89 ms of host traffic at 115200 baud (was 256 B = 22 ms)
+    RingBuffer<4096> m_txBuffer;   // Phase 4 step 2: holds a whole SYST:HELP? (~3.2 KB) or three status pushes
+    Platform::IClock* m_txClock = nullptr;
     Platform::ITaskNotifier* m_wakeNotifier = nullptr;   // optional ISR -> Comms task wake
     Platform::TaskHandle     m_wakeTask = nullptr;
 

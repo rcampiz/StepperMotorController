@@ -185,3 +185,22 @@ Not covered by this step: a raw binary upload (`UI:DISP:BITMAP`, `:RLE`, `UI:FLA
 client's 5-row RLE bands keep that window near 0.2 s, and the base64 variants keep the
 byte active. Per-chunk SPI1 locking (03_open_issues item 1) and the single ESTOP state
 holder (item 6) stay open.
+
+## 7. After Phase 4 step 2 (interrupt-driven UART transmit, 2026-10-17)
+
+`UartHardware::write()` queues into a 4 KB ring that the USART2 TXE interrupt drains; the
+Comms task returns in microseconds instead of busy-waiting a line out at 115200 (a status
+push cost it 78 ms, a `SYST:HELP?` 280 ms). When the ring is full the writer sleeps 1 ms at
+a time. `flush()` waits for the ring and the shift register (baud change, binary transfers).
+
+| Measurement | before (step 1) | after step 2 |
+|---|---|---|
+| `SYST:ESTOP` line parsed while a `SYST:HELP?` reply is still going out (`latency_us`) | 224 ms (the handler was busy-waiting the reply out) | 0.70 / 0.72 / 0.75 ms |
+| `DIAG:PING` on-chip rx->tx while a `SYST:HELP?` reply is going out | not measured (the line waited behind the reply) | 1-2 µs |
+| 0x18 -> STBY low during the same | 1 µs | 1 µs |
+| host-side arrival of those replies | ~230-280 ms | 245-280 ms: the reply bytes still queue behind the HELP bytes on the wire; that is link time, not firmware time |
+| `telemetry_load` at the 139 ms floor, `motion_scale` | PASS | PASS (encoder advanced in 10 of 10 samples; 4001 / 3986 counts per rev) |
+| Step 0 case (c), ESTOP text inside a raw bitmap stream | parsed after the stream (+14.4 s) | unchanged by design: a raw payload pauses the 0x18 byte and the text is pixels; the client's RLE bands keep the window ~0.2 s and the base64 variants keep the byte active |
+
+The telemetry floor (`telemetryPeriodFloorMs`) stays: it now protects the link budget rather
+than the Encoder task. RAM: +4 KB bss for the ring.

@@ -133,6 +133,7 @@ void initTasks() {
 
   // X_L5_L1 option: USART2 RX wakes the Comms task (10 ms poll remains the fallback)
   Harness::setCommsRxWake(r.notifier, Scheduler::g_commsTaskHandle);
+  Harness::setCommsTxClock(r.clock);   // TX ring full: the Comms task sleeps instead of spinning
   // Out-of-band ESTOP: byte 0x18 in the USART2 ISR -> STBY/RESET low + latch (Phase 4 step 1)
   Harness::setOobEstopHandler([]() { Services::g_motorService.oobEstopFromIsr(); });
 }
