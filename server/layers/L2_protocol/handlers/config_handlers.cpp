@@ -56,12 +56,14 @@ void CommandParser::cmdMaxSpdPhysical(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdMotorConfigShow() {
-  m_sink.begin(m_format == ResponseFormat::JSON, "MCONFIG");   // F12: 7 lines + terminator
+  m_sink.begin(m_format == ResponseFormat::JSON, "MCONFIG");   // F12: 9 lines + terminator
   auto cfg = m_dispatcher.getMotorConfig();
-  char buf[384];
+  char buf[512];
   snprintf(buf, sizeof(buf),
            "Motor Config %s\n"
            "KVAL: HOLD=%02X RUN=%02X ACC=%02X DEC=%02X\n"
+           "Drive: %s\n"
+           "TVAL: HOLD=%02X RUN=%02X ACC=%02X DEC=%02X\n"
            "OCD_TH=%02X STALL_TH=%02X\n"
            "ACC=%u DEC=%u MAXSPD=%u MINSPD=%u FS_SPD=%u\n"
            "Faults: OCD=%d TH_SD=%d TH_W=%d UVLO=%d STALL_A=%d STALL_B=%d CMD=%d\n"
@@ -70,6 +72,9 @@ void CommandParser::cmdMotorConfigShow() {
            cfg.valid ? "(from flash)" : "(defaults)",
            (unsigned)cfg.kvalHold, (unsigned)cfg.kvalRun,
            (unsigned)cfg.kvalAcc, (unsigned)cfg.kvalDec,
+           cfg.driveMode ? "CURRENT" : "VOLTAGE",
+           (unsigned)cfg.tvalHold, (unsigned)cfg.tvalRun,
+           (unsigned)cfg.tvalAcc, (unsigned)cfg.tvalDec,
            (unsigned)cfg.ocdThreshold, (unsigned)cfg.stallThreshold,
            (unsigned)cfg.acceleration, (unsigned)cfg.deceleration,
            (unsigned)cfg.maxSpeed, (unsigned)cfg.minSpeed, (unsigned)cfg.fsSpeed,
@@ -121,6 +126,43 @@ void CommandParser::cmdMotorConfigKval(const ParsedCommand &cmd) {
   snprintf(buf, sizeof(buf),
            "KVAL set: H=%02X R=%02X A=%02X D=%02X (not saved)", hold, run, acc,
            dec);
+  respondOk(buf);
+}
+
+// DRV:CFG:DRIVE <VOLTAGE|CURRENT|0|1> - powerSTEP01 drive mode (CM_VM), applied by DRV:CFG:APPLY
+void CommandParser::cmdMotorConfigDrive(const ParsedCommand &cmd) {
+  if (cmd.argCount < 1) {
+    respondErr("Usage: DRV:CFG:DRIVE <VOLTAGE|CURRENT>");
+    return;
+  }
+  const char *a = cmd.args[0];
+  uint8_t mode;
+  if (strcmp(a, "CURRENT") == 0 || strcmp(a, "current") == 0 || strcmp(a, "1") == 0) {
+    mode = 1;
+  } else if (strcmp(a, "VOLTAGE") == 0 || strcmp(a, "voltage") == 0 || strcmp(a, "0") == 0) {
+    mode = 0;
+  } else {
+    respondErr("Drive mode must be VOLTAGE or CURRENT");
+    return;
+  }
+  m_dispatcher.configSetDriveMode(mode);
+  respondOk(mode ? "Drive mode CURRENT (TVAL) set (not saved; APPLY with the motor idle)"
+                 : "Drive mode VOLTAGE (KVAL) set (not saved; APPLY with the motor idle)");
+}
+
+// DRV:CFG:TVAL <hold> <run> <acc> <dec> - current-mode references, hex 00-7F (78 mA/LSB)
+void CommandParser::cmdMotorConfigTval(const ParsedCommand &cmd) {
+  if (cmd.argCount < 4) {
+    respondErr("Usage: DRV:CFG:TVAL <hold> <run> <acc> <dec> (hex 00-7F, 78 mA per unit)");
+    return;
+  }
+  auto hold = static_cast<uint8_t>(strtoul(cmd.args[0], nullptr, 16) & 0x7F);
+  auto run = static_cast<uint8_t>(strtoul(cmd.args[1], nullptr, 16) & 0x7F);
+  auto acc = static_cast<uint8_t>(strtoul(cmd.args[2], nullptr, 16) & 0x7F);
+  auto dec = static_cast<uint8_t>(strtoul(cmd.args[3], nullptr, 16) & 0x7F);
+  m_dispatcher.configSetTval(hold, run, acc, dec);
+  char buf[64];
+  snprintf(buf, sizeof(buf), "TVAL set: H=%02X R=%02X A=%02X D=%02X (not saved)", hold, run, acc, dec);
   respondOk(buf);
 }
 

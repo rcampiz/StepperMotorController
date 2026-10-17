@@ -122,6 +122,8 @@ COMMANDS: Dict[str, CommandSpec] = {
     'DBG:TRACE:RESET': CommandSpec('DBG:TRACE:RESET', 'cmdTraceReset', 0, '', '', False, False, False),
     'DRV:REINIT': CommandSpec('DRV:REINIT', 'inline', 0, '', '', False, False, False),
     'DRV:CFG:KVAL': CommandSpec('DRV:CFG:KVAL', 'cmdMotorConfigKval', 4, 'DRV:CFG:KVAL <hold> <run> <acc> <dec> (hex 00-FF)', '', False, False, False),
+    'DRV:CFG:DRIVE': CommandSpec('DRV:CFG:DRIVE', 'cmdMotorConfigDrive', 1, 'DRV:CFG:DRIVE <VOLTAGE|CURRENT>', '', False, False, False),
+    'DRV:CFG:TVAL': CommandSpec('DRV:CFG:TVAL', 'cmdMotorConfigTval', 4, 'DRV:CFG:TVAL <hold> <run> <acc> <dec> (hex 00-7F, 78 mA per unit)', '', False, False, False),
     'DRV:CFG:OCD': CommandSpec('DRV:CFG:OCD', 'cmdMotorConfigOcd', 1, 'DRV:CFG:OCD <threshold> (0-31, ~375mA/step)', '', False, False, False),
     'DRV:CFG:STALL': CommandSpec('DRV:CFG:STALL', 'cmdMotorConfigStall', 1, 'DRV:CFG:STALL <threshold> (0-31, ~31.25mV/step BEMF)', '', False, False, False),
     'DRV:CFG:FAULT': CommandSpec('DRV:CFG:FAULT', 'cmdMotorConfigFault', 1, 'DRV:CFG:FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd>', '', False, False, False),

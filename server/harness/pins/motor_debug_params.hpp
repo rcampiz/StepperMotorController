@@ -29,6 +29,7 @@ struct MotorDebugParams {
     uint8_t  alarmEn;
     uint16_t fsSpd;
     uint8_t  stepMode;
+    uint8_t  driveMode;   ///< STEP_MODE bit 3 (CM_VM): 0 voltage mode, 1 current mode
 };
 
 } // namespace Harness

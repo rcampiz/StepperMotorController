@@ -60,6 +60,7 @@ def test_identity_and_protocol(board):
     ("motion_scale", {"usteps": 25600, "speed": 400, "rev": 0.5}),      # the sim boots at 1/128
     ("telemetry_load", {"period_ms": 50, "usteps": 25600, "speed": 200}),
     ("step_mode_chip", {"mode": 7}),          # APPLY routes STEP_MODE through the Motor task when the bridges are on
+    ("drive_mode_chip", {}),                  # CM_VM (current mode) takes the same Hi-Z path
 ])
 def test_scenarios_pass_on_the_real_firmware_code(board, name, params):
     r = run(board, name, **params)

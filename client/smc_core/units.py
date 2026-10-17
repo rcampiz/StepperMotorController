@@ -92,6 +92,19 @@ def kval_to_percent(raw: int) -> int:
     return round(raw / 255.0 * 100)
 
 
+# Current mode: TVAL is the coil current reference, 7.8 mV per unit across the shield's
+# 0.1 ohm sense resistors (X-NUCLEO-IHM03A1): 78 mA per unit, 0x7F = 9.9 A.
+TVAL_AMPS_PER_UNIT = 0.078
+
+
+def tval_from_amps(amps: float) -> int:
+    return max(0, min(0x7F, round(amps / TVAL_AMPS_PER_UNIT)))
+
+
+def tval_to_amps(raw: int) -> float:
+    return round(raw * TVAL_AMPS_PER_UNIT, 2)
+
+
 def acc_raw_from_sps2(sps2: float) -> int:
     return max(1, round(sps2 / ACC_DEC_FACTOR))
 

@@ -63,6 +63,11 @@ void MotorConfigManager::applyDefaults() {
     m_config.kvalRun = 0x30;   // ~19% duty
     m_config.kvalAcc = 0x40;   // ~25% duty
     m_config.kvalDec = 0x40;   // ~25% duty
+    m_config.driveMode = 0;    // voltage mode (KVAL)
+    m_config.tvalHold = TVAL_DEFAULT_HOLD;
+    m_config.tvalRun = TVAL_DEFAULT_RUN;
+    m_config.tvalAcc = TVAL_DEFAULT_RUN;
+    m_config.tvalDec = TVAL_DEFAULT_RUN;
 
     // Protection thresholds - high values = less sensitive
     m_config.ocdThreshold = 0x1F;   // Max (~10A), adjust down for protection
@@ -101,6 +106,17 @@ void MotorConfigManager::setKval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t
     m_config.kvalRun = run;
     m_config.kvalAcc = acc;
     m_config.kvalDec = dec;
+}
+
+void MotorConfigManager::setDriveMode(uint8_t mode) {
+    m_config.driveMode = mode ? 1 : 0;
+}
+
+void MotorConfigManager::setTval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec) {
+    m_config.tvalHold = hold & 0x7F;
+    m_config.tvalRun = run & 0x7F;
+    m_config.tvalAcc = acc & 0x7F;
+    m_config.tvalDec = dec & 0x7F;
 }
 
 void MotorConfigManager::setOcdThreshold(uint8_t threshold) {
@@ -204,6 +220,13 @@ bool MotorConfigManager::loadFromFlash() {
                 m_config.encFilterParam = 0; // No EMA alpha
             }
             m_config.version = 2;
+        }
+        // Migrate V2 -> V3: the bytes were reserved (zero): voltage mode, default TVALs
+        if (m_config.version < 3) {
+            m_config.driveMode = 0;
+            m_config.tvalHold = TVAL_DEFAULT_HOLD;
+            m_config.tvalRun = m_config.tvalAcc = m_config.tvalDec = TVAL_DEFAULT_RUN;
+            m_config.version = 3;
         }
         return true;
     }

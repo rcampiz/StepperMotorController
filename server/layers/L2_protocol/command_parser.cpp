@@ -525,6 +525,8 @@ void CommandParser::dispatchDriver(const char *suffix,
   }
   static const CmdEntry t1[] = {
       {"CFG:KVAL", &CommandParser::cmdMotorConfigKval},
+      {"CFG:DRIVE", &CommandParser::cmdMotorConfigDrive},
+      {"CFG:TVAL", &CommandParser::cmdMotorConfigTval},
       {"CFG:OCD", &CommandParser::cmdMotorConfigOcd},
       {"CFG:STALL", &CommandParser::cmdMotorConfigStall},
       {"CFG:FAULT", &CommandParser::cmdMotorConfigFault},

@@ -38,6 +38,8 @@ struct FakeMotorConfigDispatcher : Services::IMotorConfigDispatcher {
     bool configFactoryReset()  override { calls.push_back("configFactoryReset"); return bool{}; }
     bool configIsValid()  override { calls.push_back("configIsValid"); return bool{}; }
     void configSetKval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec)  override { calls.push_back("configSetKval"); }
+    void configSetDriveMode(uint8_t mode)  override { calls.push_back("configSetDriveMode"); }
+    void configSetTval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec)  override { calls.push_back("configSetTval"); }
     void configSetOcdThreshold(uint8_t thresh)  override { calls.push_back("configSetOcdThreshold"); }
     void configSetStallThreshold(uint8_t thresh)  override { calls.push_back("configSetStallThreshold"); }
     void configSetFaultAction(uint8_t action)  override { calls.push_back("configSetFaultAction"); }

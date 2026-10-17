@@ -23,6 +23,16 @@ public:
     uint8_t getKvalDec() const { return m_mgr.getKvalDec(); }
     void setKval(uint8_t h, uint8_t r, uint8_t a, uint8_t d) { m_mgr.setKval(h, r, a, d); }
 
+    // Drive mode (powerSTEP01 CM_VM) and the current-mode references that replace KVAL
+    bool    isCurrentMode() const { return m_mgr.isCurrentMode(); }
+    uint8_t getDriveMode() const { return m_mgr.getDriveMode(); }
+    void    setDriveMode(uint8_t m) { m_mgr.setDriveMode(m); }
+    uint8_t getTvalHold() const { return m_mgr.getTvalHold(); }
+    uint8_t getTvalRun() const { return m_mgr.getTvalRun(); }
+    uint8_t getTvalAcc() const { return m_mgr.getTvalAcc(); }
+    uint8_t getTvalDec() const { return m_mgr.getTvalDec(); }
+    void    setTval(uint8_t h, uint8_t r, uint8_t a, uint8_t d) { m_mgr.setTval(h, r, a, d); }
+
     // Protection thresholds
     uint8_t getOcdThreshold() const { return m_mgr.getOcdThreshold(); }
     uint8_t getStallThreshold() const { return m_mgr.getStallThreshold(); }

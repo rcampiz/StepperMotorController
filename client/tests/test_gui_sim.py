@@ -105,6 +105,17 @@ def test_step_mode_apply_reads_the_chip_back(gui):
     assert "DRV:STEP_MODE?" in fake.received[after_apply:]       # the chip is read back, not the config
 
 
+def test_drive_mode_apply_sends_mode_tval_and_apply(gui):
+    app, w, fake = gui
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    w._driver_panel._drive_mode_combo.setCurrentIndex(1)
+    w._driver_panel._tval_sliders[1].setValue(13)          # 1.3 A run -> 0x11 (78 mA/unit)
+    w._driver_panel._on_apply_drive()
+    assert pump(app, lambda: fake.drive_current and "DRV:CFG:APPLY" in fake.received)
+    assert fake.tval[1] == 0x11
+    assert fake.received.index("DRV:CFG:DRIVE CURRENT") < fake.received.index("DRV:CFG:APPLY")
+
+
 def test_protection_apply_sends_typed_requests_in_order(gui):
     app, w, fake = gui
     assert pump(app, lambda: w._board is not None and w._board.session_ready)

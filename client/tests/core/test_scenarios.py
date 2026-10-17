@@ -31,8 +31,8 @@ def run(board, name, **params):
 
 def test_registry_lists_the_builtin_scenarios():
     names = [s.name for s in runner.list_scenarios()]
-    assert names == ["bringup", "estop_latency", "heartbeat_loss", "motion_scale", "step_mode_chip",
-                     "step_mode_readback", "sysid", "telemetry_load"]
+    assert names == ["bringup", "drive_mode_chip", "estop_latency", "heartbeat_loss", "motion_scale",
+                     "step_mode_chip", "step_mode_readback", "sysid", "telemetry_load"]
 
 
 def test_bringup_passes_and_measures_identity(board):
@@ -73,6 +73,12 @@ def test_step_mode_chip_follows_config_in_hi_z_and_enabled(board):
     r = run(board, "step_mode_chip", mode=7)
     assert r.ok, (r.summary, r.checks)
     assert board._fake.step_mode == r.measurements["original"]
+
+
+def test_drive_mode_chip_toggles_current_mode_and_restores_it(board):
+    r = run(board, "drive_mode_chip")
+    assert r.ok, (r.summary, r.checks)
+    assert board._fake.drive_current is False and r.measurements["original"] == "voltage"
 
 
 def test_telemetry_load_sees_the_encoder_advance(board):

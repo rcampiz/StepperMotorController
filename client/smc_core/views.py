@@ -16,6 +16,8 @@ from .codec import Response, multiline_text
 FAULT_KEYS = ("OCD", "TH_SD", "TH_WARN", "UVLO", "STALL_A", "STALL_B", "CMD_ERR")
 FAULT_ACTIONS = ("HardStop", "HardHiZ", "SoftStop")
 
+_DRIVE = re.compile(r"Drive:\s*(VOLTAGE|CURRENT)")
+_TVAL = re.compile(r"TVAL:\s*HOLD=([0-9A-Fa-f]+)\s+RUN=([0-9A-Fa-f]+)\s+ACC=([0-9A-Fa-f]+)\s+DEC=([0-9A-Fa-f]+)")
 _KVAL = re.compile(r"KVAL:\s*HOLD=([0-9A-Fa-f]+)\s*RUN=([0-9A-Fa-f]+)\s*ACC=([0-9A-Fa-f]+)"
                    r"\s*DEC=([0-9A-Fa-f]+)")
 _MOTION = re.compile(r"\bACC=(\d+)\s+DEC=(\d+)\s+MAXSPD=(\d+)")
@@ -68,6 +70,12 @@ def motor_config(resp_or_text) -> Dict[str, Any]:
     m = _KVAL.search(text)
     if m:
         out["kval"] = tuple(int(g, 16) for g in m.groups())
+    m = _DRIVE.search(text)
+    if m:
+        out["drive_mode"] = m.group(1).lower()
+    m = _TVAL.search(text)
+    if m:
+        out["tval"] = tuple(int(g, 16) for g in m.groups())
     m = _OCD.search(text)
     if m:
         out["ocd_th"] = int(m.group(1), 16)

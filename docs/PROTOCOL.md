@@ -339,6 +339,8 @@ usage error. "Handler" is the firmware function, for cross-reference.
 |---|---|---|---|---|---|
 | `DRV:REINIT` (special case in dispatcher) | 0 | — | ASCII: `OK Motor driver reinitialized and config applied` | — | `inline`  |
 | `DRV:CFG:KVAL` | 4 | DRV:CFG:KVAL <hold> <run> <acc> <dec><br>DRV:CFG:KVAL <hold> <run> <acc> <dec> (hex 00-FF) | ASCII: `OK <formatted text>` | — | `cmdMotorConfigKval` (config_handlers.cpp) |
+| `DRV:CFG:DRIVE` | 1 | DRV:CFG:DRIVE <VOLTAGE\|CURRENT> | `OK <status>` | `Drive mode must be VOLTAGE or CURRENT` | `cmdMotorConfigDrive` (config_handlers.cpp) |
+| `DRV:CFG:TVAL` | 4 | DRV:CFG:TVAL <hold> <run> <acc> <dec> (hex 00-7F, 78 mA per unit) | ASCII: `OK <formatted text>` | — | `cmdMotorConfigTval` (config_handlers.cpp) |
 | `DRV:CFG:OCD` | 1 | DRV:CFG:OCD <threshold><br>DRV:CFG:OCD <threshold> (0-31, ~375mA/step) | ASCII: `OK <formatted text>` | `OCD threshold must be 0-31` | `cmdMotorConfigOcd` (config_handlers.cpp) |
 | `DRV:CFG:STALL` | 1 | DRV:CFG:STALL <threshold><br>DRV:CFG:STALL <threshold> (0-31, ~31.25mV/step BEMF) | ASCII: `OK <formatted text>` | `Stall threshold must be 0-31` | `cmdMotorConfigStall` (config_handlers.cpp) |
 | `DRV:CFG:FAULT` | 1 | DRV:CFG:FAULT <ocd> <th_sd> <th_w> <uvlo> <sta> <stb> <cmd>\n<br>DRV:CFG:FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd><br>DRV:CFG:FAULT ACTION <0\|1\|2> | ASCII: `OK Fault enables set (not saved)`, `OK <formatted text>` | `Action must be 0=HardStop, 1=HardHiZ, 2=SoftStop` | `cmdMotorConfigFault` (config_handlers.cpp) |
@@ -352,7 +354,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `DRV:CFG:LOAD` | 0 | — | ASCII: `OK Config loaded from flash` | `No valid config in flash` | `cmdMotorConfigLoad` (config_handlers.cpp) |
 | `DRV:CFG:RESET` | 0 | — | ASCII: `OK Factory defaults restored and saved` | `Flash write failed` | `cmdMotorConfigReset` (config_handlers.cpp) |
 | `DRV:CFG:APPLY` | 0 | — | ASCII: `OK Config applied and saved to flash`, `OK <status> or `, `OK <formatted text>` | `MOTOR_BUSY: Motor must be idle to apply the config`<br>`VERIFY_FAILED: STEP_MODE readback mismatch` | `cmdMotorConfigApply` (config_handlers.cpp) |
-| `DRV:STEP_MODE?` | 0 | — | ASCII: `OK <formatted text>`; JSON `DRV:STEP_MODE?` keys: `microstep_ratio`, `microsteps_per_rev`, `step_mode` | — | `cmdDrvStepModeQuery` (driver_handlers.cpp) |
+| `DRV:STEP_MODE?` | 0 | — | ASCII: `OK <formatted text>`; JSON `DRV:STEP_MODE?` keys: `drive_mode`, `microstep_ratio`, `microsteps_per_rev`, `step_mode` | — | `cmdDrvStepModeQuery` (driver_handlers.cpp) |
 | `DRV:FULL_STEPS?` | 0 | — | ASCII: `OK <formatted text>`; JSON `DRV:FULL_STEPS?` keys: `full_steps_per_rev`, `microsteps_per_rev` | — | `cmdDrvFullStepsQuery` (driver_handlers.cpp) |
 | `DRV:ENC_PPR?` | 0 | — | ASCII: `OK <formatted text>`; JSON `DRV:ENC_PPR?` keys: `encoder_ppr` | — | `cmdDrvEncoderPPRQuery` (driver_handlers.cpp) |
 

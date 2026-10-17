@@ -82,8 +82,9 @@ void CommandParser::cmdDrvStepModeQuery() {
     char json[128];
     snprintf(
         json, sizeof(json),
-        "{\"step_mode\":%u,\"microstep_ratio\":%u,\"microsteps_per_rev\":%lu}",
-        (unsigned)mode, 1U << mode, static_cast<unsigned long>(ustepsPerRev));
+        "{\"step_mode\":%u,\"microstep_ratio\":%u,\"microsteps_per_rev\":%lu,\"drive_mode\":\"%s\"}",
+        (unsigned)mode, 1U << mode, static_cast<unsigned long>(ustepsPerRev),
+        info.driveMode ? "current" : "voltage");
     respondJsonOk("DRV:STEP_MODE?", json);
   } else {
     char buf[80];

@@ -2551,6 +2551,44 @@
       "persists": false
     },
     {
+      "name": "DRV:CFG:DRIVE",
+      "prefix": "DRV",
+      "handler": "cmdMotorConfigDrive",
+      "file": "config_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "DRV:CFG:DRIVE <VOLTAGE|CURRENT>"
+      ],
+      "ascii_ok": [],
+      "json": [],
+      "errors": [
+        "Drive mode must be VOLTAGE or CURRENT"
+      ],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false
+    },
+    {
+      "name": "DRV:CFG:TVAL",
+      "prefix": "DRV",
+      "handler": "cmdMotorConfigTval",
+      "file": "config_handlers.cpp",
+      "min_args": 4,
+      "usage": [
+        "DRV:CFG:TVAL <hold> <run> <acc> <dec> (hex 00-7F, 78 mA per unit)"
+      ],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false
+    },
+    {
       "name": "DRV:CFG:OCD",
       "prefix": "DRV",
       "handler": "cmdMotorConfigOcd",
@@ -2867,6 +2905,7 @@
         {
           "command": "DRV:STEP_MODE?",
           "keys": [
+            "drive_mode",
             "microstep_ratio",
             "microsteps_per_rev",
             "step_mode"

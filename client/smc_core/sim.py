@@ -40,6 +40,8 @@ class FakeBoard:
         self.role = "NONE"
         self.dev_id = 0
         self.step_mode = 3
+        self.drive_current = False
+        self.tval = (0x05, 0x0A, 0x0A, 0x0A)
         self.full_steps = 200
         self.enc_ppr = 1600                   # counts/rev: one count per 1/8 microstep
         self.hb_timeout_ms = 0
@@ -341,7 +343,8 @@ class FakeBoard:
         self._ok(name, "HI-Z")
 
     def _c_DRV_STEP_MODE_Q(self, name, args):
-        self._ok(name, data={"step_mode": self.step_mode, "microsteps": 1 << self.step_mode})
+        self._ok(name, data={"step_mode": self.step_mode, "microsteps": 1 << self.step_mode,
+                             "drive_mode": "current" if self.drive_current else "voltage"})
 
     def _c_DRV_FULL_STEPS_Q(self, name, args):
         self._ok(name, data={"full_steps_per_rev": self.full_steps})
@@ -352,6 +355,8 @@ class FakeBoard:
     def _c_DRV_CFG_Q(self, name, args):
         self._lines("MCONFIG", [
             "Motor Config (defaults)", "KVAL: HOLD=29 RUN=29 ACC=29 DEC=29",
+            "Drive: %s" % ("CURRENT" if self.drive_current else "VOLTAGE"),
+            "TVAL: HOLD=%02X RUN=%02X ACC=%02X DEC=%02X" % self.tval,
             "OCD_TH=08 STALL_TH=10", "ACC=500 DEC=500 MAXSPD=800 MINSPD=0 FS_SPD=1023",
             "Faults: OCD=1 TH_SD=1 TH_W=1 UVLO=1 STALL_A=0 STALL_B=0 CMD=1",
             "Action: HardHiZ", "StepMode: %d (1/%d)" % (self.step_mode, 1 << self.step_mode)])
@@ -391,6 +396,14 @@ class FakeBoard:
 
     def _c_UI_DISP_BITMAP(self, name, args):
         self._start_binary(name, int(args[2]) * int(args[3]) * 2, "CRC" in args[4:])
+
+    def _c_DRV_CFG_DRIVE(self, name, args):
+        self.drive_current = args[0].upper() in ("CURRENT", "1")
+        self._ok(name, "Drive mode %s set" % ("CURRENT" if self.drive_current else "VOLTAGE"))
+
+    def _c_DRV_CFG_TVAL(self, name, args):
+        self.tval = tuple(int(a, 16) & 0x7F for a in args[:4])
+        self._ok(name, "TVAL set")
 
     def _c_DRV_CFG_STEPMODE(self, name, args):
         self.step_mode = int(args[0]) & 7

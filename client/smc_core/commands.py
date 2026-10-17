@@ -569,6 +569,19 @@ def cfg_kval(hold: int, run: int, acc: int, dec: int) -> Request:
             raise CommandError("KVAL values are 0x00..0xFF")
     return request("DRV:CFG:KVAL", *("%02X" % int(v) for v in (hold, run, acc, dec)))
 
+@builds("DRV:CFG:DRIVE")
+def cfg_drive_mode(current: bool) -> Request:
+    """powerSTEP01 drive mode: current mode (TVAL references) or voltage mode (KVAL duty).
+    Takes effect on DRV:CFG:APPLY with the motor idle (STEP_MODE's CM_VM bit needs Hi-Z)."""
+    return request("DRV:CFG:DRIVE", "CURRENT" if current else "VOLTAGE")
+
+@builds("DRV:CFG:TVAL")
+def cfg_tval(hold: int, run: int, acc: int, dec: int) -> Request:
+    for v in (hold, run, acc, dec):
+        if not 0 <= int(v) <= 0x7F:
+            raise CommandError("TVAL values are 0x00..0x7F (78 mA per unit)")
+    return request("DRV:CFG:TVAL", *("%02X" % int(v) for v in (hold, run, acc, dec)))
+
 @builds("DRV:CFG:OCD")
 def cfg_ocd(threshold: int) -> Request:
     if not 0 <= int(threshold) <= 31:

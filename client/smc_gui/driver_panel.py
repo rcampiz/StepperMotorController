@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QSlider,
     QTabWidget,
+    QComboBox,
 )
 from PySide6.QtCore import Qt, Slot, Signal
 
@@ -60,6 +61,7 @@ class DriverPanel(QWidget):
 
     refresh_requested = Signal()
     kval_apply_requested = Signal(object)     # Request
+    drive_apply_requested = Signal(list)      # [DRV:CFG:DRIVE, DRV:CFG:TVAL, DRV:CFG:APPLY]
     param_apply_requested = Signal(list)      # [Request]
     maxspd_changed = Signal(int)
 
@@ -191,6 +193,48 @@ class DriverPanel(QWidget):
         top_row.addLayout(btn_layout)
 
         main_layout.addLayout(top_row)
+
+        # Drive mode (powerSTEP01 CM_VM) + current-mode references. Current mode regulates the
+        # coil current directly (smoother torque at speed); the KVAL faders above apply in
+        # voltage mode, the TVAL faders here in current mode. Takes effect on Apply (motor idle).
+        mode_row = QHBoxLayout()
+        mode_lbl = QLabel("Drive mode:")
+        mode_lbl.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        mode_row.addWidget(mode_lbl)
+        self._drive_mode_combo = QComboBox()
+        self._drive_mode_combo.addItems(["Voltage (KVAL, % of supply)", "Current (TVAL, amps)"])
+        self._drive_mode_combo.setToolTip(
+            "Voltage mode drives the coils with a duty cycle (KVAL); current mode regulates the coil "
+            "current to the TVAL references (powerSTEP01 CM_VM bit, written in Hi-Z on Apply).")
+        mode_row.addWidget(self._drive_mode_combo)
+        mode_row.addStretch()
+        main_layout.addLayout(mode_row)
+
+        tval_row = QHBoxLayout()
+        tfaders = QHBoxLayout()
+        tfaders.setSpacing(16)
+        self._tval_sliders = []
+        for name, desc in (("HOLD", "Holding\ncurrent"), ("RUN", "Running\ncurrent"),
+                           ("ACC", "Accel\ncurrent"), ("DEC", "Decel\ncurrent")):
+            ch, slider, spin = self._create_fader_channel(name, desc, 0, 99, " x0.1 A", 10,
+                                                          FADER_STYLE_GREEN)
+            tfaders.addLayout(ch)
+            self._tval_sliders.append(slider)
+        tval_row.addLayout(tfaders)
+        tbtn = QVBoxLayout()
+        tbtn.addStretch()
+        self._apply_drive_btn = QPushButton("Apply mode + TVAL")
+        self._apply_drive_btn.setToolTip(
+            "DRV:CFG:DRIVE, DRV:CFG:TVAL, DRV:CFG:APPLY (needs the motor idle)")
+        self._apply_drive_btn.clicked.connect(self._on_apply_drive)
+        tbtn.addWidget(self._apply_drive_btn)
+        tnote = QLabel("TVAL in 0.1 A steps (78 mA per unit, 0.1 ohm sense);\n"
+                       "defaults 0.4 A hold, 0.8 A run/acc/dec")
+        tnote.setStyleSheet("font-size: 8px; color: #888;")
+        tbtn.addWidget(tnote)
+        tbtn.addStretch()
+        tval_row.addLayout(tbtn)
+        main_layout.addLayout(tval_row)
 
         # Tabbed graph area
         graph_tabs = QTabWidget()
@@ -653,6 +697,24 @@ class DriverPanel(QWidget):
             U.kval_from_percent(self._kval_dec_slider.value())))
 
     @Slot()
+    def _on_apply_drive(self):
+        current = self._drive_mode_combo.currentIndex() == 1
+        amps = [sl.value() / 10.0 for sl in self._tval_sliders]
+        self.drive_apply_requested.emit([
+            C.cfg_drive_mode(current),
+            C.cfg_tval(*(U.tval_from_amps(a) for a in amps)),
+            C.cfg_apply(),
+        ])
+
+    def update_motor_config(self, cfg: dict):
+        """DRV:CFG? view: drive mode and TVAL references (the saved config, not the chip)."""
+        if "drive_mode" in cfg:
+            self._drive_mode_combo.setCurrentIndex(1 if cfg["drive_mode"] == "current" else 0)
+        if "tval" in cfg:
+            for slider, raw in zip(self._tval_sliders, cfg["tval"]):
+                slider.setValue(round(U.tval_to_amps(raw) * 10))
+
+    @Slot()
     def _on_apply_params(self):
         self.param_apply_requested.emit([
             C.cfg_motion(U.acc_raw_from_sps2(self._acc_spin.value()),
@@ -666,8 +728,9 @@ class DriverPanel(QWidget):
         self.refresh_requested.emit()
 
     def update_driver_params(self, dbg: dict):
-        """Update from the DBG:MOTOR view (smc_core.views.motor_debug)."""
-        if "kval" in dbg:
+        """Update from the DBG:MOTOR view (smc_core.views.motor_debug). In current mode the
+        KVAL registers hold the TVAL references, so they must not overwrite the KVAL faders."""
+        if "kval" in dbg and self._drive_mode_combo.currentIndex() == 0:
             h, r, a, d = dbg["kval"]
             self._kval_hold_slider.setValue(U.kval_to_percent(h))
             self._kval_run_slider.setValue(U.kval_to_percent(r))

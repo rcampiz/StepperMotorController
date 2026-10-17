@@ -32,6 +32,9 @@ public:
 
     // DRV register setters
     virtual void configSetKval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec) = 0;
+    /// 0 = voltage mode (KVAL duty), 1 = current mode (TVAL references); applied through the Hi-Z path
+    virtual void configSetDriveMode(uint8_t mode) = 0;
+    virtual void configSetTval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec) = 0;
     virtual void configSetOcdThreshold(uint8_t thresh) = 0;
     virtual void configSetStallThreshold(uint8_t thresh) = 0;
     virtual void configSetFaultAction(uint8_t action) = 0;
@@ -46,6 +49,8 @@ public:
     // Config snapshot (L2 owns formatting)
     struct MotorConfigSnapshot {
         uint8_t kvalHold, kvalRun, kvalAcc, kvalDec;
+        uint8_t driveMode;
+        uint8_t tvalHold, tvalRun, tvalAcc, tvalDec;
         uint8_t ocdThreshold, stallThreshold;
         uint16_t acceleration, deceleration, maxSpeed, minSpeed, fsSpeed;
         bool faultOcd, faultThermalSD, faultThermalWarn, faultUvlo;

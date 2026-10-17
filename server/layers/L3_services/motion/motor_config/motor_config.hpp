@@ -26,7 +26,7 @@ namespace Services {
 // Flash storage constants - use last 4KB of Sector 7 (128KB sector at 0x08060000)
 // We'll use address 0x0807F000 (last 4KB before end of 512KB flash)
 constexpr uint32_t MOTOR_CONFIG_MAGIC = 0x4D4F5452;  // "MOTR"
-constexpr uint16_t MOTOR_CONFIG_VERSION = 2;
+constexpr uint16_t MOTOR_CONFIG_VERSION = 3;   // V3: driveMode + TVAL (current mode)
 
 /**
  * @brief Fault enable flags
@@ -50,7 +50,8 @@ struct FaultEnableFlags {
 struct MotorConfig {
     uint32_t magic;         // 0x4D4F5452 - validity marker
     uint16_t version;       // Config format version
-    uint16_t reserved1;
+    uint8_t  driveMode;     // V3: 0 = voltage mode (KVAL), 1 = current mode (TVAL); STEP_MODE bit CM_VM
+    uint8_t  tvalHold;      // V3: TVAL_HOLD (0-127, 7.8 mV/LSB on the sense: 78 mA/LSB with 0.1 ohm), 0 = default
 
     // KVAL values (0-255, PWM duty cycle percentage * 2.56)
     uint8_t kvalHold;       // Holding current
@@ -72,7 +73,8 @@ struct MotorConfig {
 
     // Full-step speed threshold (for stall detection cutoff)
     uint16_t fsSpeed;       // FS_SPD register (0x3FF = disabled)
-    uint16_t reserved3;
+    uint8_t  tvalRun;       // V3: TVAL_RUN, 0 = default
+    uint8_t  tvalAcc;       // V3: TVAL_ACC, 0 = default
 
     // Fault enables
     FaultEnableFlags faultEnable;
@@ -106,7 +108,7 @@ struct MotorConfig {
     uint16_t followHoldTimeMs;  // T_HOLD: debounce for hold error (ms), 0=200
     int16_t  followHardLimit;   // E_HARD: immediate fault threshold (ticks), 0=500
     uint8_t  followMaxRetries;  // N_RETRY: max Tier 2 recovery attempts, 0=3
-    uint8_t  followReserved;    // padding
+    uint8_t  tvalDec;           // V3: TVAL_DEC, 0 = default
 
     uint32_t crc32;         // Data integrity check
 };
@@ -164,6 +166,17 @@ public:
     uint8_t getKvalRun() const { return m_config.kvalRun; }
     uint8_t getKvalAcc() const { return m_config.kvalAcc; }
     uint8_t getKvalDec() const { return m_config.kvalDec; }
+
+    // Current mode (powerSTEP01 CM_VM): the KVAL registers become TVAL current references.
+    // Conservative defaults for an unknown motor: hold 0.39 A, run/acc/dec 0.78 A (78 mA/LSB).
+    static constexpr uint8_t TVAL_DEFAULT_HOLD = 0x05;
+    static constexpr uint8_t TVAL_DEFAULT_RUN  = 0x0A;
+    bool    isCurrentMode() const { return m_config.driveMode != 0; }
+    uint8_t getDriveMode() const { return m_config.driveMode ? 1 : 0; }
+    uint8_t getTvalHold() const { return m_config.tvalHold ? m_config.tvalHold : TVAL_DEFAULT_HOLD; }
+    uint8_t getTvalRun()  const { return m_config.tvalRun  ? m_config.tvalRun  : TVAL_DEFAULT_RUN; }
+    uint8_t getTvalAcc()  const { return m_config.tvalAcc  ? m_config.tvalAcc  : TVAL_DEFAULT_RUN; }
+    uint8_t getTvalDec()  const { return m_config.tvalDec  ? m_config.tvalDec  : TVAL_DEFAULT_RUN; }
     uint8_t getOcdThreshold() const { return m_config.ocdThreshold; }
     uint8_t getStallThreshold() const { return m_config.stallThreshold; }
     uint16_t getAcceleration() const { return m_config.acceleration; }
@@ -211,6 +224,8 @@ public:
 
     // Setters (modify RAM, call saveToFlash() to persist)
     void setKval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec);
+    void setDriveMode(uint8_t mode);                                   ///< 0 voltage, 1 current
+    void setTval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec); ///< each clamped to 0x7F
     void setOcdThreshold(uint8_t threshold);
     void setStallThreshold(uint8_t threshold);
     void setMotionParams(uint16_t acc, uint16_t dec, uint16_t maxSpd);

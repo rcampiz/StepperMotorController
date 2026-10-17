@@ -173,6 +173,53 @@ def step_mode_chip(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
                   f"DRV:STEP_MODE?={q.data.get('step_mode') if q.success else q.error_message}")
 
 
+@scenario("drive_mode_chip", "Switch the powerSTEP01 between voltage mode (KVAL) and current "
+                            "mode (TVAL) through DRV:CFG:DRIVE + APPLY and require the chip's "
+                            "CM_VM bit (DRV:STEP_MODE? drive_mode) to follow, in Hi-Z and with "
+                            "the output enabled. Restores the original mode.",
+          params={}, moves_motor=True)
+def drive_mode_chip(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
+    def chip() -> str:
+        q = ctx.call(C.step_mode_query())
+        return str(q.data.get("drive_mode", "?")) if q.success else "?"
+
+    def apply(current: bool) -> str:
+        ctx.call(C.cfg_drive_mode(current))
+        a = ctx.call(C.cfg_apply())
+        ctx.check(f"APPLY {'CURRENT' if current else 'VOLTAGE'} accepted", a.success,
+                  a.error_message or "")
+        return chip()
+
+    original = chip()
+    ctx.require("chip reports its drive mode", original in ("voltage", "current"), original)
+    ctx.measure("original", original)
+    other = "current" if original == "voltage" else "voltage"
+    step_before = _chip_geometry(ctx)["step_mode"]
+
+    ctx.call(C.fault_clear())
+    try:
+        ctx.require("disable (Hi-Z)", ctx.call(C.mot_disable()).success)
+        got = apply(other == "current")
+        ctx.check(f"chip in {other} mode after APPLY in Hi-Z", got == other, f"drive_mode={got}")
+        got = apply(original == "current")
+        ctx.check(f"chip back in {original} mode in Hi-Z", got == original, f"drive_mode={got}")
+
+        ctx.require("enable", ctx.call(C.mot_enable()).success)
+        ctx.sleep(0.2)
+        got = apply(other == "current")
+        ctx.check(f"chip in {other} mode after APPLY with the output enabled", got == other,
+                  f"drive_mode={got}")
+        step_after = _chip_geometry(ctx)["step_mode"]
+        ctx.check("step mode untouched by the drive-mode change", step_after == step_before,
+                  f"{step_before} -> {step_after}")
+    finally:
+        ctx.call(C.mot_disable())
+        ctx.call(C.cfg_drive_mode(original == "current"))
+        ctx.call(C.cfg_apply())
+        got = chip()
+        ctx.check("original drive mode restored", got == original, f"drive_mode={got}")
+
+
 @scenario("telemetry_load", "With telemetry pushed every period_ms, run a move and require the "
                             "encoder snapshot to keep advancing between samples (a starved "
                             "Encoder task freezes it). Restores the board's telemetry period.",

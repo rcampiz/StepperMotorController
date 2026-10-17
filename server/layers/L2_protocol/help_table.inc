@@ -98,6 +98,8 @@
 "DBG:TRACE:RESET",
 "DRV:REINIT",
 "DRV:CFG:KVAL <hold> <run> <acc> <dec> (hex 00-FF)",
+"DRV:CFG:DRIVE <VOLTAGE|CURRENT>",
+"DRV:CFG:TVAL <hold> <run> <acc> <dec> (hex 00-7F, 78 mA per unit)",
 "DRV:CFG:OCD <threshold> (0-31, ~375mA/step)",
 "DRV:CFG:STALL <threshold> (0-31, ~31.25mV/step BEMF)",
 "DRV:CFG:FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd>",

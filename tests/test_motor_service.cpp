@@ -194,6 +194,37 @@ TEST(apply_config_is_a_motor_task_job_that_writes_step_mode_in_hiz_or_via_the_sa
     Services::motion.stepper.config.setStepMode(original);
 }
 
+TEST(current_mode_writes_tval_and_the_cm_vm_bit_through_the_hiz_path) {
+    Rig r;
+    bool ok = false;
+    auto& cfg = Services::motion.stepper.config;
+    const uint8_t origMode = cfg.getDriveMode();
+    const uint8_t origStep = cfg.getStepMode();
+    cfg.setStepMode(5);
+    cfg.setDriveMode(1);
+    cfg.setTval(0x05, 0x11, 0x12, 0x13);
+    r.drv.hiZ = true;
+    r.drv.params[Drivers::MotorReg::STEP_MODE] = 0x05;
+    r.svc.applyConfig();
+    r.motorTaskPass();
+    EXPECT_TRUE(r.svc.lastJobResult(ok));
+    EXPECT_TRUE(ok);
+    EXPECT_EQ(r.drv.params[Drivers::MotorReg::KVAL_RUN], 0x11u);              // TVAL_RUN shares the address
+    EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0x0Fu, 0x0Du);     // 1/32 + CM_VM
+
+    // Back to voltage mode with the bridges on: the Hi-Z path clears CM_VM and KVAL returns
+    cfg.setDriveMode(0);
+    r.drv.hiZ = false;
+    r.svc.applyConfig();
+    r.motorTaskPass();
+    EXPECT_TRUE(r.svc.lastJobResult(ok));
+    EXPECT_TRUE(ok);
+    EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0x0Fu, 0x05u);
+    EXPECT_EQ(r.drv.params[Drivers::MotorReg::KVAL_RUN], cfg.getKvalRun());
+    cfg.setDriveMode(origMode);
+    cfg.setStepMode(origStep);
+}
+
 TEST(reinit_and_debug_info_run_on_the_motor_task) {
     Rig r;
     bool ok = false;

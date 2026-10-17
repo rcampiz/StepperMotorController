@@ -83,6 +83,14 @@ void ServiceDispatcher::configSetKval(uint8_t hold, uint8_t run, uint8_t acc, ui
     m_config->configSetKval(hold, run, acc, dec);
 }
 
+void ServiceDispatcher::configSetDriveMode(uint8_t mode) {
+    m_config->configSetDriveMode(mode);
+}
+
+void ServiceDispatcher::configSetTval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec) {
+    m_config->configSetTval(hold, run, acc, dec);
+}
+
 void ServiceDispatcher::configSetOcdThreshold(uint8_t thresh) {
     m_config->configSetOcdThreshold(thresh);
 }

@@ -413,8 +413,8 @@ TEST(ascii_multiline_replies_end_with_ok_and_the_line_count) {
     EXPECT_EQ(lineCount(ver), 6u);
     EXPECT_TRUE(endsWith(ver, "OK 5\r\n"));
     std::string cfg = r.run("DRV:CFG?");
-    EXPECT_EQ(lineCount(cfg), 8u);
-    EXPECT_TRUE(endsWith(cfg, "OK 7\r\n"));
+    EXPECT_EQ(lineCount(cfg), 10u);                    // Drive + TVAL lines joined in V3
+    EXPECT_TRUE(endsWith(cfg, "OK 9\r\n"));
     std::string tr = r.run("DBG:TRACE:DUMP");
     EXPECT_STREQ(tr.c_str(), "TRACE: 0 entries\r\nOK 1\r\n");
 }

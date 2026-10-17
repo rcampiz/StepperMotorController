@@ -253,6 +253,7 @@ class MainWindow(QMainWindow):
         # Driver panel refresh and parameter apply
         self._driver_panel.refresh_requested.connect(self._on_refresh_params)
         self._driver_panel.kval_apply_requested.connect(self._on_kval_apply)
+        self._driver_panel.drive_apply_requested.connect(self._on_param_apply)
         self._driver_panel.param_apply_requested.connect(self._on_param_apply)
         self._driver_panel.maxspd_changed.connect(self._motor_panel.set_max_speed)
         self._driver_panel.maxspd_changed.connect(self._telemetry_panel.set_max_speed)
@@ -748,6 +749,7 @@ class MainWindow(QMainWindow):
             self._protection_panel.update_protection_params(cfg)
             self._stepmode_panel.update_step_mode(cfg)
             self._motion_panel.update_mconfig(cfg)
+            self._driver_panel.update_motor_config(cfg)
 
         elif tag == "SET_FORMAT":
             self._status_bar.showMessage("Format set", 2000)

@@ -165,6 +165,22 @@ revolution).
 **I. GUI step-mode tab** (37a414a). After apply the tab reads `DRV:STEP_MODE?` (the
 chip) instead of trusting the saved config, and flags a config/chip mismatch in red.
 
+**J. Current mode vs voltage mode** (firmware + GUI). The powerSTEP01 can regulate coil
+current (CM_VM bit of STEP_MODE, writable only in Hi-Z) instead of driving a KVAL duty.
+Config blob V3 stores `driveMode` and four TVAL references in the bytes that were reserved
+(V2 blobs migrate: voltage mode, 0.4 A hold / 0.8 A run); `applyConfig()` writes TVAL or
+KVAL into the shared 0x09-0x0C registers and carries the CM_VM bit through the same Hi-Z
+path as the microstep bits, so a step-mode change never flips the mode. New commands
+`DRV:CFG:DRIVE VOLTAGE|CURRENT` and `DRV:CFG:TVAL <h> <r> <a> <d>` (hex, 78 mA per unit
+over the shield's 0.1 ohm sense); `DRV:CFG?` gained `Drive:` and `TVAL:` lines and
+`DRV:STEP_MODE?` reports `drive_mode` from the chip. GUI driver tab: a drive-mode combo and
+four TVAL faders in amps next to the KVAL faders. Scenario `drive_mode_chip` toggles the
+chip in Hi-Z and with the output enabled (passes on the board and the virtual Nucleo).
+Bench at 200 steps/s (1/128): voltage 3970 counts/s (std 15.2), current with the default
+0.8 A run 3969 counts/s (std 15.6): same speed, same ripple. Draw: the STEP_MODE register
+bit map (SYNC[7:4], CM_VM[3], STEP_SEL[2:0]) and which config bytes feed which register
+in each mode.
+
 ### 3.3 Tooling and docs
 
 **J. Fresh-clone bring-up** (8ceaddc). `scripts/setup/bringup.ps1` (Windows, winget)
