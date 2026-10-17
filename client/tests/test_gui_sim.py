@@ -93,6 +93,18 @@ def test_panels_render_core_views(gui):
     assert pump(app, lambda: w._stepmode_panel._mode_combo.currentIndex() == 3)
 
 
+def test_step_mode_apply_reads_the_chip_back(gui):
+    app, w, fake = gui
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    w._stepmode_panel._mode_combo.setCurrentIndex(7)
+    w._stepmode_panel._on_apply()
+    assert pump(app, lambda: fake.step_mode == 7 and "DRV:CFG:APPLY" in fake.received)
+    label = w._stepmode_panel._current_label
+    assert pump(app, lambda: "reg=7" in label.text() and "config says" not in label.text())
+    after_apply = fake.received.index("DRV:CFG:APPLY")
+    assert "DRV:STEP_MODE?" in fake.received[after_apply:]       # the chip is read back, not the config
+
+
 def test_protection_apply_sends_typed_requests_in_order(gui):
     app, w, fake = gui
     assert pump(app, lambda: w._board is not None and w._board.session_ready)

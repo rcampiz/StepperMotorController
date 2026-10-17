@@ -552,8 +552,8 @@ class MainWindow(QMainWindow):
 
     @Slot(object)
     def _on_stepmode_apply(self, req: C.Request):
-        """DRV:CFG:STEPMODE + DRV:CFG:APPLY."""
-        self._call_all([req, C.cfg_apply()], "APPLY_PARAMS")
+        """DRV:CFG:STEPMODE + DRV:CFG:APPLY, then the chip is read back (APPLY_STEPMODE)."""
+        self._call_all([req, C.cfg_apply()], "GENERIC", last_tag="APPLY_STEPMODE")
 
     @Slot(object)
     def _on_enc_filter_scpi(self, req: C.Request):
@@ -715,6 +715,12 @@ class MainWindow(QMainWindow):
             # Mode change failure — revert combo
             if tag == "SET_CTRL_MODE":
                 self._motion_panel.update_mode_response(False, {})
+            # Step mode refused (MOTOR_BUSY) or not verified: show what the chip runs
+            if tag == "APPLY_STEPMODE":
+                self._status_bar.showMessage(
+                    f"Step mode not applied: {response.error_code or ''} "
+                    f"{response.error_message}", 8000)
+                self._call(C.step_mode_query(), "REFRESH_DRV_CONFIG")
             # Flash operation failures
             if tag in ("FLASH_UPLOAD_SLOT",
                        "FLASH_SHOW",
@@ -752,6 +758,13 @@ class MainWindow(QMainWindow):
 
         elif tag == "APPLY_PARAMS":
             self._status_bar.showMessage("Parameters applied", 2000)
+            self._queue_refresh()
+
+        elif tag == "APPLY_STEPMODE":
+            self._status_bar.showMessage(
+                f"Step mode applied: {response.data.get('message', '')}", 4000)
+            self._stepmode_panel._dirty = False
+            self._call(C.step_mode_query(), "REFRESH_DRV_CONFIG")   # the chip, not the config
             self._queue_refresh()
 
         elif tag == "APPLY_PROTECTION":
@@ -810,6 +823,7 @@ class MainWindow(QMainWindow):
             if response.data:
                 self._motion_panel.update_drv_config(response.data)
                 self._motor_panel.update_drv_config(response.data)
+                self._stepmode_panel.update_chip_step_mode(response.data)
                 self._graph_panel.update_drv_config(response.data)
                 self._driver_panel.update_drv_config(response.data)
                 self._telemetry_panel.update_drv_config(response.data)

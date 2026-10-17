@@ -42,6 +42,8 @@ class StepModePanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._dirty = False
+        self._config_mode = None   # DRV:CFG? (flash config)
+        self._chip_mode = None     # DRV:STEP_MODE? (what the powerSTEP01 really runs)
         self._setup_ui()
         self._connect_dirty_tracking()
 
@@ -146,15 +148,39 @@ class StepModePanel(QWidget):
         if "step_mode" not in cfg:
             return
         reg_val = cfg["step_mode"]
-        denom = cfg.get("microsteps", 1 << reg_val)
+        self._config_mode = reg_val
 
         self._mode_combo.blockSignals(True)
         try:
             if 0 <= reg_val <= 7:
                 self._mode_combo.setCurrentIndex(reg_val)
-            self._current_label.setText(f"1/{denom} microstep (reg={reg_val})")
+            self._render_current()
         finally:
             self._mode_combo.blockSignals(False)
+
+    def update_chip_step_mode(self, data: dict):
+        """DRV:STEP_MODE? reply: the mode read back from the chip. Shown as the current
+        value, with a warning when the saved config disagrees (the chip accepts STEP_MODE
+        only with the output disabled)."""
+        if "step_mode" not in data:
+            return
+        self._chip_mode = int(data["step_mode"])
+        self._render_current()
+
+    def _render_current(self):
+        chip, cfg = self._chip_mode, self._config_mode
+        if chip is None and cfg is None:
+            return
+        shown = chip if chip is not None else cfg
+        text = f"1/{1 << shown} microstep (reg={shown})"
+        if chip is None:
+            text += "  [config]"
+        if chip is not None and cfg is not None and chip != cfg:
+            text += f"  -- config says 1/{1 << cfg}: apply again with the motor idle"
+            self._current_label.setStyleSheet("color: #ff4040;")
+        else:
+            self._current_label.setStyleSheet("color: #ff9900;")
+        self._current_label.setText(text)
 
     @Slot()
     def clear(self):
