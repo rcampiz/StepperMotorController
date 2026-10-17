@@ -84,6 +84,9 @@ public:
    */
   virtual bool setBaudRate(uint32_t baudRate) { (void)baudRate; return false; }
 
+  /// Current line rate in bit/s; 0 when the link has no baud rate (TCP, RTT, memory).
+  virtual uint32_t baudRate() const { return 0; }
+
   /// RX bytes dropped by the byte channel since init (0 if the channel cannot tell).
   virtual uint32_t rxOverflowCount() const { return 0; }
 };

@@ -819,6 +819,7 @@
           "keys": [
             "accepted",
             "enabled",
+            "min_ms",
             "requested"
           ]
         }

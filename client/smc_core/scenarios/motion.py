@@ -186,7 +186,10 @@ def telemetry_load(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     ctx.call(C.fault_clear())
     ctx.require("enable", ctx.call(C.mot_enable()).success)
     try:
-        ctx.require(f"SYST:TLM:RATE {period}", ctx.call(C.telemetry_rate(period)).success)
+        rate = ctx.call(C.telemetry_rate(period))
+        ctx.require(f"SYST:TLM:RATE {period}", rate.success, rate.error_message or "")
+        ctx.measure("accepted_ms", rate.data.get("accepted"))     # the firmware floors it to
+        ctx.measure("min_ms", rate.data.get("min_ms"))            # what the link can carry
         ctx.sleep(0.3)
         d = _move_and_measure(ctx, usteps, 1, speed, _move_timeout(usteps, speed, geom),
                               sample=lambda st: counts.append(int(st["encoder"]["count"])))

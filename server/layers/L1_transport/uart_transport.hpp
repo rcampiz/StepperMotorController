@@ -37,6 +37,7 @@ public:
     size_t println(const char* str) override;
     void flush() override;
     bool setBaudRate(uint32_t baudRate) override;
+    uint32_t baudRate() const override { return m_channel.baudRate(); }
     uint32_t rxOverflowCount() const override { return m_channel.rxOverflowCount(); }
 
 private:

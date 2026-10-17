@@ -61,6 +61,9 @@ public:
      */
     virtual bool setBaudRate(uint32_t baudRate) { (void)baudRate; return false; }
 
+    /// Current line rate in bit/s, 0 when the channel is not a serial line.
+    virtual uint32_t baudRate() const { return 0; }
+
     /// Bytes dropped because the RX ring was full, since init (monotonic). F1.1: the
     /// parser discards any line during which this changed.
     virtual uint32_t rxOverflowCount() const { return 0; }

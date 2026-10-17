@@ -8,6 +8,7 @@
 #include "L2_protocol/command_parser.hpp"
 #include "L2_protocol/command_parser_internal.hpp"
 #include "L2_protocol/service_dispatcher.hpp"
+#include "L2_protocol/status_json.hpp"
 #include "harness/pins/async_event.hpp"
 #include <string>
 
@@ -32,6 +33,8 @@ struct FakeTransport : Transport::ITransport {
     void flush() override {}
     uint32_t overflows = 0;
     uint32_t rxOverflowCount() const override { return overflows; }
+    uint32_t baud = 0;                                   // 0: no line rate, no telemetry floor
+    uint32_t baudRate() const override { return baud; }
 };
 
 struct Rig {
@@ -302,6 +305,22 @@ TEST(ping_round_trips_the_sequence_number) {
     std::string out = r.run("DIAG:PING 5");
     EXPECT_TRUE(out.find("\"command\":\"PING\"") != std::string::npos);
     EXPECT_TRUE(out.find("\"seq\":5") != std::string::npos);
+}
+
+// --- Telemetry period floor from the line rate (bench 2026-10-17: 50 ms starved the encoder)
+TEST(telemetry_rate_is_floored_so_one_status_line_uses_at_most_80_percent_of_the_link) {
+    static_assert(Protocol::telemetryPeriodFloorMs(115200) == 139, "1280 B x 10 bit / 115200 / 0.8");
+    static_assert(Protocol::telemetryPeriodFloorMs(921600) == 18, "below TELEMETRY_PERIOD_MIN_MS");
+    static_assert(Protocol::telemetryPeriodFloorMs(0) == 0, "no baud rate: no floor");
+    BoundRig r;
+    r.run("FMT JSON");
+    r.transport.baud = 115200;
+    std::string out = r.run("SYST:TLM:RATE 50");
+    EXPECT_TRUE(out.find("\"requested\":50") != std::string::npos);
+    EXPECT_TRUE(out.find("\"min_ms\":139") != std::string::npos);
+    r.transport.baud = 0;
+    out = r.run("SYST:TLM:RATE 50");
+    EXPECT_TRUE(out.find("\"min_ms\":0") != std::string::npos);
 }
 
 // --- F9: host-settable telemetry push with the DIAG:STAT? schema ---------------------

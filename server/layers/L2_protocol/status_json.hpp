@@ -16,6 +16,16 @@ namespace Protocol {
 /// Buffer the handler uses; the host test proves the worst case fits with margin.
 constexpr size_t STATUS_JSON_BUF = 1280;
 
+/// Smallest telemetry period the link can carry: one worst-case status line (STATUS_JSON_BUF
+/// bytes, 10 bits each) may take at most 80 % of the period. The Comms task transmits by
+/// busy-waiting and outranks the Encoder task, so a period below this starves the encoder
+/// snapshot (bench 2026-10-17: at 50 ms / 115200 baud the count froze for a whole move).
+/// 139 ms at 115200, 18 ms at 921600; 0 (no floor) when the link has no baud rate.
+constexpr uint32_t telemetryPeriodFloorMs(uint32_t baud) {
+    return baud == 0 ? 0
+         : (static_cast<uint32_t>(STATUS_JSON_BUF) * 10U * 1000U * 5U + baud * 4U - 1U) / (baud * 4U);
+}
+
 struct StatusJsonView {
     const char* stateStr = "";
     uint32_t    tick = 0;

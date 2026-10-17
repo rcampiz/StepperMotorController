@@ -306,7 +306,7 @@ receive-ring overflow), `DBG_LOCKED` (bring-up command before `DBG:UNLOCK`), `MO
 | Line | When | ASCII | JSON |
 |---|---|---|---|
 | Event | motor fault/stall edges, motion done, following supervisor | `!<TYPE> status=0x<hex4> [detail=<text>]` | `{{"kind":"event","type":"<TYPE>","seq":<n>,"ts_ms":<n>,"data":{{"status":<n>[,"detail":"<text>"]}}}}` |
-| Telemetry push | every `SYST:TLM:RATE <ms>` ms ({tlm_min}..{tlm_max}, 0 = off; off at boot; the ack returns the clamped value) | `TELEM: pos=<i> spd=<u> enc=<i> vel=<i>` | `{{"kind":"telemetry","data":{{...}}}}` where `data` is byte-for-byte the `DIAG:STAT?` `data` object (section 8), so a client receiving pushes never polls |
+| Telemetry push | every `SYST:TLM:RATE <ms>` ms ({tlm_min}..{tlm_max}, 0 = off; off at boot; the ack returns the clamped value and `min_ms`, the floor at the current baud rate: one worst-case status line may use at most 80 % of the link, 139 ms at 115200, so the Encoder task is never starved by the push) | `TELEM: pos=<i> spd=<u> enc=<i> vel=<i>` | `{{"kind":"telemetry","data":{{...}}}}` where `data` is byte-for-byte the `DIAG:STAT?` `data` object (section 8), so a client receiving pushes never polls |
 | Joystick | board joystick in LOCAL UI mode | `EVENT JOY <LEFT\\|RIGHT\\|UP\\|DOWN\\|CENTER> pressed\\|released` | same |
 | Banner | power-up and Comms start | 5 lines starting with a blank line and `====` | same |
 

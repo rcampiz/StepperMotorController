@@ -224,13 +224,17 @@ void CommandParser::cmdTelemetryRate(const ParsedCommand &cmd) {
     return;
   }
   auto requested = static_cast<uint32_t>(atol(cmd.args[0]));
-  uint32_t accepted = m_dispatcher.setTelemetryPeriod(requested);
+  // Floor from the line rate: a push may not use more than 80 % of the link (status_json.hpp)
+  const uint32_t floorMs = telemetryPeriodFloorMs(m_transport.baudRate());
+  const uint32_t wanted = (requested > 0 && requested < floorMs) ? floorMs : requested;
+  uint32_t accepted = m_dispatcher.setTelemetryPeriod(wanted);
   if (m_format == ResponseFormat::JSON) {
-    char buf[96];
+    char buf[112];
     snprintf(buf, sizeof(buf),
-             "{\"requested\":%lu,\"accepted\":%lu,\"enabled\":%s}",
+             "{\"requested\":%lu,\"accepted\":%lu,\"min_ms\":%lu,\"enabled\":%s}",
              static_cast<unsigned long>(requested),
              static_cast<unsigned long>(accepted),
+             static_cast<unsigned long>(floorMs),
              (accepted > 0) ? "true" : "false");
     respondJsonOk("TLM_RATE", buf);
   } else {

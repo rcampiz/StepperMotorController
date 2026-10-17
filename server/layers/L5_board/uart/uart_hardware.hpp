@@ -127,6 +127,8 @@ public:
         while ((m_usart->SR & USART_SR_TC) == 0) {}
     }
 
+    uint32_t baudRate() const override { return m_baudRate; }
+
     bool setBaudRate(uint32_t baudRate) override {
         // Disable USART
         m_usart->CR1 &= ~USART_CR1_UE;
