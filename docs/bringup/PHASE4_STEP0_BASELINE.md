@@ -58,11 +58,16 @@ reset or hung MCU, whose PA9 returns to a floating input, lets the chip fall int
 the bridges turn off: fail-safe. If the shield adds a pull-up to 3V3/VDD, the opposite holds
 and a dead MCU leaves the bridges enabled.
 
-The board-level answer could not be verified from here: the UM1857 PDF on st.com and its
-mirrors timed out or returned HTML. **Check the schematic in UM1857 (section "Schematic
-diagrams", sheet with CN9 / D8 / STBY\RESET) and record the resistor designator, value and
-rail in the table below.** If it is a pull-up, flag it as a hardware change (remove it or
-add a stronger pull-down) before relying on the pin path as the primary stop.
+Board-level answer (UM1910 "Getting started with the X-NUCLEO-IHM03A1", figure 3
+schematic, read 2026-10-17; the earlier reference to UM1857 was the wrong document number):
+the powerSTEP01 STBY\RESET pin 19 is the net `RESET_IC`, routed straight to CN5 pin 1
+(Arduino D8 = PA9) and to CN10 pin 21. **There is no resistor on that net on the shield;
+the only part is C6 = 100 nF to ground.** (R26 39 kΩ, the resistor next to it on the
+sheet, is the BUSY LED pull-up on BUSY_SYNC.) So when the MCU lets go, the node discharges
+through the chip's internal 450 kΩ pull-down with a time constant of about 45 ms, and the
+chip enters standby: fail-safe, but tens of milliseconds, not microseconds. For the pin
+path this means the MCU must drive PA9 low actively (the GPIO discharges C6 in
+microseconds), which is what Phase 4 Step 1 does. No hardware change is needed.
 
 Pin mapping on this build (from `server/layers/L5_board/board_pins.hpp`): STBY/RESET =
 **PA9** (Arduino D8, CN9), FLAG = PA10 (D2), BUSY = PB5 (D4), CS = PC8, SPI1 SCK/MISO/MOSI =
@@ -140,7 +145,7 @@ run with `scripts/bench/bringup_step0.py COM5 --no-debug` and `scripts/bench/est
 | ESTOP (c) during full-screen bitmap | ESTOP text injected at +0.77 s (8,203 bytes into the stream) was consumed as pixels; the firmware replied only when the stream ended at **+14.4 s**; the next `SYST:ESTOP` was honoured at once | matches the prediction (13.3 s of stream at 115200 + USB); analyzer value optional |
 | Encoder task stack high-water mark (words free) | **168** | read over serial with the new `DIAG:TASKS?` (same table as the LCD Task Monitor), after the motion scenarios and index crossings; item 4 of 03_open_issues can close: the estimate held |
 | Other tasks' high-water marks (words free) | Comms 1403, Motor 797, Display 351, IDLE 114; free heap pool 512 bytes | `DIAG:TASKS?`, debug build |
-| STBY/RESET shield resistor (designator, value, rail) | **pull-up on the shield**: with PA9 switched to a floating input (no MCU pull, `STBY_SENSE` debug command, 3 reads) the node stays HIGH; the chip's own 450 kΩ pull-down would have taken it low within microseconds. The designator and value still come from UM1857 (or a meter on CN9 D8 with the board unpowered) | consequence for Phase 4: a dead or reset MCU leaves the bridges enabled. The STBY pin path must drive the pin low actively, and the hardware item (remove the pull-up or add a stronger pull-down) stands |
+| STBY/RESET shield resistor (designator, value, rail) | **none; C6 = 100 nF to ground** on the RESET_IC net (UM1910 figure 3, section 2 above). Bench: with PA9 switched to a floating input (`STBY_SENSE` debug command) the node falls LOW after 38.1 / 37.8 / 37.9 / 37.2 ms, which is 100 nF discharging through the chip's internal 450 kΩ pull-down to the input threshold (an earlier version of the command sampled after a few ms, saw the capacitor still high and reported a pull-up: wrong) | consequence for Phase 4: a dead MCU lets the chip fall into standby by itself after ~40 ms (fail-safe, slow); the pin path must drive PA9 low actively, which discharges C6 in microseconds. No hardware change needed |
 | Step-mode readback (4, 7) | 4 → `step_mode 4, 1/16, 3200 µsteps/rev`; 7 → `step_mode 7, 1/128, 25600`; restored 5 (1/32) | each `DRV:CFG:APPLY` writes flash; the reply arrived within the 2.5 s wait |
 | Run / ESTOP / refused / clear / run | `MOT:RUN 300 1` → position advancing at speed 299, bridges on; `SYST:ESTOP` → state ESTOP, Hi-Z; `MOT:RUN` → `ERROR Motor fault active`; `SYST:FAULT:CLEAR` → IDLE; `MOT:RUN` ok | `SYST:FAULT:CLEAR` while not latched answers `ERROR Invalid state for operation` |
 | Debug pause / LCD disable observed | `DBG:UNLOCK` ok; `SPI_STOP` pauses the Motor task (telemetry tick advances, motor telemetry frozen); `SPI_START` resumes; `LCD_DISABLE` ok; `DBG:LOCK` ok; `SPI_STOP` refused when locked (`DBG_LOCKED`) | `scripts/bench/bringup_step0.py COM5 --no-motor`, 2026-10-17: all item-6 checks PASS |

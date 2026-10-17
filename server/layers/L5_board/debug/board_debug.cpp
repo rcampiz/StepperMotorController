@@ -11,6 +11,7 @@
 #include "L5_board/debug/board_debug.hpp"
 #include "harness/defs/harness_l4_l5.hpp"
 #include "X_vendor/CMSIS/stm32f401xe.h"
+#include "harness/pins/imicrosecond_clock.hpp"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -194,23 +195,41 @@ void BoardDebug::cmdStbyHold(Harness::IResponseSink& t) {
 }
 
 void BoardDebug::cmdStbySense(Harness::IResponseSink& t) {
-    // Let PA9 float (input, no pull) and read what the shield does with STBY/RESET when the
-    // MCU lets go: HIGH = a pull-up on the shield (a dead MCU leaves the bridges enabled),
-    // LOW = only the powerSTEP01's internal 450 k pull-down (fail-safe). Floating low puts
-    // the chip in standby and resets its registers, so the caller must DRV:REINIT after.
+    // Let PA9 float (input, no pull) and watch what the shield does with STBY/RESET when
+    // the MCU lets go. UM1910 figure 3: the RESET_IC net has no resistor on the shield, only
+    // C6 = 100 nF to ground, so the node decays through the powerSTEP01's internal 450 k
+    // pull-down with tau ~ 45 ms. A node that stays high for >1 s would mean a pull-up
+    // (not fail-safe); a fall within ~100 ms is the capacitor discharging (fail-safe, slow).
+    // Floating low puts the chip in standby and resets its registers: DRV:REINIT after.
+    Platform::IMicrosecondClock* us = Harness::microsecondClock();
     const uint32_t moder = GPIOA->MODER;
     const uint32_t pupdr = GPIOA->PUPDR;
     GPIOA->PUPDR &= ~(0x3UL << 18);
     GPIOA->MODER &= ~(0x3UL << 18);
-    for (volatile uint32_t i = 0; i < 200000; ++i) {}   // a few ms for the node to settle
-    const int level = static_cast<int>((GPIOA->IDR >> 9) & 1U);
+    const uint32_t t0 = (us != nullptr) ? us->getTickUs() : 0;
+    int level = 1;
+    uint32_t fellAtUs = 0;
+    bool fell = false;
+    while (!fell) {
+        const uint32_t now = (us != nullptr) ? us->getTickUs() : t0 + 1000001U;
+        level = static_cast<int>((GPIOA->IDR >> 9) & 1U);
+        if (level == 0) { fell = true; fellAtUs = now - t0; }
+        if (now - t0 > 1000000U) break;                  // give up after 1 s
+    }
     GPIOA->MODER = moder;
     GPIOA->PUPDR = pupdr;
     GPIOA->BSRR = (1UL << 9);                            // release STBY again (driven high)
-    char buf[128];
-    snprintf(buf, sizeof(buf), "STBY_SENSE PA9 floating reads %d: %s", level,
-             level ? "pulled UP on the shield (NOT fail-safe when the MCU dies)"
-                   : "pulled DOWN (powerSTEP01 internal 450k only: fail-safe)");
+    char buf[160];
+    if (fell) {
+        snprintf(buf, sizeof(buf),
+                 "STBY_SENSE PA9 floating fell LOW after %lu us: no pull-up on the shield, the "
+                 "node discharges through the chip's 450k pull-down (fail-safe, slow)",
+                 static_cast<unsigned long>(fellAtUs));
+    } else {
+        snprintf(buf, sizeof(buf),
+                 "STBY_SENSE PA9 floating stayed HIGH for 1 s: a pull-up holds STBY/RESET "
+                 "(NOT fail-safe when the MCU dies)");
+    }
     t.writeLine(buf);
     t.writeLine("powerSTEP01 registers may have reset: send DRV:REINIT.");
 }
