@@ -8,5 +8,6 @@ namespace Platform {
 
 uint32_t bootId() { return 0xB007CAFEu; }
 const char* deviceSerial() { return "HOST0001"; }
+const char* resetCause() { return "HOST"; }
 
 } // namespace Platform

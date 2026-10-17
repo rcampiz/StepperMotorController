@@ -395,6 +395,7 @@
         "server/harness/defs/harness_tasks_l3.hpp",
         "server/harness/pins/async_event.cpp",
         "server/harness/pins/async_event.hpp",
+        "server/harness/pins/build_id.cpp",
         "server/harness/pins/clock_board.hpp",
         "server/harness/pins/comms_board.hpp",
         "server/harness/pins/comms_protocol_init.hpp",

@@ -323,7 +323,7 @@ void CommandParser::cmdVersion() {
   char line[80];
   snprintf(line, sizeof(line), "Stepper Motor Controller v%s", Harness::FW_VERSION);
   m_sink.writeLine(line);
-  snprintf(line, sizeof(line), "Build: %s (" __DATE__ " " __TIME__ ")", Harness::BUILD_HASH);
+  snprintf(line, sizeof(line), "Build: %s (" __DATE__ " " __TIME__ ")", Harness::buildId());
   m_sink.writeLine(line);
   snprintf(line, sizeof(line), "Protocol: %u (boot %08lX)",
            static_cast<unsigned>(Harness::PROTOCOL_VERSION),

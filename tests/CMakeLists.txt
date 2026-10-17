@@ -64,6 +64,7 @@ smc_add_test(test_command_parser test_command_parser.cpp
     ${L2_HANDLER_SOURCES}
     ${SERVER}/harness/pins/async_event.cpp
     ${SERVER}/harness/pins/itask_stats.cpp
+    ${SERVER}/harness/pins/build_id.cpp
     stubs/boot_id_stub.cpp)
 
 # --- Step 6: H_L2_L3 â€” DBG:UNLOCK gate, task suspend via Platform, raw commands via L4.

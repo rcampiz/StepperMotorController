@@ -84,6 +84,51 @@ def _parse_params(items: List[str]) -> Dict[str, Any]:
     return params
 
 
+def _find_nod_drive():
+    """The NUCLEO's ST-LINK mass-storage drive (MBED.HTM + DETAILS.TXT at its root)."""
+    import string
+    for letter in string.ascii_uppercase:
+        root = f"{letter}:\\"
+        if os.path.isfile(os.path.join(root, "MBED.HTM")) and os.path.isfile(os.path.join(root, "DETAILS.TXT")):
+            return root
+    return None
+
+
+def cmd_flash(args) -> int:
+    """Program a .bin through the NUCLEO drive with the session held open. The Board re-runs
+    its setup when the !RESET line arrives, so the board is never left to boot into a port
+    that is opened afterwards (which was seen to come up silent on the bench)."""
+    import shutil
+    drive = args.drive or _find_nod_drive()
+    if drive is None:
+        raise SystemExit("no NUCLEO drive found (MBED.HTM + DETAILS.TXT at the root); pass --drive")
+    if not os.path.isfile(args.bin):
+        raise SystemExit(f"not a file: {args.bin}")
+    board = _open(args, heartbeat=True)
+    resets, sessions = [], []
+    board.subscribe("reset", lambda info, *a: resets.append(info))
+    board.subscribe("session", lambda ident, *a: sessions.append(ident))   # the setup re-run after !RESET
+    try:
+        t0 = time.monotonic()
+        shutil.copy(args.bin, drive)
+        t_copy = time.monotonic() - t0
+        end = time.monotonic() + args.flash_timeout
+        while time.monotonic() < end:
+            board._cli_liveness.touch()
+            if resets and sessions and board.session_ready:
+                break
+            time.sleep(0.05)
+        if not resets:
+            raise SystemExit(f"no !RESET within {args.flash_timeout:.0f}s after the copy ({t_copy:.1f}s)")
+        info = resets[-1]
+        _out({"drive": drive, "bin": args.bin, "copy_s": round(t_copy, 1), "boot_s": round(time.monotonic() - t0, 1),
+              "build": info.build, "fw": info.fw, "proto": info.proto, "rst": info.rst, "boot": f"{info.boot:08X}",
+              "serial": board.identity.serial if board.identity else None, "session": board.session_ready})
+        return 0 if board.session_ready else 2
+    finally:
+        board.close()
+
+
 # --- commands ---------------------------------------------------------------------
 def cmd_ports(args) -> int:
     from smc_core.transport.serial import VcpTransport
@@ -262,6 +307,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-n", type=int, default=0, help="stop after N lines (0 = until Ctrl-C)")
     p.set_defaults(fn=cmd_telemetry)
     p = sub.add_parser("estop"); board_args(p); p.set_defaults(fn=cmd_estop)
+    p = sub.add_parser("flash", help="program a .bin through the NUCLEO drive with the session held open")
+    board_args(p); p.add_argument("bin"); p.add_argument("--drive", help="mass-storage drive (default: auto-detect)")
+    p.add_argument("--flash-timeout", type=float, default=40.0, help="seconds to wait for !RESET")
+    p.set_defaults(fn=cmd_flash)
     t = sub.add_parser("test").add_subparsers(dest="tcmd", required=True)
     t.add_parser("list").set_defaults(fn=cmd_test_list)
     p = t.add_parser("run"); board_args(p)

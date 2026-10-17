@@ -15,6 +15,9 @@
 namespace Platform {
 
 uint32_t bootId();
+/// Why the MCU last reset, from RCC CSR at the first call (then cleared): "PIN", "POR",
+/// "SFT", "IWDG", "WWDG", "LPWR", "BOR", joined with '+' when several flags are set.
+const char* resetCause();
 const char* deviceSerial();
 
 } // namespace Platform

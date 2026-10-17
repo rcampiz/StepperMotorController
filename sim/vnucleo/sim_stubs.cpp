@@ -15,6 +15,7 @@ extern uint32_t g_bootId;
 namespace Platform {
 uint32_t bootId() { return Sim::g_bootId; }
 const char* deviceSerial() { return Sim::g_serial.c_str(); }
+const char* resetCause() { return "SIM"; }
 }
 
 namespace Harness {

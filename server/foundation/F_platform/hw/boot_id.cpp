@@ -47,6 +47,30 @@ uint32_t bootId()
     return s_bootId;
 }
 
+const char* resetCause()
+{
+    static char s_cause[40] = {0};
+    if (s_cause[0] == '\0') {
+        const uint32_t csr = RCC->CSR;
+        RCC->CSR |= (1UL << 24);                       // RMVF: next boot reports only its own cause
+        // RCC_CSR reset flags (RM0368 6.3.21): the trimmed CMSIS header carries no names for them
+        struct { uint32_t bit; const char* name; } const flags[] = {
+            { 1UL << 26, "PIN"  }, { 1UL << 27, "POR"  }, { 1UL << 28, "SFT"  },
+            { 1UL << 29, "IWDG" }, { 1UL << 30, "WWDG" }, { 1UL << 31, "LPWR" },
+            { 1UL << 25, "BOR"  },
+        };
+        unsigned n = 0;
+        for (const auto& f : flags) {
+            if ((csr & f.bit) == 0) continue;
+            if (n > 0 && n < sizeof(s_cause) - 1) s_cause[n++] = '+';
+            for (const char* c = f.name; *c != '\0' && n < sizeof(s_cause) - 1; ++c) s_cause[n++] = *c;
+        }
+        if (n == 0) { s_cause[0] = 'N'; s_cause[1] = 'O'; s_cause[2] = 'N'; s_cause[3] = 'E'; n = 4; }
+        s_cause[n] = '\0';
+    }
+    return s_cause;
+}
+
 const char* deviceSerial()
 {
     if (s_serial[0] == '\0') {

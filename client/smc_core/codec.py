@@ -59,6 +59,7 @@ class ResetInfo:
     proto: int
     build: str
     raw: str = ""
+    rst: str = "?"        # MCU reset cause: PIN, POR, SFT, IWDG, WWDG, LPWR, BOR (joined with +)
 
 
 @dataclass
@@ -191,7 +192,8 @@ def parse_reset(frame_or_line) -> ResetInfo:
     kv = dict(p.split("=", 1) for p in text.split()[1:] if "=" in p)
     try:
         return ResetInfo(boot=int(kv.get("boot", "0"), 16), fw=kv.get("fw", "?"),
-                         proto=int(kv.get("proto", "0")), build=kv.get("build", "?"), raw=text)
+                         proto=int(kv.get("proto", "0")), build=kv.get("build", "?"), raw=text,
+                         rst=kv.get("rst", "?"))
     except ValueError as e:
         raise ProtocolError(f"bad !RESET line: {text}") from e
 

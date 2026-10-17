@@ -138,7 +138,7 @@ verify state instead).
 
 ## 7. Protocol 2: what changed since protocol 1 (one version bump, 2026-10-06)
 
-1. `!RESET boot=<id> fw=<semver> proto=<n> build=<hash>` is the first line at boot and on
+1. `!RESET boot=<id> fw=<semver> proto=<n> build=<hash> rst=<cause>` is the first line at boot and on
    Comms start; the boot id is repeated in every heartbeat ack (`boot`).
 2. `*IDN?` -> `SMC,NUCLEO-F401RE-IHM03A1,<serial>,<fw>,<proto>` from `protocol_version.hpp`.
 3. Echo off by default in JSON mode; `SYST:ECHO ON|OFF`, `SYST:ECHO?`.
