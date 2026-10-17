@@ -9,5 +9,12 @@
 | `setup/` | fresh-clone bring-up: `bringup.ps1` (Windows, winget) and `bringup.sh` (Debian / Raspberry Pi OS, apt) install or verify every tool, fetch the FreeRTOS submodule, create the Python venvs, and queue what needs administrator rights or a manual download (ST-LINK driver, winget itself) with the download links; `-OpenLinks` opens them | `powershell -ExecutionPolicy Bypass -File scripts\setup\bringup.ps1`, `./scripts/setup/bringup.sh --install` |
 | `debug/` | `debug_openocd.ps1` (OpenOCD launcher used by VS Code), `stlink_to_jlink.ps1` (probe firmware swap) | |
 
-Flashing without the ST-LINK debug driver: copy a `.bin` (`arm-none-eabi-objcopy -O binary`)
+Flashing from the client, with the session held open through the reset (preferred on the bench: the port is never opened against a board that has already booted):
+
+```
+cd client
+.venv\Scripts\python.exe -m smc_cli flash --port COM5 ..uild\StepperMotorController.bin
+```
+
+It reports the new `build=`, `rst=` (reset cause) and serial. Flashing without the ST-LINK debug driver: copy a `.bin` (`arm-none-eabi-objcopy -O binary`)
 to the NUCLEO's `NOD_F401RE` drive; the board programs and resets itself.
