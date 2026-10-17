@@ -13,7 +13,7 @@ Flashing from the client, with the session held open through the reset (preferre
 
 ```
 cd client
-.venv\Scripts\python.exe -m smc_cli flash --port COM5 ..uild\StepperMotorController.bin
+.venv\Scripts\python.exe -m smc_cli flash --port COM5 ..\build\StepperMotorController.bin
 ```
 
 It reports the new `build=`, `rst=` (reset cause) and serial. Flashing without the ST-LINK debug driver: copy a `.bin` (`arm-none-eabi-objcopy -O binary`)
