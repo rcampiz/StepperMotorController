@@ -185,7 +185,7 @@ class MotorControlPanel(QWidget):
 
     def _create_speed_group(self) -> QGroupBox:
         """Create speed control with vertical fader and run buttons."""
-        group = QGroupBox("Speed & Run")
+        group = QGroupBox("Speed (run, jog, move, goto) & Run")
         main_layout = QHBoxLayout(group)
 
         # Left: vertical fader column
@@ -193,6 +193,8 @@ class MotorControlPanel(QWidget):
         fader_col.setSpacing(4)
 
         speed_lbl = QLabel("SPEED")
+        speed_lbl.setToolTip("Every motion on this tab uses this speed: Run, Jog, Move, GoTo, Home. "
+                             "Moves lower the chip's MAX_SPEED to it for their duration; the configured maximum (Driver tab) is restored afterwards.")
         speed_lbl.setAlignment(Qt.AlignCenter)
         speed_lbl.setFont(QFont("Segoe UI", 9, QFont.Bold))
         fader_col.addWidget(speed_lbl)
@@ -353,12 +355,12 @@ class MotorControlPanel(QWidget):
         jog_lbl.setFixedWidth(35)
         jog_row.addWidget(jog_lbl)
         self._jog_ccw_btn = QPushButton("CCW")
-        self._jog_ccw_btn.setToolTip("Jog counter-clockwise")
+        self._jog_ccw_btn.setToolTip("Jog counter-clockwise at the SPEED fader value (RUN while pressed)")
         self._jog_ccw_btn.pressed.connect(lambda: self._start_jog(0))
         self._jog_ccw_btn.released.connect(self._stop_jog)
         jog_row.addWidget(self._jog_ccw_btn)
         self._jog_cw_btn = QPushButton("CW")
-        self._jog_cw_btn.setToolTip("Jog clockwise")
+        self._jog_cw_btn.setToolTip("Jog clockwise at the SPEED fader value (RUN while pressed)")
         self._jog_cw_btn.pressed.connect(lambda: self._start_jog(1))
         self._jog_cw_btn.released.connect(self._stop_jog)
         jog_row.addWidget(self._jog_cw_btn)
@@ -370,11 +372,11 @@ class MotorControlPanel(QWidget):
         move_lbl.setFixedWidth(35)
         move_row.addWidget(move_lbl)
         self._move_ccw_btn = QPushButton("CCW")
-        self._move_ccw_btn.setToolTip("Move counter-clockwise by step count")
+        self._move_ccw_btn.setToolTip("Move counter-clockwise by the step count, at the SPEED fader value")
         self._move_ccw_btn.clicked.connect(lambda: self._on_move(0))
         move_row.addWidget(self._move_ccw_btn)
         self._move_cw_btn = QPushButton("CW")
-        self._move_cw_btn.setToolTip("Move clockwise by step count")
+        self._move_cw_btn.setToolTip("Move clockwise by the step count, at the SPEED fader value")
         self._move_cw_btn.clicked.connect(lambda: self._on_move(1))
         move_row.addWidget(self._move_cw_btn)
         btn_col.addLayout(move_row)
@@ -390,7 +392,7 @@ class MotorControlPanel(QWidget):
         self._goto_pos.setToolTip("Target position (microsteps)")
         goto_row.addWidget(self._goto_pos)
         self._goto_btn = QPushButton("Go")
-        self._goto_btn.setToolTip("Go to absolute position")
+        self._goto_btn.setToolTip("Go to the absolute position at the SPEED fader value")
         self._goto_btn.clicked.connect(self._on_goto)
         self._goto_btn.setFixedWidth(50)
         goto_row.addWidget(self._goto_btn)

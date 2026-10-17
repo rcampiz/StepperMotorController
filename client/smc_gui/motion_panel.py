@@ -321,12 +321,15 @@ class MotionPanel(QWidget):
     # =========================================================================
 
     def _create_run_group(self) -> QGroupBox:
-        group = QGroupBox("Continuous Run")
+        group = QGroupBox("Speed & Continuous Run")
         layout = QVBoxLayout(group)
 
-        # Speed row
+        # Speed row: this one speed is used by Run, Move and GoTo on this tab
         speed_row = QHBoxLayout()
-        speed_row.addWidget(QLabel("Speed:"))
+        speed_lbl = QLabel("Speed (run, move, goto):")
+        speed_lbl.setToolTip("Run turns at this speed. Move and GoTo use it as their per-move maximum: the chip's "
+                             "MAX_SPEED is lowered to it for the move and the configured maximum (Configuration below) comes back afterwards.")
+        speed_row.addWidget(speed_lbl)
 
         self._run_speed = QDoubleSpinBox()
         self._run_speed.setRange(0.0, 99999.0)
@@ -374,6 +377,11 @@ class MotionPanel(QWidget):
     def _create_position_group(self) -> QGroupBox:
         group = QGroupBox("Positioning")
         layout = QVBoxLayout(group)
+
+        note = QLabel("Move and GoTo run at the speed set above (per move; the configured Max Speed is restored afterwards).")
+        note.setStyleSheet("font-size: 9px; color: #888; font-style: italic;")
+        note.setWordWrap(True)
+        layout.addWidget(note)
 
         # Move row
         move_row = QHBoxLayout()
