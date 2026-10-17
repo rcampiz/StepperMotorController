@@ -52,6 +52,9 @@ smc_add_test(test_lcd_vsync   test_lcd_vsync.cpp)
 smc_add_test(test_motor_config test_motor_config.cpp
     ${SERVER}/layers/L3_services/motion/motor_config/motor_config.cpp)
 
+# --- Journal config store (L4) over a fake internal flash: append, newest-wins, legacy fallback.
+smc_add_test(test_config_journal test_config_journal.cpp)
+
 # --- Step 5: H_L1_L2 â€” the L2 parser formats every host-facing byte over a fake transport.
 file(GLOB L2_HANDLER_SOURCES ${SERVER}/layers/L2_protocol/handlers/*.cpp)
 smc_add_test(test_command_parser test_command_parser.cpp

@@ -69,7 +69,11 @@ bool Board::internalFlashEraseSector(uint8_t sector)
 
 bool Board::internalFlashWriteData(uint32_t addr, const uint8_t* data, size_t len)
 {
-    // Flash should already be unlocked from erase
+    // Self-contained: the journal store programs blank slots without an erase before, so
+    // the flash is still locked here (the old overwrite store relied on the erase's unlock).
+    flashUnlock();
+    flashWaitBusy();
+    flashClearErrors();
 
     // Set programming mode (32-bit)
     FLASH->CR = FLASH_CR_PSIZE_1 | FLASH_CR_PG;

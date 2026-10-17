@@ -19,14 +19,37 @@ bool MotorConfigManager::init(Drivers::IConfigStore& store) {
     m_valid = false;
 
     // Try to load from flash
-    if (loadFromFlash()) {
-        m_valid = true;
-        return true;
+    const bool loaded = loadFromFlash();
+    if (!loaded) {
+        applyDefaults();          // flash empty or corrupted: safe defaults
     }
+    m_valid = loaded;
 
-    // Flash empty or corrupted - apply safe defaults
-    applyDefaults();
-    return false;
+    // Boot-time compaction: nothing moves yet, so the sector erase costs only boot time.
+    // Keeps a run-time erase (which needs the motor stopped) from ever being needed in
+    // normal use: one erase per ~2000 saves, taken here.
+    if (savesRemaining() < COMPACT_MARGIN_SAVES) {
+        if (m_store->erase() && loaded) {
+            writeRecord();        // the record read above goes back as journal entry 0
+        }
+    }
+    return loaded;
+}
+
+size_t MotorConfigManager::savesRemaining() const {
+    if (m_store == nullptr) {
+        return 0;
+    }
+    return m_store->remaining() / sizeof(MotorConfig);
+}
+
+bool MotorConfigManager::writeRecord() {
+    if (!m_store->write(reinterpret_cast<const uint8_t*>(&m_config), sizeof(m_config))) {
+        return false;
+    }
+    MotorConfig verify;
+    return (m_store->read(reinterpret_cast<uint8_t*>(&verify), sizeof(verify)) == sizeof(verify))
+        && (memcmp(&m_config, &verify, sizeof(m_config)) == 0);
 }
 
 void MotorConfigManager::applyDefaults() {
@@ -199,20 +222,31 @@ bool MotorConfigManager::saveToFlash() {
         sizeof(m_config) - sizeof(m_config.crc32)
     );
 
-    // Erase and write
-    if (m_store == nullptr || !m_store->erase()) {
+    if (m_store == nullptr) {
+        m_lastSave = SaveStatus::WriteFailed;
         return false;
     }
 
-    if (!m_store->write(reinterpret_cast<const uint8_t*>(&m_config), sizeof(m_config))) {
-        return false;
+    // Append first: on the journal store this is a few word programs, no erase, no stall.
+    if (m_store->remaining() >= sizeof(m_config)) {
+        m_valid = writeRecord();
+        m_lastSave = m_valid ? SaveStatus::Ok : SaveStatus::WriteFailed;
+        return m_valid;
     }
 
-    // Verify by reading back
-    MotorConfig verify;
-    m_valid = (m_store->read(reinterpret_cast<uint8_t*>(&verify), sizeof(verify)) == sizeof(verify))
-           && (memcmp(&m_config, &verify, sizeof(m_config)) == 0);
-
+    // Journal full: the sector erase freezes the MCU for 1-2 s (ESTOP included), so it is
+    // only taken when the gate says the motor is stopped; otherwise the caller reports
+    // STORE_FULL and the user saves again once stopped.
+    if (m_eraseGate != nullptr && !m_eraseGate()) {
+        m_lastSave = SaveStatus::StoreFull;
+        return false;
+    }
+    if (!m_store->erase()) {
+        m_lastSave = SaveStatus::WriteFailed;
+        return false;
+    }
+    m_valid = writeRecord();
+    m_lastSave = m_valid ? SaveStatus::Ok : SaveStatus::WriteFailed;
     return m_valid;
 }
 

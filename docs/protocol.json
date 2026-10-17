@@ -90,6 +90,11 @@
       "status": "NotEnabled",
       "message": "Motor not enabled",
       "code": "NOT_ENABLED"
+    },
+    {
+      "status": "StoreFull",
+      "message": "Config store full: stop the motor and save again",
+      "code": "STORE_FULL"
     }
   ],
   "events": {
@@ -1773,12 +1778,10 @@
       "min_args": 0,
       "usage": [],
       "ascii_ok": [
-        "Follow config saved"
+        "<status> or Follow config saved"
       ],
       "json": [],
-      "errors": [
-        "Flash write failed"
-      ],
+      "errors": [],
       "note": "",
       "multiline": false,
       "binary": false,
@@ -1862,12 +1865,10 @@
       "min_args": 0,
       "usage": [],
       "ascii_ok": [
-        "Trim config saved"
+        "<status> or Trim config saved"
       ],
       "json": [],
-      "errors": [
-        "Flash write failed"
-      ],
+      "errors": [],
       "note": "",
       "multiline": false,
       "binary": false,
@@ -2746,12 +2747,10 @@
       "min_args": 0,
       "usage": [],
       "ascii_ok": [
-        "Config saved to flash"
+        "<status> or Config saved to flash"
       ],
       "json": [],
-      "errors": [
-        "Flash write failed"
-      ],
+      "errors": [],
       "note": "",
       "multiline": false,
       "binary": false,
@@ -2804,11 +2803,11 @@
       "usage": [],
       "ascii_ok": [
         "Config applied and saved to flash",
+        "<status> or ",
         "<formatted text>"
       ],
       "json": [],
       "errors": [
-        "Applied but flash write failed",
         "MOTOR_BUSY: Motor must be idle to apply the config",
         "VERIFY_FAILED: STEP_MODE readback mismatch"
       ],
@@ -3063,12 +3062,10 @@
       "min_args": 0,
       "usage": [],
       "ascii_ok": [
-        "Filter config saved"
+        "<status> or Filter config saved"
       ],
       "json": [],
-      "errors": [
-        "Flash write failed"
-      ],
+      "errors": [],
       "note": "sub-command",
       "multiline": false,
       "binary": false,

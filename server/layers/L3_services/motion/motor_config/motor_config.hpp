@@ -132,6 +132,22 @@ public:
      */
     bool isValid() const { return m_valid; }
 
+    /// Why the last saveToFlash() returned false.
+    enum class SaveStatus : uint8_t {
+        Ok,
+        StoreFull,      ///< journal full and the erase gate refused (motor moving): save again stopped
+        WriteFailed     ///< the store rejected the write or the readback differed
+    };
+    SaveStatus lastSaveStatus() const { return m_lastSave; }
+
+    /// Gate for the run-time sector erase (null = always allowed, as at boot). The erase
+    /// freezes the MCU for 1-2 s, so the composition root installs "the motor is stopped".
+    using EraseGate = bool (*)();
+    void setEraseGate(EraseGate gate) { m_eraseGate = gate; }
+
+    /// Saves possible before the journal must be erased (store-dependent).
+    size_t savesRemaining() const;
+
     /**
      * @brief Get current configuration (read-only reference)
      */
@@ -247,6 +263,13 @@ private:
 
     // Persistent blob store (L4, via H_L3_L4)
     Drivers::IConfigStore* m_store = nullptr;
+    EraseGate  m_eraseGate = nullptr;
+    SaveStatus m_lastSave = SaveStatus::Ok;
+
+    /// Compact at boot when fewer than this many saves are left, so a run-time erase is rare.
+    static constexpr size_t COMPACT_MARGIN_SAVES = 16;
+
+    bool writeRecord();   // one journal append (or overwrite) + readback verify
 };
 
 // Global instance

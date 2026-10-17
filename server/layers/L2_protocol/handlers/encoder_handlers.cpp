@@ -427,11 +427,7 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
     m_dispatcher.configSetEncFilterFull(cfg.filterFlags, cfg.emaAlpha,
                                         cfg.smaWindow, cfg.measWindowMs,
                                         rateDiv);
-    if (m_dispatcher.configSaveToFlash()) {
-      respondOk("Filter config saved");
-    } else {
-      respondErr("Flash write failed");
-    }
+    respondStatus(m_dispatcher.configSaveToFlash(), "Filter config saved");
     return;
   }
 

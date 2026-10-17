@@ -38,8 +38,12 @@ uint16_t ConfigDispatch::getFullStepsPerRev() {
     return motion.stepper.config.getFullStepsPerRev();
 }
 
-bool ConfigDispatch::configSaveToFlash() {
-    return motion.configStore.saveToFlash();
+Harness::ServiceStatus ConfigDispatch::configSaveToFlash() {
+    if (motion.configStore.saveToFlash()) {
+        return Harness::ServiceStatus::Ok;
+    }
+    return (motion.configStore.lastSaveStatus() == MotorConfigManager::SaveStatus::StoreFull)
+         ? Harness::ServiceStatus::StoreFull : Harness::ServiceStatus::FlashError;
 }
 
 bool ConfigDispatch::configLoadFromFlash() {

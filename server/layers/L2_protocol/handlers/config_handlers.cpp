@@ -84,11 +84,7 @@ void CommandParser::cmdMotorConfigShow() {
 }
 
 void CommandParser::cmdMotorConfigSave() {
-  if (m_dispatcher.configSaveToFlash()) {
-    respondOk("Config saved to flash");
-  } else {
-    respondErr("Flash write failed");
-  }
+  respondStatus(m_dispatcher.configSaveToFlash(), "Config saved to flash");
 }
 
 void CommandParser::cmdMotorConfigLoad() {
@@ -315,9 +311,11 @@ void CommandParser::cmdMotorConfigApply() {
     return;
   }
 
-  // Persist to flash so config survives reboot
-  if (!m_dispatcher.configSaveToFlash()) {
-    respondErr("Applied but flash write failed");
+  // Persist to flash so config survives reboot (journal append; STORE_FULL only when the
+  // journal needs an erase and the motor is moving)
+  auto saved = m_dispatcher.configSaveToFlash();
+  if (saved != Harness::ServiceStatus::Ok) {
+    respondStatus(saved, "");
     return;
   }
 

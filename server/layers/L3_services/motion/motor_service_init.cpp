@@ -31,8 +31,13 @@ bool initMotorSubsystem(
     // L3 owns the driver from here on
     motion.stepper.controller.bind(*h.motor, clock);
 
-    // L3 config (persistent blob via the L4 config store)
+    // L3 config (persistent blob via the L4 config store). The run-time journal erase
+    // freezes the MCU for 1-2 s, so it is gated on the motor being stopped.
     motion.configStore.init(*h.configStore);
+    motion.configStore.setEraseGate([]() -> bool {
+        const Protocol::TelemetrySnapshot s = g_telemetryStore.getSnapshot();
+        return !s.motor.busy && s.motor.speed == 0;
+    });
 
     // Motor service (task body, command sink, task control, immediate stop)
     g_motorService.init(motion.stepper.controller, motion.stepper.controller,

@@ -120,11 +120,7 @@ void CommandParser::cmdFollowThreshSet(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdFollowSave() {
-  if (m_dispatcher.configSaveToFlash()) {
-    respondOk("Follow config saved");
-  } else {
-    respondErr("Flash write failed");
-  }
+  respondStatus(m_dispatcher.configSaveToFlash(), "Follow config saved");
 }
 
 void CommandParser::cmdFollowClear() {
@@ -289,11 +285,7 @@ void CommandParser::cmdTrimReset() {
 }
 
 void CommandParser::cmdTrimSave() {
-  if (m_dispatcher.configSaveToFlash()) {
-    respondOk("Trim config saved");
-  } else {
-    respondErr("Flash write failed");
-  }
+  respondStatus(m_dispatcher.configSaveToFlash(), "Trim config saved");
 }
 
 // --- System Identification commands ---

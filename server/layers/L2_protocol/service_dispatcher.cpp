@@ -63,7 +63,7 @@ uint16_t ServiceDispatcher::getFullStepsPerRev() {
     return m_config->getFullStepsPerRev();
 }
 
-bool ServiceDispatcher::configSaveToFlash() {
+Harness::ServiceStatus ServiceDispatcher::configSaveToFlash() {
     return m_config->configSaveToFlash();
 }
 

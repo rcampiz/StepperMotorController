@@ -27,6 +27,7 @@ enum class ServiceStatus : uint8_t {
     FlashError,
     EncoderRequired,
     NotEnabled,
+    StoreFull,       // config journal full and the motor is moving: the erase would stall the MCU
 };
 
 /**
@@ -47,6 +48,7 @@ inline const char* statusToString(ServiceStatus s) {
         case ServiceStatus::FlashError:       return "Flash write failed";
         case ServiceStatus::EncoderRequired:  return "Encoder required";
         case ServiceStatus::NotEnabled:       return "Motor not enabled";
+        case ServiceStatus::StoreFull:        return "Config store full: stop the motor and save again";
         default:                              return "Unknown error";
     }
 }
@@ -69,6 +71,7 @@ inline const char* statusToCode(ServiceStatus s) {
         case ServiceStatus::FlashError:       return "FLASH_ERROR";
         case ServiceStatus::EncoderRequired:  return "ENCODER_REQUIRED";
         case ServiceStatus::NotEnabled:       return "NOT_ENABLED";
+        case ServiceStatus::StoreFull:        return "STORE_FULL";
         default:                              return "ERROR";
     }
 }

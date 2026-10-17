@@ -244,6 +244,7 @@
         "server/layers/L4_drivers/devices/encoder.hpp",
         "server/layers/L4_drivers/devices/flash_nor.hpp",
         "server/layers/L4_drivers/devices/internal_flash_config_store.hpp",
+        "server/layers/L4_drivers/devices/internal_flash_journal_store.hpp",
         "server/layers/L4_drivers/devices/joystick.hpp",
         "server/layers/L4_drivers/devices/lcd_st7789.hpp",
         "server/layers/L4_drivers/devices/powerstep01.hpp",

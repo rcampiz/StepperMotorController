@@ -165,6 +165,7 @@ ERROR_CODES: Tuple[str, ...] = (
     'QUEUE_EMPTY',
     'QUEUE_FULL',
     'RX_OVERFLOW',
+    'STORE_FULL',
     'TIMEOUT_EXPIRED',
     'UNKNOWN_CMD',
     'USAGE',

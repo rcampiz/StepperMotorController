@@ -33,7 +33,7 @@ struct FakeMotorConfigDispatcher : Services::IMotorConfigDispatcher {
     Harness::ServiceStatus configSetMaxSpeedPhysical(uint32_t stepsPerS)  override { calls.push_back("configSetMaxSpeedPhysical"); return Harness::ServiceStatus{}; }
     uint32_t getMicrostepsPerRev()  override { calls.push_back("getMicrostepsPerRev"); return uint32_t{}; }
     uint16_t getFullStepsPerRev()  override { calls.push_back("getFullStepsPerRev"); return uint16_t{}; }
-    bool configSaveToFlash()  override { calls.push_back("configSaveToFlash"); return bool{}; }
+    Harness::ServiceStatus configSaveToFlash()  override { calls.push_back("configSaveToFlash"); return Harness::ServiceStatus{}; }
     bool configLoadFromFlash()  override { calls.push_back("configLoadFromFlash"); return bool{}; }
     bool configFactoryReset()  override { calls.push_back("configFactoryReset"); return bool{}; }
     bool configIsValid()  override { calls.push_back("configIsValid"); return bool{}; }

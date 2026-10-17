@@ -19,7 +19,7 @@ public:
     Harness::ServiceStatus configSetMaxSpeedPhysical(uint32_t stepsPerS) override;
     uint32_t getMicrostepsPerRev() override;
     uint16_t getFullStepsPerRev() override;
-    bool configSaveToFlash() override;
+    Harness::ServiceStatus configSaveToFlash() override;
     bool configLoadFromFlash() override;
     bool configFactoryReset() override;
     bool configIsValid() override;

@@ -24,7 +24,8 @@ public:
     virtual uint16_t getFullStepsPerRev() = 0;
 
     // Flash persistence
-    virtual bool configSaveToFlash() = 0;
+    /// Ok, StoreFull (journal full while the motor moves: stop and save again) or FlashError.
+    virtual Harness::ServiceStatus configSaveToFlash() = 0;
     virtual bool configLoadFromFlash() = 0;
     virtual bool configFactoryReset() = 0;
     virtual bool configIsValid() = 0;

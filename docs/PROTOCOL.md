@@ -68,6 +68,7 @@ receive-ring overflow), `DBG_LOCKED` (bring-up command before `DBG:UNLOCK`), `MO
 | `FlashError` | `FLASH_ERROR` | Flash write failed |
 | `EncoderRequired` | `ENCODER_REQUIRED` | Encoder required |
 | `NotEnabled` | `NOT_ENABLED` | Motor not enabled |
+| `StoreFull` | `STORE_FULL` | Config store full: stop the motor and save again |
 
 ## 3. Asynchronous lines (may arrive at any time between replies)
 
@@ -267,11 +268,11 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `CTRL:ENC:ZERO` | 0 | — | ASCII: `OK ENCODER_ZEROED` | — | `cmdEncoderZero` (motion_handlers.cpp) |
 | `CTRL:FOLLOW?` | 0 | — | ASCII: `OK <formatted text>`; JSON `CTRL:FOLLOW?` keys: `error_ms`, `mode`, `pid_out`, `pos_error`, `retries`, `setpoint`, `state`, `tier`, `vel_error` | — | `cmdFollowingError` (control_handlers.cpp) |
 | `CTRL:FOLLOW:THRESH?` | 0 | — | ASCII: `OK <formatted text>`; JSON `CTRL:FOLLOW:THRESH?` keys: `hard_limit`, `hold_error`, `hold_time_ms`, `max_retries`, `move_error`, `move_time_ms` | — | `cmdFollowThreshQuery` (control_handlers.cpp) |
-| `CTRL:FOLLOW:SAVE` | 0 | — | ASCII: `OK Follow config saved` | `Flash write failed` | `cmdFollowSave` (control_handlers.cpp) |
+| `CTRL:FOLLOW:SAVE` | 0 | — | ASCII: `OK <status> or Follow config saved` | — | `cmdFollowSave` (control_handlers.cpp) |
 | `CTRL:FOLLOW:CLEAR` | 0 | — | ASCII: `OK Supervisor fault cleared` | `No fault to clear` | `cmdFollowClear` (control_handlers.cpp) |
 | `CTRL:TRIM?` | 0 | — | ASCII: `OK <formatted text>`; JSON `CTRL:TRIM?` keys: `active`, `base_spd`, `final_spd`, `frozen`, `i_limit`, `ki`, `kp`, `max_pct`, `out_limit`, `trim_spd`, `vel_quality` | — | `cmdTrimQuery` (control_handlers.cpp) |
 | `CTRL:TRIM:RESET` | 0 | — | ASCII: `OK Trim reset` | — | `cmdTrimReset` (control_handlers.cpp) |
-| `CTRL:TRIM:SAVE` | 0 | — | ASCII: `OK Trim config saved` | `Flash write failed` | `cmdTrimSave` (control_handlers.cpp) |
+| `CTRL:TRIM:SAVE` | 0 | — | ASCII: `OK <status> or Trim config saved` | — | `cmdTrimSave` (control_handlers.cpp) |
 | `CTRL:SYSID:STATUS?` | 0 | — | ASCII: `OK <formatted text>`; JSON `CTRL:SYSID:STATUS` keys: `phase`, `samples` | — | `cmdSysIdStatus` (control_handlers.cpp) |
 | `CTRL:SYSID:ABORT` | 0 | — | ASCII: `OK SYSID aborted` | — | `cmdSysIdAbort` (control_handlers.cpp) |
 | `CTRL:ENC:FILT:WINDOW` (sub-command) | 1 | — | ASCII: `OK <formatted text>` | `WINDOW requires ms (1-255)`<br>`Window must be 1-255 ms` | `cmdEncFilterSub` (encoder_handlers.cpp) |
@@ -282,7 +283,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `CTRL:ENC:FILT:NOTCH` (sub-command) | 1 | — | ASCII: `OK <formatted text>` | `Center must be 1-50 Hz`<br>`NOTCH requires 0\|1 [center 1-50 Hz] [Q*10 1-100]`<br>`Q*10 must be 1-100` | `cmdEncFilterSub` (encoder_handlers.cpp) |
 | `CTRL:ENC:FILT:HOLT` (sub-command) | 1 | — | ASCII: `OK <formatted text>` | `Alpha must be 0-255`<br>`Beta must be 0-255`<br>`HOLT requires 0\|1 [alpha 0-255] [beta 0-255]` | `cmdEncFilterSub` (encoder_handlers.cpp) |
 | `CTRL:ENC:FILT:RATE` (sub-command) | 1 | — | ASCII: `OK <formatted text>` | `RATE requires hz (100-10000)`<br>`Rate must be 100-10000 Hz` | `cmdEncFilterSub` (encoder_handlers.cpp) |
-| `CTRL:ENC:FILT:SAVE` (sub-command) | 0 | — | ASCII: `OK Filter config saved` | `Flash write failed` | `cmdEncFilterSub` (encoder_handlers.cpp) |
+| `CTRL:ENC:FILT:SAVE` (sub-command) | 0 | — | ASCII: `OK <status> or Filter config saved` | — | `cmdEncFilterSub` (encoder_handlers.cpp) |
 | `CTRL:ENC:FILT:RESET` (sub-command) | 0 | — | ASCII: `OK Filter reset to defaults` | `Unknown ENC:FILT sub-command` | `cmdEncFilterSub` (encoder_handlers.cpp) |
 
 ### DEV
@@ -341,10 +342,10 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `DRV:FULL_STEPS` | 1 | DRV:FULL_STEPS <steps_per_rev> | ASCII: `OK <formatted text>`; JSON `DRV:FULL_STEPS` keys: `full_steps_per_rev`, `microsteps_per_rev` | `Full steps/rev must be 1-10000` | `cmdDrvFullSteps` (driver_handlers.cpp) |
 | `DRV:ENC_PPR` | 1 | DRV:ENC_PPR <pulses_per_rev> | ASCII: `OK <formatted text>`; JSON `DRV:ENC_PPR` keys: `encoder_ppr` | `Encoder PPR must be 1-65535` | `cmdDrvEncoderPPR` (driver_handlers.cpp) |
 | `DRV:CFG?` | 0 | — | ASCII: `<lines> then OK <n>`; JSON `MCONFIG` keys: `count`, `lines` | — | `cmdMotorConfigShow` (config_handlers.cpp) |
-| `DRV:CFG:SAVE` | 0 | — | ASCII: `OK Config saved to flash` | `Flash write failed` | `cmdMotorConfigSave` (config_handlers.cpp) |
+| `DRV:CFG:SAVE` | 0 | — | ASCII: `OK <status> or Config saved to flash` | — | `cmdMotorConfigSave` (config_handlers.cpp) |
 | `DRV:CFG:LOAD` | 0 | — | ASCII: `OK Config loaded from flash` | `No valid config in flash` | `cmdMotorConfigLoad` (config_handlers.cpp) |
 | `DRV:CFG:RESET` | 0 | — | ASCII: `OK Factory defaults restored and saved` | `Flash write failed` | `cmdMotorConfigReset` (config_handlers.cpp) |
-| `DRV:CFG:APPLY` | 0 | — | ASCII: `OK Config applied and saved to flash`, `OK <formatted text>` | `Applied but flash write failed`<br>`MOTOR_BUSY: Motor must be idle to apply the config`<br>`VERIFY_FAILED: STEP_MODE readback mismatch` | `cmdMotorConfigApply` (config_handlers.cpp) |
+| `DRV:CFG:APPLY` | 0 | — | ASCII: `OK Config applied and saved to flash`, `OK <status> or `, `OK <formatted text>` | `MOTOR_BUSY: Motor must be idle to apply the config`<br>`VERIFY_FAILED: STEP_MODE readback mismatch` | `cmdMotorConfigApply` (config_handlers.cpp) |
 | `DRV:STEP_MODE?` | 0 | — | ASCII: `OK <formatted text>`; JSON `DRV:STEP_MODE?` keys: `microstep_ratio`, `microsteps_per_rev`, `step_mode` | — | `cmdDrvStepModeQuery` (driver_handlers.cpp) |
 | `DRV:FULL_STEPS?` | 0 | — | ASCII: `OK <formatted text>`; JSON `DRV:FULL_STEPS?` keys: `full_steps_per_rev`, `microsteps_per_rev` | — | `cmdDrvFullStepsQuery` (driver_handlers.cpp) |
 | `DRV:ENC_PPR?` | 0 | — | ASCII: `OK <formatted text>`; JSON `DRV:ENC_PPR?` keys: `encoder_ppr` | — | `cmdDrvEncoderPPRQuery` (driver_handlers.cpp) |

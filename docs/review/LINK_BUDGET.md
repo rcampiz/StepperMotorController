@@ -69,6 +69,11 @@ New default: **500 ms** (was `max(2000, 6 x period)` = 2000 ms), with heartbeats
    handling. Proposal: keep `APPLY` in RAM and save only on `DRV:CFG:SAVE`; move the config
    to a 16 KB sector (sectors 1 to 3, erase about 250 ms) or to the external NOR; run the
    erase from RAM. Measure on the bench first (Phase 4 Step 0 can time one `DRV:CFG:SAVE`).
+   **Resolved 2026-10-17:** the store is an append-only journal in sector 7
+   (`InternalFlashJournalStore`); a save programs 64 bytes and never erases. The sector
+   erase runs at boot when fewer than 16 saves remain, or at run time only with the motor
+   stopped (`STORE_FULL` otherwise). The client's watchdog widening stays as a belt for
+   that rare run-time erase.
 3. **Upload handlers can drop the first payload byte.** The CR/LF drain loop after
    `OK READY` (`display_handlers.cpp`) reads and discards the first byte that is not CR/LF
    if it has already arrived. Harmless today because clients wait for `OK READY` before

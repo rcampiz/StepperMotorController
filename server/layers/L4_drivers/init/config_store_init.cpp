@@ -5,7 +5,7 @@
 
 #include "harness/pins/config_store_init.hpp"
 #include "harness/defs/harness_l4_l5.hpp"
-#include "L4_drivers/devices/internal_flash_config_store.hpp"
+#include "L4_drivers/devices/internal_flash_journal_store.hpp"
 
 namespace Drivers {
 
@@ -15,7 +15,9 @@ bool initConfigStore(Drivers::IConfigStore*& store)
     if (h.internalFlash == nullptr) {
         return false;
     }
-    static InternalFlashConfigStore s_store(*h.internalFlash);
+    // Journal: saves append into blank flash; the 1-2 s sector erase happens only when the
+    // journal is full (at boot, or at run time with the motor stopped).
+    static InternalFlashJournalStore s_store(*h.internalFlash);
     store = &s_store;
     return true;
 }
