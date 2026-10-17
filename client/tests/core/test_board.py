@@ -214,6 +214,18 @@ def test_late_reply_after_timeout_is_not_given_to_the_next_request(rig):
     assert nxt.success and "serial" in nxt.data
 
 
+def test_late_reply_with_a_different_json_command_name_is_dropped(rig):
+    """SYST:HB:TIMEOUT answers as SET_HEARTBEAT. Seen on COM5 2026-10-17: a late ack shifted
+    every later reply by one (DRV:STEP_MODE? "answered" with the watchdog data)."""
+    rig.open()
+    rig.fake.delay_next_s = 0.5
+    late = rig.board.request(C.heartbeat_timeout(500))
+    assert late.error_code == "TIMEOUT"
+    nxt = rig.board.request(C.step_mode_query())
+    assert nxt.success and "step_mode" in nxt.data, nxt
+    assert "requested" not in nxt.data
+
+
 def test_coalesced_latest_sends_only_the_newest(rig):
     rig.open()
     rig.fake.delay_next_s = 0.15

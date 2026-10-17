@@ -52,6 +52,13 @@ MULTILINE_END = "OK "          # ASCII: "OK <n>" closes a multi-line reply
 # ---------------------------------------------------------------------------
 # Plain data handed to frontends
 # ---------------------------------------------------------------------------
+def _reply_name(req: C.Request) -> str:
+    """The `command` field the firmware puts in the JSON reply to `req` (23 of them differ
+    from the request name: SYST:HB -> HEARTBEAT, *IDN? -> IDN, ...)."""
+    spec = COMMANDS.get(req.name)
+    return spec.json_command if spec is not None and spec.json_command else req.name
+
+
 @dataclass
 class BoardConfig:
     heartbeat: bool = True
@@ -467,7 +474,7 @@ class Board:
             return False
         with self._route_lock:
             inflight = self._in_flight
-            if inflight is not None and cmd == inflight.name:
+            if inflight is not None and cmd in (inflight.name, _reply_name(inflight)):
                 return False
             alias = "SYST:ESTOP" if cmd in ("SYST:ESTOP", "ESTOP") else cmd
             n = self._stale_names.get(alias, 0)
@@ -810,7 +817,8 @@ class Board:
 
     def _timed_out(self, req: C.Request) -> Response:
         with self._route_lock:
-            self._stale_names[req.name] = self._stale_names.get(req.name, 0) + 1
+            name = _reply_name(req)
+            self._stale_names[name] = self._stale_names.get(name, 0) + 1
         return Response(False, req.name, {}, "TIMEOUT", f"no reply to {req.line}")
 
     def _collect_lines(self, req: C.Request, first, timeout: float) -> Response:
