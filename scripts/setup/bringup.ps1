@@ -24,7 +24,7 @@
     Do not install anything; just report what is present.
 
 .EXAMPLE
-    powershell -ExecutionPolicy Bypass -File scripts\bringup.ps1
+    powershell -ExecutionPolicy Bypass -File scripts\setup\bringup.ps1
 #>
 [CmdletBinding()]
 param(
@@ -34,7 +34,7 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
-$repoRoot = Split-Path -Parent $PSScriptRoot
+$repoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 
 # ---------------------------------------------------------------------------
 # Package list: winget id -> executable used to verify it
@@ -51,8 +51,8 @@ if (-not $SkipOpenOCD) { $packages += @{ Id = 'xpack-dev-tools.openocd-xpack'; E
 function Write-Step($msg) { Write-Host "==> $msg" -ForegroundColor Cyan }
 
 function Refresh-SessionPath {
-    # Shared with interactive use: `. scripts\env.ps1`
-    . (Join-Path $PSScriptRoot 'env.ps1')
+    # Shared with interactive use: `. scripts\build\env.ps1`
+    . (Join-Path $PSScriptRoot '..\build\env.ps1')
 }
 
 function Test-Installed($id) {
@@ -118,10 +118,10 @@ $rows | Format-Table -AutoSize | Out-String | Write-Host
 
 $missing = @($rows | Where-Object Status -eq 'MISSING')
 if ($missing.Count -eq 0) {
-    Write-Host "All tools present. Build the firmware with:  scripts\build_direct.bat" -ForegroundColor Green
-    Write-Host "Flash with:                                  scripts\flash.bat" -ForegroundColor Green
+    Write-Host "All tools present. Build the firmware with:  scripts\build\build_direct.bat" -ForegroundColor Green
+    Write-Host "Flash with:                                  scripts\build\flash.bat" -ForegroundColor Green
     exit 0
 } else {
-    Write-Host "$($missing.Count) tool(s) missing. If you just installed, open a NEW terminal and run: scripts\bringup.ps1 -VerifyOnly" -ForegroundColor Yellow
+    Write-Host "$($missing.Count) tool(s) missing. If you just installed, open a NEW terminal and run: scripts\setup\bringup.ps1 -VerifyOnly" -ForegroundColor Yellow
     exit 2
 }

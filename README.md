@@ -154,8 +154,8 @@ a host g++ for unit tests, Python 3.12 + client requirements, OpenOCD) via `wing
 prints a verification table. Safe to re-run.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\bringup.ps1
-. scripts\env.ps1    # make the tools visible in an already-open shell
+powershell -ExecutionPolicy Bypass -File scripts\setup\bringup.ps1
+. scripts\build\env.ps1    # make the tools visible in an already-open shell
 ```
 
 Manual alternative:
@@ -176,7 +176,7 @@ Manual alternative:
 CMake is the authoritative build (presets in `CMakePresets.json`):
 
 ```powershell
-. scripts\env.ps1                                  # once per shell
+. scripts\build\env.ps1                                  # once per shell
 cmake --preset firmware-debug                      # configure (ENABLE_INTERFACE_TRACE=ON)
 cmake --build --preset firmware-debug              # -> build/StepperMotorController.elf/.hex/.bin
 cmake --build --preset firmware-debug --target arch-check   # layer/harness rules + doc freshness
@@ -184,7 +184,7 @@ cmake --build --preset firmware-debug --target flash        # OpenOCD + ST-LINK
 ```
 
 `firmware-release` is the -O2 preset without interface tracing.
-`scripts\build_direct.bat` and `scripts\build.ps1` are thin wrappers over the same presets.
+`scripts\build\build_direct.bat` and `scripts\build\build.ps1` are thin wrappers over the same presets.
 
 ### Host unit tests
 
@@ -239,8 +239,8 @@ ser.write(b'DISP_TEXT 10 10 FFFF 001F Hello\n')
 Regenerate the architecture docs after editing any `harness_*.hpp` table:
 
 ```powershell
-python scripts\gen_architecture.py          # writes docs/ARCHITECTURE.md + architecture_manifest.json
-python scripts\gen_architecture.py --check  # CI: fail if stale
+python scripts\arch\gen_architecture.py          # writes docs/ARCHITECTURE.md + architecture_manifest.json
+python scripts\arch\gen_architecture.py --check  # CI: fail if stale
 ```
 
 ## What's Next

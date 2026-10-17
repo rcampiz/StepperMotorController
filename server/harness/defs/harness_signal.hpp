@@ -8,7 +8,7 @@
  * Nothing here allocates, nothing is virtual, nothing depends on the RTOS.
  *
  * Harness headers are the ONLY cross-layer headers a layer may include (see
- * scripts/check_includes.py). Platform (F_platform/boundary) is a power net and is
+ * scripts/arch/check_includes.py). Platform (F_platform/boundary) is a power net and is
  * never listed as a harness signal.
  */
 #pragma once

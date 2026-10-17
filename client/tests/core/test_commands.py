@@ -67,7 +67,7 @@ def test_each_builder_emits_a_declared_catalogue_command(name):
 
 
 def test_spec_is_fresh_against_the_firmware_parser():
-    r = subprocess.run([sys.executable, os.path.join(REPO, "scripts", "gen_protocol.py"), "--check"],
+    r = subprocess.run([sys.executable, os.path.join(REPO, "scripts", "arch", "gen_protocol.py"), "--check"],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stdout + r.stderr
 

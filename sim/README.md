@@ -18,7 +18,7 @@ Known differences: the identity store is initialised here (the firmware never ca
 display task; the boot id is random per process and the serial comes from `--serial`.
 `harness/pins/interrupt_guard.hpp` is shadowed by a host mutex (`vnucleo/shadow/`).
 
-## Build (Windows with WinLibs via `scripts\env.ps1`, or any Linux / Raspberry Pi with g++)
+## Build (Windows with WinLibs via `scripts\build\env.ps1`, or any Linux / Raspberry Pi with g++)
 
 ```
 cd sim

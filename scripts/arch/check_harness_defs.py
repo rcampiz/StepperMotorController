@@ -19,14 +19,14 @@ Checks
      boundary/ header or a task-sheet header (consumers include the defs/ harness header
      or, within the same layer, the boundary header itself).
 
-Usage: python scripts/check_harness_defs.py [--strict]
+Usage: python scripts/arch/check_harness_defs.py [--strict]
 """
 import os
 import re
 import sys
 from collections import defaultdict
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SERVER = os.path.join(ROOT, "server")
 DEFS = os.path.join(SERVER, "harness", "defs")
 

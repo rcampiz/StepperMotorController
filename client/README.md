@@ -9,7 +9,7 @@ client/
                        open_transport("COM6" | "/dev/ttyACM0" | "tcp://HOST:PORT")
     framing.py         classify(line) -> Frame (response/event/telemetry/reset/banner/...)
     codec.py           Response, Event, ResetInfo, Identity, HeartbeatAck, parse_*()
-    protocol_spec.py   GENERATED from the firmware parser (scripts/gen_protocol.py)
+    protocol_spec.py   GENERATED from the firmware parser (scripts/arch/gen_protocol.py)
     commands.py        one typed builder per PROTOCOL.md command -> Request
     views.py           typed views of text replies (DBG:MOTOR, DRV:CFG?, CTRL:ENC?, SYSID)
     units.py           motion units and powerSTEP01 register scaling

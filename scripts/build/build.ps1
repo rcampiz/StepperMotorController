@@ -8,7 +8,7 @@
 param([switch]$Tests, [switch]$All, [switch]$Release, [switch]$Clean)
 
 $ErrorActionPreference = 'Stop'
-$repo = Split-Path -Parent $PSScriptRoot
+$repo = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 . (Join-Path $PSScriptRoot 'env.ps1')
 Set-Location $repo
 

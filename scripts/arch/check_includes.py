@@ -17,15 +17,15 @@ root (server/system_init.*, main.cpp) may include every sheet, and
 L3_services/ init headers. harness/ itself may include anything.
 
 Usage:
-  python scripts/check_includes.py            # report
-  python scripts/check_includes.py --strict   # exit 1 on any violation (CI gate)
-  python scripts/check_includes.py --baseline N   # exit 1 only if violations > N
+  python scripts/arch/check_includes.py            # report
+  python scripts/arch/check_includes.py --strict   # exit 1 on any violation (CI gate)
+  python scripts/arch/check_includes.py --baseline N   # exit 1 only if violations > N
 """
 import os
 import re
 import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SERVER = os.path.join(ROOT, "server")
 
 INCLUDE_RE = re.compile(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]')

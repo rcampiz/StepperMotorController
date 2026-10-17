@@ -1,5 +1,5 @@
 # Dot-source this to make freshly installed tools visible in the current PowerShell session:
-#     . scripts\env.ps1
+#     . scripts\build\env.ps1
 # winget installers update the registry PATH, not running shells. This merges Machine + User
 # PATH into the session and adds winget's per-user portable-package bin folders.
 $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')

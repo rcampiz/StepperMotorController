@@ -13,7 +13,7 @@ To be exact:
 
 ```powershell
 git checkout c9a35e5
-. scripts\env.ps1
+. scripts\build\env.ps1
 cmake --preset firmware-debug ; cmake --build --preset firmware-debug
 cmake --build --preset firmware-debug --target flash     # OpenOCD + ST-LINK
 git checkout master
@@ -112,7 +112,7 @@ Scenarios (run each three times, report min/median/max):
 | (b) during RUN | `MOT:RUN 300 1` first | similar to (a); may add one 50 ms status poll's SPI time if the Motor task holds SPI1 |
 | (c) during full-screen bitmap | `UI_MODE REMOTE`, then `DISP_BITMAP 0 0 240 320`, start sending pixel bytes, send `ESTOP\n` **inside** the byte stream | the `ESTOP` bytes are consumed as pixels; the stop is only parsed after all 153,600 bytes: **seconds** (13.3 s at 115200 baud from stream start) |
 
-`scripts/estop_baseline.py` drives the three scenarios and prints host-side timestamps for
+`scripts/bench/estop_baseline.py` drives the three scenarios and prints host-side timestamps for
 cross-checking; the analyzer provides the real numbers.
 
 ## 5. Results table (the "before" column)
@@ -121,7 +121,7 @@ Bench session 2026-10-17. Board on COM5 (ST-LINK VCP). Flashed by copying the `.
 NUCLEO's `NOD_F401RE` drive (the ST-LINK debug interface has no driver on this PC, so the
 OpenOCD `flash` target fails; `docs/bringup` memory: drag-and-drop works). c9a35e5 built
 in a worktree with the debug preset: text 201,136, data 2,004, bss 50,384. Serial items
-run with `scripts/bringup_step0.py COM5 --no-debug` and `scripts/estop_baseline.py COM5`.
+run with `scripts/bench/bringup_step0.py COM5 --no-debug` and `scripts/bench/estop_baseline.py COM5`.
 
 | Measurement | Value | Notes |
 |---|---|---|
@@ -135,7 +135,7 @@ run with `scripts/bringup_step0.py COM5 --no-debug` and `scripts/estop_baseline.
 | STBY/RESET shield resistor (designator, value, rail) | **to be checked** (UM1857 schematic or a meter on CN9 D8 with the board unpowered) | |
 | Step-mode readback (4, 7) | 4 → `step_mode 4, 1/16, 3200 µsteps/rev`; 7 → `step_mode 7, 1/128, 25600`; restored 5 (1/32) | each `DRV:CFG:APPLY` writes flash; the reply arrived within the 2.5 s wait |
 | Run / ESTOP / refused / clear / run | `MOT:RUN 300 1` → position advancing at speed 299, bridges on; `SYST:ESTOP` → state ESTOP, Hi-Z; `MOT:RUN` → `ERROR Motor fault active`; `SYST:FAULT:CLEAR` → IDLE; `MOT:RUN` ok | `SYST:FAULT:CLEAR` while not latched answers `ERROR Invalid state for operation` |
-| Debug pause / LCD disable observed | **not run yet** (item 6 blanks the LCD; run after the Task Monitor is read) | `scripts/bringup_step0.py COM5` without `--no-debug` |
+| Debug pause / LCD disable observed | **not run yet** (item 6 blanks the LCD; run after the Task Monitor is read) | `scripts/bench/bringup_step0.py COM5` without `--no-debug` |
 | Index pulse: pulses / revolutions / period | `index_seen` true, revolutions 3, index period 2,404,685 µs, count 13,531 after the runs | the index was crossed during the 300 steps/s runs |
 | Motor supply / faults at rest | UVLO false, OCD false, status 0xE203 (Hi-Z, not busy) | on the v0.3.0 firmware found on the board, OCD/STALL events fired at rest with OCD disabled in `ALARM_EN` (noise); not seen since reflashing |
 | Firmware found on the board before Step 0 | v0.3.0, built Mar 6 2026 | replaced by c9a35e5 |

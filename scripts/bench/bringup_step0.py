@@ -3,7 +3,7 @@
 bringup_step0.py -- the serial part of the Phase 4 Step 0 bring-up list
 (docs/bringup/PHASE4_STEP0_BASELINE.md section 3, items 2 to 7) on the ST-LINK VCP.
 
-  python scripts/bringup_step0.py COM5 [--no-motor] [--no-debug]
+  python scripts/bench/bringup_step0.py COM5 [--no-motor] [--no-debug]
 
 Prints every command, its reply and a PASS/FAIL verdict, then a results block to paste
 into the baseline document. --no-motor skips the RUN/ESTOP item (3, 4); --no-debug skips

@@ -4,7 +4,7 @@
     "mcu": "STM32F401RE, Cortex-M4F @ 84 MHz, NUCLEO-F401RE + IHM03A1 (powerSTEP01) + GFX01M2 (ST7789, NOR flash, joystick)",
     "rtos": "FreeRTOS V11.1.0, GCC/ARM_CM4F, heap_4, configUSE_TIMERS=0, tick 1 kHz, max-syscall prio 5",
     "toolchain": "arm-none-eabi-gcc 14.2 (C++14, -fno-exceptions -fno-rtti); host tests: g++",
-    "build_system": "CMake presets (firmware-debug/-release, host-tests); scripts/build_direct.bat wraps the CMake build"
+    "build_system": "CMake presets (firmware-debug/-release, host-tests); scripts/build/build_direct.bat wraps the CMake build"
   },
   "layers": [
     {
@@ -997,5 +997,5 @@
       "is_violation": false
     }
   ],
-  "generated_by": "scripts/gen_architecture.py"
+  "generated_by": "scripts/arch/gen_architecture.py"
 }

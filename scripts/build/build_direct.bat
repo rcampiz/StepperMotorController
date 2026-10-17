@@ -5,7 +5,7 @@ REM   scripts\build_direct.bat         -> configure + build firmware-debug into 
 REM   scripts\build_direct.bat flash   -> ... then flash with OpenOCD (used by scripts\flash.bat)
 
 setlocal
-cd /d "%~dp0\.."
+cd /d "%~dp0\..\.."
 
 where cmake >nul 2>nul
 if %ERRORLEVEL% NEQ 0 (

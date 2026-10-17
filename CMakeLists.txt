@@ -6,7 +6,7 @@
 # Authoritative build. Configure with a preset:
 #   cmake --preset firmware-debug && cmake --build --preset firmware-debug
 # Output lands in build/ (StepperMotorController.elf/.hex/.bin/.map) so
-# scripts/flash.bat and .vscode/launch.json keep working.
+# scripts/build/flash.bat and .vscode/launch.json keep working.
 #
 # Host-side unit tests are a separate project: see tests/CMakeLists.txt
 # (preset "host-tests").
@@ -29,7 +29,7 @@ endif()
 option(ENABLE_INTERFACE_TRACE "Compile harness taps and interface trace output" OFF)
 
 # ---------------------------------------------------------------------------
-# MCU flags (identical to scripts/build_direct.bat)
+# MCU flags (identical to scripts/build/build_direct.bat)
 # ---------------------------------------------------------------------------
 set(MCU_FLAGS -mcpu=cortex-m4 -mthumb -mfpu=fpv4-sp-d16 -mfloat-abi=hard)
 
@@ -60,7 +60,7 @@ add_link_options(
 )
 
 # ---------------------------------------------------------------------------
-# Include paths and defines (identical to scripts/build_direct.bat)
+# Include paths and defines (identical to scripts/build/build_direct.bat)
 # ---------------------------------------------------------------------------
 set(EXT server/external)
 set(FREERTOS_DIR ${EXT}/X_middlewares/Third_Party/FreeRTOS-Kernel)
@@ -163,10 +163,10 @@ add_custom_target(flash
 
 # Architecture checkers as a build-time target (python required)
 add_custom_target(arch-check
-    COMMAND python ${CMAKE_SOURCE_DIR}/scripts/check_includes.py --strict
-    COMMAND python ${CMAKE_SOURCE_DIR}/scripts/check_harness_defs.py --strict
-    COMMAND python ${CMAKE_SOURCE_DIR}/scripts/gen_architecture.py --check
-    COMMAND python ${CMAKE_SOURCE_DIR}/scripts/gen_protocol.py --check
+    COMMAND python ${CMAKE_SOURCE_DIR}/scripts/arch/check_includes.py --strict
+    COMMAND python ${CMAKE_SOURCE_DIR}/scripts/arch/check_harness_defs.py --strict
+    COMMAND python ${CMAKE_SOURCE_DIR}/scripts/arch/gen_architecture.py --check
+    COMMAND python ${CMAKE_SOURCE_DIR}/scripts/arch/gen_protocol.py --check
     WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
     COMMENT "Checking layer/harness include rules"
 )

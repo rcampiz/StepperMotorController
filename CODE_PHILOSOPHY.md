@@ -305,8 +305,8 @@ it is not truly enforced.
 
 ## 14) Layer Rules and the Harness Model (Build-Enforced)
 
-Four rules, checked on every build by `scripts/check_includes.py --strict` and
-`scripts/check_harness_defs.py --strict` (the `arch-check` CMake target).
+Four rules, checked on every build by `scripts/arch/check_includes.py --strict` and
+`scripts/arch/check_harness_defs.py --strict` (the `arch-check` CMake target).
 Where this section and earlier sections disagree, this section wins.
 
 ### Rule 1: Tasks call services
@@ -381,7 +381,7 @@ front these calls, and no other sheet may do what the root does.
 
 Each header is a struct of references plus a `constexpr SignalDesc[]` table that states, per
 signal: provider side, flow direction, timing (sync / async-queue / async-flag), calling
-context (task / ISR / pre-scheduler) and ownership. `scripts/gen_architecture.py` turns these
+context (task / ISR / pre-scheduler) and ownership. `scripts/arch/gen_architecture.py` turns these
 tables into `docs/ARCHITECTURE.md` and `docs/architecture_manifest.json`; the docs are
 generated, never hand-edited.
 

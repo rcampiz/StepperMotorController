@@ -49,10 +49,10 @@ Enumerations in the signal table (`harness/defs/harness_signal.hpp`):
   file that defines connect functions (checker rules 3 and 6).
 
 Enforcement, which a diagram can show as a "design-rule check" box:
-`scripts/check_includes.py --strict` (which sheet may include which header),
-`scripts/check_harness_defs.py --strict` (8 rules: header includes, row counts, connect
+`scripts/arch/check_includes.py --strict` (which sheet may include which header),
+`scripts/arch/check_harness_defs.py --strict` (8 rules: header includes, row counts, connect
 definitions, single interface definition, pins hold no abstract classes, taps only under
-harness/, no adapters, no forwarders), `scripts/gen_architecture.py --check` (docs match
+harness/, no adapters, no forwarders), `scripts/arch/gen_architecture.py --check` (docs match
 tables). All three run from the CMake target `arch-check`.
 
 ## 3. The six harnesses

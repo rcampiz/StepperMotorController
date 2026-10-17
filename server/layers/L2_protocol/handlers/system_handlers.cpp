@@ -272,7 +272,7 @@ void CommandParser::cmdIdn() {
 }
 
 // SYST:HELP? — one line per command, generated from the dispatch tables by
-// scripts/gen_protocol.py (F8). The arch-check target fails when the table is stale.
+// scripts/arch/gen_protocol.py (F8). The arch-check target fails when the table is stale.
 namespace {
 const char* const kHelpLines[] = {
 #include "L2_protocol/help_table.inc"

@@ -4,7 +4,7 @@ REM Build script for NUCLEO-F401RE project using CMake + NMake
 setlocal enabledelayedexpansion
 
 REM Change to project root directory
-cd /d "%~dp0\.."
+cd /d "%~dp0\..\.."
 
 REM Parse command line argument
 set BUILD_TARGET=%1

@@ -14,7 +14,7 @@ if %ERRORLEVEL% NEQ 0 (
     )
 )
 
-set "LOGFILE=%~dp0..\build\flash_log.txt"
+set "LOGFILE=%~dp0..\..\build\flash_log.txt"
 
 REM Build and flash with real-time output visible to user
 call "%~dp0build_direct.bat" flash

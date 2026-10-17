@@ -6,7 +6,7 @@ The real latency is measured with a logic analyzer (see docs/bringup/PHASE4_STEP
 this script only sequences the commands and prints host-side timestamps for cross-checking.
 
 Usage:
-  python scripts/estop_baseline.py COM5 [--baud 115200] [--case a|b|c|all]
+  python scripts/bench/estop_baseline.py COM5 [--baud 115200] [--case a|b|c|all]
 
 Case a: idle, send SYST:ESTOP.
 Case b: MOT:RUN 300 1, wait 1 s, send SYST:ESTOP.
