@@ -89,7 +89,10 @@ def test_panels_render_core_views(gui):
     assert pump(app, lambda: w._board is not None and w._board.session_ready)
     w._on_refresh_params()
     assert pump(app, lambda: w._telemetry_panel._encoder_count_label.text() == "1,234")
-    assert pump(app, lambda: w._driver_panel._kval_hold_slider.value() == 16)   # 0x29 -> 16 %
+    # the sim is in current mode: the TVAL faders follow DRV:CFG? and the KVAL faders are left
+    # alone (the KVAL registers hold TVAL in current mode)
+    assert pump(app, lambda: w._driver_panel._tval_sliders[1].value() == 0x0A)
+    assert w._driver_panel._kval_hold_slider.value() == 0 and w._driver_panel._is_current_mode()
     assert pump(app, lambda: w._stepmode_panel._mode_combo.currentIndex() == 3)
 
 
@@ -109,7 +112,10 @@ def test_drive_mode_apply_sends_mode_tval_and_apply(gui):
     app, w, fake = gui
     assert pump(app, lambda: w._board is not None and w._board.session_ready)
     w._driver_panel._drive_mode_combo.setCurrentIndex(1)
-    w._driver_panel._tval_sliders[1].setValue(13)          # 1.3 A run -> 0x11 (78 mA/unit)
+    w._driver_panel._rated_spin.setValue(2.0)               # faders capped at 2.0 A -> 0x1A
+    w._driver_panel._tval_spins[1].setValue(1.3)            # 1.3 A run -> 0x11 (78 mA/unit)
+    assert w._driver_panel._tval_sliders[1].value() == 0x11
+    assert w._driver_panel._tval_sliders[2].maximum() == 0x1A
     w._driver_panel._on_apply_drive()
     assert pump(app, lambda: fake.drive_current and "DRV:CFG:APPLY" in fake.received)
     assert fake.tval[1] == 0x11

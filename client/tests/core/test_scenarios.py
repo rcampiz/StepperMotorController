@@ -78,7 +78,7 @@ def test_step_mode_chip_follows_config_in_hi_z_and_enabled(board):
 def test_drive_mode_chip_toggles_current_mode_and_restores_it(board):
     r = run(board, "drive_mode_chip")
     assert r.ok, (r.summary, r.checks)
-    assert board._fake.drive_current is False and r.measurements["original"] == "voltage"
+    assert board._fake.drive_current is True and r.measurements["original"] == "current"
 
 
 def test_telemetry_load_sees_the_encoder_advance(board):

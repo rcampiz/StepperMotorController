@@ -63,7 +63,7 @@ void MotorConfigManager::applyDefaults() {
     m_config.kvalRun = 0x30;   // ~19% duty
     m_config.kvalAcc = 0x40;   // ~25% duty
     m_config.kvalDec = 0x40;   // ~25% duty
-    m_config.driveMode = 0;    // voltage mode (KVAL)
+    m_config.driveMode = 1;    // current mode (TVAL): bench 2026-10-17, smoother than KVAL to 400 steps/s
     m_config.tvalHold = TVAL_DEFAULT_HOLD;
     m_config.tvalRun = TVAL_DEFAULT_RUN;
     m_config.tvalAcc = TVAL_DEFAULT_RUN;
@@ -221,9 +221,10 @@ bool MotorConfigManager::loadFromFlash() {
             }
             m_config.version = 2;
         }
-        // Migrate V2 -> V3: the bytes were reserved (zero): voltage mode, default TVALs
+        // Migrate V2 -> V3: the bytes were reserved (zero): current mode (the V3 default)
+        // with the default TVALs; the saved KVALs stay for anyone switching back
         if (m_config.version < 3) {
-            m_config.driveMode = 0;
+            m_config.driveMode = 1;
             m_config.tvalHold = TVAL_DEFAULT_HOLD;
             m_config.tvalRun = m_config.tvalAcc = m_config.tvalDec = TVAL_DEFAULT_RUN;
             m_config.version = 3;

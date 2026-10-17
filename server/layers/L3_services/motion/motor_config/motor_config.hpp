@@ -50,7 +50,7 @@ struct FaultEnableFlags {
 struct MotorConfig {
     uint32_t magic;         // 0x4D4F5452 - validity marker
     uint16_t version;       // Config format version
-    uint8_t  driveMode;     // V3: 0 = voltage mode (KVAL), 1 = current mode (TVAL); STEP_MODE bit CM_VM
+    uint8_t  driveMode;     // V3: 0 = voltage mode (KVAL), 1 = current mode (TVAL, the default); STEP_MODE bit CM_VM
     uint8_t  tvalHold;      // V3: TVAL_HOLD (0-127, 7.8 mV/LSB on the sense: 78 mA/LSB with 0.1 ohm), 0 = default
 
     // KVAL values (0-255, PWM duty cycle percentage * 2.56)

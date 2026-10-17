@@ -40,7 +40,7 @@ class FakeBoard:
         self.role = "NONE"
         self.dev_id = 0
         self.step_mode = 3
-        self.drive_current = False
+        self.drive_current = True
         self.tval = (0x05, 0x0A, 0x0A, 0x0A)
         self.full_steps = 200
         self.enc_ppr = 1600                   # counts/rev: one count per 1/8 microstep
