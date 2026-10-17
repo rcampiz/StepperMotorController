@@ -336,7 +336,8 @@ void CommandParser::dispatchSync(const char *suffix, const ParsedCommand &cmd) {
 // DIAG:* — Diagnostics (ping for latency, status query)
 void CommandParser::dispatchDiag(const char *suffix, const ParsedCommand &cmd) {
   static const CmdEntry t1[] = {{"PING", &CommandParser::cmdPing}};
-  static const CmdEntry0 t0[] = {{"STAT?", &CommandParser::cmdGetStatus}};
+  static const CmdEntry0 t0[] = {{"STAT?", &CommandParser::cmdGetStatus},
+                                 {"TASKS?", &CommandParser::cmdTasks}};
   if (dispatch1(suffix, t1, NCMD(t1), cmd))
     return;
   if (dispatch0(suffix, t0, NCMD(t0)))

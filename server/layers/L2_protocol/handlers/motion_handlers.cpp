@@ -165,8 +165,21 @@ void CommandParser::cmdStop(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdEstop() {
+  // Self-timed: from the arrival of the line's last byte (USART ISR stamp) to the return
+  // of the HardHiZ SPI write. This is the on-chip part of the ESTOP latency; the host
+  // adds its own USB round trip on top (Phase 4 Step 0 baseline, no analyzer needed).
+  const uint32_t rxUs = m_transport.lastRxTickUs();
   m_dispatcher.safetyEstop();
-  respondOk("ESTOP");
+  const uint32_t hizUs = m_dispatcher.getTickUs();
+  const unsigned long latency = (rxUs != 0) ? (hizUs - rxUs) : 0;
+  char buf[64];
+  if (m_format == ResponseFormat::JSON) {
+    snprintf(buf, sizeof(buf), "{\"message\":\"ESTOP\",\"latency_us\":%lu}", latency);
+    respondJsonOk("SYST:ESTOP", buf);
+  } else {
+    snprintf(buf, sizeof(buf), "ESTOP latency_us=%lu", latency);
+    respondOk(buf);
+  }
 }
 
 void CommandParser::cmdEnable() {

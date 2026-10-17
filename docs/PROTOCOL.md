@@ -215,7 +215,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `SYST:BAUD` | 1 | SYST:BAUD <115200\|230400\|460800\|921600> | ASCII: `OK <plain lines>`; JSON `SET_BAUD` keys: `baud` | `Supported: 115200, 230400, 460800, 921600` | `cmdSetBaud` (system_handlers.cpp) |
 | `SYST:EVT:EN` | 0 | — | ASCII: `OK <formatted text>` | `Invalid mask (0-255)` | `cmdEventEnable` (system_handlers.cpp) |
 | `SYST:DELAY` | 1 | SYST:DELAY <ms> | ASCII: `OK <formatted text>`; JSON `SYST:DELAY` keys: `transport_delay_ms` | `Delay must be 0-1000 ms` | `cmdSystDelay` (system_handlers.cpp) |
-| `SYST:ESTOP` | 0 | — | ASCII: `OK ESTOP` | — | `cmdEstop` (motion_handlers.cpp) |
+| `SYST:ESTOP` | 0 | — | ASCII: `OK <formatted text>`; JSON `SYST:ESTOP` keys: `latency_us`, `message` | — | `cmdEstop` (motion_handlers.cpp) |
 | `SYST:TICK?` | 0 | — | ASCII: `OK <plain lines>`; JSON `GET_TICK` keys: `tick` | — | `cmdGetTick` (system_handlers.cpp) |
 | `SYST:ECHO?` | 0 | — | JSON `ECHO` keys: `echo` | — | `cmdEchoQuery` (system_handlers.cpp) |
 | `SYST:HB:STAT?` | 0 | — | ASCII: `OK <plain lines>`; JSON `GET_HEARTBEAT_STATUS` keys: `enabled`, `last_seq`, `remaining_ms`, `timed_out`, `timeout_ms` | — | `cmdGetHeartbeatStatus` (safety_handlers.cpp) |
@@ -243,6 +243,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 |---|---|---|---|---|---|
 | `DIAG:PING` | 0 | — | ASCII: `OK <plain lines>`; JSON `PING` keys: `rx_tick`, `seq`, `state`, `tx_tick` | — | `cmdPing` (system_handlers.cpp) |
 | `DIAG:STAT?` | 0 | — | ASCII: `OK <plain lines>` | — | `cmdGetStatus` (system_handlers.cpp) |
+| `DIAG:TASKS?` | 0 | — | ASCII: `<lines> then OK <n>`; JSON `TASKS` keys: `count`, `lines` | `Task statistics unavailable` | `cmdTasks` (system_handlers.cpp) |
 
 ### CTRL
 

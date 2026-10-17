@@ -300,6 +300,7 @@ private:
   void cmdPing(const ParsedCommand &cmd);
   void cmdGetTick();
   void cmdGetStatus();
+  void cmdTasks();
   void cmdClearFault();
   void cmdForceClearFault();
 

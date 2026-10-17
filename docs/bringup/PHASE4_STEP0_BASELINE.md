@@ -1,9 +1,14 @@
 # Phase 4, Step 0: hardware baseline before the fast-ESTOP work
 
-Status 2026-10-05: **blocked on hardware**. No ST-LINK is attached to the build machine
-(OpenOCD `open failed`; the only serial ports are COM1 and two Bluetooth links). Everything
-that can be prepared without the board is below: the datasheet facts the later steps need,
-the exact measurement procedure, a scenario driver script, and the results table to fill in.
+Status 2026-10-17: **complete**. The board was attached on 2026-10-17 (COM5, drag-and-drop
+flashing). Every row of the results table in section 5 is filled: the serial bring-up list,
+the ESTOP latencies (self-timed on the chip through `latency_us` in the `SYST:ESTOP` reply,
+no logic analyzer needed), the task stack marks (`DIAG:TASKS?`), the debug gate, and the
+STBY/RESET pull direction (`STBY_SENSE`: a pull-up on the shield). Phase 4 can start.
+
+Status 2026-10-05 (historical): blocked on hardware. Everything that could be prepared
+without the board is below: the datasheet facts the later steps need, the exact measurement
+procedure, a scenario driver script, and the results table.
 
 ## 0. What to flash
 
@@ -127,15 +132,18 @@ run with `scripts/bench/bringup_step0.py COM5 --no-debug` and `scripts/bench/est
 |---|---|---|
 | Boot banner / phases | all phases `OK`: Clock, TickTimer, Platform, SPI Manager, L3 Services, Motor, Motor task, Encoder, Encoder task, Display, Display task, Comms, Comms task; first byte 0.7 s after programming | banner says v0.1.0, `SYST:VER?` says v0.3.0 (stale banner string at c9a35e5) |
 | Host round trip `DIAG:PING` → `PONG` | min 11.6 / median 16.2 / max 17.5 ms (n=10) | USB + two UART lines; the floor for host-side numbers |
-| ESTOP (a) idle, host side: write → `OK ESTOP` received | min 12.5 / median 14.7 / max 17.4 ms (n=10) | same as a ping: the firmware adds nothing measurable at host resolution. Analyzer value (last bit → 0xA8 on SPI1): **to be measured** |
-| ESTOP (b) during RUN, host side | min 10.6 / median 14.0 / max 15.6 ms (n=5) | analyzer value: **to be measured** |
+| ESTOP (a) idle, host side: write → `OK ESTOP` received | min 12.5 / median 14.7 / max 17.4 ms (n=10) | same as a ping: the firmware adds nothing measurable at host resolution |
+| ESTOP (a) idle, **on-chip** (self-timed: USART ISR stamp of the line's last byte → `HardHiZ` SPI write returned, `latency_us` in the reply) | min 664 / median 697 / max 1574 µs (n=10) | measured 2026-10-17 on the current firmware instead of with an analyzer; the 1.5 ms outliers are one Motor-task status poll holding SPI1 |
+| ESTOP (a') idle, ESTOP sent in the same millisecond as `MOT:EN` | min 682 / median 14246 / max 14836 µs (n=6) | the Motor task is executing the enable (HardStop + GET_STATUS + telemetry) and holds SPI1: the Hi-Z write waits a full Motor-task pass. This is the "SPI1 held" family (03_open_issues items 1 and 3), the number Phase 4's STBY pin path removes |
+| ESTOP (b) during RUN, host side | min 10.6 / median 14.0 / max 15.6 ms (n=5) | |
+| ESTOP (b) during `MOT:RUN 300`, on-chip | min 678 / median 692 / max 1546 µs (n=6); at `MOT:RUN 1000`: 672 / 690 / 703 µs (n=4) | the run itself adds nothing; the floor (~670 µs) is the Comms task wake-up, line parse and one SPI transaction under the mutex in the debug build |
 | ESTOP (c) during full-screen bitmap | ESTOP text injected at +0.77 s (8,203 bytes into the stream) was consumed as pixels; the firmware replied only when the stream ended at **+14.4 s**; the next `SYST:ESTOP` was honoured at once | matches the prediction (13.3 s of stream at 115200 + USB); analyzer value optional |
-| Encoder task stack high-water mark (words free) | **to be read on the LCD** (Task Monitor) | |
-| Other tasks' high-water marks | **to be read on the LCD** | |
-| STBY/RESET shield resistor (designator, value, rail) | **to be checked** (UM1857 schematic or a meter on CN9 D8 with the board unpowered) | |
+| Encoder task stack high-water mark (words free) | **168** | read over serial with the new `DIAG:TASKS?` (same table as the LCD Task Monitor), after the motion scenarios and index crossings; item 4 of 03_open_issues can close: the estimate held |
+| Other tasks' high-water marks (words free) | Comms 1403, Motor 797, Display 351, IDLE 114; free heap pool 512 bytes | `DIAG:TASKS?`, debug build |
+| STBY/RESET shield resistor (designator, value, rail) | **pull-up on the shield**: with PA9 switched to a floating input (no MCU pull, `STBY_SENSE` debug command, 3 reads) the node stays HIGH; the chip's own 450 kΩ pull-down would have taken it low within microseconds. The designator and value still come from UM1857 (or a meter on CN9 D8 with the board unpowered) | consequence for Phase 4: a dead or reset MCU leaves the bridges enabled. The STBY pin path must drive the pin low actively, and the hardware item (remove the pull-up or add a stronger pull-down) stands |
 | Step-mode readback (4, 7) | 4 → `step_mode 4, 1/16, 3200 µsteps/rev`; 7 → `step_mode 7, 1/128, 25600`; restored 5 (1/32) | each `DRV:CFG:APPLY` writes flash; the reply arrived within the 2.5 s wait |
 | Run / ESTOP / refused / clear / run | `MOT:RUN 300 1` → position advancing at speed 299, bridges on; `SYST:ESTOP` → state ESTOP, Hi-Z; `MOT:RUN` → `ERROR Motor fault active`; `SYST:FAULT:CLEAR` → IDLE; `MOT:RUN` ok | `SYST:FAULT:CLEAR` while not latched answers `ERROR Invalid state for operation` |
-| Debug pause / LCD disable observed | **not run yet** (item 6 blanks the LCD; run after the Task Monitor is read) | `scripts/bench/bringup_step0.py COM5` without `--no-debug` |
+| Debug pause / LCD disable observed | `DBG:UNLOCK` ok; `SPI_STOP` pauses the Motor task (telemetry tick advances, motor telemetry frozen); `SPI_START` resumes; `LCD_DISABLE` ok; `DBG:LOCK` ok; `SPI_STOP` refused when locked (`DBG_LOCKED`) | `scripts/bench/bringup_step0.py COM5 --no-motor`, 2026-10-17: all item-6 checks PASS |
 | Index pulse: pulses / revolutions / period | `index_seen` true, revolutions 3, index period 2,404,685 µs, count 13,531 after the runs | the index was crossed during the 300 steps/s runs |
 | Motor supply / faults at rest | UVLO false, OCD false, status 0xE203 (Hi-Z, not busy) | on the v0.3.0 firmware found on the board, OCD/STALL events fired at rest with OCD disabled in `ALARM_EN` (noise); not seen since reflashing |
 | Firmware found on the board before Step 0 | v0.3.0, built Mar 6 2026 | replaced by c9a35e5 |

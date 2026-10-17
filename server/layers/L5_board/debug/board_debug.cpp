@@ -31,6 +31,7 @@ bool BoardDebug::rawCommand(const char* cmd, const char* const* args,
     if (strcmp(cmd, "MISO_NOPULL") == 0) { cmdMisoNopull(transport); return true; }
     if (strcmp(cmd, "STBY_RELEASE") == 0) { cmdStbyRelease(transport); return true; }
     if (strcmp(cmd, "STBY_HOLD") == 0) { cmdStbyHold(transport); return true; }
+    if (strcmp(cmd, "STBY_SENSE") == 0) { cmdStbySense(transport); return true; }
     if (strcmp(cmd, "GPIO_STATE") == 0) { cmdGpioState(transport); return true; }
     if (strcmp(cmd, "PA6_HIZ") == 0) { cmdPa6Hiz(transport); return true; }
     if (strcmp(cmd, "PA6_RESTORE") == 0) { cmdPa6Restore(transport); return true; }
@@ -190,6 +191,28 @@ void BoardDebug::cmdStbyHold(Harness::IResponseSink& t) {
     GPIOA->MODER |= (0x1UL << 18);
     GPIOA->BSRR = (1UL << (9 + 16));
     t.writeLine("PA9 (STBY_RST) set LOW - powerSTEP01 in standby/reset.");
+}
+
+void BoardDebug::cmdStbySense(Harness::IResponseSink& t) {
+    // Let PA9 float (input, no pull) and read what the shield does with STBY/RESET when the
+    // MCU lets go: HIGH = a pull-up on the shield (a dead MCU leaves the bridges enabled),
+    // LOW = only the powerSTEP01's internal 450 k pull-down (fail-safe). Floating low puts
+    // the chip in standby and resets its registers, so the caller must DRV:REINIT after.
+    const uint32_t moder = GPIOA->MODER;
+    const uint32_t pupdr = GPIOA->PUPDR;
+    GPIOA->PUPDR &= ~(0x3UL << 18);
+    GPIOA->MODER &= ~(0x3UL << 18);
+    for (volatile uint32_t i = 0; i < 200000; ++i) {}   // a few ms for the node to settle
+    const int level = static_cast<int>((GPIOA->IDR >> 9) & 1U);
+    GPIOA->MODER = moder;
+    GPIOA->PUPDR = pupdr;
+    GPIOA->BSRR = (1UL << 9);                            // release STBY again (driven high)
+    char buf[128];
+    snprintf(buf, sizeof(buf), "STBY_SENSE PA9 floating reads %d: %s", level,
+             level ? "pulled UP on the shield (NOT fail-safe when the MCU dies)"
+                   : "pulled DOWN (powerSTEP01 internal 450k only: fail-safe)");
+    t.writeLine(buf);
+    t.writeLine("powerSTEP01 registers may have reset: send DRV:REINIT.");
 }
 
 void BoardDebug::cmdGpioState(Harness::IResponseSink& t) {
@@ -1207,7 +1230,7 @@ void BoardDebug::cmdEncDebug(Harness::IResponseSink& t) {
 // ---------------------------------------------------------------------------
 static const char* const s_rawCommandNames[] = {
     "SPI_DEBUG", "SPI_MODE_TEST", "CS_LOW", "CS_HIGH", "MISO_PULLDOWN", "MISO_NOPULL",
-    "STBY_RELEASE", "STBY_HOLD", "GPIO_STATE", "PA6_HIZ", "PA6_RESTORE", "SPI_STOP",
+    "STBY_RELEASE", "STBY_HOLD", "STBY_SENSE", "GPIO_STATE", "PA6_HIZ", "PA6_RESTORE", "SPI_STOP",
     "SPI_START", "GPIO_DUMP", "SPI_FLOAT_TEST", "SPI_BITBANG", "SPI_BITBANG_M3",
     "SPI_ECHO_TEST", "SPI_CS_TOGGLE", "PS01_DIAG", "PS01_FIX_CLK", "PS01_SAFE", "PS01_RESET",
     "PS01_RUN", "PS01_STOP", "LCD_DISABLE", "MOSI_TEST", "SPI_LOOPBACK", "ENC_DEBUG",

@@ -18,6 +18,7 @@
 #include "X_vendor/CMSIS/stm32f401xe.h"
 #include "harness/defs/harness_l5_l1_bytes.hpp"
 #include "F_platform/boundary/itask_notifier.hpp"
+#include "harness/pins/imicrosecond_clock.hpp"
 
 namespace Board {
 
@@ -154,6 +155,11 @@ public:
         if ((m_usart->SR & USART_SR_RXNE) != 0) {
             auto byte = static_cast<uint8_t>(m_usart->DR);
             m_rxBuffer.push(byte);
+            // Arrival stamp of the newest byte (TIM5 microseconds): the ESTOP reply reports
+            // the time from the line's last byte to the Hi-Z write (Phase 4 Step 0 baseline)
+            if (Platform::IMicrosecondClock* us = Harness::microsecondClock()) {
+                m_lastRxUs = us->getTickUs();
+            }
             if (m_wakeNotifier != nullptr) {
                 m_wakeNotifier->notifyFromISR(m_wakeTask);   // RTOS-safe: USART2 IRQ is at NVIC 6
             }
@@ -177,6 +183,7 @@ public:
 
     bool hasOverflowed() const { return m_rxBuffer.hasOverflowed(); }
     uint32_t rxOverflowCount() const override { return m_rxBuffer.getOverflowCount(); }
+    uint32_t lastRxTickUs() const override { return m_lastRxUs; }
     uint32_t getOverflowCount() const { return m_rxBuffer.getOverflowCount(); }
     void clearOverflow() { m_rxBuffer.clearOverflow(); }
 
@@ -188,6 +195,7 @@ private:
     uint8_t        m_af;
     uint32_t       m_apbClockHz;
     uint32_t       m_baudRate;
+    volatile uint32_t m_lastRxUs = 0;
     uint8_t        m_irqPriority;
     RingBuffer<1024> m_rxBuffer;   // F1.2: 89 ms of host traffic at 115200 baud (was 256 B = 22 ms)
     Platform::ITaskNotifier* m_wakeNotifier = nullptr;   // optional ISR -> Comms task wake

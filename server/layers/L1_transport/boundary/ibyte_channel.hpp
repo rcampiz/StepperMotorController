@@ -67,6 +67,9 @@ public:
     /// Bytes dropped because the RX ring was full, since init (monotonic). F1.1: the
     /// parser discards any line during which this changed.
     virtual uint32_t rxOverflowCount() const { return 0; }
+
+    /// Microsecond tick at which the newest byte arrived (0 if the channel cannot tell).
+    virtual uint32_t lastRxTickUs() const { return 0; }
 };
 
 } // namespace Transport

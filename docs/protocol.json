@@ -918,9 +918,17 @@
       "min_args": 0,
       "usage": [],
       "ascii_ok": [
-        "ESTOP"
+        "<formatted text>"
       ],
-      "json": [],
+      "json": [
+        {
+          "command": "SYST:ESTOP",
+          "keys": [
+            "latency_us",
+            "message"
+          ]
+        }
+      ],
       "errors": [],
       "note": "",
       "multiline": false,
@@ -1288,6 +1296,33 @@
       "errors": [],
       "note": "",
       "multiline": false,
+      "binary": false,
+      "persists": false
+    },
+    {
+      "name": "DIAG:TASKS?",
+      "prefix": "DIAG",
+      "handler": "cmdTasks",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<lines> then OK <n>"
+      ],
+      "json": [
+        {
+          "command": "TASKS",
+          "keys": [
+            "count",
+            "lines"
+          ]
+        }
+      ],
+      "errors": [
+        "Task statistics unavailable"
+      ],
+      "note": "",
+      "multiline": true,
       "binary": false,
       "persists": false
     },

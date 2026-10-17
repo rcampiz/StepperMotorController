@@ -89,6 +89,9 @@ public:
 
   /// RX bytes dropped by the byte channel since init (0 if the channel cannot tell).
   virtual uint32_t rxOverflowCount() const { return 0; }
+
+  /// Microsecond tick at which the newest byte arrived (0 if the link cannot tell).
+  virtual uint32_t lastRxTickUs() const { return 0; }
 };
 
 } // namespace Transport

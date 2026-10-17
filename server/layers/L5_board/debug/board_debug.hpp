@@ -28,6 +28,7 @@ private:
     void cmdMisoNopull(Harness::IResponseSink& t);
     void cmdStbyRelease(Harness::IResponseSink& t);
     void cmdStbyHold(Harness::IResponseSink& t);
+    void cmdStbySense(Harness::IResponseSink& t);
     void cmdGpioState(Harness::IResponseSink& t);
     void cmdPa6Hiz(Harness::IResponseSink& t);
     void cmdPa6Restore(Harness::IResponseSink& t);

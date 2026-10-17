@@ -7,6 +7,7 @@
 #include "L2_protocol/status_json.hpp"
 #include "harness/pins/protocol_version.hpp"
 #include "F_platform/boundary/boot_id.hpp"
+#include "F_platform/boundary/itask_stats.hpp"
 #include "harness/pins/async_event.hpp"
 
 namespace Protocol {
@@ -287,6 +288,33 @@ void CommandParser::cmdHelp() {
   m_sink.begin(m_format == ResponseFormat::JSON, "HELP");
   for (size_t i = 0; i < sizeof(kHelpLines) / sizeof(kHelpLines[0]); i++)
     m_sink.writeLine(kHelpLines[i]);
+  m_sink.end();
+}
+
+// DIAG:TASKS? — the LCD Task Monitor table over serial: one line per task,
+// "<name> prio=<p> state=<s> stack_hwm_words=<n> cpu=<pct>" (F12 multi-line reply)
+void CommandParser::cmdTasks() {
+  Platform::ITaskStats* stats = Platform::taskStatsProvider();
+  if (stats == nullptr) {
+    respondErr("Task statistics unavailable");
+    return;
+  }
+  Platform::TaskStatsSnapshot snap;
+  stats->getSnapshot(snap);
+  m_sink.begin(m_format == ResponseFormat::JSON, "TASKS");
+  static const char* const kStates[] = {"Running", "Ready", "Blocked", "Suspended", "Deleted"};
+  char line[96];
+  for (uint8_t i = 0; i < snap.count && i < Platform::TaskStatsSnapshot::MAX_TASKS; ++i) {
+    const Platform::TaskStat& t = snap.tasks[i];
+    snprintf(line, sizeof(line), "%s prio=%u state=%s stack_hwm_words=%u cpu=%u",
+             t.name, static_cast<unsigned>(t.priority),
+             (t.state < 5) ? kStates[t.state] : "?",
+             static_cast<unsigned>(t.stackHWM), static_cast<unsigned>(t.cpuPercent));
+    m_sink.writeLine(line);
+  }
+  snprintf(line, sizeof(line), "free_heap_bytes=%lu",
+           static_cast<unsigned long>(stats->getFreeHeapBytes()));
+  m_sink.writeLine(line);
   m_sink.end();
 }
 

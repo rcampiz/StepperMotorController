@@ -10,7 +10,7 @@ it matters, the proposed fix (also drawable), and status. Items are ordered by r
 | Item | State | Commit |
 |---|---|---|
 | 10 Heap use in the SPI manager | **closed**: static storage, placement new; the whole firmware is heap-free (`configSUPPORT_DYNAMIC_ALLOCATION 0`, heap_4 removed; tasks/queues/mutexes static) | F11 |
-| 4 Encoder stack | still an estimate; the task now runs from a 4096-word static pool (3968 used) and `free_heap` telemetry reports the pool's unused bytes | F11 |
+| 4 Encoder stack | **closed 2026-10-17**: measured on the bench with the new `DIAG:TASKS?` after the motion scenarios: Encoder 168 words free (Comms 1403, Motor 797, Display 351, IDLE 114); the estimate held | F11, Step 0 |
 | 3 Unlocked Comms-task calls into the controller | open (Phase 4 step 4) | — |
 | 6 Two ESTOP state holders | open (Phase 4 step 2 makes the MotorService latch the single source) | — |
 | 12 Platform files define `Harness::` functions | open (Phase 4 step 5) | — |
@@ -44,6 +44,7 @@ it matters, the proposed fix (also drawable), and status. Items are ordered by r
 | NEW (bench 2026-10-17): encoder velocity read 0 while moving | **done** with the velocity-units row: the counts-per-sample value was below the ±2 deadband (`vel_quality` 0 is GOOD) | F-vel |
 | Client: late reply shifted every later reply by one | **done** (client): a request that timed out (a slow `SYST:HB` ack) left its reply in the stream, and `Board._is_stale` compared the reply's JSON `command` (`SET_HEARTBEAT`, `HEARTBEAT`, `IDN`, ... 23 names differ) with the request name, so the late reply was handed to the next request. Now matched through `CommandSpec.json_command`; regression test in `test_board.py` | client |
 | Client: motion behaviour scenarios | **done**: `motion_scale` (ABS_POS and encoder per N microsteps, REV form, counts/rev measured: 4006 fwd / 3976 rev on the bench), `step_mode_chip`, `telemetry_load`; the in-process fake board now has timed moves and an encoder that follows in counts/rev | client |
+| NEW (2026-10-17): Phase 4 Step 0 measured without an analyzer | **done**: `SYST:ESTOP` replies `latency_us` (USART ISR stamp of the line's last byte, `IByteChannel::lastRxTickUs()`, to the return of the Hi-Z SPI write): idle 664 / 697 / 1574 µs, during RUN 678 / 692 / 1546 µs (min / median / max), but 13-15 ms when the ESTOP lands while the Motor task holds SPI1 for an enable (items 1 and 3: the reason for the Phase 4 STBY pin path). `DIAG:TASKS?` prints the LCD Task Monitor table over serial. Debug `STBY_SENSE` floats PA9 and reads it: **HIGH, a pull-up on the IHM03A1**, so a dead MCU leaves the bridges enabled (Phase 4 hardware item confirmed). Results in `docs/bringup/PHASE4_STEP0_BASELINE.md` section 5 | F-step0 |
 
 ## 1. SPI1 is held for an entire remote bitmap; ESTOP cannot interrupt it
 

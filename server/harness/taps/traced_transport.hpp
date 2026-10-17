@@ -57,6 +57,7 @@ public:
 
     uint32_t rxOverflowCount() const override { return m_real.rxOverflowCount(); }
     uint32_t baudRate() const override { return m_real.baudRate(); }
+    uint32_t lastRxTickUs() const override { return m_real.lastRxTickUs(); }
     bool setBaudRate(uint32_t baudRate) override {
         Harness::ITrace::log(Harness::ITrace::L1_L2_TRANSPORT, "[L1>L2]", "setBaud");
         return m_real.setBaudRate(baudRate);

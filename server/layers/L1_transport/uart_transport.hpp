@@ -39,6 +39,7 @@ public:
     bool setBaudRate(uint32_t baudRate) override;
     uint32_t baudRate() const override { return m_channel.baudRate(); }
     uint32_t rxOverflowCount() const override { return m_channel.rxOverflowCount(); }
+    uint32_t lastRxTickUs() const override { return m_channel.lastRxTickUs(); }
 
 private:
     Transport::IByteChannel& m_channel;

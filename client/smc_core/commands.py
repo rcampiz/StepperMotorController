@@ -272,6 +272,9 @@ def ping(seq: int = 0) -> Request: return request("DIAG:PING", int(seq))
 @builds("DIAG:STAT?")
 def status() -> Request: return request("DIAG:STAT?")
 
+@builds("DIAG:TASKS?")
+def tasks_query() -> Request: return request("DIAG:TASKS?")   # the LCD Task Monitor table over serial
+
 
 # ---------------------------------------------------------------------------
 # CTRL: control mode, encoder, supervisor, trim, system identification
