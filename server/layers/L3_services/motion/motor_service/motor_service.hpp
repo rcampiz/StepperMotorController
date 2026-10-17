@@ -82,10 +82,15 @@ public:
     uint32_t refusedWhileLatched() const { return m_refused; }
     /// Result of the last SetStepMode handled by the Motor task (tests/diagnostics).
     bool lastStepModeResult(uint8_t& readback) const;
+    /// Result of the last Motor-task job (Reinit / ApplyConfig / GetDebugInfo): answered, ok.
+    bool lastJobResult(bool& ok) const;
 
 private:
     void applyPendingTransitions();               ///< Motor task: run the pending stop/clear edge once
     void handleSetStepMode(uint8_t mode);         ///< Motor task: rewrite STEP_MODE, publish the readback
+    void handleJob(MotorCmdType type);            ///< Motor task: Reinit / ApplyConfig / GetDebugInfo, answer the slot
+    bool runJob(MotorCmdType type);               ///< Comms task: queue a job and wait (bounded) for its answer
+    static bool isJob(MotorCmdType t);
 
     IMotorControlService* m_controller = nullptr;
     MotorController*      m_rawController = nullptr;
@@ -114,6 +119,16 @@ private:
     static constexpr uint32_t STEP_MODE_ANSWERED = 1u << 16;
     static constexpr uint32_t STEP_MODE_OK       = 1u << 8;
     std::atomic<uint32_t> m_stepModeResult{STEP_MODE_PENDING};
+
+    // Motor-task job slot (Phase 4 step 5): bit 16 = answered, bit 8 = ok. One job in flight at a
+    // time (the Comms task is the only client and waits). GetDebugInfo fills m_jobDebugInfo before
+    // the answer is published.
+    static constexpr uint32_t JOB_PENDING  = 0;
+    static constexpr uint32_t JOB_ANSWERED = 1u << 16;
+    static constexpr uint32_t JOB_OK       = 1u << 8;
+    static constexpr uint32_t JOB_WAIT_MS  = 250;
+    std::atomic<uint32_t> m_jobResult{JOB_PENDING};
+    Harness::MotorDebugParams m_jobDebugInfo{};
 };
 
 extern MotorService g_motorService;

@@ -11,8 +11,8 @@ it matters, the proposed fix (also drawable), and status. Items are ordered by r
 |---|---|---|
 | 10 Heap use in the SPI manager | **closed**: static storage, placement new; the whole firmware is heap-free (`configSUPPORT_DYNAMIC_ALLOCATION 0`, heap_4 removed; tasks/queues/mutexes static) | F11 |
 | 4 Encoder stack | **closed 2026-10-17**: measured on the bench with the new `DIAG:TASKS?` after the motion scenarios: Encoder 168 words free (Comms 1403, Motor 797, Display 351, IDLE 114); the estimate held | F11, Step 0 |
-| 3 Unlocked Comms-task calls into the controller | open (Phase 4 step 4) | — |
-| 6 Two ESTOP state holders | open (Phase 4 step 2 makes the MotorService latch the single source) | — |
+| 3 Unlocked Comms-task calls into the controller | **closed 2026-10-17** (Phase 4 step 5): `reinit`, `applyConfig` and `getDebugInfo` are Motor-task jobs (`MotorCmdType::Reinit / ApplyConfig / GetDebugInfo`) answered through `MotorService`'s job slot with a 250 ms bounded wait on the Comms side; while paused or in standby the job is answered "not done" at once. Bench: `DRV:REINIT` 26 ms, `DRV:CFG:APPLY` 47 ms, `MOTOR_DEBUG` 19 ms end to end | F-jobs |
+| 6 Two ESTOP state holders | **closed 2026-10-17** (Phase 4 step 4): `CommandQueue::getState()` derives ESTOP from `MotorService::isStopLatched()`; the queue never stores ESTOP itself. A stop from any path (SYST:ESTOP, watchdog, the 0x18 byte alone) reads ESTOP, refuses motion and clears normally. Bench: 0x18 alone -> `state ESTOP`, `MOT:RUN` refused with `FAULT`, clear -> IDLE | F-latch |
 | Phase 4 step 1: out-of-band ESTOP | **done 2026-10-17**: byte 0x18 in the USART2 ISR (`UartHardware::handleIRQ` -> `Harness::invokeOobEstop()` -> `MotorService::oobEstopFromIsr`) drives STBY/RESET low and latches in the interrupt; the Motor task does the SPI HardHiZ, publishes a "Hi-Z, stopped" snapshot while the chip is in standby, and on `SYST:FAULT:CLEAR` releases the pin, waits 2 ms and re-initialises the driver with the saved config. Bench: 0x18 -> pin low 0-1 µs in every case, including the enable case that still takes 14.6 ms over SPI1. Raw binary uploads pause the byte for their payload (`OobEstopPause`); the base64 variants keep it. `SYST:ESTOP` replies `oob_pin_us` / `oob_hiz_us`. Simulator: the TCP transport and FakePowerStep honour it; the fleet ESTOP test passes | F-oob |
 | Phase 4 step 2: interrupt-driven UART transmit | **done 2026-10-17**: `UartHardware::write()` queues into a 4 KB ring drained by the USART2 TXE interrupt; the writer sleeps 1 ms at a time only when the ring is full (`Harness::setCommsTxClock`); `flush()` waits for ring + shift register. Bench: an ESTOP line parsed 0.7 ms after arrival while a `SYST:HELP?` reply is still going out (was 224 ms), a ping answered on-chip in 1-2 µs during the same. Item 2 (one serial loop) is narrower now: the Comms task is only held by *receiving* (raw binary payloads), never by sending | F-txring |
 | Phase 4 step 3: SPI1 locked per chunk during bitmaps | **done 2026-10-17**: `LCD::streamBitmapStart` releases the bus after the window set-up, each `streamBitmapData` is its own locked transaction continued with RAMWRC (0x3C), `streamBitmapEnd` only closes the stream state. Bench: a software-timed 3 s identification run during a 2.7 s bitmap took 6.34 s wall and let the motor run 45558 counts unsupervised before, 3.58 s and 24300 counts after (the Motor task passes every 50 ms through the stream). Host test in `test_lcd_vsync.cpp`. Closes item 1's fix 1 | F-spichunk |
@@ -130,7 +130,7 @@ half-configured state; the ESTOP window is bounded and short.
 mechanism now used for `SetStepMode` (command + atomic result slot), making the Motor task
 the only caller of `MotorController`.
 
-**Status**: open; low effort now that the SetStepMode message exists.
+**Status**: closed 2026-10-17 (Phase 4 step 5): all three are Motor-task jobs, see the status table.
 
 ## 4. Encoder task stack headroom is estimated, not measured
 
@@ -180,7 +180,7 @@ with the two transitions that keep them aligned.
 **Significance**: a future caller of `immediateHardHiZ` or `clearImmediateStop` that is not
 `CommandQueue` would desynchronise the host-visible state from the motor's.
 
-**Status**: documented; could be closed by making `CommandQueue` the sole owner (private
+**Status**: closed 2026-10-17 (Phase 4 step 4): the MotorService latch is the sole owner; the queue derives ESTOP from it.
 interface) or by deriving one from the other.
 
 ## 7. Two entry paths for motion commands

@@ -90,7 +90,11 @@ public:
   /**
    * @brief Get current controller state
    */
-  ControllerState getState() const { return m_state; }
+  /// ESTOP is derived from the MotorService latch (the single holder, Phase 4 step 4): a stop
+  /// from any path (SYST:ESTOP, the watchdog, the out-of-band byte) shows here as ESTOP.
+  ControllerState getState() const {
+    return (m_immediate != nullptr && m_immediate->isStopLatched()) ? ControllerState::ESTOP : m_state;
+  }
 
   /**
    * @brief Get number of commands in pending queue

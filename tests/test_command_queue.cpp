@@ -69,6 +69,17 @@ TEST(estop_stops_the_driver_immediately_even_with_a_full_motor_queue) {
     EXPECT_EQ(r.sink.timeouts.back(), 0u);      // the queued HardHiZ never waits
 }
 
+TEST(the_latch_alone_reports_estop_and_clear_releases_it) {
+    // Phase 4 step 4: the out-of-band byte latches the MotorService without going through the
+    // queue; the queue's state must still read ESTOP, refuse motion, and clear normally.
+    Rig r;
+    r.immediate.latched = true;
+    EXPECT_EQ(r.q.getState(), Services::ControllerState::ESTOP);
+    EXPECT_EQ(r.q.clearFault(), Services::QueueResult::OK);
+    EXPECT_EQ(r.immediate.clears, 1);
+    EXPECT_EQ(r.q.getState(), Services::ControllerState::IDLE);
+}
+
 TEST(clear_after_estop_releases_the_latch_exactly_once) {
     Rig r;
     r.q.emergencyStop();

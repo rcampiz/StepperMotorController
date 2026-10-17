@@ -229,3 +229,20 @@ Open, noted while measuring: twice the board answered nothing on a serial port o
 after it had booted (both the previous and this build), while a port held open through the
 reset always saw a normal boot and normal replies; reprogramming with the port open
 recovers it. Not reproduced since; tracked in `03_open_issues.md`.
+
+## 9. After Phase 4 steps 4 and 5 (single ESTOP holder, Motor-task jobs, 2026-10-17)
+
+`CommandQueue::getState()` now derives ESTOP from the MotorService latch instead of keeping
+its own copy, and the three calls the Comms task used to make on the controller directly
+(`reinit`, `applyConfig`, `getDebugInfo`) are messages the Motor task executes between its
+own driver sequences, answered through a result slot (250 ms bounded wait).
+
+| Measurement | value |
+|---|---|
+| 0x18 alone (no `SYST:ESTOP` line), then `DIAG:STAT?` | `state ESTOP`, `hi_z true`, `speed 0`; `MOT:RUN` refused with `FAULT`; `SYST:FAULT:CLEAR` -> IDLE, chip re-initialised at 1/32 (before step 4 the state read IDLE after a bare 0x18) |
+| `DRV:REINIT` end to end (job round trip included) | 25.6 ms |
+| `DRV:CFG:APPLY` end to end (apply job + flash journal append + readback job) | 46.5 ms |
+| `MOTOR_DEBUG` (GetDebugInfo job, 15 registers) | 19.4 ms |
+| scenarios after | motion_scale, step_mode_chip, estop_latency PASS (confirm 78 ms) |
+
+Phase 4 as planned in `03_open_issues.md` items 1, 3, 6 and the Step 0 proposal is complete.

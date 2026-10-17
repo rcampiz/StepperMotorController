@@ -170,6 +170,13 @@ void MotorService::onCommand(const MotorCommand& cmd)
     applyPendingTransitions();
     if (m_debugPaused.load() || m_standby.load()) {
         ++m_refused;                                   // SPI_STOP / standby: no driver traffic at all
+        if (isJob(cmd.type)) {
+            m_jobResult.store(JOB_ANSWERED);           // answer "not done" so the Comms task does not wait
+        }
+        return;
+    }
+    if (isJob(cmd.type)) {
+        handleJob(cmd.type);
         return;
     }
     if (cmd.type == MotorCmdType::SetStepMode) {
@@ -230,33 +237,89 @@ bool MotorService::sendCommand(const MotorCommand& cmd, uint32_t timeoutMs)
 // IMotorTaskControl (Comms task context)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Motor-task jobs (Phase 4 step 5). The Comms task never touches the controller itself:
+// every driver sequence runs on the Motor task, between its own operations.
+// ---------------------------------------------------------------------------
+
+bool MotorService::isJob(MotorCmdType t)
+{
+    return t == MotorCmdType::Reinit || t == MotorCmdType::ApplyConfig || t == MotorCmdType::GetDebugInfo;
+}
+
+bool MotorService::runJob(MotorCmdType type)
+{
+    if (m_controller == nullptr) {
+        return false;
+    }
+    m_jobResult.store(JOB_PENDING);
+    MotorCommand cmd = {};
+    cmd.type = type;
+    if (!sendCommand(cmd, SEND_TIMEOUT_MS)) {
+        return false;
+    }
+    uint32_t waited = 0;
+    uint32_t result = m_jobResult.load();
+    while ((result & JOB_ANSWERED) == 0u && m_clock != nullptr && waited < JOB_WAIT_MS) {
+        m_clock->delayMs(STEP_MODE_POLL_MS);
+        waited += STEP_MODE_POLL_MS;
+        result = m_jobResult.load();
+    }
+    return (result & JOB_ANSWERED) != 0u && (result & JOB_OK) != 0u;
+}
+
+void MotorService::handleJob(MotorCmdType type)
+{
+    bool ok = false;
+    if (m_controller != nullptr) {
+        switch (type) {
+            case MotorCmdType::Reinit:
+                m_controller->reinit();
+                ok = true;
+                break;
+            case MotorCmdType::ApplyConfig: {
+                ok = m_controller->applyConfig();
+                if (!ok) {
+                    // Bridges on: STEP_MODE needs the Hi-Z path, which is ours to run here
+                    uint8_t readback = 0xFF;
+                    ok = m_controller->setStepModeSafe(motion.stepper.config.getStepMode(), readback);
+                }
+                break;
+            }
+            case MotorCmdType::GetDebugInfo:
+                m_controller->getDebugInfo(m_jobDebugInfo);
+                ok = true;
+                break;
+            default:
+                break;
+        }
+    }
+    m_jobResult.store(JOB_ANSWERED | (ok ? JOB_OK : 0u));
+}
+
+bool MotorService::lastJobResult(bool& ok) const
+{
+    const uint32_t result = m_jobResult.load();
+    ok = (result & JOB_OK) != 0u;
+    return (result & JOB_ANSWERED) != 0u;
+}
+
 void MotorService::reinit()
 {
-    if (m_controller != nullptr) {
-        m_controller->reinit();
-    }
+    (void)runJob(MotorCmdType::Reinit);
 }
 
 bool MotorService::applyConfig()
 {
-    if (m_controller == nullptr) {
-        return false;
-    }
-    if (m_controller->applyConfig()) {
-        return true;
-    }
-    // The bridges were on, so STEP_MODE could not be written in place: route it through
-    // the Motor task (Hi-Z, write, verify, SoftStop), exactly as DRV:STEP_MODE does.
-    uint8_t readback = 0xFF;
-    return setStepModeSafe(motion.stepper.config.getStepMode(), readback);
+    return runJob(MotorCmdType::ApplyConfig);
 }
 
 bool MotorService::getDebugInfo(Harness::MotorDebugParams& out)
 {
-    if (m_controller == nullptr) {
+    if (!runJob(MotorCmdType::GetDebugInfo)) {
         return false;
     }
-    m_controller->getDebugInfo(out);
+    out = m_jobDebugInfo;
     return true;
 }
 

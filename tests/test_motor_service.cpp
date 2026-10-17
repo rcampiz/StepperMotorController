@@ -165,33 +165,61 @@ TEST(step_mode_is_a_message_answered_by_the_motor_task) {
     EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0x07u, 4u);
 }
 
-TEST(apply_config_writes_step_mode_only_in_hiz_else_via_the_motor_task) {
+TEST(apply_config_is_a_motor_task_job_that_writes_step_mode_in_hiz_or_via_the_safe_path) {
     Rig r;
     const uint8_t original = Services::motion.stepper.config.getStepMode();
-    // Hi-Z (boot, reinit, output disabled): written in place and verified
+    bool ok = false;
+    // Comms side: the job is queued, nothing touches the driver until the Motor task runs
     Services::motion.stepper.config.setStepMode(5);
     r.drv.hiZ = true;
     r.drv.params[Drivers::MotorReg::STEP_MODE] = 0x07;
-    EXPECT_TRUE(r.svc.applyConfig());
+    const int before = r.drv.setParams;
+    EXPECT_FALSE(r.svc.applyConfig());                    // unanswered here: nobody drains the queue
+    EXPECT_EQ(r.drv.setParams, before);
+    EXPECT_EQ(r.q.available(), 1u);
+    r.motorTaskPass();                                    // Hi-Z: written in place and verified
+    EXPECT_TRUE(r.svc.lastJobResult(ok));
+    EXPECT_TRUE(ok);
     EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0x07u, 5u);
 
-    // Bridges on: the chip would ignore the write, so nothing is written in place and a
-    // SetStepMode message is queued for the Motor task (times out here: nobody drains it)
+    // Bridges on: the Motor task takes the Hi-Z path itself (no second message needed)
     Services::motion.stepper.config.setStepMode(3);
     r.drv.hiZ = false;
-    EXPECT_FALSE(r.svc.applyConfig());
-    EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0x07u, 5u);
-    EXPECT_EQ(r.q.available(), 1u);
-    r.motorTaskPass();                                    // Hi-Z, write, verify, SoftStop
+    r.svc.applyConfig();
+    r.motorTaskPass();
+    EXPECT_TRUE(r.svc.lastJobResult(ok));
+    EXPECT_TRUE(ok);
     EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0x07u, 3u);
     EXPECT_EQ(r.drv.hardHiZCalls, 1);
-
-    // Already matching: no write at all, whatever the bridge state
-    const int before = r.drv.setParams;
-    EXPECT_TRUE(r.svc.applyConfig());
-    EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0x07u, 3u);
-    EXPECT_TRUE(r.drv.setParams > before);                // the other registers are written
     Services::motion.stepper.config.setStepMode(original);
+}
+
+TEST(reinit_and_debug_info_run_on_the_motor_task) {
+    Rig r;
+    bool ok = false;
+    const int inits = r.drv.inits;
+    r.svc.reinit();                                       // queued only
+    EXPECT_EQ(r.drv.inits, inits);
+    r.motorTaskPass();
+    EXPECT_EQ(r.drv.inits, inits + 1);
+    EXPECT_TRUE(r.svc.lastJobResult(ok));
+    EXPECT_TRUE(ok);
+
+    Harness::MotorDebugParams info{};
+    r.drv.params[Drivers::MotorReg::KVAL_RUN] = 0x5A;
+    EXPECT_FALSE(r.svc.getDebugInfo(info));               // unanswered on the Comms side alone
+    r.motorTaskPass();
+    EXPECT_TRUE(r.svc.lastJobResult(ok));
+    EXPECT_TRUE(ok);
+
+    // Paused (SPI_STOP): the job is answered "not done" at once instead of timing out
+    r.svc.setDebugPaused(true);
+    r.svc.reinit();
+    r.motorTaskPass();
+    EXPECT_TRUE(r.svc.lastJobResult(ok));
+    EXPECT_FALSE(ok);
+    EXPECT_EQ(r.drv.inits, inits + 1);
+    r.svc.setDebugPaused(false);
 }
 
 namespace {

@@ -183,7 +183,7 @@ QueueResult CommandQueue::clearQueue()
         // Can't clear while running - need to stop first
         result = QueueResult::INVALID_STATE;
     }
-    else if (m_state == ControllerState::FAULT || m_state == ControllerState::ESTOP) {
+    else if (getState() == ControllerState::FAULT || getState() == ControllerState::ESTOP) {
         // Can clear in fault/estop states
         m_queueHead = 0;
         m_queueTail = 0;
@@ -209,11 +209,12 @@ void CommandQueue::emergencyStop()
     // Acquire lock — held briefly, safe for emergency path
     m_lock->acquire();
 
-    // Clear pending queue
+    // Clear pending queue. The state machine goes back to IDLE; ESTOP is not stored here but
+    // derived from the MotorService latch that immediateHardHiZ() sets below (single holder).
     m_queueHead = 0;
     m_queueTail = 0;
     m_queueDepth = 0;
-    m_state = ControllerState::ESTOP;
+    m_state = ControllerState::IDLE;
 
     m_lock->release();
 
@@ -233,7 +234,7 @@ QueueResult CommandQueue::clearFault()
 
     QueueResult result = QueueResult::OK;
 
-    if (m_state != ControllerState::FAULT && m_state != ControllerState::ESTOP) {
+    if (getState() != ControllerState::FAULT && getState() != ControllerState::ESTOP) {
         result = QueueResult::INVALID_STATE;
     }
     else {
