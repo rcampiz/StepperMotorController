@@ -291,9 +291,27 @@ void CommandParser::cmdMotorConfigStepMode(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdMotorConfigApply() {
-  // Apply current config to motor driver
+  // STEP_MODE can only be changed with the motor idle (Hi-Z write on the Motor task)
+  Protocol::TelemetrySnapshot snap;
+  m_dispatcher.getTelemetry(snap);
+  if (snap.motor.busy) {
+    if (m_format == ResponseFormat::JSON) {
+      respondJsonErr("DRV:CFG:APPLY", "MOTOR_BUSY",
+                     "Motor must be idle to apply the config");
+    } else {
+      respondErr("MOTOR_BUSY: Motor must be idle to apply the config");
+    }
+    return;
+  }
+
+  // Apply current config to motor driver; false = STEP_MODE did not reach the chip
   if (!m_dispatcher.motorApplyConfig()) {
-    respondErr("Failed to apply config to motor");
+    if (m_format == ResponseFormat::JSON) {
+      respondJsonErr("DRV:CFG:APPLY", "VERIFY_FAILED",
+                     "STEP_MODE readback mismatch");
+    } else {
+      respondErr("VERIFY_FAILED: STEP_MODE readback mismatch");
+    }
     return;
   }
 
@@ -308,11 +326,11 @@ void CommandParser::cmdMotorConfigApply() {
   if (m_dispatcher.motorGetDebugInfo(info)) {
     char buf[128];
     snprintf(buf, sizeof(buf),
-             "Config applied. CHIP: OCD_TH=%02X STALL_TH=%02X ALARM_EN=%02X "
-             "CONFIG=%04X FS_SPD=%03X",
-             (unsigned)info.ocdTh, (unsigned)info.stallTh,
-             (unsigned)info.alarmEn, (unsigned)info.config,
-             (unsigned)info.fsSpd);
+             "Config applied. CHIP: STEP_MODE=%u OCD_TH=%02X STALL_TH=%02X "
+             "ALARM_EN=%02X CONFIG=%04X FS_SPD=%03X",
+             (unsigned)info.stepMode, (unsigned)info.ocdTh,
+             (unsigned)info.stallTh, (unsigned)info.alarmEn,
+             (unsigned)info.config, (unsigned)info.fsSpd);
     respondOk(buf);
   } else {
     respondOk("Config applied and saved to flash");

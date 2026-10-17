@@ -76,8 +76,15 @@ public:
 
     // ── Config application ──
 
-    /** @brief Apply MotorConfig to driver registers */
-    void applyConfig() override;
+    /**
+     * @brief Apply MotorConfig to driver registers
+     *
+     * STEP_MODE is a "WH" register: the chip accepts the write only with the bridges in
+     * Hi-Z and silently ignores it otherwise (measured on the bench 2026-10-17). It is
+     * written here only in Hi-Z and read back; returns false when it could not be applied,
+     * and the caller must go through setStepModeSafe() on the Motor task.
+     */
+    bool applyConfig() override;
 
     /**
      * @brief Write STEP_MODE with readback verify

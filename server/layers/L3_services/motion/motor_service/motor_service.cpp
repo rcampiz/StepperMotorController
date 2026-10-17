@@ -21,6 +21,7 @@
 
 #include "L3_services/motion/motor_service/motor_service.hpp"
 #include "L3_services/motion/motor_controller/motor_controller.hpp"
+#include "L3_services/motion/motion.hpp"
 
 namespace Services {
 
@@ -155,8 +156,13 @@ bool MotorService::applyConfig()
     if (m_controller == nullptr) {
         return false;
     }
-    m_controller->applyConfig();
-    return true;
+    if (m_controller->applyConfig()) {
+        return true;
+    }
+    // The bridges were on, so STEP_MODE could not be written in place: route it through
+    // the Motor task (Hi-Z, write, verify, SoftStop), exactly as DRV:STEP_MODE does.
+    uint8_t readback = 0xFF;
+    return setStepModeSafe(motion.stepper.config.getStepMode(), readback);
 }
 
 bool MotorService::getDebugInfo(Harness::MotorDebugParams& out)

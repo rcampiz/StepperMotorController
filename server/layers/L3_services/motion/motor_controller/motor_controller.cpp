@@ -462,7 +462,7 @@ void MotorController::periodicUpdate()
 // Config application
 // ============================================================================
 
-void MotorController::applyConfig()
+bool MotorController::applyConfig()
 {
     const auto& cfg = motion.stepper.config.getConfig();
 
@@ -495,13 +495,21 @@ void MotorController::applyConfig()
     if (cfg.faultEnable.cmdErr)      alarmEn |= (1 << 7);
     m_driver->setParam(MotorReg::ALARM_EN, alarmEn);
 
-    // Microstep mode (read-modify-write to preserve CM_VM and SYNC bits)
+    // Microstep mode: STEP_MODE is writable only in Hi-Z; a write with the bridges on is
+    // ignored by the chip (bench 2026-10-17: config 1/128, chip stayed 1/32). Write it only
+    // in Hi-Z (boot, reinit, output disabled), read-modify-write to keep CM_VM and SYNC bits,
+    // and verify. Otherwise report it so the caller uses the Motor task's Hi-Z-safe path.
+    const uint32_t wanted = cfg.stepMode & 0x07U;
     uint32_t stepMode = m_driver->getParam(MotorReg::STEP_MODE);
-    stepMode = (stepMode & 0xF8) | (cfg.stepMode & 0x07);
-    m_driver->setParam(MotorReg::STEP_MODE, stepMode);
+    bool stepModeOk = (stepMode & 0x07U) == wanted;
+    if (!stepModeOk && m_driver->getStatus().hiZ()) {
+        m_driver->setParam(MotorReg::STEP_MODE, (stepMode & 0xF8U) | wanted);
+        stepModeOk = (m_driver->getParam(MotorReg::STEP_MODE) & 0x07U) == wanted;
+    }
 
     // Clear any latched fault bits from the register write sequence
     m_driver->getStatus();
+    return stepModeOk;
 }
 
 bool MotorController::setStepModeSafe(uint8_t mode,

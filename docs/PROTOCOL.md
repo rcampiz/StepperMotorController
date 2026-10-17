@@ -344,7 +344,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `DRV:CFG:SAVE` | 0 | — | ASCII: `OK Config saved to flash` | `Flash write failed` | `cmdMotorConfigSave` (config_handlers.cpp) |
 | `DRV:CFG:LOAD` | 0 | — | ASCII: `OK Config loaded from flash` | `No valid config in flash` | `cmdMotorConfigLoad` (config_handlers.cpp) |
 | `DRV:CFG:RESET` | 0 | — | ASCII: `OK Factory defaults restored and saved` | `Flash write failed` | `cmdMotorConfigReset` (config_handlers.cpp) |
-| `DRV:CFG:APPLY` | 0 | — | ASCII: `OK Config applied and saved to flash`, `OK <formatted text>` | `Applied but flash write failed`<br>`Failed to apply config to motor` | `cmdMotorConfigApply` (config_handlers.cpp) |
+| `DRV:CFG:APPLY` | 0 | — | ASCII: `OK Config applied and saved to flash`, `OK <formatted text>` | `Applied but flash write failed`<br>`MOTOR_BUSY: Motor must be idle to apply the config`<br>`VERIFY_FAILED: STEP_MODE readback mismatch` | `cmdMotorConfigApply` (config_handlers.cpp) |
 | `DRV:STEP_MODE?` | 0 | — | ASCII: `OK <formatted text>`; JSON `DRV:STEP_MODE?` keys: `microstep_ratio`, `microsteps_per_rev`, `step_mode` | — | `cmdDrvStepModeQuery` (driver_handlers.cpp) |
 | `DRV:FULL_STEPS?` | 0 | — | ASCII: `OK <formatted text>`; JSON `DRV:FULL_STEPS?` keys: `full_steps_per_rev`, `microsteps_per_rev` | — | `cmdDrvFullStepsQuery` (driver_handlers.cpp) |
 | `DRV:ENC_PPR?` | 0 | — | ASCII: `OK <formatted text>`; JSON `DRV:ENC_PPR?` keys: `encoder_ppr` | — | `cmdDrvEncoderPPRQuery` (driver_handlers.cpp) |

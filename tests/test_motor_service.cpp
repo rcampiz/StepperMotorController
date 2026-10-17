@@ -163,6 +163,35 @@ TEST(step_mode_is_a_message_answered_by_the_motor_task) {
     EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0x07u, 4u);
 }
 
+TEST(apply_config_writes_step_mode_only_in_hiz_else_via_the_motor_task) {
+    Rig r;
+    const uint8_t original = Services::motion.stepper.config.getStepMode();
+    // Hi-Z (boot, reinit, output disabled): written in place and verified
+    Services::motion.stepper.config.setStepMode(5);
+    r.drv.hiZ = true;
+    r.drv.params[Drivers::MotorReg::STEP_MODE] = 0x07;
+    EXPECT_TRUE(r.svc.applyConfig());
+    EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0x07u, 5u);
+
+    // Bridges on: the chip would ignore the write, so nothing is written in place and a
+    // SetStepMode message is queued for the Motor task (times out here: nobody drains it)
+    Services::motion.stepper.config.setStepMode(3);
+    r.drv.hiZ = false;
+    EXPECT_FALSE(r.svc.applyConfig());
+    EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0x07u, 5u);
+    EXPECT_EQ(r.q.available(), 1u);
+    r.motorTaskPass();                                    // Hi-Z, write, verify, SoftStop
+    EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0x07u, 3u);
+    EXPECT_EQ(r.drv.hardHiZCalls, 1);
+
+    // Already matching: no write at all, whatever the bridge state
+    const int before = r.drv.setParams;
+    EXPECT_TRUE(r.svc.applyConfig());
+    EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0x07u, 3u);
+    EXPECT_TRUE(r.drv.setParams > before);                // the other registers are written
+    Services::motion.stepper.config.setStepMode(original);
+}
+
 TEST(debug_pause_stops_all_driver_traffic_until_resumed) {
     Rig r;
     r.svc.setDebugPaused(true);
