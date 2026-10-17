@@ -149,9 +149,13 @@ See [docs/HOST_INTERFACE_AND_SYNC.md](docs/HOST_INTERFACE_AND_SYNC.md) for compl
 
 ### Prerequisites
 
-**One-command setup (Windows):** installs or verifies every tool below (ARM GCC, CMake, Ninja,
-a host g++ for unit tests, Python 3.12 + client requirements, OpenOCD) via `winget`, then
-prints a verification table. Safe to re-run.
+**Fresh clone, one command.** On Windows `scripts\setup\bringup.ps1` installs or verifies every
+tool below with `winget` (per user, no administrator), fetches the FreeRTOS submodule, creates
+`client\.venv`, and prints a queue of whatever it cannot do itself (the ST-LINK USB driver needs
+administrator rights; without winget every tool gets its download link). `-OpenLinks` opens those
+pages in the browser, `-VerifyOnly` only reports, `-SkipFirmware` is for a client-only machine.
+On Debian / Raspberry Pi OS `scripts/setup/bringup.sh` does the same with apt (`--install` runs
+the sudo step for you, otherwise it prints the exact commands). Safe to re-run.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\setup\bringup.ps1
