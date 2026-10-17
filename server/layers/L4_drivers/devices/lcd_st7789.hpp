@@ -1004,7 +1004,8 @@ public:
      * @brief Start streaming bitmap data (for chunked transfers)
      *
      * Call this before streamBitmapData(). Must call streamBitmapEnd() when done.
-     * Holds the SPI lock until streamBitmapEnd() is called.
+     * Takes the SPI lock only for the window set-up; each streamBitmapData() call is its own
+     * locked transaction (RAMWRC continues the write), so other bus users run between chunks.
      *
      * @param x, y Top-left position
      * @param w, h Bitmap dimensions
@@ -1017,11 +1018,17 @@ public:
         uint16_t drawW = (x + w > WIDTH) ? WIDTH - x : w;
         uint16_t drawH = (y + h > HEIGHT) ? HEIGHT - y : h;
 
+        // Phase 4 step 3: the bus is held only for the window set-up; every chunk takes the
+        // lock for its own transaction and continues the write with RAMWRC (0x3C), so the
+        // Motor task's status poll, the following supervisor and an ESTOP's HardHiZ get the
+        // bus between chunks instead of waiting for the whole bitmap (up to 13 s at 115200).
         m_spi.lock();
         m_spi.setMode(Board::SPIMode::Mode0);
         m_spi.setPrescaler(m_prescaler);
         csLow();
         setWindowLocked(x, y, x + drawW - 1, y + drawH - 1);
+        csHigh();
+        m_spi.unlock();
         m_streaming = true;
     }
 
@@ -1037,6 +1044,14 @@ public:
         if (!m_streaming) {
             return;
         }
+        // One bus transaction per call: RAMWRC continues at the pixel after the last one
+        // written, so CS may rise and other bus users may run between calls.
+        m_spi.lock();
+        m_spi.setMode(Board::SPIMode::Mode0);
+        m_spi.setPrescaler(m_prescaler);
+        csLow();
+        dcLow();  m_spi.transfer(0x3C);  // RAMWRC: memory write continue
+        dcHigh();
         // Bulk-invert into static buffer, then TX-only write (DMA on SPI1)
         static uint8_t invBuf[512];
         size_t offset = 0;
@@ -1049,19 +1064,16 @@ public:
             m_spi.writeOnly(invBuf, chunk);
             offset += chunk;
         }
+        csHigh();
+        m_spi.unlock();
     }
 
     /**
      * @brief End bitmap streaming
      *
-     * Releases the SPI lock held by streamBitmapStart().
+     * Nothing is on the bus between chunks any more; this only closes the stream state.
      */
     void streamBitmapEnd() override {
-        if (!m_streaming) {
-            return;
-        }
-        csHigh();
-        m_spi.unlock();
         m_streaming = false;
     }
 

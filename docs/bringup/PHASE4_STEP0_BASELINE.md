@@ -204,3 +204,28 @@ a time. `flush()` waits for the ring and the shift register (baud change, binary
 
 The telemetry floor (`telemetryPeriodFloorMs`) stays: it now protects the link budget rather
 than the Encoder task. RAM: +4 KB bss for the ring.
+
+## 8. After Phase 4 step 3 (SPI1 locked per chunk during bitmaps, 2026-10-17)
+
+`LCD::streamBitmapStart` now releases SPI1 after the window set-up and every
+`streamBitmapData` call is its own locked transaction, continued with the ST7789 RAMWRC
+command (0x3C). Measured by running a software-timed 3 s identification step (the Motor task
+advances the test's clock 50 ms per pass, so a blocked task simply stretches the run) while
+a 240 x 60 raw bitmap (28.8 KB, 2.7 s at 115200) streams in remote display mode. Watchdog
+widened to 5 s for the test, because a single 2.7 s receive starves the 500 ms heartbeat
+(the GUI's 5-row bands exist for that reason).
+
+| Measurement | before (bus held for the whole bitmap) | after (per chunk) |
+|---|---|---|
+| wall time of the 3.2 s software run | 6.34 s | 3.58 s (3.2 s + settle + poll granularity) |
+| encoder travel during it (3 s at 400 steps/s = 6 rev = 24000 counts) | 45558 counts: the chip kept running at the last commanded speed, unsupervised, while the Motor task waited for the bus | 24303 / 24290 counts |
+| Motor task passes during the 2.7 s stream | none | every 50 ms |
+
+So during a remote bitmap the status poll, the following supervisor, the speed trim and
+system identification keep running, and an ESTOP's SPI HardHiZ no longer queues behind the
+stream (the pin path already made the stop itself independent of it).
+
+Open, noted while measuring: twice the board answered nothing on a serial port opened
+after it had booted (both the previous and this build), while a port held open through the
+reset always saw a normal boot and normal replies; reprogramming with the port open
+recovers it. Not reproduced since; tracked in `03_open_issues.md`.
