@@ -451,7 +451,17 @@ class Board:
         if k == FrameKind.RESPONSE:
             if self._is_stale(frame):
                 return
-            if self._in_flight is not None:
+            inflight = self._in_flight
+            if (inflight is not None and inflight.reply == C.Reply.SINGLE and frame.obj is None
+                    and not frame.text.startswith(("OK", "ERROR", "{"))):
+                # A single reply is an OK/ERROR line or one JSON object. Anything else is the
+                # tail of a line that was already in flight when the port opened (a telemetry
+                # push cut in half, seen on COM5); taking it as the reply would shift every
+                # later reply by one request.
+                self._record("rx", "junk", frame.text)
+                self._emit("unsolicited", frame.text)
+                return
+            if inflight is not None:
                 self._replies.put((now, frame))
             else:
                 self._emit("unsolicited", frame.text)

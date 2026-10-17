@@ -226,6 +226,19 @@ def test_late_reply_with_a_different_json_command_name_is_dropped(rig):
     assert "requested" not in nxt.data
 
 
+def test_the_tail_of_a_line_cut_at_open_is_not_taken_as_a_reply(rig):
+    """Opening COM5 in the middle of a telemetry push delivered its tail as the reply to the
+    first command and shifted every later reply by one (seen 2026-10-17)."""
+    rig.open()
+    rig.fake.delay_next_s = 0.2
+    ticket = rig.board.submit(C.step_mode_query())
+    time.sleep(0.05)
+    rig.fake.t.feed_line('en":true,"revolutions":6,"index_period_us":4298409,"vel_quality":2}}')
+    resp = ticket.wait(2.0)
+    assert resp.success and "step_mode" in resp.data, resp
+    assert any(r.kind == "junk" for r in rig.board.recorder)
+
+
 def test_coalesced_latest_sends_only_the_newest(rig):
     rig.open()
     rig.fake.delay_next_s = 0.15
