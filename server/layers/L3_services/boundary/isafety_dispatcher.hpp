@@ -23,6 +23,8 @@ public:
     };
 
     virtual void safetyEstop() = 0;
+    /// Timing of the last out-of-band (0x18) ESTOP: arrival to STBY low, arrival to SPI HardHiZ.
+    virtual bool safetyEstopTiming(uint32_t& pinUs, uint32_t& hizUs) = 0;
     virtual Harness::ServiceStatus safetyClearFault(char* activeFaults, uint32_t bufSize) = 0;
     virtual Harness::ServiceStatus safetyForceClearFault() = 0;
     virtual uint32_t safetySetHeartbeatTimeout(uint32_t ms) = 0;

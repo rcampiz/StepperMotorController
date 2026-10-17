@@ -18,6 +18,10 @@ public:
      * @return 16-bit STATUS value (0 on failure)
      */
     virtual uint16_t getMotorStatusReg() = 0;
+    /// True while the out-of-band ESTOP holds the driver in standby (status reads are garbage).
+    virtual bool isMotorInStandby() = 0;
+    /// Out-of-band ESTOP timing (see IMotorTaskControl::estopTiming).
+    virtual bool estopTiming(uint32_t& pinUs, uint32_t& hizUs) = 0;
 
     /**
      * @brief Clear the comms timeout latch

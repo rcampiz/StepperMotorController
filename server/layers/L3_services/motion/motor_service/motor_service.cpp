@@ -23,6 +23,7 @@
 #include "L3_services/motion/motor_controller/motor_controller.hpp"
 #include "L3_services/motion/motion.hpp"
 #include "L3_services/infra/tick_timer/tick_timer.hpp"
+#include "harness/pins/imicrosecond_clock.hpp"
 
 namespace Services {
 
@@ -69,10 +70,61 @@ void MotorService::applyPendingTransitions()
     }
     if (m_stopPending.exchange(false)) {
         m_rawController->onEmergencyStop();
+        noteHiZDone();
+        if (m_standby.load()) {
+            m_rawController->publishStandbySnapshot();
+        }
     }
     if (m_clearPending.exchange(false)) {
+        if (m_standby.load()) {
+            // Out-of-band stop: the chip sat in standby with its registers reset. Release the
+            // pin, wait, re-initialise and re-apply the config before motion is allowed again.
+            m_rawController->wakeFromStandby();
+            m_standby.store(false);
+        }
+        m_oobSeen.store(false);
         m_rawController->clearEmergencyStop();
     }
+}
+
+void MotorService::oobEstopFromIsr()
+{
+    Platform::IMicrosecondClock* us = Harness::microsecondClock();
+    const uint32_t t0 = (us != nullptr) ? us->getTickUs() : 0;
+    // Same order as immediateHardHiZ: latch first, then the stop. The pin is the stop here;
+    // the SPI HardHiZ follows on the Motor task (and on the Comms task when the SYST:ESTOP
+    // line behind the byte is parsed), both harmless while the chip is in standby.
+    m_stopLatched.store(true);
+    m_clearPending.store(false);
+    m_stopPending.store(true);
+    m_standby.store(true);
+    if (m_rawController != nullptr) {
+        m_rawController->standbyFromIsr();
+    }
+    m_oobRxUs.store(t0);
+    m_oobPinUs.store((us != nullptr) ? us->getTickUs() : 0);
+    m_oobHizUs.store(0);
+    m_oobSeen.store(true);
+}
+
+void MotorService::noteHiZDone()
+{
+    if (m_oobSeen.load() && m_oobHizUs.load() == 0) {
+        Platform::IMicrosecondClock* us = Harness::microsecondClock();
+        m_oobHizUs.store((us != nullptr) ? us->getTickUs() : 0);
+    }
+}
+
+bool MotorService::estopTiming(uint32_t& pinUs, uint32_t& hizUs) const
+{
+    if (!m_oobSeen.load()) {
+        return false;
+    }
+    const uint32_t rx = m_oobRxUs.load();
+    pinUs = m_oobPinUs.load() - rx;
+    const uint32_t hiz = m_oobHizUs.load();
+    hizUs = (hiz != 0) ? hiz - rx : 0;
+    return true;
 }
 
 void MotorService::handleSetStepMode(uint8_t mode)
@@ -116,8 +168,8 @@ void MotorService::onCommand(const MotorCommand& cmd)
         return;
     }
     applyPendingTransitions();
-    if (m_debugPaused.load()) {
-        ++m_refused;                                   // SPI_STOP: no driver traffic at all
+    if (m_debugPaused.load() || m_standby.load()) {
+        ++m_refused;                                   // SPI_STOP / standby: no driver traffic at all
         return;
     }
     if (cmd.type == MotorCmdType::SetStepMode) {
@@ -141,6 +193,10 @@ void MotorService::periodicUpdate()
         return;
     }
     applyPendingTransitions();
+    if (m_standby.load()) {
+        m_rawController->publishStandbySnapshot();     // the chip cannot be read: report Hi-Z, stopped
+        return;
+    }
     if (m_debugPaused.load()) {
         return;                                        // SPI_STOP: no status polls
     }
@@ -267,6 +323,7 @@ void MotorService::immediateHardHiZ()
     if (m_rawController != nullptr) {
         m_rawController->emergencyHiZ();
     }
+    noteHiZDone();
 }
 
 void MotorService::clearImmediateStop()

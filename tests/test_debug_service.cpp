@@ -37,6 +37,8 @@ struct FakeMotorCtrl : Services::IMotorTaskControl {
     std::vector<std::string> log;
     void reinit() override { ++reinits; log.push_back("reinit"); }
     bool applyConfig() override { return true; }
+    bool isStandbyAsserted() const override { return false; }
+    bool estopTiming(uint32_t&, uint32_t&) const override { return false; }
     bool getDebugInfo(Harness::MotorDebugParams& info) override { info = Harness::MotorDebugParams{}; info.status = 0x0003; info.absPos = -5; return true; }
     bool setStepModeSafe(uint8_t m, uint8_t& rb) override { rb = m; return true; }
     void setDebugPaused(bool p) override { paused = p; log.push_back(p ? "pause" : "resume"); }

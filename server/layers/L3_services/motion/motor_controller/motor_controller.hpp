@@ -97,6 +97,15 @@ public:
     /** @brief Reinitialize driver hardware + reapply config */
     void reinit() override;
 
+    /** @brief ISR context: drive STBY/RESET low (bridges off in microseconds, registers reset) */
+    void standbyFromIsr();
+
+    /** @brief Motor task: release STBY/RESET, wait for the chip, re-initialise and re-apply the config */
+    void wakeFromStandby();
+
+    /** @brief Motor task: publish "Hi-Z, stopped" while the chip is in standby and cannot be read */
+    void publishStandbySnapshot();
+
     // ── Debug ──
 
     /** @brief Read all powerSTEP01 registers into debug struct */

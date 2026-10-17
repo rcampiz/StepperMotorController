@@ -53,6 +53,7 @@ struct FakeMotorConfigDispatcher : Services::IMotorConfigDispatcher {
 struct FakeSafetyDispatcher : Services::ISafetyDispatcher {
     mutable std::vector<std::string> calls;
     void safetyEstop()  override { calls.push_back("safetyEstop"); }
+    bool safetyEstopTiming(uint32_t& pinUs, uint32_t& hizUs)  override { calls.push_back("safetyEstopTiming"); pinUs = uint32_t{}; hizUs = uint32_t{}; return bool{}; }
     Harness::ServiceStatus safetyClearFault(char* activeFaults, uint32_t bufSize)  override { calls.push_back("safetyClearFault"); return Harness::ServiceStatus{}; }
     Harness::ServiceStatus safetyForceClearFault()  override { calls.push_back("safetyForceClearFault"); return Harness::ServiceStatus{}; }
     uint32_t safetySetHeartbeatTimeout(uint32_t ms)  override { calls.push_back("safetySetHeartbeatTimeout"); return uint32_t{}; }

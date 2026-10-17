@@ -168,6 +168,7 @@ void CommandParser::cmdDispBitmap(const ParsedCommand &cmd) {
            static_cast<unsigned long>(expectedBytes));
   m_transport.println(buf);
   m_transport.flush();
+  OobEstopPause oobPause(m_transport);   // raw payload bytes may be 0x18
 
   // Drain trailing \r/\n from command line before binary read
   {
@@ -407,6 +408,7 @@ void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
            static_cast<unsigned long>(compressedBytes));
   m_transport.println(buf);
   m_transport.flush();
+  OobEstopPause oobPause(m_transport);   // raw payload bytes may be 0x18
 
   // Drain trailing \r/\n from command line before binary read
   {
@@ -607,6 +609,7 @@ void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
            static_cast<unsigned long>(expectedBytes));
   m_transport.println(buf);
   m_transport.flush();
+  OobEstopPause oobPause(m_transport);   // raw payload bytes may be 0x18
 
   // Drain trailing \r/\n from command line before binary read
   {
@@ -720,6 +723,7 @@ void CommandParser::cmdFlashUploadRle(const ParsedCommand &cmd) {
            static_cast<unsigned long>(compressedBytes));
   m_transport.println(buf);
   m_transport.flush();
+  OobEstopPause oobPause(m_transport);   // raw payload bytes may be 0x18
 
   // Drain trailing \r/\n from command line before binary read
   {

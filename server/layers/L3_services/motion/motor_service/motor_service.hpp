@@ -51,6 +51,11 @@ public:
     /// SYNC:START:AT target (the CommandQueue); the Motor task flushes it at the tick.
     void setScheduledStart(IScheduledStart* s) { m_scheduledStart = s; }
 
+    /// USART2 ISR, byte 0x18 (Phase 4 step 1): STBY/RESET low, latch, Motor task finishes.
+    void oobEstopFromIsr();
+    bool isStandbyAsserted() const override { return m_standby.load(); }
+    bool estopTiming(uint32_t& pinUs, uint32_t& hizUs) const override;
+
     // IMotorService (Motor task)
     void onCommand(const MotorCommand& cmd) override;
     void periodicUpdate() override;
@@ -96,6 +101,12 @@ private:
     std::atomic<bool>     m_debugPaused{false};   ///< SPI_STOP/SPI_START: Motor task leaves the driver alone
     uint32_t              m_refused = 0;          ///< commands dropped while latched/paused (Motor task only)
     IScheduledStart*      m_scheduledStart = nullptr;
+    std::atomic<bool>     m_standby{false};       ///< STBY/RESET held low by the OOB ESTOP until clear
+    std::atomic<bool>     m_oobSeen{false};       ///< an out-of-band stop happened since the last clear
+    std::atomic<uint32_t> m_oobRxUs{0};           ///< 0x18 arrival (ISR)
+    std::atomic<uint32_t> m_oobPinUs{0};          ///< STBY/RESET driven low (ISR)
+    std::atomic<uint32_t> m_oobHizUs{0};          ///< first SPI HardHiZ after it (Comms or Motor task)
+    void noteHiZDone();
     void handleStartAt(uint32_t targetTick);     ///< Motor task: wait for the tick, then flush the armed queue
 
     // SetStepMode result slot: bit 16 = answered, bit 8 = ok, bits 0..7 = readback

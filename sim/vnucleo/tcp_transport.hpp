@@ -22,6 +22,10 @@ namespace Sim {
 
 class TcpTransport : public Transport::ITransport {
 public:
+    void setOobEstopEnabled(bool enabled) override { oobEnabled_ = enabled; }
+private:
+    volatile bool oobEnabled_ = true;
+public:
     static constexpr size_t RX_RING = 1024;     // UartHardware RingBuffer<1024>
 
     TcpTransport(const std::string& bindAddr, uint16_t port);

@@ -130,6 +130,10 @@ void ServiceDispatcher::safetyEstop() {
     m_safety->safetyEstop();
 }
 
+bool ServiceDispatcher::safetyEstopTiming(uint32_t& pinUs, uint32_t& hizUs) {
+    return m_safety->safetyEstopTiming(pinUs, hizUs);
+}
+
 Harness::ServiceStatus ServiceDispatcher::safetyClearFault(char* activeFaults, uint32_t bufSize) {
     return m_safety->safetyClearFault(activeFaults, bufSize);
 }

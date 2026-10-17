@@ -925,7 +925,9 @@
           "command": "SYST:ESTOP",
           "keys": [
             "latency_us",
-            "message"
+            "message",
+            "oob_hiz_us",
+            "oob_pin_us"
           ]
         }
       ],

@@ -12,6 +12,7 @@ namespace Services {
 class SafetyDispatch : public Services::ISafetyDispatcher {
 public:
     void safetyEstop() override;
+    bool safetyEstopTiming(uint32_t& pinUs, uint32_t& hizUs) override;
     Harness::ServiceStatus safetyClearFault(char* activeFaults, uint32_t bufSize) override;
     Harness::ServiceStatus safetyForceClearFault() override;
     uint32_t safetySetHeartbeatTimeout(uint32_t ms) override;

@@ -600,4 +600,36 @@ void MotorController::clearEmergencyStop()
     m_motionInhibited = false;
 }
 
+void MotorController::standbyFromIsr()
+{
+    // One GPIO write: the IHM03A1 has only C6 (100 nF) on the line, so the pin discharges it
+    // in microseconds and the powerSTEP01 drops its bridges. Nothing else is touched here.
+    if (m_driver != nullptr) {
+        m_driver->setStandby(true);
+    }
+}
+
+void MotorController::publishStandbySnapshot()
+{
+    // SPI is off while STBY/RESET is low, so the status poll stops; the host must still see
+    // the truth: outputs in Hi-Z, not busy, speed 0 (the idle Hi-Z STATUS word of the chip),
+    // position as last read.
+    auto& writer = Services::g_telemetryStore;
+    writer.writeMotorStatus(0xE203);
+    writer.writeMotorParam(MotorReg::SPEED, 0);
+}
+
+void MotorController::wakeFromStandby()
+{
+    // Datasheet: >= 0.5 ms logic wake-up + 1 ms charge-pump start before the first command,
+    // and every register is back at its default, so this is a full re-initialisation.
+    if (m_driver != nullptr) {
+        m_driver->setStandby(false);
+        if (m_clock != nullptr) {
+            m_clock->delayMs(2);
+        }
+        reinit();
+    }
+}
+
 } // namespace Services

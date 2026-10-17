@@ -172,12 +172,26 @@ void CommandParser::cmdEstop() {
   m_dispatcher.safetyEstop();
   const uint32_t hizUs = m_dispatcher.getTickUs();
   const unsigned long latency = (rxUs != 0) ? (hizUs - rxUs) : 0;
-  char buf[64];
+  // Out-of-band stop (0x18 ahead of this line): arrival -> STBY low, arrival -> SPI HardHiZ
+  uint32_t oobPinUs = 0, oobHizUs = 0;
+  const bool oob = m_dispatcher.safetyEstopTiming(oobPinUs, oobHizUs);
+  char buf[112];
   if (m_format == ResponseFormat::JSON) {
-    snprintf(buf, sizeof(buf), "{\"message\":\"ESTOP\",\"latency_us\":%lu}", latency);
+    if (oob) {
+      snprintf(buf, sizeof(buf),
+               "{\"message\":\"ESTOP\",\"latency_us\":%lu,\"oob_pin_us\":%lu,\"oob_hiz_us\":%lu}",
+               latency, static_cast<unsigned long>(oobPinUs), static_cast<unsigned long>(oobHizUs));
+    } else {
+      snprintf(buf, sizeof(buf), "{\"message\":\"ESTOP\",\"latency_us\":%lu}", latency);
+    }
     respondJsonOk("SYST:ESTOP", buf);
   } else {
-    snprintf(buf, sizeof(buf), "ESTOP latency_us=%lu", latency);
+    if (oob) {
+      snprintf(buf, sizeof(buf), "ESTOP latency_us=%lu oob_pin_us=%lu oob_hiz_us=%lu", latency,
+               static_cast<unsigned long>(oobPinUs), static_cast<unsigned long>(oobHizUs));
+    } else {
+      snprintf(buf, sizeof(buf), "ESTOP latency_us=%lu", latency);
+    }
     respondOk(buf);
   }
 }

@@ -20,6 +20,8 @@
 #include "F_platform/tasks/encoder_task_init.hpp"
 #include "F_platform/tasks/display_task_init.hpp"
 #include "harness/pins/imicrosecond_clock.hpp"
+#include "harness/pins/oob_estop.hpp"
+#include "L3_services/motion/motor_service/motor_service.hpp"
 #include "harness/pins/itask_stats.hpp"
 #include "harness/pins/early_debug_board.hpp"
 #include "harness/pins/clock_board.hpp"
@@ -131,6 +133,8 @@ void initTasks() {
 
   // X_L5_L1 option: USART2 RX wakes the Comms task (10 ms poll remains the fallback)
   Harness::setCommsRxWake(r.notifier, Scheduler::g_commsTaskHandle);
+  // Out-of-band ESTOP: byte 0x18 in the USART2 ISR -> STBY/RESET low + latch (Phase 4 step 1)
+  Harness::setOobEstopHandler([]() { Services::g_motorService.oobEstopFromIsr(); });
 }
 
 // Phase 5: Start scheduler — never returns

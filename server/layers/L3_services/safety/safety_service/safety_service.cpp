@@ -25,8 +25,10 @@ Result emergencyStop() {
 Result clearFault(char *activeFaults, uint32_t activeFaultsSize) {
     Trace::ServiceScope svc(Trace::SVC_SAFETY);
     TRACE_ENTRY("SAFE:CLR");
-    // Safety check: read powerSTEP01 STATUS register before allowing clear
-    uint16_t statusReg = g_safetyActions->getMotorStatusReg();
+    // Safety check: read powerSTEP01 STATUS register before allowing clear. After an
+    // out-of-band stop the chip is in standby (SPI off, registers reset): nothing to read;
+    // the Motor task re-initialises it on clear and the next status poll reports real faults.
+    uint16_t statusReg = g_safetyActions->isMotorInStandby() ? 0 : g_safetyActions->getMotorStatusReg();
     if (statusReg != 0) {
         bool ocd   = !(statusReg & (1 << 13));  // Overcurrent (bit 13, active-low)
         uint8_t thStatus = (statusReg >> 11) & 0x3;  // Bits 11-12: TH_STATUS
@@ -52,6 +54,10 @@ Result clearFault(char *activeFaults, uint32_t activeFaultsSize) {
     }
     TRACE_EXIT("SAFE:CLR", static_cast<uint32_t>(Result::INVALID_STATE));
     return Result::INVALID_STATE;
+}
+
+bool estopTiming(uint32_t& pinUs, uint32_t& hizUs) {
+    return g_safetyActions->estopTiming(pinUs, hizUs);
 }
 
 Result forceClearFault() {

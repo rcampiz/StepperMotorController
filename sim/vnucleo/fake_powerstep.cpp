@@ -119,6 +119,18 @@ void FakePowerStep::init() {
     last_ = nowSeconds();
 }
 
+void FakePowerStep::setStandby(bool standby) {
+    std::lock_guard<std::recursive_mutex> lk(m_);
+    logMotion("standby", standby ? 1 : 0);
+    if (standby) {
+        update();
+        v_ = 0.0;
+        mode_ = Mode::Idle;
+        hiZ_ = true;
+        resetRegisters();                       // STBY/RESET low resets every register
+    }
+}
+
 void FakePowerStep::run(bool forward, uint32_t speed) {
     std::lock_guard<std::recursive_mutex> lk(m_);
     logMotion("run", forward ? static_cast<long long>(speed) : -static_cast<long long>(speed));

@@ -36,6 +36,8 @@ Result clearFault(char *activeFaults = nullptr, uint32_t activeFaultsSize = 0);
  * @return OK on success, INVALID_STATE if not in fault
  */
 Result forceClearFault();
+/// Out-of-band ESTOP timing; false when none happened since the last clear.
+bool estopTiming(uint32_t& pinUs, uint32_t& hizUs);
 
 uint32_t setHeartbeatTimeout(uint32_t ms);
 void heartbeatReceived(uint32_t seq);

@@ -21,9 +21,11 @@ namespace {
 struct FakeDriver : Drivers::IMotorDriver {
     bool hiZ = true;        // powerSTEP01 powers up in Hi-Z
     bool running = false;
+    bool standby = false; int inits = 0;
     int hardHiZCalls = 0, runCalls = 0, setParams = 0;
     uint32_t params[32] = {};
-    void init() override { hiZ = true; running = false; }
+    void init() override { hiZ = true; running = false; standby = false; ++inits; }
+    void setStandby(bool s) override { standby = s; if (s) { hiZ = true; running = false; } }
     void run(bool, uint32_t) override { running = true; hiZ = false; ++runCalls; }
     void move(bool, uint32_t) override { running = true; hiZ = false; ++runCalls; }
     void goTo(int32_t) override { running = true; hiZ = false; ++runCalls; }
@@ -216,6 +218,36 @@ TEST(start_at_on_the_motor_task_flushes_at_the_tick_unless_latched) {
     EXPECT_EQ(sched.executed, 1);
     r.svc.clearImmediateStop();
     r.motorTaskPass();
+}
+
+TEST(out_of_band_estop_drops_the_pin_latches_and_clear_reinitialises_the_chip) {
+    Rig r;
+    r.svc.onCommand(cmd(Services::MotorCmdType::Run, 100, 1));
+    EXPECT_TRUE(r.drv.running);
+    const int initsBefore = r.drv.inits;
+
+    r.svc.oobEstopFromIsr();                             // the USART2 ISR, byte 0x18
+    EXPECT_TRUE(r.drv.standby);                          // one GPIO write, no SPI
+    EXPECT_TRUE(r.svc.isStopLatched());
+    EXPECT_TRUE(r.svc.isStandbyAsserted());
+    uint32_t pin = 1, hiz = 1;
+    EXPECT_TRUE(r.svc.estopTiming(pin, hiz));
+
+    // Motor task pass: the pending stop runs, nothing else touches the driver in standby
+    r.motorTaskPass();
+    r.svc.onCommand(cmd(Services::MotorCmdType::Run, 100, 1));
+    EXPECT_FALSE(r.drv.running);
+    EXPECT_TRUE(r.drv.standby);
+    EXPECT_EQ(r.drv.inits, initsBefore);
+
+    // Clear: the Motor task releases the pin, re-initialises and re-applies the config
+    r.svc.clearImmediateStop();
+    r.motorTaskPass();
+    EXPECT_FALSE(r.drv.standby);
+    EXPECT_EQ(r.drv.inits, initsBefore + 1);
+    EXPECT_FALSE(r.svc.isStandbyAsserted());
+    r.svc.onCommand(cmd(Services::MotorCmdType::Run, 100, 1));
+    EXPECT_TRUE(r.drv.running);                          // motion allowed again
 }
 
 TEST(debug_pause_stops_all_driver_traffic_until_resumed) {

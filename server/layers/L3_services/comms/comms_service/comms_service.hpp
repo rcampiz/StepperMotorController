@@ -46,6 +46,8 @@ public:
 
     // ISafetyActions (SafetyService)
     uint16_t getMotorStatusReg() override;
+    bool isMotorInStandby() override;
+    bool estopTiming(uint32_t& pinUs, uint32_t& hizUs) override;
     void clearCommsTimeout() override;
     uint32_t setHeartbeatTimeout(uint32_t ms) override;
     void heartbeatReceived(uint32_t seq) override;

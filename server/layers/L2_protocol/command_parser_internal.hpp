@@ -15,6 +15,15 @@
 
 namespace Protocol {
 
+/// Raw binary payloads may legitimately contain 0x18: pause the out-of-band ESTOP byte for
+/// the duration of the receive loop (RAII, so every exit path resumes it). The base64
+/// variants keep it active, which is why protocol 2 prefers them (PROTOCOL.md section 5).
+struct OobEstopPause {
+  explicit OobEstopPause(Transport::ITransport &t) : m_t(t) { m_t.setOobEstopEnabled(false); }
+  ~OobEstopPause() { m_t.setOobEstopEnabled(true); }
+  Transport::ITransport &m_t;
+};
+
 // newlib-nano doesn't support %lld — manual int64_t to string
 inline void i64toa(int64_t val, char *buf, size_t bufSize) {
   if (bufSize == 0)

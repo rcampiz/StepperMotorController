@@ -96,6 +96,10 @@ public:
     virtual MotorStatus getStatus() = 0;
     virtual bool isBusy() = 0;
     virtual bool flagActive() = 0;
+
+    /// STBY/RESET line: true = hold the chip in standby (outputs off, registers reset).
+    /// One GPIO write, ISR-safe. init() releases it and re-configures the chip.
+    virtual void setStandby(bool standby) { (void)standby; }
 };
 
 } // namespace Drivers

@@ -427,6 +427,8 @@
         "server/harness/pins/motor_conversions.hpp",
         "server/harness/pins/motor_debug_params.hpp",
         "server/harness/pins/motor_driver_init.hpp",
+        "server/harness/pins/oob_estop.cpp",
+        "server/harness/pins/oob_estop.hpp",
         "server/harness/pins/platform_board.hpp",
         "server/harness/pins/protocol_version.hpp",
         "server/harness/pins/seq_snapshot.hpp",

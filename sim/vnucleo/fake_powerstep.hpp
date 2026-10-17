@@ -31,6 +31,7 @@ public:
     FakePowerStep() { resetRegisters(); }
 
     void init() override;
+    void setStandby(bool standby) override;
     void run(bool forward, uint32_t speed) override;
     void move(bool forward, uint32_t steps) override;
     void goTo(int32_t position) override;

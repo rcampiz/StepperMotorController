@@ -157,3 +157,31 @@ Scripts fixed during the session: `estop_baseline.py` case (c) paused 200 ms aft
 bitmap header, longer than the firmware's 100 ms per-byte timeout, so the first run never
 entered bitmap mode; `bringup_step0.py` item 3 now checks speed and Hi-Z rather than BUSY,
 which the powerSTEP01 asserts only while a command executes.
+
+## 6. After Phase 4 step 1 (out-of-band ESTOP, 2026-10-17)
+
+Byte 0x18 is recognised in the USART2 interrupt, which drives STBY/RESET low and latches;
+the Motor task finishes with the SPI HardHiZ and the wake-up on clear (PROTOCOL.md section 5).
+Measured with the self-timing in the `SYST:ESTOP` reply (`oob_pin_us`, `oob_hiz_us`) on the
+same board, same debug build:
+
+| Case | 0x18 arrival -> STBY/RESET low | 0x18 arrival -> SPI HardHiZ | before (Step 0, line path) |
+|---|---|---|---|
+| (a) idle | 0-1 µs (5 of 5) | 1.3 / 1.6 / 3.4 ms (min / median / max) | 697 µs median |
+| (a') ESTOP right after `MOT:EN` | 0-1 µs (5 of 5) | 14.6 / 14.6 / 15.2 ms (the Motor task still holds SPI1 for the enable) | 14.2 ms median |
+| (b) during `MOT:RUN 300` | 1 µs (5 of 5) | 1.3 / 1.6 / 1.8 ms | 692 µs median |
+
+The bridges are now off within a microsecond of the byte in every case; the SPI command that
+follows only tidies up (the chip is already in standby and ignores it), so the 14 ms SPI1
+hold no longer matters for the stop itself. It still delays the status snapshot, which the
+Motor task now substitutes with "Hi-Z, stopped" while the chip is in standby. Recovery:
+`SYST:FAULT:CLEAR` releases the pin, the Motor task waits 2 ms, re-initialises the driver
+and re-applies the saved config; a 1-revolution move afterwards lands on 6400 microsteps
+at the saved 1/32. The client's fast path (purge, 0x18, `SYST:ESTOP`, readback) confirms
+`state=ESTOP hiZ=True` in 94-109 ms, which is the host-side readback cadence, not the stop.
+
+Not covered by this step: a raw binary upload (`UI:DISP:BITMAP`, `:RLE`, `UI:FLASH:UPLOAD`,
+`:RLE`) pauses the 0x18 recognition for its payload, since pixel bytes may be 0x18; the
+client's 5-row RLE bands keep that window near 0.2 s, and the base64 variants keep the
+byte active. Per-chunk SPI1 locking (03_open_issues item 1) and the single ESTOP state
+holder (item 6) stay open.

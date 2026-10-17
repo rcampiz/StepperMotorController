@@ -24,6 +24,11 @@ public:
     virtual bool setStepModeSafe(uint8_t mode, uint8_t& readback) = 0;
     /// Debug: true = the Motor task stops touching the driver (no SPI traffic) until false.
     virtual void setDebugPaused(bool paused) = 0;
+    /// True while the out-of-band ESTOP holds STBY/RESET low (SPI reads are meaningless).
+    virtual bool isStandbyAsserted() const = 0;
+    /// Timing of the last out-of-band ESTOP: 0x18 arrival to pin low, and to the SPI HardHiZ.
+    /// False when none happened since the last clear.
+    virtual bool estopTiming(uint32_t& pinUs, uint32_t& hizUs) const = 0;
     virtual bool isDebugPaused() const = 0;
 };
 

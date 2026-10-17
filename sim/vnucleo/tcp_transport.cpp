@@ -3,6 +3,7 @@
  * @brief TCP server transport (Winsock on Windows, BSD sockets elsewhere).
  */
 #include "tcp_transport.hpp"
+#include "harness/pins/oob_estop.hpp"
 
 #include <chrono>
 #include <cstring>
@@ -83,6 +84,10 @@ void TcpTransport::acceptLoop() {
             if (n <= 0) break;
             std::lock_guard<std::mutex> lk(rxMutex_);
             for (int i = 0; i < n; ++i) {
+                if (buf[i] == 0x18 && oobEnabled_) {
+                    Harness::invokeOobEstop();           // as the USART2 ISR does on the board
+                    continue;
+                }
                 if (rx_.size() >= RX_RING) {
                     overflows_++;                            // like a full UART ring
                 } else {

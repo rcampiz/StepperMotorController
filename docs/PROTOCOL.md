@@ -112,16 +112,21 @@ missed a fault compares `last_seq` with the last `seq` it received and watches
 | Step-mode change | `DRV:STEP_MODE <m>` is executed by the Motor task; the reply waits up to 250 ms for the readback. |
 | ESTOP latch | `SYST:ESTOP` (and the watchdog) latch: Move/GoTo/Run/Home/Mark are refused (`ERROR Fault`) until `SYST:FAULT:CLEAR`. |
 
-## 5. Out-of-band emergency stop (planned, Phase 4)
+## 5. Out-of-band emergency stop (Phase 4 step 1, since 2026-10-17)
 
 Byte **0x18 (CAN)** is reserved. It is recognised in the USART2 interrupt before the byte
-reaches the ring (even when the ring is full), drives the driver's STBY/RESET line low,
-and wakes the Motor task, which then sends `HardHiZ` over SPI, latches, and keeps the pin
-low until `SYST:FAULT:CLEAR` runs the wake-up sequence. The byte is never echoed or
-queued and produces no reply; the host confirms with `DIAG:STAT?` (`state` = `ESTOP`,
-`motor.hi_z` = true). **Consequence:** no host payload may contain 0x18: binary bitmap
-and flash uploads are replaced by base64 variants (`UI:DISP:BITMAP:B64` exists; base64
-flash upload and RLE-over-base64 are part of protocol 2).
+reaches the ring (even when the ring is full or the Comms task is inside a handler), drives
+the driver's STBY/RESET line low in the interrupt itself (bridges off within microseconds;
+the chip's registers reset), and latches the stop. The Motor task then sends `HardHiZ` over
+SPI and stops polling the chip; the pin stays low until `SYST:FAULT:CLEAR`, on which the
+Motor task releases it, waits 2 ms and re-initialises the driver with the saved config. The
+byte is never echoed or queued and produces no reply by itself; a `SYST:ESTOP` line sent
+after it (the client's fast path) answers with `oob_pin_us` (0x18 arrival to pin low) and
+`oob_hiz_us` (arrival to the SPI HardHiZ) beside `latency_us`, and the host confirms with
+`DIAG:STAT?` (`state` = `ESTOP`, `motor.hi_z` = true). **Raw binary payloads** (`UI:DISP:BITMAP`,
+`:RLE`, `UI:FLASH:UPLOAD`, `:RLE`) may contain 0x18, so the byte is ignored for the duration
+of those receive loops; the base64 variants keep it active, which is why protocol 2 prefers
+them.
 
 ## 6. Per-line checksum (proposal, protocol 2)
 
@@ -215,7 +220,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `SYST:BAUD` | 1 | SYST:BAUD <115200\|230400\|460800\|921600> | ASCII: `OK <plain lines>`; JSON `SET_BAUD` keys: `baud` | `Supported: 115200, 230400, 460800, 921600` | `cmdSetBaud` (system_handlers.cpp) |
 | `SYST:EVT:EN` | 0 | — | ASCII: `OK <formatted text>` | `Invalid mask (0-255)` | `cmdEventEnable` (system_handlers.cpp) |
 | `SYST:DELAY` | 1 | SYST:DELAY <ms> | ASCII: `OK <formatted text>`; JSON `SYST:DELAY` keys: `transport_delay_ms` | `Delay must be 0-1000 ms` | `cmdSystDelay` (system_handlers.cpp) |
-| `SYST:ESTOP` | 0 | — | ASCII: `OK <formatted text>`; JSON `SYST:ESTOP` keys: `latency_us`, `message` | — | `cmdEstop` (motion_handlers.cpp) |
+| `SYST:ESTOP` | 0 | — | ASCII: `OK <formatted text>`; JSON `SYST:ESTOP` keys: `latency_us`, `message`, `oob_hiz_us`, `oob_pin_us` | — | `cmdEstop` (motion_handlers.cpp) |
 | `SYST:TICK?` | 0 | — | ASCII: `OK <plain lines>`; JSON `GET_TICK` keys: `tick` | — | `cmdGetTick` (system_handlers.cpp) |
 | `SYST:ECHO?` | 0 | — | JSON `ECHO` keys: `echo` | — | `cmdEchoQuery` (system_handlers.cpp) |
 | `SYST:HB:STAT?` | 0 | — | ASCII: `OK <plain lines>`; JSON `GET_HEARTBEAT_STATUS` keys: `enabled`, `last_seq`, `remaining_ms`, `timed_out`, `timeout_ms` | — | `cmdGetHeartbeatStatus` (safety_handlers.cpp) |

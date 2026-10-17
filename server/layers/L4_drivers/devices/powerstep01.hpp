@@ -233,7 +233,7 @@ public:
 
     bool flagActive() override { return !m_flag.read(); }
 
-    void setStandby(bool standby) { m_stbyRst.write(!standby); }
+    void setStandby(bool standby) override { m_stbyRst.write(!standby); }
 
 private:
     Board::ISPIBus& m_spi;

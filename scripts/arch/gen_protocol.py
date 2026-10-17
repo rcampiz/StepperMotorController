@@ -334,16 +334,21 @@ missed a fault compares `last_seq` with the last `seq` it received and watches
 | Step-mode change | `DRV:STEP_MODE <m>` is executed by the Motor task; the reply waits up to {step_wait} ms for the readback. |
 | ESTOP latch | `SYST:ESTOP` (and the watchdog) latch: Move/GoTo/Run/Home/Mark are refused (`ERROR Fault`) until `SYST:FAULT:CLEAR`. |
 
-## 5. Out-of-band emergency stop (planned, Phase 4)
+## 5. Out-of-band emergency stop (Phase 4 step 1, since 2026-10-17)
 
 Byte **0x18 (CAN)** is reserved. It is recognised in the USART2 interrupt before the byte
-reaches the ring (even when the ring is full), drives the driver's STBY/RESET line low,
-and wakes the Motor task, which then sends `HardHiZ` over SPI, latches, and keeps the pin
-low until `SYST:FAULT:CLEAR` runs the wake-up sequence. The byte is never echoed or
-queued and produces no reply; the host confirms with `DIAG:STAT?` (`state` = `ESTOP`,
-`motor.hi_z` = true). **Consequence:** no host payload may contain 0x18: binary bitmap
-and flash uploads are replaced by base64 variants (`UI:DISP:BITMAP:B64` exists; base64
-flash upload and RLE-over-base64 are part of protocol 2).
+reaches the ring (even when the ring is full or the Comms task is inside a handler), drives
+the driver's STBY/RESET line low in the interrupt itself (bridges off within microseconds;
+the chip's registers reset), and latches the stop. The Motor task then sends `HardHiZ` over
+SPI and stops polling the chip; the pin stays low until `SYST:FAULT:CLEAR`, on which the
+Motor task releases it, waits 2 ms and re-initialises the driver with the saved config. The
+byte is never echoed or queued and produces no reply by itself; a `SYST:ESTOP` line sent
+after it (the client's fast path) answers with `oob_pin_us` (0x18 arrival to pin low) and
+`oob_hiz_us` (arrival to the SPI HardHiZ) beside `latency_us`, and the host confirms with
+`DIAG:STAT?` (`state` = `ESTOP`, `motor.hi_z` = true). **Raw binary payloads** (`UI:DISP:BITMAP`,
+`:RLE`, `UI:FLASH:UPLOAD`, `:RLE`) may contain 0x18, so the byte is ignored for the duration
+of those receive loops; the base64 variants keep it active, which is why protocol 2 prefers
+them.
 
 ## 6. Per-line checksum (proposal, protocol 2)
 

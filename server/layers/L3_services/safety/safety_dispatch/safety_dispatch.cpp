@@ -21,6 +21,10 @@ Harness::ServiceStatus SafetyDispatch::safetyClearFault(char* activeFaults, uint
     }
 }
 
+bool SafetyDispatch::safetyEstopTiming(uint32_t& pinUs, uint32_t& hizUs) {
+    return Safety::estopTiming(pinUs, hizUs);
+}
+
 Harness::ServiceStatus SafetyDispatch::safetyForceClearFault() {
     auto r = Safety::forceClearFault();
     return r == Safety::Result::OK

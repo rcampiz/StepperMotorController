@@ -85,6 +85,16 @@ void CommsService::tick()
 // ISafetyActions
 // ---------------------------------------------------------------------------
 
+bool CommsService::isMotorInStandby()
+{
+    return m_motorCtrl != nullptr && m_motorCtrl->isStandbyAsserted();
+}
+
+bool CommsService::estopTiming(uint32_t& pinUs, uint32_t& hizUs)
+{
+    return m_motorCtrl != nullptr && m_motorCtrl->estopTiming(pinUs, hizUs);
+}
+
 uint16_t CommsService::getMotorStatusReg()
 {
     Harness::MotorDebugParams info;

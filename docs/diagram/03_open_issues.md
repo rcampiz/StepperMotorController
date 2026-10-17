@@ -13,6 +13,7 @@ it matters, the proposed fix (also drawable), and status. Items are ordered by r
 | 4 Encoder stack | **closed 2026-10-17**: measured on the bench with the new `DIAG:TASKS?` after the motion scenarios: Encoder 168 words free (Comms 1403, Motor 797, Display 351, IDLE 114); the estimate held | F11, Step 0 |
 | 3 Unlocked Comms-task calls into the controller | open (Phase 4 step 4) | — |
 | 6 Two ESTOP state holders | open (Phase 4 step 2 makes the MotorService latch the single source) | — |
+| Phase 4 step 1: out-of-band ESTOP | **done 2026-10-17**: byte 0x18 in the USART2 ISR (`UartHardware::handleIRQ` -> `Harness::invokeOobEstop()` -> `MotorService::oobEstopFromIsr`) drives STBY/RESET low and latches in the interrupt; the Motor task does the SPI HardHiZ, publishes a "Hi-Z, stopped" snapshot while the chip is in standby, and on `SYST:FAULT:CLEAR` releases the pin, waits 2 ms and re-initialises the driver with the saved config. Bench: 0x18 -> pin low 0-1 µs in every case, including the enable case that still takes 14.6 ms over SPI1. Raw binary uploads pause the byte for their payload (`OobEstopPause`); the base64 variants keep it. `SYST:ESTOP` replies `oob_pin_us` / `oob_hiz_us`. Simulator: the TCP transport and FakePowerStep honour it; the fleet ESTOP test passes | F-oob |
 | 12 Platform files define `Harness::` functions | open (Phase 4 step 5) | — |
 | Server review F1.1/F1.2 | **done**: lines spanning an RX overflow are refused (`ERROR RX_OVERFLOW`), ring 256 -> 1024 B, counters in `DIAG:STAT?.system` | F1 |
 | Server review F3 | **done**: read-only debug dumps bypass `DBG:UNLOCK` | F3 |
@@ -83,7 +84,7 @@ following faults is blind for the same period. Both violate the 5 ms target.
    aborts; the Motor task performs the Hi-Z (not the Comms task). Latency becomes ≤ one
    chunk at the UART rate, or ≤ one Motor-task pass if the Motor task is woken directly.
 
-**Status**: analysed, proposed, not implemented. Waiting for a decision.
+**Status**: proposed fix 2 (the out-of-band byte) is in since 2026-10-17 (Phase 4 step 1): the stop no longer waits for the stream, because the STBY/RESET pin is driven from the interrupt. Fix 1 (per-chunk SPI1 locking, so the Motor task's status poll and the following supervisor keep running during a bitmap) is still open; during a raw binary payload the byte is paused and the stop waits for the end of the current band (the client's bands are ~0.2 s).
 
 ## 2. The Comms task is one serial command loop
 

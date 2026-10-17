@@ -76,6 +76,7 @@ set(FIRMWARE_SOURCES
     ${SERVER}/foundation/F_platform/tasks/encoder_task.cpp
     ${SERVER}/harness/pins/async_event.cpp
     ${SERVER}/harness/pins/imicrosecond_clock.cpp
+    ${SERVER}/harness/pins/oob_estop.cpp
     ${SERVER}/harness/pins/itask_stats.cpp
     ${SERVER}/harness/pins/itrace_context.cpp
     ${SERVER}/harness/trace/interface_trace.cpp

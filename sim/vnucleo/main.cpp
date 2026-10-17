@@ -35,6 +35,7 @@
 #include "harness/defs/harness_l2_l3.hpp"
 #include "harness/pins/async_event.hpp"
 #include "harness/pins/imicrosecond_clock.hpp"
+#include "harness/pins/oob_estop.hpp"
 #include "harness/pins/motor_command.hpp"
 #include "L2_protocol/command_parser.hpp"
 #include "L2_protocol/service_dispatcher.hpp"
@@ -140,6 +141,7 @@ int main(int argc, char** argv) {
     Services::g_commandQueue.init(commandQueueLock, clock, Services::g_motorService,
                                   &Services::g_motorService);
     Services::g_motorService.setScheduledStart(&Services::g_commandQueue);
+    Harness::setOobEstopHandler([]() { Services::g_motorService.oobEstopFromIsr(); });
 
     // initEncoderSubsystem with the fake encoder
     const auto& encCfg = Services::motion.encoder.config;

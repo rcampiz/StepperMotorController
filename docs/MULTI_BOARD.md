@@ -203,7 +203,7 @@ A per-board link budget is unaffected: every wheel has its own USB link.
 1. **Initialise the identity store** so `DEV:ID`/`DEV:ROLE` stop crashing (finding 1).
    Small change, needed before the stored role can be used as a cross-check. **Done
    2026-10-17.**
-2. **Phase 4 fast ESTOP** (0x18 in the USART2 ISR, STBY low): makes the fan-out a 1–2 ms
+2. **Phase 4 fast ESTOP** (0x18 in the USART2 ISR, STBY low): **step 1 done 2026-10-17** (pin low within 1 µs of the byte on the bench). Makes the fan-out a 1–2 ms
    stop on every wheel, even during uploads.
 3. **Never stall the MCU while driving.** `DRV:CFG:APPLY` and every save erase a 128 KB
    flash sector, about 1–2 s with the CPU likely stalled (finding 2). On a base, that is
