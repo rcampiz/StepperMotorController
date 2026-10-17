@@ -57,8 +57,14 @@ def case_c(port, baud):
     total = 240 * 320 * 2
     port.write(b"UI:DISP:BITMAP 0 0 240 320\n")
     port.flush()
-    time.sleep(0.2)
-    print("  firmware:", port.read(port.in_waiting or 1).decode(errors="replace").strip())
+    # Wait for "OK READY <n>" and start streaming at once: the firmware's bitmap handler
+    # gives up after 100 ms without a byte (BYTE_TIMEOUT_MS), so a pause here would make it
+    # drop the whole stream as garbage and parse the injected ESTOP immediately.
+    head = b""
+    t_wait = time.perf_counter()
+    while b"READY" not in head and time.perf_counter() - t_wait < 2.0:
+        head += port.read(port.in_waiting or 1)
+    print("  firmware:", head.decode(errors="replace").strip().replace("\n", " | "))
     chunk = bytes([0x1F, 0x00]) * 32            # 64 bytes of one colour
     sent = 0
     t_start = time.perf_counter()

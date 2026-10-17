@@ -117,15 +117,30 @@ cross-checking; the analyzer provides the real numbers.
 
 ## 5. Results table (the "before" column)
 
+Bench session 2026-10-17. Board on COM5 (ST-LINK VCP). Flashed by copying the `.bin` to the
+NUCLEO's `NOD_F401RE` drive (the ST-LINK debug interface has no driver on this PC, so the
+OpenOCD `flash` target fails; `docs/bringup` memory: drag-and-drop works). c9a35e5 built
+in a worktree with the debug preset: text 201,136, data 2,004, bss 50,384. Serial items
+run with `scripts/bringup_step0.py COM5 --no-debug` and `scripts/estop_baseline.py COM5`.
+
 | Measurement | Value | Notes |
 |---|---|---|
-| Boot banner / phases | | |
-| ESTOP (a) idle: last bit → 0xA8 on SPI1 | | PA9: no edge expected |
-| ESTOP (b) during RUN | | |
-| ESTOP (c) during bitmap: last bit → 0xA8 | | expect ≈ remaining stream time |
-| Encoder task stack high-water mark (words free) | | from Task Monitor |
-| Other tasks' high-water marks | | |
-| STBY/RESET shield resistor (designator, value, rail) | | from UM1857 schematic |
-| Step-mode readback (4, 7) | | |
-| Debug pause / LCD disable observed | | |
-| Index pulse: pulses / revolutions / period | | |
+| Boot banner / phases | all phases `OK`: Clock, TickTimer, Platform, SPI Manager, L3 Services, Motor, Motor task, Encoder, Encoder task, Display, Display task, Comms, Comms task; first byte 0.7 s after programming | banner says v0.1.0, `SYST:VER?` says v0.3.0 (stale banner string at c9a35e5) |
+| Host round trip `DIAG:PING` → `PONG` | min 11.6 / median 16.2 / max 17.5 ms (n=10) | USB + two UART lines; the floor for host-side numbers |
+| ESTOP (a) idle, host side: write → `OK ESTOP` received | min 12.5 / median 14.7 / max 17.4 ms (n=10) | same as a ping: the firmware adds nothing measurable at host resolution. Analyzer value (last bit → 0xA8 on SPI1): **to be measured** |
+| ESTOP (b) during RUN, host side | min 10.6 / median 14.0 / max 15.6 ms (n=5) | analyzer value: **to be measured** |
+| ESTOP (c) during full-screen bitmap | ESTOP text injected at +0.77 s (8,203 bytes into the stream) was consumed as pixels; the firmware replied only when the stream ended at **+14.4 s**; the next `SYST:ESTOP` was honoured at once | matches the prediction (13.3 s of stream at 115200 + USB); analyzer value optional |
+| Encoder task stack high-water mark (words free) | **to be read on the LCD** (Task Monitor) | |
+| Other tasks' high-water marks | **to be read on the LCD** | |
+| STBY/RESET shield resistor (designator, value, rail) | **to be checked** (UM1857 schematic or a meter on CN9 D8 with the board unpowered) | |
+| Step-mode readback (4, 7) | 4 → `step_mode 4, 1/16, 3200 µsteps/rev`; 7 → `step_mode 7, 1/128, 25600`; restored 5 (1/32) | each `DRV:CFG:APPLY` writes flash; the reply arrived within the 2.5 s wait |
+| Run / ESTOP / refused / clear / run | `MOT:RUN 300 1` → position advancing at speed 299, bridges on; `SYST:ESTOP` → state ESTOP, Hi-Z; `MOT:RUN` → `ERROR Motor fault active`; `SYST:FAULT:CLEAR` → IDLE; `MOT:RUN` ok | `SYST:FAULT:CLEAR` while not latched answers `ERROR Invalid state for operation` |
+| Debug pause / LCD disable observed | **not run yet** (item 6 blanks the LCD; run after the Task Monitor is read) | `scripts/bringup_step0.py COM5` without `--no-debug` |
+| Index pulse: pulses / revolutions / period | `index_seen` true, revolutions 3, index period 2,404,685 µs, count 13,531 after the runs | the index was crossed during the 300 steps/s runs |
+| Motor supply / faults at rest | UVLO false, OCD false, status 0xE203 (Hi-Z, not busy) | on the v0.3.0 firmware found on the board, OCD/STALL events fired at rest with OCD disabled in `ALARM_EN` (noise); not seen since reflashing |
+| Firmware found on the board before Step 0 | v0.3.0, built Mar 6 2026 | replaced by c9a35e5 |
+
+Scripts fixed during the session: `estop_baseline.py` case (c) paused 200 ms after the
+bitmap header, longer than the firmware's 100 ms per-byte timeout, so the first run never
+entered bitmap mode; `bringup_step0.py` item 3 now checks speed and Hi-Z rather than BUSY,
+which the powerSTEP01 asserts only while a command executes.
