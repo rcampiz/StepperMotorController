@@ -17,7 +17,8 @@
  *           [--motion-log FILE]
  *
  * Differences from the board (none touch the protocol):
- *   - g_deviceConfig is initialised here; the firmware's composition root never does
+ *   - g_deviceConfig is initialised here with its own fake flash (the firmware does it in
+ *     initDisplaySubsystem, on the reserved first sectors of the NOR image flash)
  *     (docs/review/LINK_BUDGET.md finding 1), so DEV:ID / DEV:ROLE work only on the sim.
  *   - No LCD, joystick or display task; UI:DISP:* draw into a counter.
  *   - The boot id is random per process; the serial comes from --serial.
@@ -148,7 +149,7 @@ int main(int argc, char** argv) {
         encoderHw, critical, usClock, Services::motion.encoder.processor,
         Services::motion.control.mode, encCfg.getEncMeasWindowMs(), encCfg.getEncSampleRateHz());
 
-    // Images and device identity (the firmware does not initialise g_deviceConfig)
+    // Images and device identity (separate fake flashes; the firmware shares one NOR flash)
     Services::g_flashImageService.init(&imageFlash);
     Services::g_deviceConfig.init(identityFlash, deviceLock);
 

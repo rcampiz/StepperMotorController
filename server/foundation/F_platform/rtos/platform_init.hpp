@@ -29,6 +29,7 @@ struct Resources {
     ILock*  commandQueueLock;
     ILock*  uiModeLock;
     ILock*  telemetryLock;
+    ILock*  deviceConfigLock;
     IClock* clock;
     IQueue<AsyncEvent, 8>* eventQueue;
     ITaskStats* taskStats;

@@ -28,6 +28,7 @@ static Platform::FreeRTOSMutex s_controlModeLock;
 static Platform::FreeRTOSMutex s_commandQueueLock;
 static Platform::FreeRTOSMutex s_uiModeLock;
 static Platform::FreeRTOSMutex s_telemetryLock;
+static Platform::FreeRTOSMutex s_deviceConfigLock;
 static Platform::FreeRTOSClock s_clock;
 static Platform::FreeRTOSQueue<AsyncEvent, 8> s_eventQueue;
 static Platform::FreeRTOSTaskStats s_taskStats;
@@ -48,7 +49,7 @@ void init()
 {
     if (!s_spi1Lock.valid() || !s_spi2Lock.valid() ||
         !s_controlModeLock.valid() || !s_commandQueueLock.valid() ||
-        !s_uiModeLock.valid() || !s_telemetryLock.valid()) {
+        !s_uiModeLock.valid() || !s_telemetryLock.valid() || !s_deviceConfigLock.valid()) {
         EarlyDebug::println("Platform locks: FAIL!");
         while (1) {}
     }
@@ -56,7 +57,7 @@ void init()
     s_resources = {
         &s_spi1Lock, &s_spi2Lock,
         &s_controlModeLock, &s_commandQueueLock,
-        &s_uiModeLock, &s_telemetryLock,
+        &s_uiModeLock, &s_telemetryLock, &s_deviceConfigLock,
         &s_clock, &s_eventQueue,
         &s_taskStats, &s_scheduler
     };
@@ -85,6 +86,7 @@ bool initPlatformBoard(PlatformResources& out)
     out.commandQueueLock = &s_commandQueueLock;
     out.uiModeLock       = &s_uiModeLock;
     out.telemetryLock    = &s_telemetryLock;
+    out.deviceConfigLock = &s_deviceConfigLock;
     out.clock            = &s_clock;
     out.eventQueue       = &s_eventQueue;
     out.taskStats        = &s_taskStats;

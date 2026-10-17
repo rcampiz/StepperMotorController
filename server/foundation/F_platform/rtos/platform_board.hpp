@@ -32,6 +32,7 @@ struct PlatformResources {
     Platform::ILock*  commandQueueLock;
     Platform::ILock*  uiModeLock;
     Platform::ILock*  telemetryLock;
+    Platform::ILock*  deviceConfigLock;   ///< DeviceConfigManager (DEV:ID / DEV:ROLE, NOR flash)
     Platform::IClock* clock;
     Platform::IQueue<AsyncEvent, 8>* eventQueue;
     Platform::ITaskStats* taskStats;

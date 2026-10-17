@@ -13,9 +13,8 @@ port. One process is one board. No hardware, no FreeRTOS.
 | Remote LCD | accepts and counts draw commands |
 | FreeRTOS tasks | `std::thread` running `vMotorTask`, `vCommsTask`, `vEncoderTask` |
 
-Known differences: the identity store is initialised here (the firmware never calls
-`g_deviceConfig.init()`, so `DEV:ID`/`DEV:ROLE` only work on the sim); no LCD, joystick or
-display task; the boot id is random per process and the serial comes from `--serial`.
+Known differences: the identity store has its own fake flash here (the firmware keeps it in
+the reserved first sectors of the NOR image flash); no LCD, joystick or display task; the boot id is random per process and the serial comes from `--serial`.
 `harness/pins/interrupt_guard.hpp` is shadowed by a host mutex (`vnucleo/shadow/`).
 
 ## Build (Windows with WinLibs via `scripts\build\env.ps1`, or any Linux / Raspberry Pi with g++)

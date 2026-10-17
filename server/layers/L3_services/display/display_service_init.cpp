@@ -9,10 +9,12 @@
 #include "L3_services/ui/ui_mode/ui_mode.hpp"
 #include "infra/flash_image_service/flash_image_service.hpp"
 #include "infra/indicator_service/indicator_service.hpp"
+#include "L3_services/config/device_config/device_config.hpp"
 
 namespace Services {
 
-bool initDisplaySubsystem(Platform::IClock& clock, DisplaySubsystemResult& result)
+bool initDisplaySubsystem(Platform::IClock& clock, Platform::ILock& deviceConfigLock,
+                          DisplaySubsystemResult& result)
 {
     const Harness::L3L4Harness& h = Harness::connectL3L4(clock);
     if (h.canvas == nullptr) {
@@ -21,6 +23,10 @@ bool initDisplaySubsystem(Platform::IClock& clock, DisplaySubsystemResult& resul
 
     if (h.flash != nullptr && g_flashImageService.init(h.flash)) {
         result.flashAvailable = true;
+        // Device identity lives in the reserved first sectors of the same NOR flash
+        // (0x000000-0x001FFF, below FLASH_IMAGE_BASE). Not initialising it left the
+        // setters with a null lock (crash on DEV:ID / DEV:ROLE) since f874dd5.
+        result.identityValid = g_deviceConfig.init(*h.flash, deviceConfigLock);
     }
 
     g_indicatorService.init(h.canvas);

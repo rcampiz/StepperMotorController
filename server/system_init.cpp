@@ -111,7 +111,9 @@ void initTasks() {
 
   // Display
   Services::DisplaySubsystemResult dispResult;
-  initOrHalt("Display", Services::initDisplaySubsystem(*r.clock, dispResult));
+  initOrHalt("Display", Services::initDisplaySubsystem(*r.clock, *r.deviceConfigLock, dispResult));
+  Harness::debugPrintln(dispResult.identityValid ? "Device identity... OK"
+                                                 : "Device identity... DEFAULTS");
   initOrHalt("Display task", Scheduler::initDisplayTask(*dispResult.displayService,
                                                         *r.clock, *r.scheduler));
 

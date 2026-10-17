@@ -76,6 +76,8 @@ uint8_t DeviceConfigManager::getDefaultMode() const {
 }
 
 bool DeviceConfigManager::setDeviceId(uint16_t id) {
+  if (m_lock == nullptr || m_flash == nullptr)   // never initialised (no NOR flash probed)
+    return false;
   m_lock->acquire();
 
   m_config.deviceId = id;
@@ -86,6 +88,8 @@ bool DeviceConfigManager::setDeviceId(uint16_t id) {
 }
 
 bool DeviceConfigManager::setRole(WheelRole role) {
+  if (m_lock == nullptr || m_flash == nullptr)
+    return false;
   m_lock->acquire();
 
   m_config.role = static_cast<uint8_t>(role);
@@ -96,6 +100,8 @@ bool DeviceConfigManager::setRole(WheelRole role) {
 }
 
 bool DeviceConfigManager::setDefaultMode(uint8_t mode) {
+  if (m_lock == nullptr || m_flash == nullptr)
+    return false;
   m_lock->acquire();
 
   m_config.defaultMode = mode;
