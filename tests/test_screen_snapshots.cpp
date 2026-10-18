@@ -19,6 +19,7 @@
 #include "L3_services/ui/screens/saver_screen.hpp"
 #include "L3_services/ui/screens/recovery_screen.hpp"
 #include "L3_services/ui/screens/screen_care_screen.hpp"
+#include "L3_services/ui/screens/estop_screen.hpp"
 #include "L3_services/infra/indicator_service/indicator_service.hpp"
 #include "L3_services/ui/screen_manager/screen_manager.hpp"
 #include "L3_services/infra/telemetry_store/telemetry_store.hpp"
@@ -336,6 +337,27 @@ TEST(motion_indicator_shows_heading_speed_and_turn_magnitudes) {
     settle(ind);
     EXPECT_TRUE(rig.panel.countColor(0x079F, 20, 60, 200, 200) == 0);
     EXPECT_TRUE(rig.panel.countColor(0xF8DB, 20, 60, 200, 200) == 0);
+}
+
+TEST(estop_page_shows_the_latch_and_fills_the_clear_bar) {
+    EXPECT_TRUE(initStore());
+    Rig rig;
+    UI::MenuScreen root("Main Menu");
+    UI::EstopScreen page;
+    rig.start(&root);
+    rig.mgr.push(&page);
+    rig.frame();
+    EXPECT_TRUE(rig.panel.countColor(0xF906, 0, 40, 240, 50) > 1000);    // the red block title
+    EXPECT_TRUE(rig.panel.countColor(0xFF20, 0, 0, 240, 22) > 2000);     // hazard band
+    page.setProgress(60);
+    rig.frame();
+    const uint32_t filled = rig.panel.countColor(0xFF20, UI::EstopScreen::BAR_X, UI::EstopScreen::BAR_Y,
+                                                 UI::EstopScreen::BAR_W, UI::EstopScreen::BAR_H);
+    EXPECT_TRUE(filled > 100u * 14u && filled < 140u * 14u);             // 60 % of the bar
+    page.setMessage("Hardware fault active: UVLO");
+    rig.frame();
+    rig.dump("estop");
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::ORANGE, 0, 260, 240, 12) > 20);
 }
 
 TEST(graph_screen_draws_a_trace_from_telemetry) {

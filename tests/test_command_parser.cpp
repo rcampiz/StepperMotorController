@@ -94,6 +94,18 @@ TEST(async_event_is_emitted_in_ascii_by_default) {
     EXPECT_TRUE(r.transport.out.find('!') != std::string::npos);
 }
 
+TEST(lcd_estop_events_name_their_source) {
+    Rig r;
+    AsyncEvent on{EventType::ESTOP, EVT_SOURCE_LCD};
+    AsyncEvent off{EventType::ESTOP_CLEAR, EVT_SOURCE_LCD};
+    r.proc.emitEvent(on, 1, 10);
+    r.proc.emitEvent(off, 2, 20);
+    EXPECT_TRUE(r.transport.out.find("!ESTOP source=LCD") != std::string::npos);
+    EXPECT_TRUE(r.transport.out.find("!ESTOP_CLEAR source=LCD") != std::string::npos);
+    EXPECT_TRUE(eventTypeAlwaysDelivered(EventType::ESTOP));
+    EXPECT_EQ(eventTypeToMaskBit(EventType::ESTOP), 0);
+}
+
 // --- F4: DIAG:STAT? JSON never truncates ---------------------------------------
 #include "L2_protocol/status_json.hpp"
 #include <limits.h>

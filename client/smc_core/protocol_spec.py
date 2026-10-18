@@ -184,7 +184,7 @@ ERROR_CODES: Tuple[str, ...] = (
     'VERIFY_FAILED',
 )
 
-EVENT_TYPES: Tuple[str, ...] = ('FAULT', 'FAULT_CLEAR', 'STALL', 'STALL_CLEAR', 'MOTION_DONE', 'FOLLOW_FAULT', 'FOLLOW_RECOVERY', 'FOLLOW_RECOVERED',)
+EVENT_TYPES: Tuple[str, ...] = ('FAULT', 'FAULT_CLEAR', 'STALL', 'STALL_CLEAR', 'MOTION_DONE', 'FOLLOW_FAULT', 'FOLLOW_RECOVERY', 'FOLLOW_RECOVERED', 'ESTOP', 'ESTOP_CLEAR',)
 EVENT_MASK_BITS: Dict[str, int] = {'FAULT': 0, 'FAULT_CLR': 1, 'STALL': 2, 'STALL_CLR': 3, 'MOTION_DONE': 4, 'FOLLOW_FAULT': 5, 'FOLLOW_RECOVERY': 6, 'FOLLOW_RECOVERED': 7}
 STATUS_JSON_KEYS: Tuple[str, ...] = (
     'state', 'tick', 'queue_depth', 'motor', 'position', 'speed',

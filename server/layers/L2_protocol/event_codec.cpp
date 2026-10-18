@@ -81,6 +81,11 @@ void formatAscii(Transport::ITransport& transport, const AsyncEvent& evt, uint32
             snprintf(line, sizeof(line), "!%s status=0x%04X",
                      typeName, evt.statusReg);
             break;
+        case EventType::ESTOP:
+        case EventType::ESTOP_CLEAR:
+            snprintf(line, sizeof(line), "!%s source=%s", typeName,
+                     evt.statusReg == EVT_SOURCE_LCD ? "LCD" : "board");
+            break;
 
         default:
             return;
@@ -134,6 +139,16 @@ void formatJson(Transport::ITransport& transport, const AsyncEvent& evt, uint32_
                 static_cast<unsigned long>(seq),
                 static_cast<unsigned long>(ts_ms),
                 static_cast<unsigned>(evt.statusReg));
+            break;
+        case EventType::ESTOP:
+        case EventType::ESTOP_CLEAR:
+            snprintf(buf, sizeof(buf),
+                "{\"kind\":\"event\",\"type\":\"%s\",\"seq\":%lu,\"ts_ms\":%lu,"
+                "\"data\":{\"source\":\"%s\"}}",
+                typeName,
+                static_cast<unsigned long>(seq),
+                static_cast<unsigned long>(ts_ms),
+                evt.statusReg == EVT_SOURCE_LCD ? "LCD" : "board");
             break;
 
         default:

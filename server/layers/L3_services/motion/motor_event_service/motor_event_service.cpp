@@ -70,7 +70,7 @@ bool MotorEventManager::post(EventType type, uint16_t statusReg) {
     }
 
     uint8_t bit = eventTypeToMaskBit(type);
-    if (!(m_enableMask & bit)) {
+    if (!eventTypeAlwaysDelivered(type) && !(m_enableMask & bit)) {
         return false;
     }
 

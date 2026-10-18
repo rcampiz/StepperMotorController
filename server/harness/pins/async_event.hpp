@@ -19,6 +19,8 @@ enum class EventType : uint8_t {
     FOLLOW_FAULT       = 5,
     FOLLOW_RECOVERY    = 6,
     FOLLOW_RECOVERED   = 7,
+    ESTOP              = 8,   ///< latched from the board itself (statusReg = source: 1 = LCD joystick)
+    ESTOP_CLEAR        = 9,   ///< cleared from the board itself (statusReg = source)
 };
 
 struct AsyncEvent {
@@ -41,3 +43,7 @@ static constexpr uint8_t EVT_RESERVED_SLOT_THRESHOLD = 4;
 const char* eventTypeToString(EventType t);
 uint8_t eventTypeToMaskBit(EventType t);
 bool eventTypeIsCritical(EventType t);
+/// Safety events are delivered whatever SYST:EVT:EN mask is set
+bool eventTypeAlwaysDelivered(EventType t);
+
+static constexpr uint16_t EVT_SOURCE_LCD = 1;

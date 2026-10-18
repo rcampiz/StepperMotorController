@@ -1157,6 +1157,16 @@ class MainWindow(QMainWindow):
             self._status_bar.showMessage("Stall cleared", 3000)
             log.info("[EVENT] Stall cleared (status=0x%s)", status_hex)
 
+        elif event_type == "ESTOP":
+            self._status_bar.showMessage(
+                "E-STOP from the board (%s): hold CENTER 3 s on the board, or Clear Fault here"
+                % data.get("source", "board"), 15000)
+            log.warning("[EVENT] E-STOP from the board (%s)", data.get("source"))
+
+        elif event_type == "ESTOP_CLEAR":
+            self._status_bar.showMessage("E-STOP cleared on the board", 5000)
+            log.info("[EVENT] E-STOP cleared on the board (%s)", data.get("source"))
+
         elif event_type == "MOTION_DONE":
             self._status_bar.showMessage("Motion complete", 3000)
             log.info("[EVENT] Motion complete (status=0x%s)", status_hex)

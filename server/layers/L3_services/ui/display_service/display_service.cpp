@@ -10,6 +10,8 @@
 #include "L3_services/config/device_config/device_config.hpp"
 #include "L3_services/ui/screens/encoder_screen.hpp"
 #include "L3_services/ui/theme.hpp"
+#include "L3_services/safety/safety_service/safety_service.hpp"
+#include "L3_services/dispatch/command_queue/command_queue.hpp"
 #include <stdio.h>
 #include <string.h>
 
@@ -165,9 +167,60 @@ void DisplayService::onRunRecovery()
     d.m_screenManager.push(&d.m_recoveryScreen);
 }
 
+bool DisplayService::latched() const
+{
+    const auto st = Services::g_commandQueue.getState();
+    return st == Services::ControllerState::ESTOP || st == Services::ControllerState::FAULT;
+}
+
+void DisplayService::triggerEstop()
+{
+    if (latched()) return;                                  // already stopped
+    Services::Safety::emergencyStop();
+    motion.stepper.event.post(EventType::ESTOP, EVT_SOURCE_LCD);   // the host learns it was the board
+}
+
+void DisplayService::attemptClear()
+{
+    char why[48] = {};
+    const auto r = Services::Safety::clearFault(why, sizeof why);
+    if (r == Services::Safety::Result::OK) {
+        motion.stepper.event.post(EventType::ESTOP_CLEAR, EVT_SOURCE_LCD);
+        m_estopScreen.setMessage("cleared");
+    } else if (r == Services::Safety::Result::FAULT_ACTIVE) {
+        m_estopScreen.setMessage(why);                      // e.g. "Hardware fault active: UVLO"
+    } else {
+        m_estopScreen.setMessage("not latched");
+    }
+    m_clearHold = 0;
+    m_estopScreen.setProgress(0);
+}
+
+void DisplayService::estopTick(UI::UIMode mode)
+{
+    const auto st = Services::g_commandQueue.getState();
+    const bool isLatched = st == Services::ControllerState::ESTOP || st == Services::ControllerState::FAULT;
+    UI::IScreen* top = m_screenManager.current();
+    if (isLatched) {
+        if (mode == UI::UIMode::REMOTE) {
+            m_uiMode->setMode(UI::UIMode::LOCAL);           // the board shows a stop itself
+            return;                                         // the mode change repaints next tick
+        }
+        if (top != &m_estopScreen) {
+            if (top == &m_saverScreen || top == &m_recoveryScreen) m_screenManager.pop();
+            m_estopScreen.setFault(st == Services::ControllerState::FAULT);
+            m_clearHold = 0;
+            m_screenManager.push(&m_estopScreen);
+        }
+    } else if (top == &m_estopScreen) {
+        m_screenManager.pop();
+    }
+}
+
 void DisplayService::careTick(uint32_t nowMs)
 {
     UI::IScreen* top = m_screenManager.current();
+    if (top == &m_estopScreen) return;                      // no saver over a stop
     if (top == &m_recoveryScreen) {
         if (m_recoveryScreen.finished()) m_screenManager.pop();
         return;
@@ -212,6 +265,18 @@ void DisplayService::handleJoystick()
         }
     }
 
+    // E-STOP: a quick double tap of CENTER, in any mode and on any screen
+    if (dir == UI::JoyDirection::CENTER && m_prevRaw != UI::JoyDirection::CENTER) {
+        const uint32_t now = m_clock->getTickMs();
+        if (m_lastTapMs != 0 && (now - m_lastTapMs) <= DOUBLE_TAP_MS) {
+            m_lastTapMs = 0;
+            triggerEstop();
+        } else {
+            m_lastTapMs = now;
+        }
+    }
+    m_prevRaw = dir;
+
     if (m_uiMode->getMode() == UI::UIMode::REMOTE) {
         // Forward joystick edges upstream
         if (dir != m_lastDir) {
@@ -231,6 +296,24 @@ void DisplayService::handleJoystick()
         } else {
             m_centerHoldCount = 0;
         }
+        return;
+    }
+
+    // The E-STOP page owns the stick: holding CENTER fills the bar and clears at the end
+    if (m_screenManager.current() == &m_estopScreen) {
+        if (dir == UI::JoyDirection::CENTER) {
+            if (m_clearHold < CLEAR_POLLS) {
+                m_clearHold++;
+                m_estopScreen.setProgress(static_cast<uint8_t>(m_clearHold * 100u / CLEAR_POLLS));
+                if (m_clearHold == CLEAR_POLLS) attemptClear();
+            }
+        } else if (m_clearHold != 0) {
+            m_clearHold = 0;
+            m_estopScreen.setProgress(0);
+        }
+        m_lastDir = dir;
+        m_centerHoldCount = 0;
+        m_lastInputMs = m_clock->getTickMs();
         return;
     }
 
@@ -290,6 +373,8 @@ void DisplayService::tick()
         if (m_indicator != nullptr) m_indicator->invalidate();
         m_lastMode = mode;
     }
+
+    estopTick(mode);
 
     if (mode == UI::UIMode::REMOTE && m_indicator != nullptr) {
         m_indicator->tick();                 // eases toward the host's last indicator target

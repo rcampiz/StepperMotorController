@@ -91,6 +91,8 @@ Event types and `SYST:EVT:EN <mask>` bits:
 | `FOLLOW_FAULT` | 5 | 5 |
 | `FOLLOW_RECOVERY` | 6 | 6 |
 | `FOLLOW_RECOVERED` | 7 | 7 |
+| `ESTOP` | 8 |  |
+| `ESTOP_CLEAR` | 9 |  |
 
 `seq` (JSON events only; the ASCII event line carries no sequence number) is a per-boot
 counter that starts at 1 and increments once per event line *sent*, so a gap between two

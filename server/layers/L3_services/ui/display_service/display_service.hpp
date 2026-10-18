@@ -33,6 +33,7 @@
 #include "L3_services/ui/screens/saver_screen.hpp"
 #include "L3_services/ui/screens/recovery_screen.hpp"
 #include "L3_services/ui/screens/screen_care_screen.hpp"
+#include "L3_services/ui/screens/estop_screen.hpp"
 #include "L3_services/ui/screen_care.hpp"
 #include "F_platform/boundary/iclock.hpp"
 #include <stdint.h>
@@ -77,6 +78,7 @@ public:
 
 private:
     void handleJoystick();
+    bool latched() const;
     void updateStatusLine();
     void populateImageMenu();
     static bool onImageActionSelect(uint8_t index);
@@ -113,6 +115,17 @@ private:
     UI::SaverScreen      m_saverScreen;
     UI::RecoveryScreen   m_recoveryScreen;
     UI::ScreenCareScreen m_careScreen;
+    UI::EstopScreen      m_estopScreen;
+    // E-STOP from the joystick: two CENTER presses within DOUBLE_TAP_MS; clearing it: hold
+    // CENTER for CLEAR_POLLS on the E-STOP page
+    static constexpr uint32_t DOUBLE_TAP_MS = 400;
+    static constexpr uint16_t CLEAR_POLLS = 60;      ///< 3 s at 20 Hz
+    UI::JoyDirection m_prevRaw = UI::JoyDirection::NONE;
+    uint32_t m_lastTapMs = 0;
+    uint16_t m_clearHold = 0;
+    void triggerEstop();
+    void attemptClear();
+    void estopTick(UI::UIMode mode);
     uint32_t m_lastInputMs = 0;      ///< for the saver's quiet time
     UI::UIMode m_lastMode = UI::UIMode::LOCAL;  ///< to repaint when remote mode ends
     bool     m_bootHandoff = false;  ///< boot colour test -> saver after BOOT_SCREEN_MS

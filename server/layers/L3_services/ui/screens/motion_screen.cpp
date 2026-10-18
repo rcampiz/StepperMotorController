@@ -9,6 +9,7 @@
 #include "harness/defs/harness_l3_l4.hpp"
 #include "L3_services/motion/motion_service/motion_service.hpp"
 #include "L3_services/infra/telemetry_store/telemetry_store.hpp"
+#include "L3_services/motion/motion.hpp"
 #include <stdio.h>
 #include <string.h>
 
@@ -22,6 +23,13 @@ static constexpr uint16_t FIELDS_Y  = Theme::CONTENT_Y + 40;
 static constexpr uint16_t HINT_Y    = FIELDS_Y + 8 * Chrome::ROW_H + 4;
 
 static uint16_t fieldY(uint8_t i) { return static_cast<uint16_t>(FIELDS_Y + i * Chrome::ROW_H); }
+
+uint32_t MotionScreen::rpmToFullStepsPerSec(uint16_t rpm) const
+{
+    // The same conversion as MOT:RUN <rpm> RPM: full steps per revolution / 60
+    const uint32_t full = Services::motion.stepper.config.getFullStepsPerRev();
+    return (static_cast<uint32_t>(rpm) * full + 30u) / 60u;
+}
 
 void MotionScreen::onActivate()
 {
@@ -42,7 +50,7 @@ bool MotionScreen::isFieldEnabled(uint8_t field, bool faulted) const
 void MotionScreen::renderStatus(Services::ICanvas& lcd, bool force)
 {
     Protocol::TelemetrySnapshot t = Services::g_telemetryStore.getSnapshot();
-    char buf[12];
+    char buf[24];
 
     if (force) {
         lcd.drawString(Theme::MARGIN + 2, STATUS_Y + 4, "POS", Theme::CYAN, Theme::BG, Theme::FONT_SMALL);
@@ -54,7 +62,13 @@ void MotionScreen::renderStatus(Services::ICanvas& lcd, bool force)
         snprintf(m_posText, sizeof m_posText, "%s", buf);
         Chrome::textBox(lcd, 32, STATUS_Y, 112, 16, 2, 2, buf, Theme::TEXT, Theme::BG);
     }
-    snprintf(buf, sizeof buf, "%lu st/s", static_cast<unsigned long>(t.motor.speed));
+    {
+        // Commanded speed as the motor sees it: full steps/s -> RPM
+        const uint16_t full = Services::motion.stepper.config.getFullStepsPerRev();
+        const uint32_t rpmX10 = full ? (t.motor.speed * 600u + full / 2) / full : 0;
+        snprintf(buf, sizeof buf, "%lu.%lu RPM", static_cast<unsigned long>(rpmX10 / 10),
+                 static_cast<unsigned long>(rpmX10 % 10));
+    }
     if (force || strcmp(buf, m_spdText) != 0) {
         snprintf(m_spdText, sizeof m_spdText, "%s", buf);
         Chrome::textBox(lcd, 32, STATUS_Y + 18, 112, 16, 2, 2, buf, Theme::TEXT, Theme::BG);
@@ -77,7 +91,7 @@ void MotionScreen::renderField(Services::ICanvas& lcd, uint8_t field, bool fault
     uint16_t color = 0;
     val[0] = '\0';
     switch (field) {
-        case FIELD_SPEED:    label = "Speed";    snprintf(val, sizeof val, "%lu st/s", static_cast<unsigned long>(m_speed)); break;
+        case FIELD_SPEED:    label = "Speed";    snprintf(val, sizeof val, "%u RPM", static_cast<unsigned>(m_rpm)); break;
         case FIELD_RUN_CW:   label = "Run CW";   break;
         case FIELD_RUN_CCW:  label = "Run CCW";  break;
         case FIELD_JOG_SIZE: label = "Jog size"; snprintf(val, sizeof val, "%ld", static_cast<long>(JOG_SIZES[m_jogSizeIdx])); break;
@@ -129,9 +143,9 @@ void MotionScreen::adjust(int8_t delta)
         if (delta > 0 && m_jogSizeIdx < NUM_JOG_SIZES - 1) m_jogSizeIdx++;
         markRow(FIELD_JOG_SIZE); markRow(FIELD_JOG_CW); markRow(FIELD_JOG_CCW);
     } else if (m_selectedField == FIELD_SPEED) {
-        uint32_t step = (m_speed < 1000) ? 50 : 250;
-        if (delta < 0) m_speed = (m_speed > SPEED_MIN + step) ? m_speed - step : SPEED_MIN;
-        else           m_speed = (m_speed + step <= SPEED_MAX) ? m_speed + step : SPEED_MAX;
+        const uint16_t step = (m_rpm < 100) ? 5 : 10;
+        if (delta < 0) m_rpm = (m_rpm > RPM_MIN + step) ? static_cast<uint16_t>(m_rpm - step) : RPM_MIN;
+        else           m_rpm = (m_rpm + step <= RPM_MAX) ? static_cast<uint16_t>(m_rpm + step) : RPM_MAX;
         markRow(FIELD_SPEED);
     }
 }
@@ -139,8 +153,8 @@ void MotionScreen::adjust(int8_t delta)
 void MotionScreen::activate(bool hiZ)
 {
     switch (m_selectedField) {
-        case FIELD_RUN_CW:  Services::Motion::run(m_speed, true);  break;
-        case FIELD_RUN_CCW: Services::Motion::run(m_speed, false); break;
+        case FIELD_RUN_CW:  Services::Motion::run(rpmToFullStepsPerSec(m_rpm), true);  break;
+        case FIELD_RUN_CCW: Services::Motion::run(rpmToFullStepsPerSec(m_rpm), false); break;
         case FIELD_JOG_CW:  Services::Motion::move(JOG_SIZES[m_jogSizeIdx]);  break;
         case FIELD_JOG_CCW: Services::Motion::move(-JOG_SIZES[m_jogSizeIdx]); break;
         case FIELD_STOP:    Services::Motion::stop(false); break;

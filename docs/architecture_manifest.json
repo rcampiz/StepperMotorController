@@ -215,6 +215,8 @@
         "server/layers/L3_services/ui/screens/dispatcher_screen.hpp",
         "server/layers/L3_services/ui/screens/encoder_screen.cpp",
         "server/layers/L3_services/ui/screens/encoder_screen.hpp",
+        "server/layers/L3_services/ui/screens/estop_screen.cpp",
+        "server/layers/L3_services/ui/screens/estop_screen.hpp",
         "server/layers/L3_services/ui/screens/graph_screen.cpp",
         "server/layers/L3_services/ui/screens/graph_screen.hpp",
         "server/layers/L3_services/ui/screens/image_view_screen.cpp",

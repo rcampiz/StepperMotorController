@@ -130,6 +130,14 @@
       {
         "type": "FOLLOW_RECOVERED",
         "id": 7
+      },
+      {
+        "type": "ESTOP",
+        "id": 8
+      },
+      {
+        "type": "ESTOP_CLEAR",
+        "id": 9
       }
     ],
     "masks": [

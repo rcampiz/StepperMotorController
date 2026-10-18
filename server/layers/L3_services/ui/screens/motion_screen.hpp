@@ -45,8 +45,8 @@ private:
     bool m_hintDirty = true;
 
     // Live status cache, so a cell is repainted only when its text changes
-    char m_posText[12] = {};
-    char m_spdText[12] = {};
+    char m_posText[24] = {};
+    char m_spdText[24] = {};
     char m_stateText[8] = {};
     bool m_prevHiZ = true;
     bool m_prevFaulted = false;
@@ -54,9 +54,12 @@ private:
     static constexpr int32_t JOG_SIZES[] = {100, 200, 500, 1000, 5000, 10000};
     static constexpr uint8_t NUM_JOG_SIZES = 6;
     uint8_t m_jogSizeIdx = 3;        // 1000
-    uint32_t m_speed = 200;          // steps/s
-    static constexpr uint32_t SPEED_MIN = 10;
-    static constexpr uint32_t SPEED_MAX = 15625;
+    // Speed in RPM: what a person means by "how fast", and independent of the microstep
+    // setting; converted to full steps/s with the configured steps per revolution on use
+    uint16_t m_rpm = 90;             // clear of the 55-66 and 105-122 RPM resonance bands
+    static constexpr uint16_t RPM_MIN = 5;
+    static constexpr uint16_t RPM_MAX = 600;
+    uint32_t rpmToFullStepsPerSec(uint16_t rpm) const;
 
     static bool isEditable(uint8_t field) { return field == FIELD_SPEED || field == FIELD_JOG_SIZE; }
     bool isFieldEnabled(uint8_t field, bool faulted) const;
