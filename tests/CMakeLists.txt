@@ -1,4 +1,4 @@
-﻿cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.20)
 
 # ---------------------------------------------------------------------------
 # Host-side unit tests for the firmware's RTOS-free layers.
@@ -116,6 +116,7 @@ smc_add_test(test_screen_snapshots test_screen_snapshots.cpp
     ${SERVER}/layers/L3_services/ui/screen_manager/screen_manager.cpp
     ${SERVER}/layers/L3_services/ui/chrome/chrome.cpp
     ${SERVER}/layers/L3_services/ui/screens/device_info_screen.cpp
+    ${SERVER}/layers/L3_services/ui/screens/arch_screen.cpp
     ${SERVER}/layers/L3_services/config/device_config/device_config.cpp
     stubs/trace_stub.cpp
     ${SERVER}/layers/L3_services/infra/telemetry_store/telemetry_store.cpp)

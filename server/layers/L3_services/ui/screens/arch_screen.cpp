@@ -10,29 +10,33 @@
 #include "harness/defs/harness_l3_l4.hpp"
 #include "L3_services/infra/trace/trace.hpp"
 #include "harness/trace/interface_trace.hpp"
+#include "ui/chrome/chrome.hpp"
+#include "ui/theme.hpp"
 #include <stdio.h>
 #include <string.h>
 
 namespace UI {
 
-static constexpr uint16_t MARGIN = 4;
-static constexpr uint16_t TITLE_H = 16;
+static constexpr uint16_t MARGIN = Theme::MARGIN;
+static constexpr uint16_t TOP = Theme::CONTENT_Y + 2;            // first content row
+static constexpr uint16_t HINT_Y = Theme::CONTENT_BOTTOM - 10;   // one small-font hint line
+static constexpr uint16_t TITLE_H = 14;
 static constexpr uint16_t LINE_H = 12;
 static constexpr uint16_t LINE_W = Services::Canvas::WIDTH - (2 * MARGIN);
-static constexpr uint16_t WHITE   = 0xFFFF;
-static constexpr uint16_t BG      = 0x0000;
-static constexpr uint16_t CYAN    = 0x07FF;
-static constexpr uint16_t GREEN   = 0x07E0;
-static constexpr uint16_t MAGENTA = 0xF81F;
-static constexpr uint16_t RED     = 0xF800;
-static constexpr uint16_t YELLOW  = 0xFFE0;
-static constexpr uint16_t ORANGE  = 0xFD20;
-static constexpr uint16_t DIM     = 0x4208;
-static constexpr uint16_t PAUSE_COLOR = 0xFFE0;
+static constexpr uint16_t WHITE   = Theme::TEXT;
+static constexpr uint16_t BG      = Theme::BG;
+static constexpr uint16_t CYAN    = Theme::CYAN;
+static constexpr uint16_t GREEN   = Theme::GREEN;
+static constexpr uint16_t MAGENTA = Theme::MAGENTA;
+static constexpr uint16_t RED     = Theme::RED;
+static constexpr uint16_t YELLOW  = Theme::YELLOW;
+static constexpr uint16_t ORANGE  = Theme::ORANGE;
+static constexpr uint16_t DIM     = Theme::DIM;
+static constexpr uint16_t PAUSE_COLOR = Theme::YELLOW;
 
 // Layer colors: L1=cyan, L2=green, L3=orange, L4=magenta, L5=red, F=yellow
 static constexpr uint16_t LAYER_COLORS[] = {
-    CYAN, GREEN, ORANGE, MAGENTA, RED, YELLOW
+    CYAN, GREEN, ORANGE, MAGENTA, Theme::VIOLET, YELLOW
 };
 static constexpr const char* LAYER_NAMES[] = {
     "L1 Transport", "L2 Protocol", "L3 Services",
@@ -41,10 +45,10 @@ static constexpr const char* LAYER_NAMES[] = {
 static constexpr const char* LAYER_CONTENTS[] = {
     "UART  RTT",
     "Parser  Telemetry",
-    "Motion Safety Config",
+    "Motion Safety Cfg",
     "Motor Enc LCD Flash",
     "GPIO SPI UART ADC",
-    "Tasks are orthogonal"
+    "Tasks orthogonal"
 };
 
 // Task columns for matrix mode
@@ -95,11 +99,20 @@ void ArchScreen::onActivate()
     memset(m_cellCounts, 0, sizeof(m_cellCounts));
 }
 
+void ArchScreen::switchMode(Mode m)
+{
+    m_mode = m;
+    m_titleDrawn = false;
+    m_needsRedraw = true;
+}
+
 void ArchScreen::render(Services::ICanvas& lcd)
 {
     if (!m_titleDrawn) {
-        lcd.fillScreen(BG);
+        lcd.fillRect(0, Theme::CONTENT_Y, Theme::WIDTH,
+                     static_cast<uint16_t>(Theme::CONTENT_BOTTOM - Theme::CONTENT_Y + 1), BG);
         m_titleDrawn = true;
+        for (uint8_t i = 0; i < NUM_LAYERS; i++) m_layerDrawn[i] = 0xFFFF;
     }
 
     switch (m_mode) {
@@ -117,64 +130,77 @@ void ArchScreen::render(Services::ICanvas& lcd)
 
 void ArchScreen::renderDiagram(Services::ICanvas& lcd)
 {
-    if (!m_needsRedraw) return;
+    // Six layer bands, host side at the top, hardware at the bottom, with the live boundary
+    // traffic of each layer (trace entries in the ring) as a bar and a count on the right.
+    static constexpr uint16_t BAND_H = 34;
+    static constexpr uint16_t BAND_GAP = 4;
+    static constexpr uint16_t BAR_X = Theme::WIDTH - 72;
+    static constexpr uint16_t BAR_W = 56;
+    static constexpr const char* LAYER_TAGS[] = { "L1", "L2", "L3", "L4", "L5", "F" };
+    static constexpr const char* LAYER_SHORT[] = {
+        "Transport", "Protocol", "Services", "Drivers", "Board", "Platform" };
 
-    uint16_t y = MARGIN;
-
-    // Title
-    lcd.blitTextLine(MARGIN, y, LINE_W, 8, "Firmware Architecture", CYAN, BG);
-    y += TITLE_H;
-    lcd.drawHLine(MARGIN, y, LINE_W, CYAN);
-    y += 4;
-
-    // Draw 6 layer boxes: L1-L5 + F_platform
-    static constexpr uint16_t BOX_H = 36;
-    static constexpr uint16_t BOX_W = LINE_W;
-    static constexpr uint16_t BOX_GAP = 2;
-    static constexpr uint16_t ARROW_H = 6;
-
-    for (uint8_t i = 0; i < NUM_LAYERS; i++) {
-        uint16_t color = LAYER_COLORS[i];
-
-        // Draw separator before F_platform to show orthogonality
-        if (i == 5) {
-            lcd.drawHLine(MARGIN, y, BOX_W, DIM);
-            y += 2;
-            lcd.blitTextLine(MARGIN, y, LINE_W, 8, "  orthogonal", DIM, BG);
-            y += 10;
-            lcd.drawHLine(MARGIN, y, BOX_W, DIM);
-            y += 2;
+    uint16_t y = TOP;
+    if (m_needsRedraw) {
+        lcd.blitTextLine(MARGIN, y, LINE_W, 8, "LAYERS   live boundary traffic", DIM, BG);
+        y += TITLE_H;
+        for (uint8_t i = 0; i < NUM_LAYERS; i++) {
+            uint16_t color = LAYER_COLORS[i];
+            auto by = static_cast<uint16_t>(y + i * (BAND_H + BAND_GAP));
+            lcd.fillRect(MARGIN, by, LINE_W, BAND_H, Theme::PANEL);
+            lcd.fillRect(MARGIN, by, 4, BAND_H, color);
+            lcd.drawString(static_cast<uint16_t>(MARGIN + 10), static_cast<uint16_t>(by + 3), LAYER_TAGS[i],
+                           color, Theme::PANEL, Theme::FONT_LARGE);
+            lcd.drawString(static_cast<uint16_t>(MARGIN + 44), static_cast<uint16_t>(by + 3), LAYER_SHORT[i],
+                           WHITE, Theme::PANEL, Theme::FONT_MEDIUM);
+            lcd.blitTextLine(static_cast<uint16_t>(MARGIN + 44), static_cast<uint16_t>(by + 20), 112, 8,
+                             LAYER_CONTENTS[i], DIM, Theme::PANEL);
+            lcd.fillRect(BAR_X, static_cast<uint16_t>(by + 8), BAR_W, 8, Theme::BLACK);
+            // Arrow to the next band (not after L5: F is orthogonal, not below)
+            if (i < 4) {
+                auto ay = static_cast<uint16_t>(by + BAND_H);
+                lcd.fillRect(static_cast<uint16_t>(MARGIN + 18), ay, 1, BAND_GAP, CYAN);
+            }
+            if (i == 4) {
+                auto ay = static_cast<uint16_t>(by + BAND_H);
+                lcd.fillRect(MARGIN, static_cast<uint16_t>(ay + 1), LINE_W, 1, DIM);   // orthogonal rule
+            }
         }
-
-        // Box outline
-        lcd.drawRect(MARGIN, y, BOX_W, BOX_H, color);
-
-        // Layer name (top line, colored)
-        lcd.blitTextLine(MARGIN + 4, y + 4, BOX_W - 8, 8,
-                         LAYER_NAMES[i], color, BG);
-
-        // Contents (second line, dimmer)
-        lcd.blitTextLine(MARGIN + 4, y + 16, BOX_W - 8, 8,
-                         LAYER_CONTENTS[i], dimColor(color), BG);
-
-        y += BOX_H;
-
-        // Draw arrow between L1-L5 layers (not after L5 or F)
-        if (i < 4) {
-            uint16_t arrowX = Services::Canvas::WIDTH / 2;
-            uint16_t midY = y + ARROW_H / 2;
-            lcd.fillRect(arrowX, y, 1, ARROW_H, DIM);
-            // Small arrowhead
-            lcd.fillRect(arrowX - 2, midY, 5, 1, DIM);
-            y += ARROW_H + BOX_GAP;
-        } else if (i == 4) {
-            y += BOX_GAP;
-        }
+        Chrome::hintLine(lcd, HINT_Y, "RIGHT next view: matrix, flow, tasks", DIM);
     }
 
-    // Footer
-    lcd.blitTextLine(MARGIN, Services::Canvas::HEIGHT - 10, LINE_W, 8,
-                     "L:back  R:matrix", CYAN, BG);
+    // Live counts: throttled like the other modes
+    size_t total = Trace::getTotal();
+    size_t count = Trace::getCount();
+    bool newData = (total != m_lastTotal);
+    if (newData) m_lastTotal = total;
+    if (!m_needsRedraw && (!newData || m_paused)) return;
+    static uint8_t frameSkip = 0;
+    if (!m_needsRedraw && ++frameSkip < 4) return;
+    frameSkip = 0;
+
+    uint16_t layerCount[NUM_LAYERS] = {};
+    Trace::Entry entry;
+    size_t scan = count < 200 ? count : 200;
+    for (size_t ri = 0; ri < scan; ri++) {
+        if (!Trace::getEntry(count - 1 - ri, entry)) continue;
+        uint8_t layer = boundaryToLayer(entry.boundary);
+        if (layer < NUM_LAYERS) layerCount[layer]++;
+    }
+    y = static_cast<uint16_t>(TOP + TITLE_H);
+    char buf[8];
+    for (uint8_t i = 0; i < NUM_LAYERS; i++) {
+        if (layerCount[i] == m_layerDrawn[i]) continue;
+        m_layerDrawn[i] = layerCount[i];
+        auto by = static_cast<uint16_t>(y + i * (BAND_H + BAND_GAP));
+        auto w = static_cast<uint16_t>(layerCount[i] * BAR_W / (scan ? scan : 1));
+        if (layerCount[i] > 0 && w == 0) w = 1;
+        if (w > 0) lcd.fillRect(BAR_X, static_cast<uint16_t>(by + 8), w, 8, LAYER_COLORS[i]);
+        if (w < BAR_W) lcd.fillRect(static_cast<uint16_t>(BAR_X + w), static_cast<uint16_t>(by + 8),
+                                    static_cast<uint16_t>(BAR_W - w), 8, Theme::BLACK);
+        snprintf(buf, sizeof buf, "%u", static_cast<unsigned>(layerCount[i]));
+        lcd.blitTextLine(BAR_X, static_cast<uint16_t>(by + 20), BAR_W, 8, buf, LAYER_COLORS[i], Theme::PANEL);
+    }
 }
 
 // =============================================================================
@@ -198,7 +224,7 @@ void ArchScreen::renderMatrix(Services::ICanvas& lcd)
         frameSkip = 0;
     }
 
-    uint16_t y = MARGIN;
+    uint16_t y = TOP;
     char buf[40];
 
     // Title
@@ -307,10 +333,8 @@ void ArchScreen::renderMatrix(Services::ICanvas& lcd)
                      " bright>10  dim 1-9  . none", DIM, BG);
     y += LINE_H;
 
-    // Footer
-    lcd.blitTextLine(MARGIN, Services::Canvas::HEIGHT - 10, LINE_W, 8,
-                     "CTR:pause L:diag R:flow",
-                     m_paused ? PAUSE_COLOR : CYAN, BG);
+    Chrome::hintLine(lcd, HINT_Y, m_paused ? "PAUSED   CENTER resume   RIGHT next view"
+                                           : "CENTER pause   RIGHT next view", m_paused ? PAUSE_COLOR : DIM);
 }
 
 // =============================================================================
@@ -334,7 +358,7 @@ void ArchScreen::renderFlow(Services::ICanvas& lcd)
         frameSkip = 0;
     }
 
-    uint16_t y = MARGIN;
+    uint16_t y = TOP;
 
     // Title
     lcd.blitTextLine(MARGIN, y, LINE_W, 8, "SCPI Flow", CYAN, BG);
@@ -458,7 +482,7 @@ void ArchScreen::renderFlow(Services::ICanvas& lcd)
         //   Row 2: Live trace method or static desc  — white (live) / dim (static)
         // Colored sidebar
         lcd.fillRect(ARROW_X - 3, y, 7, LAYER_H - 2,
-                     active ? dimColor(color) : 0x2104);
+                     active ? dimColor(color) : Theme::PANEL);
 
         // Layer name
         const char* layerLabel;
@@ -574,7 +598,7 @@ void ArchScreen::renderFlow(Services::ICanvas& lcd)
     // F_platform layer box
     bool fActive = layerInfo[5].active;
     lcd.fillRect(ARROW_X - 3, y, 7, LAYER_H - 2,
-                 fActive ? dimColor(YELLOW) : 0x2104);
+                 fActive ? dimColor(YELLOW) : Theme::PANEL);
     lcd.blitTextLine(FLOW_X, y, 120, 8, "F  Platform",
                      fActive ? YELLOW : dimColor(YELLOW), BG);
     if (fActive && (layerInfo[5].method != nullptr)) {
@@ -585,10 +609,8 @@ void ArchScreen::renderFlow(Services::ICanvas& lcd)
                          "FreeRTOSMutex impl", dimColor(YELLOW), BG);
     }
 
-    // Footer
-    lcd.blitTextLine(MARGIN, Services::Canvas::HEIGHT - 10, LINE_W, 8,
-                     "L:matrix  R:tasks  Handoff=yellow",
-                     m_paused ? PAUSE_COLOR : CYAN, BG);
+    Chrome::hintLine(lcd, HINT_Y, m_paused ? "PAUSED   CENTER resume   RIGHT next view"
+                                           : "CENTER pause   RIGHT next view", m_paused ? PAUSE_COLOR : DIM);
 }
 
 // =============================================================================
@@ -611,59 +633,30 @@ InputResult ArchScreen::handleInput(JoyDirection dir, bool pressed)
 InputResult ArchScreen::handleDiagramInput(JoyDirection dir)
 {
     switch (dir) {
-        case JoyDirection::LEFT:
-            return InputResult::EXIT_SCREEN;
+        case JoyDirection::LEFT:   return InputResult::EXIT_SCREEN;
         case JoyDirection::RIGHT:
-            m_mode = Mode::MATRIX;
-            m_titleDrawn = false;
-            m_needsRedraw = true;
-            return InputResult::HANDLED;
-        default:
-            return InputResult::HANDLED;
+        case JoyDirection::CENTER: switchMode(Mode::MATRIX); return InputResult::HANDLED;
+        default:                   return InputResult::HANDLED;
     }
 }
 
 InputResult ArchScreen::handleMatrixInput(JoyDirection dir)
 {
     switch (dir) {
-        case JoyDirection::LEFT:
-            m_mode = Mode::DIAGRAM;
-            m_titleDrawn = false;
-            m_needsRedraw = true;
-            return InputResult::HANDLED;
-        case JoyDirection::RIGHT:
-            m_mode = Mode::FLOW;
-            m_titleDrawn = false;
-            m_needsRedraw = true;
-            return InputResult::HANDLED;
-        case JoyDirection::CENTER:
-            m_paused = !m_paused;
-            m_needsRedraw = true;
-            return InputResult::HANDLED;
-        default:
-            return InputResult::HANDLED;
+        case JoyDirection::LEFT:   return InputResult::EXIT_SCREEN;
+        case JoyDirection::RIGHT:  switchMode(Mode::FLOW); return InputResult::HANDLED;
+        case JoyDirection::CENTER: m_paused = !m_paused; m_needsRedraw = true; return InputResult::HANDLED;
+        default:                   return InputResult::HANDLED;
     }
 }
 
 InputResult ArchScreen::handleFlowInput(JoyDirection dir)
 {
     switch (dir) {
-        case JoyDirection::LEFT:
-            m_mode = Mode::MATRIX;
-            m_titleDrawn = false;
-            m_needsRedraw = true;
-            return InputResult::HANDLED;
-        case JoyDirection::RIGHT:
-            m_mode = Mode::TASKS;
-            m_titleDrawn = false;
-            m_needsRedraw = true;
-            return InputResult::HANDLED;
-        case JoyDirection::CENTER:
-            m_paused = !m_paused;
-            m_needsRedraw = true;
-            return InputResult::HANDLED;
-        default:
-            return InputResult::HANDLED;
+        case JoyDirection::LEFT:   return InputResult::EXIT_SCREEN;
+        case JoyDirection::RIGHT:  switchMode(Mode::TASKS); return InputResult::HANDLED;
+        case JoyDirection::CENTER: m_paused = !m_paused; m_needsRedraw = true; return InputResult::HANDLED;
+        default:                   return InputResult::HANDLED;
     }
 }
 
@@ -691,7 +684,7 @@ void ArchScreen::renderTasks(Services::ICanvas& lcd)
         frameSkip = 0;
     }
 
-    uint16_t y = MARGIN;
+    uint16_t y = TOP;
     char buf[40];
     uint8_t selTaskId = TASK_IDS[m_selectedTask];
 
@@ -803,7 +796,7 @@ void ArchScreen::renderTasks(Services::ICanvas& lcd)
 
         // Colored sidebar
         lcd.fillRect(ARROW_X - 3, y, 7, LAYER_H - 2,
-                     active ? dimColor(color) : 0x2104);
+                     active ? dimColor(color) : Theme::PANEL);
 
         // Layer name
         const char* layerLabel;
@@ -867,7 +860,7 @@ void ArchScreen::renderTasks(Services::ICanvas& lcd)
     // F_platform layer box
     bool fActive = layerInfo[5].active;
     lcd.fillRect(ARROW_X - 3, y, 7, LAYER_H - 2,
-                 fActive ? dimColor(YELLOW) : 0x2104);
+                 fActive ? dimColor(YELLOW) : Theme::PANEL);
     lcd.blitTextLine(FLOW_X, y, 120, 8, "F  Platform",
                      fActive ? YELLOW : dimColor(YELLOW), BG);
     if (fActive && (layerInfo[5].method != nullptr)) {
@@ -877,25 +870,15 @@ void ArchScreen::renderTasks(Services::ICanvas& lcd)
         lcd.blitTextLine(FLOW_X + 4, y + 8, 150, 8, "(no trace)", DIM, BG);
     }
 
-    // Footer
-    lcd.blitTextLine(MARGIN, Services::Canvas::HEIGHT - 10, LINE_W, 8,
-                     "L:flow R:diag UD:task CTR:pause",
-                     m_paused ? PAUSE_COLOR : CYAN, BG);
+    Chrome::hintLine(lcd, HINT_Y, m_paused ? "PAUSED   UP/DOWN task   CENTER resume"
+                                           : "UP/DOWN task   CENTER pause   RIGHT next", m_paused ? PAUSE_COLOR : DIM);
 }
 
 InputResult ArchScreen::handleTasksInput(JoyDirection dir)
 {
     switch (dir) {
-        case JoyDirection::LEFT:
-            m_mode = Mode::FLOW;
-            m_titleDrawn = false;
-            m_needsRedraw = true;
-            return InputResult::HANDLED;
-        case JoyDirection::RIGHT:
-            m_mode = Mode::DIAGRAM;
-            m_titleDrawn = false;
-            m_needsRedraw = true;
-            return InputResult::HANDLED;
+        case JoyDirection::LEFT:   return InputResult::EXIT_SCREEN;
+        case JoyDirection::RIGHT:  switchMode(Mode::DIAGRAM); return InputResult::HANDLED;
         case JoyDirection::UP:
             m_selectedTask = (m_selectedTask == 0) ? (NUM_TASKS - 1) : (m_selectedTask - 1);
             m_needsRedraw = true;
@@ -904,12 +887,8 @@ InputResult ArchScreen::handleTasksInput(JoyDirection dir)
             m_selectedTask = (m_selectedTask + 1) % NUM_TASKS;
             m_needsRedraw = true;
             return InputResult::HANDLED;
-        case JoyDirection::CENTER:
-            m_paused = !m_paused;
-            m_needsRedraw = true;
-            return InputResult::HANDLED;
-        default:
-            return InputResult::HANDLED;
+        case JoyDirection::CENTER: m_paused = !m_paused; m_needsRedraw = true; return InputResult::HANDLED;
+        default:                   return InputResult::HANDLED;
     }
 }
 

@@ -50,6 +50,9 @@ public:
 
     bool needsFullRedraw() const override { return false; }
     void clearRedrawFlag() override { }
+    bool usesChrome() const override { return true; }
+    const char* title() const override { return "Architecture"; }
+    const char* centerHint() const override { return "PAUSE"; }
 
 private:
     enum class Mode : uint8_t { DIAGRAM, MATRIX, FLOW, TASKS };
@@ -72,6 +75,9 @@ private:
 
     // Matrix mode: 6 layers x 5 tasks count grid
     uint8_t m_cellCounts[6][5] = {};
+    // Diagram mode: live boundary traffic per layer, what is drawn (0xFFFF = nothing yet)
+    uint16_t m_layerDrawn[6] = {};
+    void switchMode(Mode m);
 };
 
 } // namespace UI

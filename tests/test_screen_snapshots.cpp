@@ -15,6 +15,7 @@
 #include "L3_services/ui/screens/encoder_screen.hpp"
 #include "L3_services/ui/screens/graph_screen.hpp"
 #include "L3_services/ui/screens/device_info_screen.hpp"
+#include "L3_services/ui/screens/arch_screen.hpp"
 #include "L3_services/ui/screen_manager/screen_manager.hpp"
 #include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include "L3_services/ui/theme.hpp"
@@ -27,6 +28,15 @@
 #else
 #define MKDIR(p) mkdir(p, 0755)
 #endif
+
+#include "L3_services/infra/trace/trace.hpp"
+
+// The architecture screen reads the trace ring; the host build has no ring, so it is empty
+namespace Trace {
+size_t getTotal() { return 0; }
+size_t getCount() { return 0; }
+bool getEntry(size_t, Entry&) { return false; }
+}
 
 using namespace fakes;
 
@@ -173,6 +183,23 @@ TEST(device_info_repaints_only_the_live_cells) {
     const uint32_t cost = rig.panel.pixelsWritten - first;
     printf("  device info: first frame %u px, live update %u px\n", first, cost);
     EXPECT_TRUE(cost <= 3u * 116u * 16u);                      // three value cells at most
+}
+
+TEST(architecture_screen_cycles_its_views_with_right_and_leaves_with_left) {
+    Rig rig;
+    UI::MenuScreen root("Main Menu");
+    UI::ArchScreen arch;
+    rig.start(&root);
+    rig.mgr.push(&arch);
+    rig.frame();
+    rig.dump("arch_diagram");
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::PANEL, 0, UI::Theme::CONTENT_Y, 240, 240) > 6 * 200 * 30);  // six bands
+    rig.key(UI::JoyDirection::RIGHT); rig.frame(); rig.dump("arch_matrix");
+    rig.key(UI::JoyDirection::RIGHT); rig.frame(); rig.dump("arch_flow");
+    rig.key(UI::JoyDirection::RIGHT); rig.frame(); rig.dump("arch_tasks");
+    EXPECT_EQ(rig.mgr.depth(), 2);
+    rig.key(UI::JoyDirection::LEFT);
+    EXPECT_EQ(rig.mgr.depth(), 1);
 }
 
 TEST(graph_screen_draws_a_trace_from_telemetry) {
