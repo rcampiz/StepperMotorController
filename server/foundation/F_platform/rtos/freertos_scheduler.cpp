@@ -5,6 +5,7 @@
 
 #include "F_platform/rtos/freertos_scheduler.hpp"
 #include "F_platform/hw/early_debug.hpp"
+#include "F_platform/hw/early_debug_board.hpp"
 
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
@@ -61,8 +62,9 @@ void FreeRTOSScheduler::start()
     SEGGER_SYSVIEW_Start();
 #endif
 
-    EarlyDebug::println("Starting scheduler...");
-    EarlyDebug::println("===================");
+    // Through the guard (F16): dropped once the composition root retired the debug UART
+    Platform::debugPrintln("Starting scheduler...");
+    Platform::debugPrintln("===================");
 
     vTaskStartScheduler();
 

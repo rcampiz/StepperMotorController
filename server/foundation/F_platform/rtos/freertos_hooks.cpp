@@ -7,6 +7,7 @@
  */
 
 #include "F_platform/hw/early_debug.hpp"
+#include "F_platform/hw/early_debug_board.hpp"
 #include "X_vendor/CMSIS/stm32f401xe.h"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/FreeRTOS.h"
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
@@ -111,7 +112,7 @@ void vApplicationIdleHook(void)
     static bool once = false;
     if (!once) {
         once = true;
-        EarlyDebug::println("[IDLE] First idle tick");
+        Platform::debugPrintln("[IDLE] First idle tick");   // guarded: USART2 is the protocol's by now
     }
     __WFI();
 }
