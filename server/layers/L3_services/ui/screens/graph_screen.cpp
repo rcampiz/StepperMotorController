@@ -1,13 +1,12 @@
 /**
  * @file graph_screen.cpp
- * @brief Rolling telemetry line graph — flicker-free column-buffer rendering
- *
- * Each graph column is built as a complete pixel buffer in RAM, then sent
- * to the LCD in a single DMA transfer via blitColumn(). No fillRect clear,
- * no per-pixel drawLine — zero visual flicker.
+ * @brief Telemetry strip chart with a major/minor grid and per-column diff rendering.
  */
 
 #include "ui/screens/graph_screen.hpp"
+#include "ui/chrome/chrome.hpp"
+#include "ui/theme.hpp"
+#include "ui/screens/encoder_screen.hpp"      // ENCODER_CPR
 #include "harness/defs/harness_l3_l4.hpp"
 #include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include <stdio.h>
@@ -15,85 +14,48 @@
 
 namespace UI {
 
-// Encoder CPR for RPM conversion (must match encoder_screen.hpp and GUI)
-static constexpr int32_t ENCODER_CPR = 4000;
+static constexpr uint16_t HEADER_Y = Theme::CONTENT_Y + 2;      // channel + latest value
+static constexpr uint16_t LABEL_X = 2;                           // y-axis labels (small font)
+static constexpr uint16_t HINT_Y = 270;
 
-// Colors (RGB565 big-endian for column buffer)
-static constexpr uint16_t LABEL_COLOR = 0x07FF;   // Cyan
-static constexpr uint16_t BG_COLOR = 0x0000;       // Black
-static constexpr uint16_t GRID_COLOR = 0x4208;     // Dark gray
-static constexpr uint16_t VALUE_COLOR = 0xFFFF;    // White
-static constexpr uint16_t VEL_COLOR = 0x07E0;      // Green
-static constexpr uint16_t SPD_COLOR = 0x07FF;      // Cyan
-static constexpr uint16_t POS_COLOR = 0xFBE0;      // Yellow
-static constexpr uint16_t SLIP_COLOR = 0xF81F;     // Magenta
-static constexpr uint16_t AXIS_COLOR = 0x8410;     // Medium gray
-
-// Layout
-static constexpr uint8_t TEXT_SCALE = 3;   // Medium font (8×12)
-static constexpr uint16_t HEADER_Y = 2;
-
-// Helper: write a pixel color into the column buffer at a given row
-static inline void setColPixel(uint8_t* buf, uint16_t row, uint16_t color)
+static inline void setPx(uint8_t* buf, uint16_t row, uint16_t color)
 {
-    uint16_t off = row * 2;
-    buf[off]     = static_cast<uint8_t>(color >> 8);
-    buf[off + 1] = static_cast<uint8_t>(color & 0xFF);
+    buf[row * 2] = static_cast<uint8_t>(color >> 8);
+    buf[row * 2 + 1] = static_cast<uint8_t>(color & 0xFF);
 }
 
 void GraphScreen::onActivate()
 {
     m_needsRedraw = true;
-    // Don't clear samples — preserve history across menu visits
+    m_full = true;
+    // Samples are kept across visits; everything on the panel is redrawn
+}
+
+void GraphScreen::resetColumns()
+{
+    memset(m_lo, 0xFF, sizeof m_lo);
+    memset(m_hi, 0xFF, sizeof m_hi);
 }
 
 void GraphScreen::pushSample(int32_t value)
 {
     m_samples[m_head] = value;
-    m_head = (m_head + 1) % GRAPH_SAMPLES;
-    if (m_count < GRAPH_SAMPLES) m_count++;
+    m_head = static_cast<uint16_t>((m_head + 1) % SAMPLES);
+    if (m_count < SAMPLES) m_count++;
 }
 
 int32_t GraphScreen::getSample(uint16_t age) const
 {
     if (age >= m_count) return 0;
-    uint16_t idx = (m_head + GRAPH_SAMPLES - 1 - age) % GRAPH_SAMPLES;
+    auto idx = static_cast<uint16_t>((m_head + SAMPLES - 1 - age) % SAMPLES);
     return m_samples[idx];
-}
-
-void GraphScreen::computeRange(int32_t& outMin, int32_t& outMax) const
-{
-    uint16_t n = (m_count < GRAPH_W) ? m_count : GRAPH_W;
-    if (n == 0) {
-        outMin = -1; outMax = 1;
-        return;
-    }
-    outMin = getSample(0);
-    outMax = outMin;
-    for (uint16_t i = 1; i < n; i++) {
-        int32_t v = getSample(i);
-        if (v < outMin) outMin = v;
-        if (v > outMax) outMax = v;
-    }
-    // Always include zero for absolute reference
-    if (outMin > 0) outMin = 0;
-    if (outMax < 0) outMax = 0;
-    // Enforce minimum range of -10 to +10
-    if (outMin > -10) outMin = -10;
-    if (outMax < 10) outMax = 10;
-    // Add 10% padding beyond extremes
-    int32_t span = outMax - outMin;
-    int32_t pad = span / 10;
-    if (pad < 1) pad = 1;
-    outMin -= pad;
-    outMax += pad;
 }
 
 const char* GraphScreen::channelName() const
 {
     switch (m_channel) {
-        case Channel::VELOCITY: return "RPM";
-        case Channel::SPEED:    return "Speed";
+        case Channel::VELOCITY: return "Shaft rpm";
+        case Channel::SPEED:    return "Cmd speed";
         case Channel::POSITION: return "Position";
         case Channel::SLIP:     return "Slip";
     }
@@ -105,8 +67,8 @@ const char* GraphScreen::channelUnit() const
     switch (m_channel) {
         case Channel::VELOCITY: return "rpm";
         case Channel::SPEED:    return "st/s";
-        case Channel::POSITION: return "steps";
-        case Channel::SLIP:     return "ticks";
+        case Channel::POSITION: return "st";
+        case Channel::SLIP:     return "cnt";
     }
     return "";
 }
@@ -114,217 +76,205 @@ const char* GraphScreen::channelUnit() const
 uint16_t GraphScreen::channelColor() const
 {
     switch (m_channel) {
-        case Channel::VELOCITY: return VEL_COLOR;
-        case Channel::SPEED:    return SPD_COLOR;
-        case Channel::POSITION: return POS_COLOR;
-        case Channel::SLIP:     return SLIP_COLOR;
+        case Channel::VELOCITY: return Theme::CYAN;
+        case Channel::SPEED:    return Theme::MAGENTA;
+        case Channel::POSITION: return Theme::YELLOW;
+        case Channel::SLIP:     return Theme::ORANGE;
     }
-    return VALUE_COLOR;
+    return Theme::TEXT;
 }
 
-void GraphScreen::renderHeader(Services::ICanvas& lcd)
+void GraphScreen::dataRange(int32_t& outMin, int32_t& outMax) const
 {
-    char buf[30];
+    uint16_t n = (m_count < PLOT_W) ? m_count : PLOT_W;
+    outMin = 0; outMax = 0;
+    for (uint16_t i = 0; i < n; i++) {
+        int32_t v = getSample(i);
+        if (v < outMin) outMin = v;
+        if (v > outMax) outMax = v;
+    }
+    if (outMin > -10) outMin = -10;
+    if (outMax < 10) outMax = 10;
+}
 
-    // Channel name with arrows — padded to fixed width, no fillRect clear
-    snprintf(buf, sizeof(buf), "< %-8s >", channelName());
-    lcd.drawString(4, HEADER_Y, buf, channelColor(), BG_COLOR, TEXT_SCALE);
+void GraphScreen::updateRange()
+{
+    if (m_yScaleMode == YScaleMode::FIXED) return;
+    int32_t lo, hi;
+    dataRange(lo, hi);
+    // Grow when the data leaves the drawn range; shrink only when it uses under half of it.
+    // Each range change moves every column, so hysteresis keeps the plot still.
+    bool grow = lo < m_min || hi > m_max;
+    int32_t span = m_max - m_min;
+    bool shrink = (hi - lo) * 2 < span && span > 40;
+    if (!grow && !shrink) return;
+    int32_t pad = (hi - lo) / 5;
+    if (pad < 2) pad = 2;
+    m_min = lo - pad;
+    m_max = hi + pad;
+}
 
-    // Current value + unit — right-aligned, padded to overwrite old text
+uint16_t GraphScreen::rowOf(int32_t value) const
+{
+    int32_t span = m_max - m_min;
+    if (span <= 0) span = 1;
+    int64_t h = static_cast<int64_t>(value - m_min) * (PLOT_H - 1) / span;
+    if (h < 0) h = 0;
+    if (h > PLOT_H - 1) h = PLOT_H - 1;
+    return static_cast<uint16_t>(PLOT_H - 1 - h);
+}
+
+void GraphScreen::drawFrame(Services::ICanvas& lcd)
+{
+    // The plot interior: black, minor grid every 10 px, major every 50 px, drawn column-wise
+    for (uint16_t x = 0; x < PLOT_W; x++) {
+        bool majX = (x % GRID_MAJOR) == 0, minX = (x % GRID_MINOR) == 0;
+        for (uint16_t y = 0; y < PLOT_H; y++) {
+            bool majY = (y % GRID_MAJOR) == 0, minY = (y % GRID_MINOR) == 0;
+            uint16_t c = Theme::BLACK;
+            if (majX || majY) c = Theme::GRID_MAJ;
+            else if (minX || minY) c = Theme::GRID;
+            setPx(m_colBuf, y, c);
+        }
+        lcd.blitColumn(static_cast<uint16_t>(PLOT_X + x), PLOT_Y, PLOT_H, m_colBuf);
+    }
+    Chrome::drawCorners(lcd, static_cast<uint16_t>(PLOT_X - 2), static_cast<uint16_t>(PLOT_Y - 2),
+                        static_cast<uint16_t>(PLOT_W + 4), static_cast<uint16_t>(PLOT_H + 4), 8, Theme::CYAN);
+    // Time labels under the plot
+    lcd.drawString(PLOT_X, static_cast<uint16_t>(PLOT_Y + PLOT_H + 5), "-10s", Theme::DIM, Theme::BG, Theme::FONT_SMALL);
+    lcd.drawString(static_cast<uint16_t>(PLOT_X + PLOT_W / 2 - 9), static_cast<uint16_t>(PLOT_Y + PLOT_H + 5), "-5s", Theme::DIM, Theme::BG, Theme::FONT_SMALL);
+    lcd.drawString(static_cast<uint16_t>(PLOT_X + PLOT_W - 12), static_cast<uint16_t>(PLOT_Y + PLOT_H + 5), "0s", Theme::DIM, Theme::BG, Theme::FONT_SMALL);
+    Chrome::hintLine(lcd, HINT_Y, "CENTER channel   UP/DOWN lock scale", Theme::DIM);
+    Chrome::drawDeck(lcd, static_cast<uint16_t>(HINT_Y + 12), Theme::CONTENT_BOTTOM);
+    m_rangeText[0][0] = m_rangeText[1][0] = '\0';
+    resetColumns();
+}
+
+void GraphScreen::drawAxisLabels(Services::ICanvas& lcd)
+{
+    char buf[12];
+    const char* lock = (m_yScaleMode == YScaleMode::FIXED) ? "LOCK" : "    ";
+    snprintf(buf, sizeof buf, "%5ld", static_cast<long>(m_max));
+    if (strcmp(buf, m_rangeText[0]) != 0) {
+        snprintf(m_rangeText[0], sizeof m_rangeText[0], "%s", buf);
+        lcd.blitTextLine(LABEL_X, PLOT_Y, 30, Theme::SMALL_H, buf, Theme::DIM, Theme::BG);
+        lcd.blitTextLine(LABEL_X, static_cast<uint16_t>(PLOT_Y + PLOT_H / 2 - 4), 30, Theme::SMALL_H, lock,
+                         Theme::YELLOW, Theme::BG);
+    }
+    snprintf(buf, sizeof buf, "%5ld", static_cast<long>(m_min));
+    if (strcmp(buf, m_rangeText[1]) != 0) {
+        snprintf(m_rangeText[1], sizeof m_rangeText[1], "%s", buf);
+        lcd.blitTextLine(LABEL_X, static_cast<uint16_t>(PLOT_Y + PLOT_H - Theme::SMALL_H), 30, Theme::SMALL_H, buf, Theme::DIM, Theme::BG);
+    }
+}
+
+void GraphScreen::drawHeader(Services::ICanvas& lcd, bool force)
+{
+    char buf[20];
+    if (force) {
+        Chrome::textBox(lcd, Theme::MARGIN, HEADER_Y, 110, 16, 2, 2, channelName(), channelColor(), Theme::BG);
+        m_valueText[0] = '\0';
+    }
     int32_t latest = (m_count > 0) ? getSample(0) : 0;
-    snprintf(buf, sizeof(buf), "%6ld %-5s", static_cast<long>(latest), channelUnit());
-    lcd.drawString(120, HEADER_Y, buf, VALUE_COLOR, BG_COLOR, TEXT_SCALE);
+    snprintf(buf, sizeof buf, "%ld %s", static_cast<long>(latest), channelUnit());
+    if (strcmp(buf, m_valueText) != 0) {
+        snprintf(m_valueText, sizeof m_valueText, "%s", buf);
+        size_t n = strlen(buf);
+        if (n > 13) n = 13;
+        auto tw = static_cast<uint16_t>(n * Theme::MED_W);
+        Chrome::textBox(lcd, 122, HEADER_Y, 112, 16, static_cast<uint16_t>(112 - tw - 2), 2, buf, Theme::TEXT, Theme::BG);
+    }
 }
 
-void GraphScreen::renderGraph(Services::ICanvas& lcd)
+void GraphScreen::drawColumns(Services::ICanvas& lcd)
 {
-    uint16_t displaySamples = (m_count < GRAPH_W) ? m_count : GRAPH_W;
-
-    if (displaySamples < 2) {
-        // Not enough data — clear graph area and show message
-        lcd.fillRect(GRAPH_X, GRAPH_Y, GRAPH_W, GRAPH_H, BG_COLOR);
-        lcd.drawString(GRAPH_X + 20, GRAPH_Y + GRAPH_H / 2,
-                       "No data", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
-        return;
-    }
-
-    // Compute Y range (always includes zero for absolute reference)
-    int32_t minVal, maxVal;
-    if (m_yScaleMode == YScaleMode::FIXED) {
-        minVal = m_fixedMin;
-        maxVal = m_fixedMax;
-    } else {
-        computeRange(minVal, maxVal);
-    }
-
-    int32_t range = maxVal - minVal;
-    uint16_t lineColor = channelColor();
-
-    // Zero-line row (always in range since 0 is always included)
-    int32_t zp = ((-minVal) * static_cast<int32_t>(GRAPH_H - 1)) / range;
-    auto zeroRow = static_cast<uint16_t>(GRAPH_H - 1 - zp);
-
-    // Column-buffer rendering: build each column in RAM, blit via DMA
-    uint16_t prevPixelRow = 0;
+    uint16_t shown = (m_count < PLOT_W) ? m_count : PLOT_W;
+    const uint16_t color = channelColor();
+    uint16_t prevRow = 0;
     bool havePrev = false;
 
-    for (uint16_t col = 0; col < GRAPH_W; col++) {
-        // Fill entire column with background
-        for (uint16_t row = 0; row < GRAPH_H; row++) {
-            setColPixel(m_colBuf, row, BG_COLOR);
-        }
-
-        // Draw zero line (always visible)
-        if (zeroRow < GRAPH_H) {
-            setColPixel(m_colBuf, zeroRow, GRID_COLOR);
-        }
-
-        // Check if this column has data
-        auto age = static_cast<uint16_t>(GRAPH_W - 1 - col);
-        if (age < displaySamples) {
-            int32_t val = getSample(age);
-
-            // Map value to pixel row (0 = top, GRAPH_H-1 = bottom)
-            int32_t pixelH = ((val - minVal) * static_cast<int32_t>(GRAPH_H - 1)) / range;
-            if (pixelH < 0) pixelH = 0;
-            if (pixelH >= static_cast<int32_t>(GRAPH_H)) pixelH = GRAPH_H - 1;
-            auto curRow = static_cast<uint16_t>(GRAPH_H - 1 - pixelH);
-
+    for (uint16_t x = 0; x < PLOT_W; x++) {
+        auto age = static_cast<uint16_t>(PLOT_W - 1 - x);
+        uint8_t lo = 0xFF, hi = 0xFF;
+        if (age < shown) {
+            uint16_t row = rowOf(getSample(age));
             if (havePrev) {
-                // Fill connected line segment from prevRow to curRow (2px thick)
-                uint16_t rMin = (prevPixelRow < curRow) ? prevPixelRow : curRow;
-                uint16_t rMax = (prevPixelRow > curRow) ? prevPixelRow : curRow;
-                // Extend by 1 for 2px thickness
-                uint16_t rEnd = (rMax + 1 < GRAPH_H) ? static_cast<uint16_t>(rMax + 1) : rMax;
-                for (uint16_t r = rMin; r <= rEnd; r++) {
-                    setColPixel(m_colBuf, r, lineColor);
-                }
+                lo = static_cast<uint8_t>(row < prevRow ? row : prevRow);
+                hi = static_cast<uint8_t>(row > prevRow ? row : prevRow);
             } else {
-                // First data point — draw 2px dot
-                setColPixel(m_colBuf, curRow, lineColor);
-                if (curRow + 1 < GRAPH_H) {
-                    setColPixel(m_colBuf, static_cast<uint16_t>(curRow + 1), lineColor);
-                }
+                lo = hi = static_cast<uint8_t>(row);
             }
-
-            prevPixelRow = curRow;
+            prevRow = row;
             havePrev = true;
         }
+        if (lo == m_lo[x] && hi == m_hi[x]) continue;        // this column is already right
 
-        // Blit column to LCD — single DMA transfer, no flicker
-        lcd.blitColumn(static_cast<uint16_t>(GRAPH_X + col), GRAPH_Y, GRAPH_H, m_colBuf);
+        // Repaint the union of the old span and the new one, grid restored, trace on top
+        uint16_t from = PLOT_H, to = 0;
+        if (m_lo[x] != 0xFF) { from = m_lo[x]; to = m_hi[x]; }
+        if (lo != 0xFF) { if (lo < from) from = lo; if (hi > to) to = hi; }
+        if (from > to) { m_lo[x] = lo; m_hi[x] = hi; continue; }
+        bool majX = (x % GRID_MAJOR) == 0, minX = (x % GRID_MINOR) == 0;
+        for (uint16_t y = from; y <= to; y++) {
+            bool majY = (y % GRID_MAJOR) == 0, minY = (y % GRID_MINOR) == 0;
+            uint16_t c = Theme::BLACK;
+            if (majX || majY) c = Theme::GRID_MAJ;
+            else if (minX || minY) c = Theme::GRID;
+            if (lo != 0xFF && y >= lo && y <= hi) c = color;
+            setPx(m_colBuf, static_cast<uint16_t>(y - from), c);
+        }
+        lcd.blitColumn(static_cast<uint16_t>(PLOT_X + x), static_cast<uint16_t>(PLOT_Y + from),
+                       static_cast<uint16_t>(to - from + 1), m_colBuf);
+        m_lo[x] = lo;
+        m_hi[x] = hi;
     }
-
-    // Y-axis labels (scale=3, overlaid on left margin — padded to overwrite old text)
-    char buf[12];
-    snprintf(buf, sizeof(buf), "%-6ld", static_cast<long>(maxVal));
-    lcd.drawString(2, GRAPH_Y + 2, buf, AXIS_COLOR, BG_COLOR, TEXT_SCALE);
-
-    snprintf(buf, sizeof(buf), "%-6ld", static_cast<long>(minVal));
-    lcd.drawString(2, static_cast<uint16_t>(GRAPH_Y + GRAPH_H - 14), buf, AXIS_COLOR, BG_COLOR, TEXT_SCALE);
-
-    // Mode indicator in Y-axis margin (midway)
-    const char* modeStr = (m_yScaleMode == YScaleMode::DYNAMIC) ? "Auto " : "Lock ";
-    lcd.drawString(2, static_cast<uint16_t>(GRAPH_Y + (GRAPH_H / 2) - 6),
-                   modeStr, AXIS_COLOR, BG_COLOR, TEXT_SCALE);
-
-    // X-axis time labels (scale=3, below graph — padded)
-    auto xAxisY = static_cast<uint16_t>(GRAPH_Y + GRAPH_H + 4);
-
-    // Dynamic time window: displaySamples * 50ms per sample
-    uint16_t totalMs = displaySamples * 50;
-    uint16_t dataStartCol = (displaySamples < GRAPH_W)
-        ? static_cast<uint16_t>(GRAPH_W - displaySamples) : 0;
-
-    // Oldest time label (left edge of data)
-    if (totalMs >= 1000) {
-        snprintf(buf, sizeof(buf), "%-4us", totalMs / 1000);
-    } else {
-        snprintf(buf, sizeof(buf), "0.%us ", totalMs / 100);
-    }
-    lcd.drawString(static_cast<uint16_t>(GRAPH_X + dataStartCol), xAxisY,
-                   buf, AXIS_COLOR, BG_COLOR, TEXT_SCALE);
-
-    // Middle time label
-    uint16_t halfMs = totalMs / 2;
-    auto midCol = static_cast<uint16_t>(dataStartCol + (GRAPH_W - dataStartCol) / 2);
-    if (halfMs >= 1000) {
-        snprintf(buf, sizeof(buf), "%us", halfMs / 1000);
-    } else {
-        snprintf(buf, sizeof(buf), "0.%us", halfMs / 100);
-    }
-    auto midW = static_cast<uint16_t>(strlen(buf)) * 8;
-    lcd.drawString(static_cast<uint16_t>(GRAPH_X + midCol - midW / 2), xAxisY,
-                   buf, AXIS_COLOR, BG_COLOR, TEXT_SCALE);
-
-    // "0s" at right (newest)
-    lcd.drawString(static_cast<uint16_t>(GRAPH_X + GRAPH_W - 16), xAxisY,
-                   "0s", AXIS_COLOR, BG_COLOR, TEXT_SCALE);
 }
 
 void GraphScreen::render(Services::ICanvas& lcd)
 {
-    // On first frame after activation, clear entire screen once
-    if (m_needsRedraw) {
-        lcd.fillScreen(BG_COLOR);
-    }
-
-    // Sample current data
-    Protocol::TelemetrySnapshot telem = Services::g_telemetryStore.getSnapshot();
-
+    Protocol::TelemetrySnapshot t = Services::g_telemetryStore.getSnapshot();
     int32_t value = 0;
     switch (m_channel) {
-        case Channel::VELOCITY:
-            value = telem.encoder.velocity * 60L / ENCODER_CPR;
-            break;
-        case Channel::SPEED:
-            value = static_cast<int32_t>(telem.motor.speed);
-            break;
-        case Channel::POSITION:
-            value = telem.motor.position;
-            break;
-        case Channel::SLIP:
-            value = telem.control.followingError;
-            break;
+        case Channel::VELOCITY: value = static_cast<int32_t>(static_cast<int64_t>(t.encoder.velocity) * 60 / ENCODER_CPR); break;
+        case Channel::SPEED:    value = static_cast<int32_t>(t.motor.speed); break;
+        case Channel::POSITION: value = t.motor.position; break;
+        case Channel::SLIP:     value = t.control.followingError; break;
     }
     pushSample(value);
 
-    renderHeader(lcd);
-    renderGraph(lcd);
+    bool full = m_full;
+    if (full) {
+        m_full = false;
+        drawFrame(lcd);
+    }
+    updateRange();
+    drawAxisLabels(lcd);
+    drawHeader(lcd, full);
+    drawColumns(lcd);
 }
 
 InputResult GraphScreen::handleInput(JoyDirection dir, bool pressed)
 {
-    if (!pressed) {
-        return InputResult::HANDLED;
-    }
-
+    if (!pressed) return InputResult::HANDLED;
     switch (dir) {
         case JoyDirection::LEFT:
             return InputResult::EXIT_SCREEN;
-
         case JoyDirection::CENTER:
         case JoyDirection::RIGHT: {
-            auto ch = static_cast<uint8_t>(m_channel);
-            ch = (ch + 1) % NUM_CHANNELS;
+            auto ch = static_cast<uint8_t>((static_cast<uint8_t>(m_channel) + 1) % NUM_CHANNELS);
             m_channel = static_cast<Channel>(ch);
             m_count = 0;
             m_head = 0;
             m_yScaleMode = YScaleMode::DYNAMIC;
-            m_needsRedraw = true;
+            m_min = -10; m_max = 10;
+            m_full = true;                               // new channel: fresh frame
             return InputResult::HANDLED;
         }
-
         case JoyDirection::UP:
         case JoyDirection::DOWN:
-            if (m_yScaleMode == YScaleMode::DYNAMIC) {
-                m_yScaleMode = YScaleMode::FIXED;
-                computeRange(m_fixedMin, m_fixedMax);
-            } else {
-                m_yScaleMode = YScaleMode::DYNAMIC;
-            }
+            m_yScaleMode = (m_yScaleMode == YScaleMode::DYNAMIC) ? YScaleMode::FIXED : YScaleMode::DYNAMIC;
+            m_rangeText[0][0] = '\0';                    // relabel with the lock mark
             return InputResult::HANDLED;
-
         default:
             return InputResult::HANDLED;
     }

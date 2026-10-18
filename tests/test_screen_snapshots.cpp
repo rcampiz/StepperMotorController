@@ -182,14 +182,22 @@ TEST(graph_screen_draws_a_trace_from_telemetry) {
     UI::GraphScreen graph;
     rig.start(&root);
     rig.mgr.push(&graph);
-    for (int i = 0; i < 120; i++) {
+    for (int i = 0; i < 260; i++) {
         setEncoder(i * 100, (i % 40 < 20) ? 10000 : 2000);
         rig.frame();
     }
     const uint32_t before = rig.panel.pixelsWritten;
+    setEncoder(26000, 2000);
     rig.frame();
     rig.dump("graph");
-    printf("  graph: one frame %u px\n", rig.panel.pixelsWritten - before);
-    EXPECT_TRUE(rig.panel.windows > 0);
+    const uint32_t cost = rig.panel.pixelsWritten - before;
+    printf("  graph: one scrolling frame %u px\n", cost);
+    EXPECT_TRUE(cost < 12000);                                  // per-column diff, not the whole plot
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::CYAN, 32, 62, 200, 190) > 400);   // the trace
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::GRID_MAJ, 32, 62, 200, 190) > 800); // the major grid
+    rig.key(UI::JoyDirection::CENTER);                          // next channel: fresh frame
+    rig.frame();
+    rig.key(UI::JoyDirection::LEFT);
+    EXPECT_EQ(rig.mgr.depth(), 1);
 }
 
