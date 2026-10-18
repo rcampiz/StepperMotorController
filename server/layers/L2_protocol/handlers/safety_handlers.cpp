@@ -63,6 +63,17 @@ void CommandParser::cmdSetHeartbeat(const ParsedCommand &cmd) {
   }
 
   auto requested = static_cast<uint32_t>(atol(cmd.args[0]));
+  if (requested == 0) {
+    // F2: a watchdog the protected party can switch off is not a watchdog. Disarming is
+    // allowed only while the motor is in Hi-Z (nothing to protect); otherwise widen it.
+    TelemetrySnapshot snap{};
+    m_dispatcher.getTelemetry(snap);
+    if (!snap.motor.hiZ) {
+      respondErr("INVALID_STATE",
+                 "Watchdog can be disarmed only with the motor in Hi-Z (MOT:DIS); widen it instead");
+      return;
+    }
+  }
   uint32_t accepted = m_dispatcher.safetySetHeartbeatTimeout(requested);
 
   if (m_format == ResponseFormat::JSON) {

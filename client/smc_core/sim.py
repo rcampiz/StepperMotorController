@@ -251,6 +251,10 @@ class FakeBoard:
 
     def _c_SYST_HB_TIMEOUT(self, name, args):
         ms = int(args[0])
+        if ms == 0 and not self.hi_z:                      # F2: disarm only in Hi-Z
+            self._err("SET_HEARTBEAT", "INVALID_STATE",
+                      "Watchdog can be disarmed only with the motor in Hi-Z (MOT:DIS); widen it instead")
+            return
         self.hb_timeout_ms = 0 if ms == 0 else max(100, min(5000, ms))
         self.last_hb = time.monotonic()
         self._ok("SET_HEARTBEAT", data={"requested": ms, "accepted": self.hb_timeout_ms,

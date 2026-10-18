@@ -80,6 +80,17 @@ def test_telemetry_is_pushed_not_polled(rig):
     assert "DIAG:STAT?" not in rig.tx()
 
 
+def test_watchdog_disarm_is_refused_unless_the_motor_is_in_hi_z(rig):     # F2
+    rig.open()
+    rig.fake.hi_z = False
+    r = rig.board.request(C.heartbeat_timeout(0))
+    assert not r.success and r.error_code == "INVALID_STATE"
+    assert rig.fake.hb_timeout_ms == 500
+    rig.fake.hi_z = True
+    assert rig.board.request(C.heartbeat_timeout(0)).success and rig.fake.hb_timeout_ms == 0
+    assert rig.board.request(C.heartbeat_timeout(500)).success
+
+
 def test_heartbeat_needs_fresh_liveness_and_the_watchdog_fires_without_it(rig):
     rig.open()
     assert wait_for(lambda: rig.board.hb.acked >= 3)

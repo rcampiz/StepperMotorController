@@ -207,6 +207,7 @@ void CommandParser::cmdDispBitmap(const ParsedCommand &cmd) {
 
     m_dispatcher.displayStreamData(chunk, chunkReceived);
     bytesReceived += chunkReceived;
+    feedWatchdogDuringUpload();
   }
 
   m_dispatcher.displayStreamEnd();
@@ -432,6 +433,8 @@ void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
       crcState = Util::crc32_update(crcState, &byte, 1);
     }
     bytesReceived++;
+    if ((bytesReceived & 63U) == 0)
+      feedWatchdogDuringUpload();
 
     switch (rleState) {
     case HEADER:
@@ -492,6 +495,10 @@ void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
   }
 
   respondOk("");
+}
+
+void CommandParser::feedWatchdogDuringUpload() {
+  m_dispatcher.safetyHeartbeatReceived(m_dispatcher.safetyGetHeartbeatStatus().lastSeq);
 }
 
 bool CommandParser::hasCrcFlag(const ParsedCommand &cmd) const {
@@ -634,6 +641,7 @@ void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
     }
 
     bytesReceived += toRead;
+    feedWatchdogDuringUpload();
   }
 
   // Verify CRC if requested
@@ -760,6 +768,8 @@ void CommandParser::cmdFlashUploadRle(const ParsedCommand &cmd) {
       crcState = Util::crc32_update(crcState, &byte, 1);
     }
     bytesReceived++;
+    if ((bytesReceived & 63U) == 0)
+      feedWatchdogDuringUpload();
 
     switch (rleState) {
     case HEADER:

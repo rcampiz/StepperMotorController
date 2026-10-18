@@ -394,6 +394,11 @@ private:
    */
   bool verifyCrc(uint32_t computedCrc, Base64Reader &payload);
 
+  /// An upload keeps the Comms task inside one handler for seconds, during which no
+  /// SYST:HB line can be parsed. The payload bytes themselves prove the host is alive, so
+  /// the receive loops feed the watchdog with the last heartbeat's sequence number (F2).
+  void feedWatchdogDuringUpload();
+
   // Trace command handlers
   void cmdTraceDump();
   void cmdTraceReset();

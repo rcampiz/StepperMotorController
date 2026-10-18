@@ -499,14 +499,20 @@ struct StreamingDisplay : FakeL3::FakeDisplayDispatcher {
     void displayStreamEnd() override { ++ends; }
 };
 
+struct HiZSystem : FakeL3::FakeSystemDispatcher {
+    bool hiZ = false;
+    void getTelemetry(Protocol::TelemetrySnapshot& out) override { out = {}; out.motor.hiZ = hiZ; }
+};
+
 struct UploadRig {
     FakeTransport transport;
     Protocol::ServiceDispatcher dispatcher;
     FakeL3::Bundle l3;
     StreamingDisplay display;
+    HiZSystem system;
     Harness::L3Dispatchers dispatchers{l3.motion, l3.config, l3.safety, l3.queue, l3.controlMode,
                                        l3.supervisorTrim, l3.encoder, l3.motorDriver, display,
-                                       l3.flash, l3.system, l3.trace, l3.debug};
+                                       l3.flash, system, l3.trace, l3.debug};
     Protocol::CommandParser parser{transport, dispatcher};
     Protocol::ICommandProcessor& proc = parser;
     UploadRig() { dispatcher.bind(dispatchers); }
@@ -562,6 +568,25 @@ TEST(bitmap_upload_takes_base64_text_with_the_crc_encoded_in_it) {
     EXPECT_TRUE(r.display.bytes == pix);
     EXPECT_EQ(r.display.starts, 1);
     EXPECT_EQ(r.display.ends, 1);
+    // the transfer fed the watchdog from its own traffic (F2)
+    bool fed = false;
+    for (auto& c : r.l3.safety.calls) if (c == "safetyHeartbeatReceived") fed = true;
+    EXPECT_TRUE(fed);
+}
+
+TEST(watchdog_can_be_disarmed_only_with_the_motor_in_hiz) {               // F2
+    UploadRig r;
+    r.system.hiZ = false;
+    std::string out = r.run("SYST:HB:TIMEOUT 0", "");
+    EXPECT_TRUE(out.find("ERROR INVALID_STATE") != std::string::npos);
+    bool set = false;
+    for (auto& c : r.l3.safety.calls) if (c == "safetySetHeartbeatTimeout") set = true;
+    EXPECT_FALSE(set);
+    out = r.run("SYST:HB:TIMEOUT 300", "");                                // widening is always fine
+    EXPECT_TRUE(out.find("ERROR") == std::string::npos);
+    r.system.hiZ = true;
+    out = r.run("SYST:HB:TIMEOUT 0", "");
+    EXPECT_TRUE(out.find("ERROR") == std::string::npos);
 }
 
 TEST(bitmap_upload_rejects_bad_base64_and_a_wrong_crc) {

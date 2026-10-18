@@ -50,7 +50,7 @@ necessarily the SCPI text typed; the catalogue below lists it.
 `CODE` is one of: `UNKNOWN_CMD` (prefix or suffix not in the catalogue), `USAGE` (missing or
 malformed arguments; the message is the usage string), `RX_OVERFLOW` (the line spanned a
 receive-ring overflow), `DBG_LOCKED` (bring-up command before `DBG:UNLOCK`), `MOTOR_BUSY` /
-`VERIFY_FAILED` (`DRV:STEP_MODE`), `ERROR` (a validation message without a finer code), or a
+`VERIFY_FAILED` (`DRV:STEP_MODE`), `INVALID_STATE` (`SYST:HB:TIMEOUT 0` with the motor energised), `ERROR` (a validation message without a finer code), or a
 `ServiceStatus` name from the table below (the message is the text column):
 
 | ServiceStatus | CODE | message |
@@ -105,7 +105,7 @@ missed a fault compares `last_seq` with the last `seq` it received and watches
 
 | Rule | Value |
 |---|---|
-| Heartbeat watchdog | `SYST:HB:TIMEOUT <ms>` arms it (100..5000 ms, 0 = off); the host must send `SYST:HB <seq>` more often than that. On timeout the firmware performs an emergency stop (latched: motion refused until `SYST:FAULT:CLEAR`). The ack carries `remaining_ms`. |
+| Heartbeat watchdog | `SYST:HB:TIMEOUT <ms>` arms it (100..5000 ms); the host must send `SYST:HB <seq>` more often than that. On timeout the firmware performs an emergency stop (latched: motion refused until `SYST:FAULT:CLEAR`). The ack carries `remaining_ms`. `0` (off) is accepted only while the motor is in Hi-Z (`ERROR INVALID_STATE` otherwise): widen the timeout instead of disarming it. An upload in progress feeds the watchdog from its own payload traffic, so a long transfer does not trip it while the bytes keep coming (and the 100 ms character timeout aborts the transfer when they stop). |
 | Baud switch | after `SYST:BAUD <rate>` the firmware switches at once and **reverts to 115200 if no valid command arrives within 2000 ms** at the new rate. |
 | Binary transfers | after `OK READY` the payload is base64 text (RFC 4648 alphabet, `=` padding; CR, LF, space and tab between characters are skipped). Each character must arrive within 100 ms or the transfer aborts with `ERROR Timeout at byte i/n`; a character outside the alphabet aborts with `ERROR Bad base64 at byte i/n` (i counts decoded bytes). Decoded data is consumed in 64-byte chunks. The Comms task is inside the handler for the whole transfer: no other command line is parsed until it ends, but the 0x18 out-of-band stop (section 5) stays armed because base64 text cannot contain it. |
 | Motor command queue | motion commands are queued to the Motor task with a 50 ms bound; `ERROR Queue full` if it does not fit. |
@@ -164,9 +164,11 @@ verify state instead).
     the wire grow by 4/3; the out-of-band stop needs no pause. `UI:DISP:BITMAP:B64` (inline,
     up to 512 bytes) is unchanged.
 
+13. (2026-10-18) `SYST:HB:TIMEOUT 0` is refused with `ERROR INVALID_STATE` unless the motor is
+    in Hi-Z, and uploads feed the watchdog from their own traffic (section 4).
+
 Reserved for a later version:
 
-- `SYST:HB:TIMEOUT 0` refused unless the motor is in Hi-Z (`ERROR INVALID_STATE`).
 - Per-line checksum (`CHECKSUM` error code).
 
 ## 8. `DIAG:STAT?` JSON fields
