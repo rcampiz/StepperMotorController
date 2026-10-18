@@ -42,6 +42,11 @@ public:
         Harness::ITrace::log(Harness::ITrace::L3_L4_ENCODER, "[L3>L4]", "enc.restart", detail);
         m_real.restartSampling(hz);
     }
+    void pauseSampling() override {
+        Harness::ITrace::log(Harness::ITrace::L3_L4_ENCODER, "[L3>L4]", "enc.pause");
+        m_real.pauseSampling();
+    }
+    const uint16_t* syncBuffer() const override { return m_real.syncBuffer(); }
 
 private:
     Drivers::IEncoderHardware& m_real;

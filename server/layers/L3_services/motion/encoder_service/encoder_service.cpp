@@ -50,6 +50,9 @@ bool EncoderService::init(Drivers::IEncoderHardware& hw,
 
 void EncoderService::sample()
 {
+    if (m_frozen) {
+        return;                      // rings frozen for a capture readout: keep the last state
+    }
     if (m_hw == nullptr || !m_hw->isReady()) {
         return;
     }
@@ -199,6 +202,59 @@ void EncoderService::setSampleRate(uint16_t hz)
     m_hw->restartSampling(hz);
     m_lastDmaIdx = 0;
     m_sampleRateHz = hz;
+}
+
+} // namespace Services
+
+namespace Services {
+
+// ---------------------------------------------------------------------------
+// Position capture (CTRL:CAP:*): the DMA rings hold the last 4096 samples of the encoder
+// count and, beside it, the chip's SYNC step count taken at the same instants. Freezing
+// stops the DMA so the host can page the rings out; resuming restarts sampling at the
+// current rate (the velocity estimate pauses meanwhile, so capture with the motor stopped
+// or in open loop).
+// ---------------------------------------------------------------------------
+bool EncoderService::captureFreeze(CaptureInfo& info)
+{
+    if (m_hw == nullptr || !m_hw->isReady()) {
+        return false;
+    }
+    if (!m_frozen) {
+        m_hw->pauseSampling();
+        m_frozenWrite = m_hw->sampleWriteIndex();
+        m_frozen = true;
+    }
+    info.samples = m_hw->sampleBufferSize();
+    info.rateHz = m_sampleRateHz;
+    info.sync = (m_hw->syncBuffer() != nullptr);
+    return true;
+}
+
+bool EncoderService::captureRead(uint32_t i, uint16_t& enc, uint16_t& sync)
+{
+    if (!m_frozen || m_hw == nullptr) {
+        return false;
+    }
+    const uint32_t size = m_hw->sampleBufferSize();
+    if (i >= size) {
+        return false;
+    }
+    const uint32_t idx = (m_frozenWrite + i) % size;
+    enc = m_hw->sampleBuffer()[idx];
+    const uint16_t* sb = m_hw->syncBuffer();
+    sync = (sb != nullptr) ? sb[idx] : 0;
+    return true;
+}
+
+void EncoderService::captureResume()
+{
+    if (!m_frozen || m_hw == nullptr) {
+        return;
+    }
+    m_hw->restartSampling(m_sampleRateHz);
+    m_lastDmaIdx = 0;
+    m_frozen = false;
 }
 
 } // namespace Services

@@ -317,6 +317,18 @@ void ServiceDispatcher::encoderResetCount() {
     m_encoder->encoderResetCount();
 }
 
+bool ServiceDispatcher::captureFreeze(uint32_t& samples, uint16_t& rateHz, bool& sync) {
+    return m_encoder->captureFreeze(samples, rateHz, sync);
+}
+
+bool ServiceDispatcher::captureRead(uint32_t i, uint16_t& enc, uint16_t& sync) {
+    return m_encoder->captureRead(i, enc, sync);
+}
+
+void ServiceDispatcher::captureResume() {
+    m_encoder->captureResume();
+}
+
 void ServiceDispatcher::encFilterGetConfig(EncFilterParams& out) {
     m_encoder->encFilterGetConfig(out);
 }

@@ -1720,6 +1720,32 @@
       "persists": false
     },
     {
+      "name": "CTRL:CAP:DATA?",
+      "prefix": "CTRL",
+      "handler": "cmdCaptureData",
+      "file": "control_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<lines> then OK <n>"
+      ],
+      "json": [
+        {
+          "command": "CAP_DATA",
+          "keys": [
+            "count",
+            "lines",
+            "offset"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": "",
+      "multiline": true,
+      "binary": false,
+      "persists": false
+    },
+    {
       "name": "CTRL:MODE?",
       "prefix": "CTRL",
       "handler": "cmdGetMode",
@@ -2000,6 +2026,50 @@
       "usage": [],
       "ascii_ok": [
         "SYSID aborted"
+      ],
+      "json": [],
+      "errors": [],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false
+    },
+    {
+      "name": "CTRL:CAP:FREEZE",
+      "prefix": "CTRL",
+      "handler": "cmdCaptureFreeze",
+      "file": "control_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [
+        {
+          "command": "CAP_FREEZE",
+          "keys": [
+            "pulses_per_full_step",
+            "rate_hz",
+            "samples",
+            "sync"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false
+    },
+    {
+      "name": "CTRL:CAP:RESUME",
+      "prefix": "CTRL",
+      "handler": "cmdCaptureResume",
+      "file": "control_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "Sampling resumed"
       ],
       "json": [],
       "errors": [],

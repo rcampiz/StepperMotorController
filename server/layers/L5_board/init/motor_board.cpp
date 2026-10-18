@@ -41,8 +41,12 @@ bool Harness::initMotorBoard(Harness::MotorPins& pins)
     motorStbyRst.setSpeed(GPIOSpeed::Low);
     pins.stbyRst = &motorStbyRst;
 
+    // BUSY/SYNC: the Motor task selects the chip's SYNC output (a pulse per 1/8 step) on
+    // this pin and TIM3 counts the pulses (AF2 = TIM3_CH2); the level is still readable.
+    // The firmware takes the busy state from the status register, not from this pin.
     static GPIO motorBusy(Pins::IHM03A1::BUSY_PORT, Pins::IHM03A1::BUSY_PIN);
-    motorBusy.setMode(GPIOMode::Input);
+    motorBusy.setMode(GPIOMode::AltFunc);
+    motorBusy.setAlternateFunction(2);
     motorBusy.setPull(GPIOPull::PullUp);
     pins.busy = &motorBusy;
 

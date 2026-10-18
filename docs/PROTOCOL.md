@@ -280,6 +280,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `CTRL:SYSID:TRAPEZOID` | 2 | CTRL:SYSID:TRAPEZOID <speed_sps> <dir> [dur_ms] [settle_ms] | ASCII: `OK SYSID trapezoid started` | `SYSID already running`<br>`speed_sps must be 1-15625` | `cmdSysIdTrapezoid` (control_handlers.cpp) |
 | `CTRL:SYSID:RECT` | 2 | CTRL:SYSID:RECT <speed_sps> <dir> [dur_ms] [settle_ms] | ASCII: `OK SYSID rect started` | `SYSID already running`<br>`speed_sps must be 1-15625` | `cmdSysIdRect` (control_handlers.cpp) |
 | `CTRL:SYSID:DATA?` | 0 | — | ASCII: `<lines> then OK <n>`; JSON `SYSID_DATA` keys: `count`, `lines`, `offset`, `samples`, `total` | `No data ready (test not DONE)`<br>`offset past end` | `cmdSysIdData` (control_handlers.cpp) |
+| `CTRL:CAP:DATA?` | 0 | — | ASCII: `<lines> then OK <n>`; JSON `CAP_DATA` keys: `count`, `lines`, `offset` | — | `cmdCaptureData` (control_handlers.cpp) |
 | `CTRL:MODE?` | 0 | — | ASCII: `OK <formatted text>` | — | `cmdGetMode` (control_handlers.cpp) |
 | `CTRL:ENC:STAT?` | 0 | — | ASCII: `OK <formatted text>` | — | `cmdGetEncoderStatus` (encoder_handlers.cpp) |
 | `CTRL:ENC?` | 0 | — | ASCII: `OK <formatted text>`; JSON `ENC` keys: `count`, `index_period_us`, `index_seen`, `index_tick`, `revolutions`, `velocity` | `Encoder not available` | `cmdEncoder` (encoder_handlers.cpp) |
@@ -293,6 +294,8 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `CTRL:TRIM:SAVE` | 0 | — | ASCII: `OK <status> or Trim config saved` | — | `cmdTrimSave` (control_handlers.cpp) |
 | `CTRL:SYSID:STATUS?` | 0 | — | ASCII: `OK <formatted text>`; JSON `CTRL:SYSID:STATUS` keys: `phase`, `samples` | — | `cmdSysIdStatus` (control_handlers.cpp) |
 | `CTRL:SYSID:ABORT` | 0 | — | ASCII: `OK SYSID aborted` | — | `cmdSysIdAbort` (control_handlers.cpp) |
+| `CTRL:CAP:FREEZE` | 0 | — | ASCII: `OK <plain lines>`; JSON `CAP_FREEZE` keys: `pulses_per_full_step`, `rate_hz`, `samples`, `sync` | — | `cmdCaptureFreeze` (control_handlers.cpp) |
+| `CTRL:CAP:RESUME` | 0 | — | ASCII: `OK Sampling resumed` | — | `cmdCaptureResume` (control_handlers.cpp) |
 | `CTRL:ENC:FILT:WINDOW` (sub-command) | 1 | — | ASCII: `OK <formatted text>` | `WINDOW requires ms (1-255)`<br>`Window must be 1-255 ms` | `cmdEncFilterSub` (encoder_handlers.cpp) |
 | `CTRL:ENC:FILT:EMA` (sub-command) | 1 | — | ASCII: `OK <formatted text>` | `EMA alpha must be 0-255`<br>`EMA requires 0\|1 [alpha]` | `cmdEncFilterSub` (encoder_handlers.cpp) |
 | `CTRL:ENC:FILT:SMA` (sub-command) | 1 | — | ASCII: `OK <formatted text>` | `SMA requires 0\|1 [window]`<br>`SMA window must be 0-32` | `cmdEncFilterSub` (encoder_handlers.cpp) |

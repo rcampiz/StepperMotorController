@@ -475,6 +475,10 @@ void MotorController::periodicUpdate()
 // ============================================================================
 
 namespace {
+/// STEP_MODE[7:4]: SYNC_EN with SYNC_SEL = 8 pulses per full step on the BUSY/SYNC pin, which
+/// TIM3 counts for the position capture (CTRL:CAP:*). Written with every STEP_MODE update.
+constexpr uint32_t STEP_MODE_SYNC_8FS = 0xC0U;
+
 /// CONFIG[15:10] in current mode: PRED_EN (bit 15) and the target switching period TSW
 uint32_t cmConfigHi(const Services::StepperConfig& c) {
     return (c.getCmPredEn() ? 0x8000U : 0U) | (static_cast<uint32_t>(c.getCmTsw() & 0x1FU) << 10);
@@ -533,9 +537,9 @@ bool MotorController::applyConfig()
     // in Hi-Z (boot, reinit, output disabled), read-modify-write to keep CM_VM and SYNC bits,
     // and verify. Otherwise report it so the caller uses the Motor task's Hi-Z-safe path.
     // STEP_MODE[2:0] = microstep mode, bit 3 = CM_VM (current mode); both only writable in Hi-Z.
-    const uint32_t wanted = (cfg.stepMode & 0x07U) | (currentMode ? 0x08U : 0U);
+    const uint32_t wanted = STEP_MODE_SYNC_8FS | (cfg.stepMode & 0x07U) | (currentMode ? 0x08U : 0U);
     uint32_t stepMode = m_driver->getParam(MotorReg::STEP_MODE);
-    bool stepModeOk = (stepMode & 0x0FU) == wanted;
+    bool stepModeOk = (stepMode & 0xFFU) == wanted;
     // CONFIG[15:10] in current mode (PRED_EN, TSW) is Hi-Z-only as well; untouched in
     // voltage mode where those bits set the PWM frequency
     bool configOk = true;
@@ -544,8 +548,8 @@ bool MotorController::applyConfig()
     }
     if ((!stepModeOk || !configOk) && m_driver->getStatus().hiZ()) {
         if (!stepModeOk) {
-            m_driver->setParam(MotorReg::STEP_MODE, (stepMode & 0xF0U) | wanted);
-            stepModeOk = (m_driver->getParam(MotorReg::STEP_MODE) & 0x0FU) == wanted;
+            m_driver->setParam(MotorReg::STEP_MODE, wanted);
+            stepModeOk = (m_driver->getParam(MotorReg::STEP_MODE) & 0xFFU) == wanted;
         }
         if (!configOk) {
             const uint32_t hi = cmConfigHi(motion.stepper.config);
@@ -566,11 +570,10 @@ bool MotorController::setStepModeSafe(uint8_t mode,
     m_driver->hardHiZ();
     m_clock->delayMs(5);
 
-    // Read-modify-write STEP_MODE: microstep bits from the argument, CM_VM from the saved
-    // drive mode (so a step-mode change never flips voltage/current), SYNC bits preserved
+    // STEP_MODE: microstep bits from the argument, CM_VM from the saved drive mode (so a
+    // step-mode change never flips voltage/current), SYNC output on (8 pulses per full step)
     const uint32_t cmBit = motion.stepper.config.isCurrentMode() ? 0x08U : 0U;
-    uint32_t reg = m_driver->getParam(MotorReg::STEP_MODE);
-    reg = (reg & 0xF0) | (mode & 0x07) | cmBit;
+    const uint32_t reg = STEP_MODE_SYNC_8FS | (mode & 0x07) | cmBit;
     m_driver->setParam(MotorReg::STEP_MODE, reg);
 
     // Read back and verify (microstep bits are the readback; CM_VM must match too)

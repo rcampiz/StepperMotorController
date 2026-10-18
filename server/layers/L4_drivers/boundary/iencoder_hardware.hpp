@@ -45,6 +45,10 @@ public:
     virtual uint16_t sampleRateHz() const = 0;
     /// Stop, prefill with the current count, restart at hz (clamped 100..10000). Task context.
     virtual void restartSampling(uint16_t hz) = 0;
+    /// Freeze both rings in place (CTRL:CAP:FREEZE); restartSampling() resumes.
+    virtual void pauseSampling() {}
+    /// Ring of the commanded-step count sampled with the encoder ring (nullptr if not fitted).
+    virtual const uint16_t* syncBuffer() const { return nullptr; }
 };
 
 } // namespace Drivers

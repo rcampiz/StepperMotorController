@@ -31,6 +31,17 @@ public:
     virtual void resetCount() = 0;
     virtual void clearIndexFlag() = 0;
     virtual bool isAvailable() = 0;
+
+    // --- position capture (CTRL:CAP:*): freeze the DMA rings, read them, resume ---
+    struct CaptureInfo {
+        uint32_t samples = 0;     ///< ring length (oldest first after a freeze)
+        uint16_t rateHz = 0;      ///< sample rate the rings were filled at
+        bool     sync = false;    ///< a commanded-step ring exists beside the encoder ring
+    };
+    virtual bool captureFreeze(CaptureInfo& info) { (void)info; return false; }
+    /// Sample i (0 = oldest) of the frozen rings: encoder count and SYNC pulse count, 16-bit wrapped.
+    virtual bool captureRead(uint32_t i, uint16_t& enc, uint16_t& sync) { (void)i; (void)enc; (void)sync; return false; }
+    virtual void captureResume() {}
 };
 
 } // namespace Services

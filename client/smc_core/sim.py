@@ -51,6 +51,8 @@ class FakeBoard:
         self.last_hb = time.monotonic()
         self.tlm_ms = 0
         self.tlm_compact = False
+        self.enc_rate = 1000
+        self._cap_frozen = False
         self.events_on = False
         self.seq = 0
         self.received: List[str] = []           # every command line, in order
@@ -427,6 +429,38 @@ class FakeBoard:
     def _c_DRV_CFG_TVAL(self, name, args):
         self.tval = tuple(int(a, 16) & 0x7F for a in args[:4])
         self._ok(name, "TVAL set")
+
+    def _c_CTRL_ENC_FILT_RATE(self, name, args):
+        self.enc_rate = max(100, min(10000, int(args[0])))
+        self._ok("ENC_FILT", "Sample rate %d Hz" % self.enc_rate)
+
+    CAP_SAMPLES = 4096
+
+    def _c_CTRL_CAP_FREEZE(self, name, args):
+        self._cap_frozen = True
+        self._ok("CAP_FREEZE", data={"samples": self.CAP_SAMPLES, "rate_hz": self.enc_rate,
+                                     "sync": True, "pulses_per_full_step": 8})
+
+    def _c_CTRL_CAP_DATA_Q(self, name, args):
+        if not self._cap_frozen:
+            self._err("CAP_DATA", "INVALID_STATE", "No frozen capture at that offset (CTRL:CAP:FREEZE first)")
+            return
+        import math
+        offset = int(args[0]) if args else 0
+        count = min(int(args[1]) if len(args) > 1 else 200, 256, self.CAP_SAMPLES - offset)
+        # a 60 rpm cruise (4000 counts/s) with a 120 Hz, 4-count oscillation on the encoder
+        cpp = self.enc_ppr / (self.full_steps * 8.0)       # counts per SYNC pulse, as reported
+        lines = []
+        for i in range(offset, offset + count):
+            t = i / self.enc_rate
+            sync = int(round(t * self.full_steps * 8))               # 8 pulses per full step, 1 rev/s
+            enc = int(round(sync * cpp + 4.0 * math.sin(2 * math.pi * 120.0 * t)))
+            lines.append("%d,%d" % (enc & 0xFFFF, sync & 0xFFFF))
+        self._lines("CAP_DATA", lines, extra={"offset": offset})
+
+    def _c_CTRL_CAP_RESUME(self, name, args):
+        self._cap_frozen = False
+        self._ok("CAP_RESUME", "Sampling resumed")
 
     def _c_DRV_CFG_PRED(self, name, args):
         self.cm["pred"] = args[0].upper() in ("ON", "1")

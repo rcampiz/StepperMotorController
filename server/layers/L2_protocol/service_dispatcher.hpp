@@ -108,6 +108,9 @@ public:
     bool isEncoderAvailable() override;
     EncoderSnapshot getEncoderSnapshot() override;
     void encoderResetCount() override;
+    bool captureFreeze(uint32_t& samples, uint16_t& rateHz, bool& sync) override;
+    bool captureRead(uint32_t i, uint16_t& enc, uint16_t& sync) override;
+    void captureResume() override;
     void encFilterGetConfig(EncFilterParams& out) override;
     void encFilterSetConfig(const EncFilterParams& cfg) override;
     void encFilterSetLegacy(uint8_t type, uint8_t param) override;

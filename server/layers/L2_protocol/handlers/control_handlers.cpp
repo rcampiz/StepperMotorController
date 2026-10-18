@@ -7,6 +7,9 @@
 
 namespace Protocol {
 
+/// SYNC_SEL the Motor task programs into STEP_MODE: 8 pulses per full step (STEP_MODE 0xC0)
+static constexpr unsigned CAPTURE_SYNC_PULSES_PER_FULL_STEP = 8;
+
 void CommandParser::cmdGetMode() {
   char buf[48];
   snprintf(buf, sizeof(buf), "%s encoder=%s", controlModeToString(m_dispatcher.getControlMode()),
@@ -498,6 +501,66 @@ void CommandParser::cmdSysIdRect(const ParsedCommand &cmd) {
 void CommandParser::cmdSysIdAbort() {
   m_dispatcher.sysIdAbort();
   respondOk("SYSID aborted");
+}
+
+// ---------------------------------------------------------------------------
+// Position capture: the DMA rings (encoder count + commanded-step SYNC count, sampled at
+// the same instants at the encoder sample rate, CTRL:ENC:FILT:RATE) frozen and paged out.
+// ---------------------------------------------------------------------------
+
+// CTRL:CAP:FREEZE - stop the rings; reply with their size and rate
+void CommandParser::cmdCaptureFreeze() {
+  uint32_t samples = 0;
+  uint16_t rateHz = 0;
+  bool sync = false;
+  if (!m_dispatcher.captureFreeze(samples, rateHz, sync)) {
+    respondErr("INVALID_STATE", "No encoder sampler to capture");
+    return;
+  }
+  if (m_format == ResponseFormat::JSON) {
+    char buf[112];
+    snprintf(buf, sizeof(buf),
+             "{\"samples\":%lu,\"rate_hz\":%u,\"sync\":%s,\"pulses_per_full_step\":%u}",
+             static_cast<unsigned long>(samples), static_cast<unsigned>(rateHz),
+             sync ? "true" : "false", static_cast<unsigned>(CAPTURE_SYNC_PULSES_PER_FULL_STEP));
+    respondJsonOk("CAP_FREEZE", buf);
+  } else {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "OK CAP_FREEZE %lu %u %u %u", static_cast<unsigned long>(samples),
+             static_cast<unsigned>(rateHz), sync ? 1U : 0U,
+             static_cast<unsigned>(CAPTURE_SYNC_PULSES_PER_FULL_STEP));
+    m_transport.println(buf);
+  }
+}
+
+// CTRL:CAP:DATA? <offset> <count> - lines "enc,sync" (16-bit wrapped), oldest first
+void CommandParser::cmdCaptureData(const ParsedCommand &cmd) {
+  uint32_t offset = (cmd.argCount >= 1) ? static_cast<uint32_t>(atol(cmd.args[0])) : 0;
+  uint32_t count = (cmd.argCount >= 2) ? static_cast<uint32_t>(atol(cmd.args[1])) : 200;
+  if (count > 256) count = 256;
+  uint16_t enc = 0, sync = 0;
+  if (!m_dispatcher.captureRead(offset, enc, sync)) {
+    respondErr("INVALID_STATE", "No frozen capture at that offset (CTRL:CAP:FREEZE first)");
+    return;
+  }
+  char extra[48];
+  snprintf(extra, sizeof(extra), "\"offset\":%lu", static_cast<unsigned long>(offset));
+  m_sink.begin(m_format == ResponseFormat::JSON, "CAP_DATA", extra);
+  char buf[32];
+  for (uint32_t i = 0; i < count; i++) {
+    if (!m_dispatcher.captureRead(offset + i, enc, sync)) {
+      break;
+    }
+    snprintf(buf, sizeof(buf), "%u,%u", static_cast<unsigned>(enc), static_cast<unsigned>(sync));
+    m_sink.writeLine(buf);
+  }
+  m_sink.end();
+}
+
+// CTRL:CAP:RESUME - restart sampling at the current rate
+void CommandParser::cmdCaptureResume() {
+  m_dispatcher.captureResume();
+  respondOk("Sampling resumed");
 }
 
 } // namespace Protocol

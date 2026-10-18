@@ -149,7 +149,7 @@ class TestsPanel(QWidget):
         shown = {k: v for k, v in result.measurements.items() if k not in ("samples", "traceback")}
         if shown:
             self._output.appendPlainText("    " + json.dumps(shown))
-        if any(k.startswith(("rpm_", "mode_")) for k in result.measurements):
+        if any(k.startswith(("rpm_", "mode_")) for k in result.measurements) or "capture" in result.measurements:
             self._graph_result = result
             self._replot()
 
@@ -179,6 +179,19 @@ class TestsPanel(QWidget):
         res = self._graph_result
         if res is None:
             return
+        cap = res.measurements.get("capture")
+        if isinstance(cap, dict) and cap.get("t_ms"):
+            # position_capture: encoder minus commanded position against time
+            self._plot.getPlotItem().showAxis("top", False)
+            self._plot.setLabel("bottom", "time (ms)")
+            self._plot.setLabel("left", "position error (encoder counts)")
+            label = "%s rpm, %d Hz: std %.1f, peak %.0f Hz (amp %.1f)" % (
+                cap.get("rpm", "?"), cap.get("rate_hz", 0), cap.get("err_std", 0),
+                cap.get("peak_hz", 0), cap.get("peak_amp", 0))
+            self._plot.plot(cap["t_ms"], cap["err"], name=label, pen=pg.mkPen(self._PENS[0], width=1))
+            return
+        self._plot.setLabel("bottom", "RPM")
+        self._plot.setLabel("left", "velocity ripple (std, counts/s)")
         self._steps_axis.full_steps = int(res.measurements.get("full_steps", 200))
         self._plot.getPlotItem().showAxis("top", self._steps_axis_cb.isChecked())
         self._plot.setLabel("top", "full steps/s" if self._steps_axis_cb.isChecked() else None)

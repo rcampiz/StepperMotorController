@@ -26,6 +26,24 @@ void EncoderDispatch::encoderResetCount() {
     if (m_encoder != nullptr) m_encoder->resetCount();
 }
 
+bool EncoderDispatch::captureFreeze(uint32_t& samples, uint16_t& rateHz, bool& sync) {
+    if (m_encoder == nullptr) return false;
+    Services::IEncoder::CaptureInfo info;
+    if (!m_encoder->captureFreeze(info)) return false;
+    samples = info.samples;
+    rateHz = info.rateHz;
+    sync = info.sync;
+    return true;
+}
+
+bool EncoderDispatch::captureRead(uint32_t i, uint16_t& enc, uint16_t& sync) {
+    return m_encoder != nullptr && m_encoder->captureRead(i, enc, sync);
+}
+
+void EncoderDispatch::captureResume() {
+    if (m_encoder != nullptr) m_encoder->captureResume();
+}
+
 void EncoderDispatch::encFilterGetConfig(EncFilterParams& out) {
     m_encFilter->getConfig(out);
 }

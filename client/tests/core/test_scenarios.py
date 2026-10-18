@@ -32,8 +32,8 @@ def run(board, name, **params):
 def test_registry_lists_the_builtin_scenarios():
     names = [s.name for s in runner.list_scenarios()]
     assert names == ["bringup", "drive_mode_chip", "estop_latency", "heartbeat_loss", "motion_scale",
-                     "resonance_map", "resonance_sweep", "step_mode_chip", "step_mode_readback", "sysid",
-                     "telemetry_load"]
+                     "position_capture", "resonance_map", "resonance_sweep", "step_mode_chip",
+                     "step_mode_readback", "sysid", "telemetry_load"]
 
 
 def test_bringup_passes_and_measures_identity(board):
@@ -97,6 +97,16 @@ def test_resonance_map_sweeps_each_mode_and_restores_the_original(board):
     assert r.measurements["mode_8"]["usteps_per_rev"] == 1600
     assert set(r.measurements["mode_32"]["std"]) == {"60", "70"}
     assert board._fake.step_mode == 7
+
+
+def test_position_capture_reads_the_rings_and_finds_the_oscillation(board):
+    r = run(board, "position_capture", rpm=60, rate_hz=2000, settle_s=0.1)
+    assert r.ok, (r.summary, r.checks)
+    cap = r.measurements["capture"]
+    assert cap["n"] == 4096 and cap["rate_hz"] == 2000 and cap["sync"]
+    assert abs(cap["peak_hz"] - 120.0) <= 3.0                     # the fake's 120 Hz wobble
+    assert 2.5 <= cap["peak_amp"] <= 4.5 and cap["err_std"] < 4.0
+    assert board._fake.enc_rate == 1000 and not board._fake._cap_frozen   # restored, resumed
 
 
 def test_telemetry_load_sees_the_encoder_advance(board):

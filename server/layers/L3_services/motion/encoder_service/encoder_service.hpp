@@ -49,6 +49,9 @@ public:
     void resetCount() override;
     void clearIndexFlag() override;
     bool isAvailable() override;
+    bool captureFreeze(CaptureInfo& info) override;
+    bool captureRead(uint32_t i, uint16_t& enc, uint16_t& sync) override;
+    void captureResume() override;
 
     // IEncoderFilterControl (dispatchers, Comms task)
     void getConfig(IEncoderDispatcher::EncFilterParams& out) override;
@@ -71,6 +74,8 @@ private:
     uint32_t m_lastDmaIdx = 0;
     uint32_t m_ackedIndexPulses = 0;   ///< pulses acknowledged by clearIndexFlag (Comms task writes, Encoder task reads)
     uint16_t m_sampleRateHz = DEFAULT_SAMPLE_RATE_HZ;
+    bool     m_frozen = false;          // CTRL:CAP:FREEZE: rings stopped, sample() idles
+    uint32_t m_frozenWrite = 0;         // write index at the freeze (oldest sample)
     uint8_t  m_measWindowMs = DEFAULT_MEAS_WINDOW_MS;
     int32_t  m_lastRawVelocity = 0;
 };

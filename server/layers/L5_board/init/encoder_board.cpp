@@ -53,7 +53,7 @@ bool Harness::initEncoderBoard(Harness::EncoderPins& pins)
     timerCounter.init();
     pins.timer = &timerCounter;
 
-    // Construct DMA sampler (reads TIM4->CNT via TIM3 + DMA1_Stream2)
+    // Construct DMA sampler (TIM2 trigger: TIM4->CNT and the TIM3 SYNC pulse count)
     static Board::EncoderSampler sampler(&TIM4->CNT);
     pins.sampler = &sampler;
     pins.indexExtiLine = Pins::Encoder::EZ_PIN;

@@ -387,6 +387,7 @@ void CommandParser::dispatchCtrl(const char *suffix, const ParsedCommand &cmd) {
       {"SYSID:TRAPEZOID", &CommandParser::cmdSysIdTrapezoid},
       {"SYSID:RECT", &CommandParser::cmdSysIdRect},
       {"SYSID:DATA?", &CommandParser::cmdSysIdData},
+      {"CAP:DATA?", &CommandParser::cmdCaptureData},
   };
   static const CmdEntry0 t0[] = {
       {"MODE?", &CommandParser::cmdGetMode},
@@ -402,6 +403,8 @@ void CommandParser::dispatchCtrl(const char *suffix, const ParsedCommand &cmd) {
       {"TRIM:SAVE", &CommandParser::cmdTrimSave},
       {"SYSID:STATUS?", &CommandParser::cmdSysIdStatus},
       {"SYSID:ABORT", &CommandParser::cmdSysIdAbort},
+      {"CAP:FREEZE", &CommandParser::cmdCaptureFreeze},
+      {"CAP:RESUME", &CommandParser::cmdCaptureResume},
   };
   if (dispatch1(suffix, t1, NCMD(t1), cmd))
     return;

@@ -48,6 +48,8 @@ public:
     uint32_t sampleWriteIndex() const override { return m_sampler.getWriteIndex(); }
     uint16_t sampleRateHz() const override { return m_sampler.getSampleRateHz(); }
     void restartSampling(uint16_t hz) override;
+    void pauseSampling() override { m_sampler.stop(); }
+    const uint16_t* syncBuffer() const override { return m_sampler.getSyncBuffer(); }
 
 private:
     static void indexIsrTrampoline();   ///< L5 EXTI callback (no context argument)

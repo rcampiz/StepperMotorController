@@ -555,14 +555,31 @@ struct HiZSystem : FakeL3::FakeSystemDispatcher {
     void getTelemetry(Protocol::TelemetrySnapshot& out) override { out = {}; out.motor.hiZ = hiZ; }
 };
 
+struct CapEncoder : FakeL3::FakeEncoderDispatcher {
+    bool fitted = true;
+    bool frozen = false;
+    bool captureFreeze(uint32_t& samples, uint16_t& rateHz, bool& sync) override {
+        if (!fitted) return false;
+        frozen = true; samples = 6; rateHz = 2000; sync = true; return true;
+    }
+    bool captureRead(uint32_t i, uint16_t& enc, uint16_t& sync) override {
+        if (!frozen || i >= 6) return false;
+        enc = static_cast<uint16_t>(65530 + i * 3);            // wraps past 65535 on purpose
+        sync = static_cast<uint16_t>(i);
+        return true;
+    }
+    void captureResume() override { frozen = false; }
+};
+
 struct UploadRig {
     FakeTransport transport;
     Protocol::ServiceDispatcher dispatcher;
     FakeL3::Bundle l3;
     StreamingDisplay display;
     HiZSystem system;
+    CapEncoder encoder;
     Harness::L3Dispatchers dispatchers{l3.motion, l3.config, l3.safety, l3.queue, l3.controlMode,
-                                       l3.supervisorTrim, l3.encoder, l3.motorDriver, display,
+                                       l3.supervisorTrim, encoder, l3.motorDriver, display,
                                        l3.flash, system, l3.trace, l3.debug};
     Protocol::CommandParser parser{transport, dispatcher};
     Protocol::ICommandProcessor& proc = parser;
@@ -652,4 +669,26 @@ TEST(bitmap_upload_rejects_bad_base64_and_a_wrong_crc) {
     for (int i = 0; i < 4; ++i) body.push_back(0);             // CRC32 of 8 x 0x55 is not zero
     out = r2.run("UI:DISP:BITMAP 0 0 2 2 CRC", b64(body));
     EXPECT_TRUE(out.find("CRC mismatch") != std::string::npos);
+}
+
+TEST(position_capture_freezes_pages_the_rings_and_resumes) {
+    UploadRig r;
+    r.run("FMT JSON", "");
+    std::string out = r.run("CTRL:CAP:DATA? 0 4", "");
+    EXPECT_TRUE(out.find("INVALID_STATE") != std::string::npos);          // not frozen yet
+    out = r.run("CTRL:CAP:FREEZE", "");
+    EXPECT_TRUE(out.find("\"samples\":6") != std::string::npos);
+    EXPECT_TRUE(out.find("\"rate_hz\":2000") != std::string::npos);
+    EXPECT_TRUE(out.find("\"pulses_per_full_step\":8") != std::string::npos);
+    out = r.run("CTRL:CAP:DATA? 2 10", "");                                  // count clipped to the ring
+    EXPECT_TRUE(out.find("\"command\":\"CAP_DATA\"") != std::string::npos);
+    EXPECT_TRUE(out.find("\"offset\":2") != std::string::npos);
+    EXPECT_TRUE(out.find("\"lines\":[\"0,2\",\"3,3\",\"6,4\",\"9,5\"]") != std::string::npos);
+    EXPECT_TRUE(out.find("\"count\":4") != std::string::npos);
+    out = r.run("CTRL:CAP:RESUME", "");
+    EXPECT_TRUE(out.find("ERROR") == std::string::npos);
+    EXPECT_FALSE(r.encoder.frozen);
+    r.encoder.fitted = false;
+    out = r.run("CTRL:CAP:FREEZE", "");
+    EXPECT_TRUE(out.find("INVALID_STATE") != std::string::npos);
 }

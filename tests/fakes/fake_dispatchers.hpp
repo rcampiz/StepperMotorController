@@ -113,6 +113,9 @@ struct FakeEncoderDispatcher : Services::IEncoderDispatcher {
     bool isEncoderAvailable()  override { calls.push_back("isEncoderAvailable"); return bool{}; }
     EncoderSnapshot getEncoderSnapshot()  override { calls.push_back("getEncoderSnapshot"); return EncoderSnapshot{}; }
     void encoderResetCount()  override { calls.push_back("encoderResetCount"); }
+    bool captureFreeze(uint32_t& samples, uint16_t& rateHz, bool& sync)  override { calls.push_back("captureFreeze"); samples = uint32_t{}; rateHz = uint16_t{}; sync = bool{}; return bool{}; }
+    bool captureRead(uint32_t i, uint16_t& enc, uint16_t& sync)  override { calls.push_back("captureRead"); enc = uint16_t{}; sync = uint16_t{}; return bool{}; }
+    void captureResume()  override { calls.push_back("captureResume"); }
     void encFilterGetConfig(EncFilterParams& out)  override { calls.push_back("encFilterGetConfig"); out = EncFilterParams{}; }
     void encFilterSetConfig(const EncFilterParams& cfg)  override { calls.push_back("encFilterSetConfig"); }
     void encFilterSetLegacy(uint8_t type, uint8_t param)  override { calls.push_back("encFilterSetLegacy"); }

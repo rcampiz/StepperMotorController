@@ -11,7 +11,7 @@ All three energise the motor (moves_motor=True) and leave the output disabled at
 """
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from .. import commands as C
 from .. import views as V
@@ -360,3 +360,104 @@ def telemetry_load(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     finally:
         ctx.call(C.telemetry_rate(restore))
         ctx.call(C.mot_disable())
+
+
+def _dft_peak_hz(signal: List[float], rate_hz: float, f_lo: float = 5.0, f_hi: float = 500.0,
+                 step_hz: float = 1.0) -> Tuple[float, float]:
+    """(frequency, amplitude) of the strongest component of signal between f_lo and f_hi:
+    a Hann-windowed DFT on at most 2048 decimated samples, 1 Hz grid (pure Python, no numpy
+    in smc_core). Amplitude is the sine amplitude in the signal's unit (Hann gain corrected)."""
+    import math
+    n = len(signal)
+    if n < 16:
+        return 0.0, 0.0
+    dec = max(1, n // 2048)
+    xs = signal[::dec]
+    fs = rate_hz / dec
+    m = len(xs)
+    mean = sum(xs) / m
+    win = [0.5 - 0.5 * math.cos(2.0 * math.pi * i / (m - 1)) for i in range(m)]
+    xs = [(x - mean) * w for x, w in zip(xs, win)]
+    best = (0.0, 0.0)
+    f = f_lo
+    f_hi = min(f_hi, fs / 2.0)
+    while f <= f_hi:
+        w = 2.0 * math.pi * f / fs
+        re = sum(x * math.cos(w * i) for i, x in enumerate(xs))
+        im = sum(x * math.sin(w * i) for i, x in enumerate(xs))
+        amp = 4.0 * math.hypot(re, im) / m           # 2/N for a sine, x2 for the Hann window
+        if amp > best[1]:
+            best = (f, amp)
+        f += step_hz
+    return best
+
+
+@scenario("position_capture", "RUN at rpm, let the DMA rings fill at rate_hz, freeze them and read "
+                               "the encoder count and the chip's commanded-step count sampled at "
+                               "the same instants; reports the position error (counts) over time, "
+                               "its ripple and the strongest oscillation frequency. Restores the "
+                               "sample rate. Open loop only (the velocity estimate pauses while "
+                               "frozen).",
+          params={"rpm": 60, "rate_hz": 2000, "settle_s": 1.0, "restore_rate_hz": 1000},
+          moves_motor=True)
+def position_capture(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
+    from .. import views as V2
+    rpm, rate = float(params["rpm"]), int(params["rate_hz"])
+    geom = _chip_geometry(ctx)
+    full, cpr = geom["full_steps_per_rev"], geom["encoder_cpr"] or 4000
+    ctx.require("set sample rate", ctx.call(C.enc_sample_rate(rate)).success)
+    ctx.call(C.fault_clear())
+    ctx.require("enable", ctx.call(C.mot_enable()).success)
+    rows: List[Tuple[int, int]] = []
+    info: Dict[str, Any] = {}
+    try:
+        sps = int(round(rpm / 60.0 * full))
+        ctx.require("run", ctx.call(C.mot_run(sps, 1)).success)
+        # the rings hold the last 4096 samples: wait at least that long plus the settle so the
+        # whole capture is cruise, not the start of the run
+        ctx.sleep(float(params["settle_s"]) + 4096.0 / rate + 0.1)
+        f = ctx.call(C.cap_freeze())
+        ctx.require("freeze", f.success, f.error_message or "")
+        info = dict(f.data)
+        n = int(info.get("samples", 0))
+        off = 0
+        while off < n:
+            d = ctx.call(C.cap_data(off, 256))
+            ctx.require(f"read {off}", d.success, d.error_message or "")
+            chunk = V2.capture_rows(d)
+            if not chunk:
+                break
+            rows.extend(chunk)
+            off += len(chunk)
+        ctx.call(C.cap_resume())
+        ctx.call(C.mot_stop())
+    finally:
+        ctx.call(C.cap_resume())
+        ctx.call(C.mot_stop())
+        ctx.call(C.mot_disable())
+        ctx.call(C.enc_sample_rate(int(params["restore_rate_hz"])))
+    ctx.require("samples read", len(rows) >= 64, f"{len(rows)} rows")
+    enc = V2.unwrap16([r[0] for r in rows])
+    syn = V2.unwrap16([r[1] for r in rows])
+    ppfs = int(info.get("pulses_per_full_step", 8)) or 8
+    counts_per_pulse = cpr / float(full * ppfs)
+    enc_rel = [e - enc[0] for e in enc]
+    cmd_rel = [(s_ - syn[0]) * counts_per_pulse for s_ in syn]
+    # the SYNC count is unsigned: orient it with the direction the encoder moved
+    if enc_rel[-1] < 0:
+        cmd_rel = [-c for c in cmd_rel]
+    err = [e - c for e, c in zip(enc_rel, cmd_rel)]
+    mean = sum(err) / len(err)
+    err0 = [round(e - mean, 2) for e in err]
+    std = (sum(e * e for e in err0) / len(err0)) ** 0.5
+    peak_hz, peak_amp = _dft_peak_hz(err0, float(info.get("rate_hz", rate)))
+    t_ms = [round(1000.0 * i / float(info.get("rate_hz", rate)), 3) for i in range(len(err0))]
+    ctx.measure("capture", {"rate_hz": int(info.get("rate_hz", rate)), "n": len(err0), "rpm": rpm,
+                            "counts_per_pulse": round(counts_per_pulse, 4), "sync": bool(info.get("sync")),
+                            "err_std": round(std, 2), "err_p2p": round(max(err0) - min(err0), 1),
+                            "peak_hz": round(peak_hz, 1), "peak_amp": round(peak_amp, 2),
+                            "enc_travel": enc_rel[-1], "cmd_travel": round(cmd_rel[-1], 1),
+                            "t_ms": t_ms, "err": err0})
+    ctx.check("commanded and measured travel agree within 2 %",
+              abs(enc_rel[-1] - cmd_rel[-1]) <= 0.02 * max(1.0, abs(cmd_rel[-1])) + 4,
+              f"enc {enc_rel[-1]} cmd {cmd_rel[-1]:.0f}")

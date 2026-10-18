@@ -3,7 +3,7 @@
  * @brief Abstract interface for DMA-based encoder sampling
  *
  * Decouples encoder task from CMSIS DMA/timer registers.
- * Implemented by Board::EncoderSampler (TIM3 + DMA1_Stream2).
+ * Implemented by Board::EncoderSampler (TIM2 trigger, DMA1_Stream1 + DMA1_Stream5).
  */
 
 #pragma once
@@ -33,6 +33,10 @@ public:
 
     /** @brief Get pointer to the circular sample buffer */
     virtual const uint16_t* getBuffer() const = 0;
+
+    /** @brief Second ring sampled at the same instants: the driver's SYNC step-pulse count
+     *         (powerSTEP01 BUSY/SYNC on PB5 counted by TIM3); nullptr when not fitted */
+    virtual const uint16_t* getSyncBuffer() const { return nullptr; }
 
     /** @brief Get buffer size (number of entries) */
     virtual uint32_t getBufferSize() const = 0;

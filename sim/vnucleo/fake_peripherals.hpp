@@ -28,7 +28,7 @@ namespace Sim {
 /// The DMA sample ring is filled lazily at the sample rate when the service looks at it.
 class FakeEncoderHw : public Drivers::IEncoderHardware {
 public:
-    static constexpr uint32_t RING = 512;
+    static constexpr uint32_t RING = 4096;
     FakeEncoderHw(FakePowerStep& motor, uint32_t ppr = 1000, uint32_t fullStepsPerRev = 200)
         : motor_(motor), ppr_(ppr), fspr_(fullStepsPerRev) {}
 
@@ -49,21 +49,27 @@ public:
     }
     void indexISR(uint32_t, uint32_t) override {}
     const uint16_t* sampleBuffer() const override { return ring_; }
+    const uint16_t* syncBuffer() const override { return sync_; }
     uint32_t sampleBufferSize() const override { return RING; }
+    void pauseSampling() override { std::lock_guard<std::mutex> lk(m_); paused_ = true; }
     uint32_t sampleWriteIndex() const override {
         std::lock_guard<std::mutex> lk(m_);
+        if (paused_) return widx_;
         const double now = nowSeconds();
         const uint32_t due = static_cast<uint32_t>((now - t0_) * rate_);
         const int32_t c = count();
+        const int32_t sy = syncCount();
         uint32_t n = due - written_;
         if (n > RING) n = RING;                 // a long gap: keep the newest RING samples
         for (uint32_t i = 1; i <= n; ++i) {     // interpolate from the last sample to now
             const double f = static_cast<double>(i) / n;
             ring_[widx_] = static_cast<uint16_t>(lastC_ + std::lround((c - lastC_) * f));
+            sync_[widx_] = static_cast<uint16_t>(lastS_ + std::lround((sy - lastS_) * f));
             widx_ = (widx_ + 1) % RING;
         }
         written_ = due;
         lastC_ = c;
+        lastS_ = sy;
         return widx_;
     }
     uint16_t sampleRateHz() const override { return rate_; }
@@ -71,9 +77,12 @@ public:
         std::lock_guard<std::mutex> lk(m_);
         rate_ = std::max<uint16_t>(100, std::min<uint16_t>(10000, hz));
         lastC_ = count();
+        lastS_ = syncCount();
         for (auto& v : ring_) v = static_cast<uint16_t>(lastC_);
+        for (auto& v : sync_) v = static_cast<uint16_t>(lastS_);
         widx_ = 0;
         written_ = 0;
+        paused_ = false;
         t0_ = nowSeconds();
     }
 
@@ -83,11 +92,18 @@ private:
         return static_cast<int32_t>(std::lround(motor_.positionMicrosteps() * 4.0 * ppr_ / usPerRev));
     }
     int32_t count() const { return rawCount() - offset_; }
+    /// The chip's SYNC pulses: 8 per full step of commanded position (what TIM3 counts)
+    int32_t syncCount() const {
+        return static_cast<int32_t>(std::lround(motor_.positionMicrosteps() * 8.0 / motor_.microstepsPerFullStep()));
+    }
 
     FakePowerStep& motor_;
     uint32_t ppr_, fspr_;
     mutable std::mutex m_;
     mutable uint16_t ring_[RING] = {};
+    mutable uint16_t sync_[RING] = {};
+    mutable int32_t lastS_ = 0;
+    mutable bool paused_ = false;
     mutable uint32_t widx_ = 0;
     mutable uint32_t written_ = 0;
     mutable int32_t lastC_ = 0;

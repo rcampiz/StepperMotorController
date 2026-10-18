@@ -31,6 +31,11 @@ public:
     virtual bool isEncoderAvailable() = 0;
     virtual EncoderSnapshot getEncoderSnapshot() = 0;
     virtual void encoderResetCount() = 0;
+    /// Position capture: freeze the DMA rings (samples, rate, whether a SYNC ring exists),
+    /// page them out oldest first, resume sampling. False when no encoder is fitted.
+    virtual bool captureFreeze(uint32_t& samples, uint16_t& rateHz, bool& sync) = 0;
+    virtual bool captureRead(uint32_t i, uint16_t& enc, uint16_t& sync) = 0;
+    virtual void captureResume() = 0;
 
     // Live runtime filter config
     virtual void encFilterGetConfig(EncFilterParams& out) = 0;

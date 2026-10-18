@@ -461,6 +461,9 @@ private:
   void cmdSysIdStatus();                             // CTRL:SYSID:STATUS?
   void cmdSysIdData(const ParsedCommand &cmd);       // CTRL:SYSID:DATA?
   void cmdSysIdAbort();                              // CTRL:SYSID:ABORT
+  void cmdCaptureFreeze();                           // CTRL:CAP:FREEZE
+  void cmdCaptureData(const ParsedCommand &cmd);     // CTRL:CAP:DATA? <offset> <count>
+  void cmdCaptureResume();                           // CTRL:CAP:RESUME
 };
 
 } // namespace Protocol

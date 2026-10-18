@@ -213,6 +213,7 @@ TEST(current_mode_writes_tval_and_the_cm_vm_bit_through_the_hiz_path) {
     EXPECT_TRUE(ok);
     EXPECT_EQ(r.drv.params[Drivers::MotorReg::KVAL_RUN], 0x11u);              // TVAL_RUN shares the address
     EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0x0Fu, 0x0Du);     // 1/32 + CM_VM
+    EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0xF0u, 0xC0u);     // SYNC out, 8 per full step
     EXPECT_EQ(r.drv.params[Drivers::MotorReg::CONFIG], 0x8000u | (20u << 10) | 0x088u);   // low bits kept
     EXPECT_EQ(r.drv.params[Drivers::MotorReg::T_FAST], 0x2Au);
     EXPECT_EQ(r.drv.params[Drivers::MotorReg::TON_MIN], 0x29u);              // default resolved

@@ -176,3 +176,32 @@ def sysid_data(resp: Response) -> SysIdChunk:
             except ValueError:
                 continue
     return SysIdChunk(offset, total, rows)
+
+
+def capture_rows(resp: Response) -> List[Tuple[int, int]]:
+    """CTRL:CAP:DATA? -> [(encoder_count, sync_count)], 16-bit wrapped values as sent."""
+    rows: List[Tuple[int, int]] = []
+    for line in resp.lines or resp.raw.split("\n"):
+        parts = line.strip().split(",")
+        if len(parts) == 2:
+            try:
+                rows.append((int(parts[0]), int(parts[1])))
+            except ValueError:
+                continue
+    return rows
+
+
+def unwrap16(values: List[int]) -> List[int]:
+    """Continuous values from a 16-bit wrapped series (deltas within +-32768)."""
+    out: List[int] = []
+    acc = 0
+    prev = None
+    for v in values:
+        if prev is None:
+            acc = v
+        else:
+            d = (v - prev + 32768) % 65536 - 32768
+            acc += d
+        out.append(acc)
+        prev = v
+    return out

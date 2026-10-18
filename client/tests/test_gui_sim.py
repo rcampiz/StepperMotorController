@@ -177,6 +177,17 @@ def test_tests_tab_graphs_a_resonance_map(gui):
     assert w._tests_panel._plot.getPlotItem().getAxis("top").isVisible()
 
 
+def test_tests_tab_graphs_a_position_capture(gui):
+    app, w, fake = gui
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    w._tests_panel.start("position_capture", {"rpm": 60, "rate_hz": 2000, "settle_s": 0.05})
+    assert pump(app, lambda: w._tests_panel.results, timeout=30.0)
+    res = w._tests_panel.results[0]
+    assert res.ok, (res.summary, res.checks)
+    items = w._tests_panel._plot.getPlotItem().listDataItems()
+    assert len(items) == 1 and len(items[0].xData) == 4096
+
+
 def test_tests_tab_runs_a_scenario(gui):
     app, w, fake = gui
     assert pump(app, lambda: w._board is not None and w._board.session_ready)

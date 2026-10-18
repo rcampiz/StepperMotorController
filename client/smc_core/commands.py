@@ -314,6 +314,23 @@ def encoder_debug() -> Request: return request("CTRL:ENC:DBG?")
 @builds("CTRL:ENC:FILT?")
 def enc_filter_query() -> Request: return request("CTRL:ENC:FILT?")
 
+def enc_sample_rate(hz: int) -> Request:
+    """CTRL:ENC:FILT:RATE <hz>: the encoder DMA sample rate (100..10000), which is also the
+    rate of the position capture rings."""
+    if not 100 <= int(hz) <= 10000:
+        raise CommandError("sample rate is 100..10000 Hz")
+    return request("CTRL:ENC:FILT:RATE", int(hz))
+
+@builds("CTRL:CAP:FREEZE")
+def cap_freeze() -> Request: return request("CTRL:CAP:FREEZE")
+
+@builds("CTRL:CAP:DATA?")
+def cap_data(offset: int, count: int = 200) -> Request:
+    return request("CTRL:CAP:DATA?", int(offset), int(count))
+
+@builds("CTRL:CAP:RESUME")
+def cap_resume() -> Request: return request("CTRL:CAP:RESUME")
+
 @builds("CTRL:ENC:FILT")
 def enc_filter_legacy(*args) -> Request:
     """CTRL:ENC:FILT <args...>: the pre-sub-command form, kept for completeness."""
