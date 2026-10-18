@@ -282,6 +282,14 @@ def test_vcom_slider_and_black_test_screen(gui):
     assert "UI:MODE REMOTE" in fake.received
 
 
+def test_the_first_indicator_reaches_the_board_after_the_mode_switch(gui):
+    app, w, fake = gui
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    w._on_indicator_send_requested(135, 1, True, 40, 60)
+    assert pump(app, lambda: getattr(fake, "indicator", None) == (135, 1, True, 40, 60), timeout=3.0), \
+        [r for r in fake.received if r.startswith("UI:")]
+
+
 def test_gui_notices_the_board_was_taken_back_to_its_menu(gui):
     app, w, fake = gui
     assert pump(app, lambda: w._board is not None and w._board.session_ready)

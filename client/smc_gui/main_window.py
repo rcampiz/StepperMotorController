@@ -802,10 +802,16 @@ class MainWindow(QMainWindow):
         if self._bridge is None:
             self._display_panel.transfer_complete(False, "Not connected")
             return
+        req = C.disp_indicator(angle, rotation_dir, has_translation, speed_pct, rot_pct)
         if not self._remote_mode_sent:
+            # Taking the LCD: the mode switch and the first indicator go in order through the
+            # queue (a coalesced request jumps the queue and would reach the board while it is
+            # still in LOCAL mode, be refused, and leave the screen frozen on its last frame)
             self._call(C.ui_mode(remote=True))
+            self._call(req)
             self._remote_mode_sent = True
-        self._bridge.latest("indicator", C.disp_indicator(angle, rotation_dir, has_translation, speed_pct, rot_pct))
+        else:
+            self._bridge.latest("indicator", req)
         self._display_panel.transfer_complete(True, "Indicator sent")
 
     # --- Flash operation handlers ---

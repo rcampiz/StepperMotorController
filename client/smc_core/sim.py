@@ -444,6 +444,9 @@ class FakeBoard:
         self._ok(name, "")
 
     def _c_UI_DISP_INDICATOR(self, name, args):
+        if getattr(self, "ui_mode", "LOCAL") != "REMOTE":
+            self._err(name, "ERROR", "Not in REMOTE mode")          # as the firmware does
+            return
         if len(args) < 3:
             self._err(name, "INVALID_PARAM", "Usage: UI:DISP:INDICATOR <angle> <rot_dir> <has_trans> [speed_pct] [rot_pct]")
             return
