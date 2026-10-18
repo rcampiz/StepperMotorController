@@ -123,6 +123,12 @@ private:
     UI::JoyDirection m_prevRaw = UI::JoyDirection::NONE;
     uint32_t m_lastTapMs = 0;
     uint16_t m_clearHold = 0;
+    bool m_clearArmed = false;       ///< CENTER released once since the page came up
+    // A CENTER press waits DOUBLE_TAP_MS before it reaches the screen: if a second press
+    // comes, it was an E-STOP and neither press selects anything
+    bool m_centerPending = false;
+    uint32_t m_centerPendingMs = 0;
+    bool m_swallowCenter = false;    ///< the second press of a double tap
     void triggerEstop();
     void attemptClear();
     void estopTick(UI::UIMode mode);

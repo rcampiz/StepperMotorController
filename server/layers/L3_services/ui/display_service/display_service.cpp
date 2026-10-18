@@ -210,6 +210,7 @@ void DisplayService::estopTick(UI::UIMode mode)
             if (top == &m_saverScreen || top == &m_recoveryScreen) m_screenManager.pop();
             m_estopScreen.setFault(st == Services::ControllerState::FAULT);
             m_clearHold = 0;
+            m_clearArmed = false;
             m_screenManager.push(&m_estopScreen);
         }
     } else if (top == &m_estopScreen) {
@@ -270,6 +271,8 @@ void DisplayService::handleJoystick()
         const uint32_t now = m_clock->getTickMs();
         if (m_lastTapMs != 0 && (now - m_lastTapMs) <= DOUBLE_TAP_MS) {
             m_lastTapMs = 0;
+            m_centerPending = false;     // the first press never reaches the screen
+            m_swallowCenter = true;      // nor does this one
             triggerEstop();
         } else {
             m_lastTapMs = now;
@@ -299,9 +302,14 @@ void DisplayService::handleJoystick()
         return;
     }
 
-    // The E-STOP page owns the stick: holding CENTER fills the bar and clears at the end
+    // The E-STOP page owns the stick: holding CENTER fills the bar and clears at the end.
+    // The hold only counts once CENTER has been let go since the page came up, so the
+    // second press of the double tap that stopped the motor cannot start clearing it.
     if (m_screenManager.current() == &m_estopScreen) {
-        if (dir == UI::JoyDirection::CENTER) {
+        m_centerPending = false;
+        m_swallowCenter = false;
+        if (dir != UI::JoyDirection::CENTER) m_clearArmed = true;
+        if (dir == UI::JoyDirection::CENTER && m_clearArmed) {
             if (m_clearHold < CLEAR_POLLS) {
                 m_clearHold++;
                 m_estopScreen.setProgress(static_cast<uint8_t>(m_clearHold * 100u / CLEAR_POLLS));
@@ -315,6 +323,12 @@ void DisplayService::handleJoystick()
         m_centerHoldCount = 0;
         m_lastInputMs = m_clock->getTickMs();
         return;
+    }
+
+    // A CENTER press that was not followed by a second one within the window: deliver it now
+    if (m_centerPending && (m_clock->getTickMs() - m_centerPendingMs) > DOUBLE_TAP_MS) {
+        m_centerPending = false;
+        m_screenManager.handleInput(UI::JoyDirection::CENTER, true);
     }
 
     // Any move is activity for the saver; the first one while it shows just wakes the panel
@@ -341,7 +355,18 @@ void DisplayService::handleJoystick()
     }
 
     if (dir != m_lastDir) {
-        if (dir != UI::JoyDirection::NONE) {
+        if (dir == UI::JoyDirection::CENTER) {
+            if (m_swallowCenter) {
+                m_swallowCenter = false;                 // the E-STOP's second press
+            } else {
+                m_centerPending = true;                  // wait: it may be the first of two
+                m_centerPendingMs = m_clock->getTickMs();
+            }
+        } else if (dir != UI::JoyDirection::NONE) {
+            if (m_centerPending) {                       // keep the order of the presses
+                m_centerPending = false;
+                m_screenManager.handleInput(UI::JoyDirection::CENTER, true);
+            }
             m_screenManager.handleInput(dir, true);
         }
         m_lastDir = dir;
