@@ -3,10 +3,12 @@
  * @brief Screen saver. Pushed by the DisplayService after a quiet period; the first
  *        joystick move pops it (and is swallowed). Three styles (ScreenCareSettings):
  *
- *  - SYNTHWAVE: a sky from deep violet to pink haze with twinkling stars, a striped sun
- *    whose bands slide down, cyan wireframe mountains, and a magenta perspective grid that
- *    scrolls toward the viewer. Every 30 s the mountains reshape and the sun moves, so no
- *    pixel holds an image. Per frame only the floor and the sun's box are repainted.
+ *  - SYNTHWAVE: a sky with twinkling stars, a striped sun whose bands slide down,
+ *    wireframe mountains or a lit skyline, and a perspective grid that scrolls toward the
+ *    viewer. Every 30 s a new scene: another palette (sunset, Blade Runner amber, cyber,
+ *    acid), horizon height, sun size and place, so no pixel holds one picture. Once per
+ *    scene "STEPPER MOTOR CONTROLLER" sweeps across in block letters with a magenta and a
+ *    cyan ghost. Per frame only the floor, the sun's box and the title band are repainted.
  *  - HOTLINE: a diagonal stripe band and a blocky SMC card with chromatic aberration,
  *    relaid every 2 s, with VHS glitch slices in between.
  *  - BLANK: a black panel, nothing sent.
@@ -32,9 +34,10 @@ public:
     void clearRedrawFlag() override { m_needsRedraw = false; }
 
     // Synthwave scene geometry (public for the host tests)
-    static constexpr int16_t HORIZON_Y = 200;
-    static constexpr int16_t SUN_R = 46;
     static constexpr uint16_t SCENE_FRAMES = 600;  ///< 30 s at 20 Hz, then a new scene
+    static constexpr uint16_t TITLE_START_FRAME = 100;   ///< the title starts 5 s into a scene
+    int16_t horizon() const { return m_horizon; }
+    uint8_t palette() const { return m_palette; }
 
 private:
     const ScreenCareSettings* m_settings;
@@ -49,8 +52,16 @@ private:
     float m_phase = 0.0f;                  // grid scroll, line spacings
     uint8_t m_stripe = 0;                  // sun stripe scroll
     int16_t m_sunX = 120;
-    uint8_t m_ridge[240] = {};             // mountain height above the horizon per column
-    uint16_t m_sky[HORIZON_Y] = {};        // sky colour per row
+    int16_t m_sunR = 46;
+    int16_t m_horizon = 200;
+    uint8_t m_palette = 0;
+    bool m_city = false;
+    uint32_t m_seedScene = 0;
+    int16_t m_titleX = -1000;              // the title's left edge while it passes
+    int16_t m_titleY = 40;
+    uint8_t m_ridge[240] = {};             // mountain / building height above the horizon per column
+    uint8_t m_bldStart[240] = {};          // skyline: the column each building starts at
+    uint16_t m_sky[240] = {};              // sky colour per row (horizon < 240)
     uint8_t m_starX[STAR_COUNT] = {};
     uint8_t m_starY[STAR_COUNT] = {};
     void synthNewScene();
@@ -58,6 +69,7 @@ private:
     void synthFloor(Services::ICanvas& lcd);
     void synthSunBox(Services::ICanvas& lcd);
     void synthTwinkle(Services::ICanvas& lcd);
+    void synthTitle(Services::ICanvas& lcd);
     uint16_t synthUpper(int16_t x, int16_t y) const;   // sky, sun, mountains, horizon line
     void renderSynthwave(Services::ICanvas& lcd);
 
