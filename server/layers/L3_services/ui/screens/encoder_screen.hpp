@@ -1,14 +1,11 @@
 /**
  * @file encoder_screen.hpp
- * @brief Encoder monitor screen with numerical values and circular dial
+ * @brief Encoder screen: a dial with the shaft angle, the live counts, and a sweeping
+ *        velocity scope.
  *
- * Top half: numerical values (count, velocity, RPM, angle, revolutions)
- * Bottom half: circular dial with tick marks and red position dot
- *
- * Uses composited scanline rendering for the dial (same technique as
- * indicator_service.cpp) for flicker-free updates.
- *
- * No RTOS headers. No driver dependencies beyond LCD.
+ * Everything static (ring, ticks, labels, scope frame) is drawn once on activation. Per
+ * frame only what changed is sent: the needle (old one erased, new one drawn), the value
+ * cells whose text changed, and one scope column.
  */
 
 #ifndef ENCODER_SCREEN_HPP
@@ -20,8 +17,7 @@
 
 namespace UI {
 
-// Configurable encoder counts per revolution (4x quadrature)
-// 1000-line encoder at 4x = 4000 CPR (must match GUI ENCODER_CPR)
+// Encoder counts per revolution (4x quadrature of a 1000-line disc; must match the GUI)
 constexpr int32_t ENCODER_CPR = 4000;
 
 class EncoderScreen : public IScreen {
@@ -32,44 +28,38 @@ public:
     void onActivate() override;
     bool needsFullRedraw() const override { return m_needsRedraw; }
     void clearRedrawFlag() override { m_needsRedraw = false; }
+    bool usesChrome() const override { return true; }
+    const char* title() const override { return "Encoder"; }
+    const char* centerHint() const override { return nullptr; }
 
 private:
     bool m_needsRedraw = true;
+    bool m_full = true;
 
-    // Previous dot position for dirty-rect erase
-    int16_t m_prevDotX = -1;
-    int16_t m_prevDotY = -1;
-    int16_t m_prevAngleDeg = -1;
-    bool m_dialDrawn = false;
-    bool m_labelsDrawn = false;
-
-    // Cached previous values for dirty-flag rendering
-    int64_t m_prevCount = 0;
-    int32_t m_prevVelocity = 0;
-    int32_t m_prevRevX100 = 0;   // count/CPR scaled by 100
-    int32_t m_prevRsX100 = 0;    // rev/s scaled by 100
-    int32_t m_prevRpmX10 = 0;    // RPM scaled by 10
-    uint32_t m_prevIndexPeriod = 0;
-
-    // Dial geometry
+    // Dial
     static constexpr int16_t DIAL_CX = 120;
-    static constexpr int16_t DIAL_CY = 220;
-    static constexpr int16_t DIAL_RADIUS = 60;
-    static constexpr int16_t TICK_OUTER = 65;    // Major tick outer extent
-    static constexpr int16_t TICK_INNER = 53;    // Major tick inner extent
-    static constexpr int16_t TICK_MINOR_OUTER = 62;
-    static constexpr int16_t TICK_MINOR_INNER = 56;
-    static constexpr int16_t DOT_RADIUS = 4;
-    static constexpr int16_t DOT_ORBIT = 50;     // Distance from center for position dot
+    static constexpr int16_t DIAL_CY = 116;
+    static constexpr int16_t DIAL_R = 62;          // ring outer radius
+    static constexpr int16_t NEEDLE_LEN = 44;      // inside the ticks
+    uint16_t m_prevAngle1024 = 0xFFFF;             // 0xFFFF: no needle drawn yet
+    bool m_prevIndexSeen = false;
 
-    // Numerical section height
-    static constexpr uint16_t NUM_SECTION_Y = 160;
+    // Value cells, repainted when their text changes
+    char m_cell[6][14] = {};
 
-    void renderNumerical(Services::ICanvas& lcd, const Protocol::TelemetrySnapshot& telem);
-    void renderDialStatic(Services::ICanvas& lcd);
-    void renderDialDot(Services::ICanvas& lcd, int16_t angleDeg);
+    // Velocity scope: sweeping cursor over SCOPE_W columns, sticky full-scale
+    static constexpr uint16_t SCOPE_X = 8;
+    static constexpr uint16_t SCOPE_Y = 250;
+    static constexpr uint16_t SCOPE_W = 224;
+    static constexpr uint16_t SCOPE_H = 44;
+    uint16_t m_scopeCol = 0;
+    int32_t m_scopeScale = 1000;                   // counts/s at full height, grows only
+    uint8_t m_colBuf[SCOPE_H * 2] = {};
 
-    // i64toa helper (newlib-nano doesn't support %lld)
+    void drawStatic(Services::ICanvas& lcd);
+    void drawNeedle(Services::ICanvas& lcd, uint16_t angle1024, uint16_t color);
+    void drawCell(Services::ICanvas& lcd, uint8_t i, const char* label, const char* value, uint16_t color);
+    void drawScopeColumn(Services::ICanvas& lcd, int32_t velocity);
     static void i64toa(int64_t val, char* buf, int bufSize);
 };
 

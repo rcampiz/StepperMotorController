@@ -1,16 +1,12 @@
 /**
  * @file encoder_screen.cpp
- * @brief Encoder monitor screen implementation
- *
- * Uses composited scanline rendering for the dial, matching the
- * technique from indicator_service.cpp. The dial ring, tick marks,
- * and position dot are all composited in a single SPI streaming pass
- * for the dirty region, eliminating flicker.
+ * @brief Encoder dial, value cells and the sweeping velocity scope.
  */
 
 #include "ui/screens/encoder_screen.hpp"
+#include "ui/chrome/chrome.hpp"
+#include "ui/theme.hpp"
 #include "harness/defs/harness_l3_l4.hpp"
-#include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include "graphics/trig_lut/trig_lut.hpp"
 #include "graphics/primitives/primitives.hpp"
 #include <stdio.h>
@@ -18,299 +14,198 @@
 
 namespace UI {
 
-// Layout (medium font: 8×12 char cell)
-static constexpr uint16_t MARGIN = 6;
-static constexpr uint16_t LINE_H = 15;
-static constexpr uint16_t LABEL_COLOR = 0x07FF;  // Cyan
-static constexpr uint16_t VALUE_COLOR = 0xFFFF;   // White
-static constexpr uint16_t BG_COLOR = 0x0000;
-static constexpr uint16_t VALUE_X = 58;
-static constexpr uint8_t  TEXT_SCALE = 3;  // Medium (8×12)
-
-// Dial colors
-static constexpr uint16_t DIAL_RING_COLOR = 0xFFFF;  // White
-static constexpr uint16_t TICK_COLOR = 0xFFFF;        // White
-static constexpr uint16_t DOT_COLOR = 0xF800;         // Red
-static constexpr uint16_t DIAL_BG = 0x0000;
+// Value cells: two columns of three, under the dial
+static constexpr uint16_t CELLS_Y = 190;
+static constexpr uint16_t CELL_H = 18;
+static constexpr uint16_t CELL_LABEL_W = 28;
+static constexpr uint16_t CELL_W = 112;
 
 void EncoderScreen::onActivate()
 {
     m_needsRedraw = true;
-    m_dialDrawn = false;
-    m_labelsDrawn = false;
-    m_prevDotX = -1;
-    m_prevDotY = -1;
-    m_prevAngleDeg = -1;
-    m_prevCount = 0;
-    m_prevVelocity = 0;
-    m_prevRevX100 = 0;
-    m_prevRsX100 = 0;
-    m_prevRpmX10 = 0;
-    m_prevIndexPeriod = 0;
+    m_full = true;
+    m_prevAngle1024 = 0xFFFF;
+    m_prevIndexSeen = false;
+    memset(m_cell, 0, sizeof m_cell);
+    m_scopeCol = 0;
+    m_scopeScale = 1000;
 }
 
 void EncoderScreen::i64toa(int64_t val, char* buf, int bufSize)
 {
     if (bufSize < 2) { buf[0] = '\0'; return; }
-
     bool neg = (val < 0);
     if (neg) val = -val;
-
-    // Build digits in reverse
     char tmp[24];
     int len = 0;
-    if (val == 0) {
-        tmp[len++] = '0';
-    } else {
-        while (val > 0 && len < 22) {
-            tmp[len++] = '0' + static_cast<char>(val % 10);
-            val /= 10;
-        }
+    if (val == 0) tmp[len++] = '0';
+    while (val > 0 && len < 22) { tmp[len++] = static_cast<char>('0' + (val % 10)); val /= 10; }
+    if (neg && len < 22) tmp[len++] = '-';
+    int out = 0;
+    for (int i = len - 1; i >= 0 && out < bufSize - 1; i--) buf[out++] = tmp[i];
+    buf[out] = '\0';
+}
+
+// Point at radius r and angle1024 (0 = top, clockwise) from the dial centre
+static void dialPoint(int16_t r, uint16_t angle1024, int16_t& x, int16_t& y)
+{
+    int16_t s = Graphics::sin_q15(angle1024), c = Graphics::cos_q15(angle1024);
+    x = static_cast<int16_t>(120 + ((static_cast<int32_t>(s) * r) >> 15));
+    y = static_cast<int16_t>(116 - ((static_cast<int32_t>(c) * r) >> 15));
+}
+
+void EncoderScreen::drawStatic(Services::ICanvas& lcd)
+{
+    // Rings: a faint outer halo and the cyan ring
+    Graphics::drawCircleOutline(lcd, DIAL_CX, DIAL_CY, static_cast<int16_t>(DIAL_R + 5), Theme::GRID_MAJ);
+    Graphics::fillRing(lcd, DIAL_CX, DIAL_CY, DIAL_R, static_cast<int16_t>(DIAL_R - 2), Theme::CYAN);
+    // Ticks: every 10 degrees, the quadrants longer and magenta
+    for (uint16_t deg = 0; deg < 360; deg = static_cast<uint16_t>(deg + 10)) {
+        bool major = (deg % 90) == 0;
+        uint16_t a = Graphics::deg_to_angle1024(deg);
+        int16_t x0, y0, x1, y1;
+        dialPoint(static_cast<int16_t>(DIAL_R - (major ? 14 : 7)), a, x0, y0);
+        dialPoint(static_cast<int16_t>(DIAL_R - 3), a, x1, y1);
+        lcd.drawLine(x0, y0, x1, y1,
+                     major ? Theme::MAGENTA : Theme::VIOLET);
     }
-    if (neg && len < 22) {
-        tmp[len++] = '-';
+    // Quadrant labels outside the ring
+    lcd.drawString(static_cast<uint16_t>(DIAL_CX + DIAL_R + 10), static_cast<uint16_t>(DIAL_CY - 4), "90", Theme::DIM, Theme::BG, Theme::FONT_SMALL);
+    lcd.drawString(static_cast<uint16_t>(DIAL_CX - DIAL_R - 26), static_cast<uint16_t>(DIAL_CY - 4), "270", Theme::DIM, Theme::BG, Theme::FONT_SMALL);
+    // Index mark above the top tick: outline until the index pulse has been seen
+    Graphics::drawCircleOutline(lcd, DIAL_CX, static_cast<int16_t>(DIAL_CY - DIAL_R - 10), 3, Theme::YELLOW);
+    // Hub
+    Graphics::fillCircle(lcd, DIAL_CX, DIAL_CY, 5, Theme::MAGENTA);
+    Graphics::fillCircle(lcd, DIAL_CX, DIAL_CY, 2, Theme::TEXT);
+
+    // Cell labels
+    static const char* const LABELS[6] = {"POS", "REV", "VEL", "RPM", "IDX", "ERR"};
+    for (uint8_t i = 0; i < 6; i++) {
+        auto x = static_cast<uint16_t>(Theme::MARGIN + (i % 2) * (CELL_W + 4));
+        auto y = static_cast<uint16_t>(CELLS_Y + (i / 2) * CELL_H);
+        lcd.drawString(static_cast<uint16_t>(x + 2), static_cast<uint16_t>(y + 4), LABELS[i],
+                       (i == 2 || i == 3) ? Theme::MAGENTA : (i == 4 ? Theme::YELLOW : Theme::CYAN),
+                       Theme::BG, Theme::FONT_SMALL);
     }
 
-    // Reverse into output
-    int out = 0;
-    for (int i = len - 1; i >= 0 && out < bufSize - 1; i--) {
-        buf[out++] = tmp[i];
-    }
-    buf[out] = '\0';
+    // Scope frame: black interior with a mid line, brackets, label
+    lcd.fillRect(SCOPE_X, SCOPE_Y, SCOPE_W, SCOPE_H, Theme::BLACK);
+    lcd.fillRect(SCOPE_X, static_cast<uint16_t>(SCOPE_Y + SCOPE_H / 2), SCOPE_W, 1, Theme::GRID);
+    Chrome::drawCorners(lcd, static_cast<uint16_t>(SCOPE_X - 2), static_cast<uint16_t>(SCOPE_Y - 2),
+                        static_cast<uint16_t>(SCOPE_W + 4), static_cast<uint16_t>(SCOPE_H + 4), 8, Theme::GRID_MAJ);
+    lcd.drawString(static_cast<uint16_t>(SCOPE_X + 2), static_cast<uint16_t>(SCOPE_Y + SCOPE_H + 4),
+                   "VEL  11 s sweep", Theme::DIM, Theme::BG, Theme::FONT_SMALL);
+}
+
+void EncoderScreen::drawNeedle(Services::ICanvas& lcd, uint16_t angle1024, uint16_t color)
+{
+    int16_t tipX, tipY, baseX, baseY;
+    dialPoint(NEEDLE_LEN, angle1024, tipX, tipY);
+    dialPoint(7, angle1024, baseX, baseY);
+    lcd.drawLine(baseX, baseY, tipX, tipY, color);
+    lcd.drawLine(static_cast<int16_t>(baseX + 1), baseY, static_cast<int16_t>(tipX + 1), tipY, color);
+}
+
+void EncoderScreen::drawCell(Services::ICanvas& lcd, uint8_t i, const char* label, const char* value, uint16_t color)
+{
+    (void)label;
+    if (strncmp(value, m_cell[i], sizeof m_cell[i]) == 0) return;
+    snprintf(m_cell[i], sizeof m_cell[i], "%s", value);
+    auto x = static_cast<uint16_t>(Theme::MARGIN + (i % 2) * (CELL_W + 4) + CELL_LABEL_W);
+    auto y = static_cast<uint16_t>(CELLS_Y + (i / 2) * CELL_H);
+    Chrome::textBox(lcd, x, y, static_cast<uint16_t>(CELL_W - CELL_LABEL_W), 16, 0, 2, value, color, Theme::BG);
+}
+
+void EncoderScreen::drawScopeColumn(Services::ICanvas& lcd, int32_t velocity)
+{
+    int32_t mag = velocity < 0 ? -velocity : velocity;
+    while (mag > m_scopeScale && m_scopeScale < 2000000) m_scopeScale *= 2;   // sticky, never shrinks
+
+    const uint16_t mid = SCOPE_H / 2;
+    int32_t h = velocity * static_cast<int32_t>(mid - 1) / m_scopeScale;
+    auto row = static_cast<uint16_t>(mid - h);
+    if (row >= SCOPE_H) row = SCOPE_H - 1;
+
+    auto set = [&](uint16_t r, uint16_t colour) {
+        m_colBuf[r * 2] = static_cast<uint8_t>(colour >> 8);
+        m_colBuf[r * 2 + 1] = static_cast<uint8_t>(colour & 0xFF);
+    };
+    for (uint16_t r = 0; r < SCOPE_H; r++) set(r, Theme::BLACK);
+    set(mid, Theme::GRID);
+    // Fill from the mid line to the value, the tip brighter
+    uint16_t lo = row < mid ? row : mid, hi = row < mid ? mid : row;
+    for (uint16_t r = lo; r <= hi; r++) set(r, Theme::GRID_MAJ);
+    set(row, Theme::CYAN);
+    lcd.blitColumn(static_cast<uint16_t>(SCOPE_X + m_scopeCol), SCOPE_Y, SCOPE_H, m_colBuf);
+    // Cursor: a magenta column just ahead, erased as the sweep reaches it
+    auto next = static_cast<uint16_t>((m_scopeCol + 1) % SCOPE_W);
+    for (uint16_t r = 0; r < SCOPE_H; r++) set(r, Theme::MAGENTA);
+    lcd.blitColumn(static_cast<uint16_t>(SCOPE_X + next), SCOPE_Y, SCOPE_H, m_colBuf);
+    m_scopeCol = next;
 }
 
 void EncoderScreen::render(Services::ICanvas& lcd)
 {
-    Protocol::TelemetrySnapshot telem = Services::g_telemetryStore.getSnapshot();
+    Protocol::TelemetrySnapshot t = Services::g_telemetryStore.getSnapshot();
+    if (m_full) {
+        m_full = false;
+        drawStatic(lcd);
+    }
 
-    renderNumerical(lcd, telem);
-
-    // Compute angle from encoder count
-    auto countMod = static_cast<int32_t>(telem.encoder.count % ENCODER_CPR);
+    // Angle from the count: degrees x10 for the text, 1024ths for the needle
+    auto countMod = static_cast<int32_t>(t.encoder.count % ENCODER_CPR);
     if (countMod < 0) countMod += ENCODER_CPR;
-    auto angleDeg = static_cast<int16_t>((countMod * 360L) / ENCODER_CPR);
+    auto angle1024 = static_cast<uint16_t>((static_cast<int64_t>(countMod) * 1024) / ENCODER_CPR);
+    auto degX10 = static_cast<int32_t>((static_cast<int64_t>(countMod) * 3600) / ENCODER_CPR);
 
-    // Draw static dial elements once
-    if (!m_dialDrawn) {
-        renderDialStatic(lcd);
-        m_dialDrawn = true;
+    if (angle1024 != m_prevAngle1024) {
+        if (m_prevAngle1024 != 0xFFFF) drawNeedle(lcd, m_prevAngle1024, Theme::BG);
+        drawNeedle(lcd, angle1024, Theme::MAGENTA);
+        Graphics::fillCircle(lcd, DIAL_CX, DIAL_CY, 2, Theme::TEXT);
+        m_prevAngle1024 = angle1024;
+        char buf[12];
+        snprintf(buf, sizeof buf, "%ld.%ld", static_cast<long>(degX10 / 10), static_cast<long>(degX10 % 10));
+        // Angle readout inside the dial, centred under the hub, always 5 cells wide
+        char padded[8];
+        snprintf(padded, sizeof padded, "%5s", buf);
+        lcd.drawString(static_cast<uint16_t>(DIAL_CX - 20), static_cast<uint16_t>(DIAL_CY + 20), padded,
+                       Theme::TEXT, Theme::BG, Theme::FONT_MEDIUM);
+        lcd.drawString(static_cast<uint16_t>(DIAL_CX + 21), static_cast<uint16_t>(DIAL_CY + 19), "o",
+                       Theme::TEXT, Theme::BG, Theme::FONT_SMALL);
+    }
+    if (t.encoder.indexSeen && !m_prevIndexSeen) {
+        Graphics::fillCircle(lcd, DIAL_CX, static_cast<int16_t>(DIAL_CY - DIAL_R - 10), 3, Theme::YELLOW);
+        m_prevIndexSeen = true;
     }
 
-    // Update dot only if angle changed
-    if (angleDeg != m_prevAngleDeg) {
-        renderDialDot(lcd, angleDeg);
-        m_prevAngleDeg = angleDeg;
-    }
-}
+    // Cells
+    char buf[16], tmp[20];
+    i64toa(t.encoder.count, tmp, sizeof tmp);
+    snprintf(buf, sizeof buf, "%s", tmp);
+    drawCell(lcd, 0, "POS", buf, Theme::TEXT);
+    auto revX1000 = static_cast<int32_t>((t.encoder.count * 1000LL) / ENCODER_CPR);
+    bool neg = revX1000 < 0; if (neg) revX1000 = -revX1000;
+    snprintf(buf, sizeof buf, "%s%ld.%03ld", neg ? "-" : "", static_cast<long>(revX1000 / 1000), static_cast<long>(revX1000 % 1000));
+    drawCell(lcd, 1, "REV", buf, Theme::TEXT);
+    snprintf(buf, sizeof buf, "%ld c/s", static_cast<long>(t.encoder.velocity));
+    drawCell(lcd, 2, "VEL", buf, Theme::TEXT);
+    int32_t rpmX10 = static_cast<int32_t>((static_cast<int64_t>(t.encoder.velocity) * 600) / ENCODER_CPR);
+    neg = rpmX10 < 0; if (neg) rpmX10 = -rpmX10;
+    snprintf(buf, sizeof buf, "%s%ld.%ld", neg ? "-" : "", static_cast<long>(rpmX10 / 10), static_cast<long>(rpmX10 % 10));
+    drawCell(lcd, 3, "RPM", buf, Theme::TEXT);
+    if (t.encoder.indexPeriodUs > 0) snprintf(buf, sizeof buf, "%lu us", static_cast<unsigned long>(t.encoder.indexPeriodUs));
+    else snprintf(buf, sizeof buf, "%s", t.encoder.indexSeen ? "seen" : "---");
+    drawCell(lcd, 4, "IDX", buf, Theme::TEXT);
+    snprintf(buf, sizeof buf, "%ld", static_cast<long>(t.control.followingError));
+    drawCell(lcd, 5, "ERR", buf, (t.control.followingError > 50 || t.control.followingError < -50) ? Theme::ORANGE : Theme::TEXT);
 
-// Format fixed-point value (scaled by 100) as "X.XX", e.g. 125 → "1.25"
-static void fmtFixed2(char* buf, int sz, int32_t valX100)
-{
-    bool neg = (valX100 < 0);
-    int32_t a = neg ? -valX100 : valX100;
-    snprintf(buf, sz, "%s%ld.%02ld",
-             neg ? "-" : "", static_cast<long>(a / 100), static_cast<long>(a % 100));
-}
-
-// Format fixed-point value (scaled by 10) as "X.X", e.g. 125 → "12.5"
-static void fmtFixed1(char* buf, int sz, int32_t valX10)
-{
-    bool neg = (valX10 < 0);
-    int32_t a = neg ? -valX10 : valX10;
-    snprintf(buf, sz, "%s%ld.%ld",
-             neg ? "-" : "", static_cast<long>(a / 10), static_cast<long>(a % 10));
-}
-
-// Pad buffer with spaces to width, null-terminate
-static void padRight(char* buf, int width)
-{
-    int len = static_cast<int>(strlen(buf));
-    while (len < width) { buf[len++] = ' '; }
-    buf[width] = '\0';
-}
-
-void EncoderScreen::renderNumerical(Services::ICanvas& lcd, const Protocol::TelemetrySnapshot& telem)
-{
-    char buf[24];
-    char tmp[20];
-    uint16_t y = MARGIN;
-
-    // First frame after activation: force all value redraws
-    bool forceAll = !m_labelsDrawn;
-
-    // Draw labels once (they never change)
-    if (!m_labelsDrawn) {
-        lcd.drawString(MARGIN, y, "Encoder", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
-        y += LINE_H + 2;
-        lcd.drawHLine(MARGIN, y, Services::Canvas::WIDTH - 2 * MARGIN, LABEL_COLOR);
-        y += 6;
-
-        lcd.drawString(MARGIN, y, "Cnt:", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
-        y += LINE_H;
-        lcd.drawString(MARGIN, y, "Vel:", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
-        y += LINE_H;
-        lcd.drawString(MARGIN, y, "Rev:", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
-        y += LINE_H;
-        lcd.drawString(MARGIN, y, "R/s:", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
-        y += LINE_H;
-        lcd.drawString(MARGIN, y, "RPM:", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
-        y += LINE_H;
-        lcd.drawString(MARGIN, y, "Idx:", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
-
-        m_labelsDrawn = true;
-    }
-
-    // Compute derived values using same approach as GUI:
-    //   rev   = count / CPR          (2 decimal places)
-    //   rev/s = velocity / CPR       (2 decimal places)
-    //   RPM   = velocity / CPR * 60  (1 decimal place)
-    auto revX100 = static_cast<int32_t>((telem.encoder.count * 100LL) / ENCODER_CPR);
-    int32_t rsX100 = (telem.encoder.velocity * 100L) / ENCODER_CPR;
-    int32_t rpmX10 = (telem.encoder.velocity * 600L) / ENCODER_CPR;
-
-    // Y position for first value row (after title + separator)
-    y = MARGIN + LINE_H + 2 + 6;
-
-    // Count (ticks)
-    if (forceAll || telem.encoder.count != m_prevCount) {
-        i64toa(telem.encoder.count, tmp, sizeof(tmp));
-        snprintf(buf, sizeof(buf), "%s t", tmp);
-        padRight(buf, 16);
-        lcd.drawString(VALUE_X, y, buf, VALUE_COLOR, BG_COLOR, TEXT_SCALE);
-        m_prevCount = telem.encoder.count;
-    }
-    y += LINE_H;
-
-    // Velocity (ticks/s)
-    if (forceAll || telem.encoder.velocity != m_prevVelocity) {
-        snprintf(buf, sizeof(buf), "%ld t/s", static_cast<long>(telem.encoder.velocity));
-        padRight(buf, 16);
-        lcd.drawString(VALUE_X, y, buf, VALUE_COLOR, BG_COLOR, TEXT_SCALE);
-        m_prevVelocity = telem.encoder.velocity;
-    }
-    y += LINE_H;
-
-    // Revolutions (count / CPR, 2 decimal places — matches GUI)
-    if (forceAll || revX100 != m_prevRevX100) {
-        fmtFixed2(tmp, sizeof(tmp), revX100);
-        snprintf(buf, sizeof(buf), "%s rev", tmp);
-        padRight(buf, 16);
-        lcd.drawString(VALUE_X, y, buf, VALUE_COLOR, BG_COLOR, TEXT_SCALE);
-        m_prevRevX100 = revX100;
-    }
-    y += LINE_H;
-
-    // Rev/s (velocity / CPR, 2 decimal places — matches GUI)
-    if (forceAll || rsX100 != m_prevRsX100) {
-        fmtFixed2(buf, sizeof(buf), rsX100);
-        padRight(buf, 16);
-        lcd.drawString(VALUE_X, y, buf, VALUE_COLOR, BG_COLOR, TEXT_SCALE);
-        m_prevRsX100 = rsX100;
-    }
-    y += LINE_H;
-
-    // RPM (velocity / CPR * 60, 1 decimal place — matches GUI)
-    if (forceAll || rpmX10 != m_prevRpmX10) {
-        fmtFixed1(buf, sizeof(buf), rpmX10);
-        padRight(buf, 16);
-        lcd.drawString(VALUE_X, y, buf, VALUE_COLOR, BG_COLOR, TEXT_SCALE);
-        m_prevRpmX10 = rpmX10;
-    }
-    y += LINE_H;
-
-    // Index period
-    if (forceAll || telem.encoder.indexPeriodUs != m_prevIndexPeriod) {
-        if (telem.encoder.indexPeriodUs > 0) {
-            snprintf(buf, sizeof(buf), "%lu us",
-                     static_cast<unsigned long>(telem.encoder.indexPeriodUs));
-        } else {
-            snprintf(buf, sizeof(buf), "---");
-        }
-        padRight(buf, 16);
-        lcd.drawString(VALUE_X, y, buf, VALUE_COLOR, BG_COLOR, TEXT_SCALE);
-        m_prevIndexPeriod = telem.encoder.indexPeriodUs;
-    }
-}
-
-void EncoderScreen::renderDialStatic(Services::ICanvas& lcd)
-{
-    // Draw dial ring outline
-    Graphics::drawCircleOutline(lcd, DIAL_CX, DIAL_CY, DIAL_RADIUS, DIAL_RING_COLOR);
-
-    // Major tick marks at 0, 90, 180, 270 degrees
-    static constexpr uint16_t majorAngles[] = {0, 90, 180, 270};
-    for (int i = 0; i < 4; i++) {
-        uint16_t a = Graphics::deg_to_angle1024(majorAngles[i]);
-        int16_t outerX, outerY, innerX, innerY;
-        Graphics::rotate_point(0, static_cast<int16_t>(-TICK_OUTER), a, outerX, outerY);
-        Graphics::rotate_point(0, static_cast<int16_t>(-TICK_INNER), a, innerX, innerY);
-        lcd.drawLine(
-            static_cast<int16_t>(DIAL_CX + innerX),
-            static_cast<int16_t>(DIAL_CY + innerY),
-            static_cast<int16_t>(DIAL_CX + outerX),
-            static_cast<int16_t>(DIAL_CY + outerY),
-            TICK_COLOR);
-    }
-
-    // Minor tick marks at 45, 135, 225, 315 degrees
-    static constexpr uint16_t minorAngles[] = {45, 135, 225, 315};
-    for (int i = 0; i < 4; i++) {
-        uint16_t a = Graphics::deg_to_angle1024(minorAngles[i]);
-        int16_t outerX, outerY, innerX, innerY;
-        Graphics::rotate_point(0, static_cast<int16_t>(-TICK_MINOR_OUTER), a, outerX, outerY);
-        Graphics::rotate_point(0, static_cast<int16_t>(-TICK_MINOR_INNER), a, innerX, innerY);
-        lcd.drawLine(
-            static_cast<int16_t>(DIAL_CX + innerX),
-            static_cast<int16_t>(DIAL_CY + innerY),
-            static_cast<int16_t>(DIAL_CX + outerX),
-            static_cast<int16_t>(DIAL_CY + outerY),
-            TICK_COLOR);
-    }
-
-    // Degree labels at cardinal points
-    lcd.drawString(DIAL_CX - 3, DIAL_CY - TICK_OUTER - 10, "0", LABEL_COLOR, BG_COLOR);
-    lcd.drawString(DIAL_CX + TICK_OUTER + 4, DIAL_CY - 4, "90", LABEL_COLOR, BG_COLOR);
-    lcd.drawString(DIAL_CX - 9, DIAL_CY + TICK_OUTER + 3, "180", LABEL_COLOR, BG_COLOR);
-    lcd.drawString(DIAL_CX - TICK_OUTER - 22, DIAL_CY - 4, "270", LABEL_COLOR, BG_COLOR);
-}
-
-void EncoderScreen::renderDialDot(Services::ICanvas& lcd, int16_t angleDeg)
-{
-    // Erase previous dot
-    if (m_prevDotX >= 0 && m_prevDotY >= 0) {
-        Graphics::fillCircle(lcd, m_prevDotX, m_prevDotY, DOT_RADIUS + 1, DIAL_BG);
-
-        // Re-draw any tick marks that the erase may have overlapped
-        // (simpler than composited rendering for just a dot)
-        // The static dial will be redrawn on next full redraw if needed;
-        // for partial updates, the ring outline near the dot is thin enough
-        // that this is acceptable.
-    }
-
-    // Compute new dot position
-    uint16_t a = Graphics::deg_to_angle1024(static_cast<uint16_t>(angleDeg));
-    int16_t dx, dy;
-    Graphics::rotate_point(0, static_cast<int16_t>(-DOT_ORBIT), a, dx, dy);
-    auto dotX = static_cast<int16_t>(DIAL_CX + dx);
-    auto dotY = static_cast<int16_t>(DIAL_CY + dy);
-
-    // Draw new dot
-    Graphics::fillCircle(lcd, dotX, dotY, DOT_RADIUS, DOT_COLOR);
-
-    m_prevDotX = dotX;
-    m_prevDotY = dotY;
+    drawScopeColumn(lcd, t.encoder.velocity);
 }
 
 InputResult EncoderScreen::handleInput(JoyDirection dir, bool pressed)
 {
-    if (!pressed) {
-        return InputResult::HANDLED;
-    }
-
-    if (dir == JoyDirection::LEFT) {
-        return InputResult::EXIT_SCREEN;
-    }
-
+    if (!pressed) return InputResult::HANDLED;
+    if (dir == JoyDirection::LEFT) return InputResult::EXIT_SCREEN;
     return InputResult::HANDLED;
 }
 

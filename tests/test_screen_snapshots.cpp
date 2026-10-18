@@ -144,8 +144,14 @@ TEST(encoder_screen_shows_the_dial_and_the_count) {
     setEncoder(1400, 10000);
     rig.frame();
     rig.dump("encoder");
-    printf("  encoder: first frame %u px, one update %u px\n", first, rig.panel.pixelsWritten - first);
-    EXPECT_TRUE(rig.panel.countColor(0x0000) < 240u * 320u);  // something other than black is drawn
+    const uint32_t update = rig.panel.pixelsWritten - first;
+    printf("  encoder: first frame %u px, one update %u px\n", first, update);
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::MAGENTA, 60, 60, 120, 120) > 30);   // the needle
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::CYAN, 50, 45, 140, 140) > 300);     // the ring
+    EXPECT_TRUE(update < 4000);                                 // needle, angle, two cells, two scope columns
+    // 400 frames later the scope has swept the width and wrapped; nothing else grows
+    for (int i = 0; i < 400; i++) { setEncoder(1400 + i * 3, 10000 - i * 40); rig.frame(); }
+    rig.dump("encoder_swept");
 }
 
 TEST(device_info_repaints_only_the_live_cells) {
