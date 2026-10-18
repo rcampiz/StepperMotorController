@@ -367,6 +367,7 @@ class DriverPanel(QWidget):
         cm_lbl.setFont(QFont("Segoe UI", 9, QFont.Bold))
         cm.addWidget(cm_lbl)
         self._pred_cb = QCheckBox("Predictive control")
+        self._pred_cb.setChecked(True)                    # firmware default
         self._pred_cb.setToolTip("PRED_EN: the chip predicts the next PWM period from the last one "
                                  "so the current follows the sine more closely at speed. Off by default.")
         cm.addWidget(self._pred_cb)

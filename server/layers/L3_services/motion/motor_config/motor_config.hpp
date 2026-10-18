@@ -112,7 +112,7 @@ struct MotorConfig {
 
     // V4 (2026-10-18): the blob grew from 64 to 128 bytes. powerSTEP01 current-mode
     // regulation (0 = chip default everywhere) and room for later fields.
-    uint8_t  cmPredEn;        // CONFIG bit 15 PRED_EN (predictive current control): 0 off, 1 on
+    uint8_t  cmPredEn;        // CONFIG bit 15 PRED_EN (predictive current control): 0 = default (on), 1 off, 2 on
     uint8_t  cmTswPlus1;      // CONFIG[14:10] target switching period + 1 ((TSW+1) x 4 us); 0 = default (48 us)
     uint8_t  cmTFast;         // T_FAST: [7:4] FAST_STEP, [3:0] TOFF_FAST, (v+1) x 2 us each; 0 = default 0x19
     uint8_t  cmTonMin;        // TON_MIN (7 bits, (v+1) x 0.5 us); 0 = default 0x29 (21 us)
@@ -265,7 +265,7 @@ public:
     static constexpr uint8_t CM_DEFAULT_TSW   = 11;
     static constexpr uint8_t CM_DEFAULT_TFAST = 0x19;
     static constexpr uint8_t CM_DEFAULT_TMIN  = 0x29;
-    bool    getCmPredEn()  const { return m_config.cmPredEn != 0; }
+    bool    getCmPredEn()  const { return m_config.cmPredEn != 1; }   // on by default (bench 2026-10-18: less ripple at every speed)
     uint8_t getCmTsw()     const { return m_config.cmTswPlus1 ? static_cast<uint8_t>((m_config.cmTswPlus1 - 1) & 0x1F) : CM_DEFAULT_TSW; }
     uint8_t getCmTFast()   const { return m_config.cmTFast   ? m_config.cmTFast   : CM_DEFAULT_TFAST; }
     uint8_t getCmTonMin()  const { return m_config.cmTonMin  ? m_config.cmTonMin  : CM_DEFAULT_TMIN; }

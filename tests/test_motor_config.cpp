@@ -74,7 +74,7 @@ TEST(a_pre_v4_64_byte_blob_is_migrated_with_regulation_at_chip_defaults) {
     EXPECT_EQ(cfg.getStepMode(), 7u);
     EXPECT_EQ(cfg.getTvalRun(), 0x11u);
     EXPECT_TRUE(cfg.isCurrentMode());
-    EXPECT_FALSE(cfg.getCmPredEn());
+    EXPECT_TRUE(cfg.getCmPredEn());                              // the firmware default is on
     EXPECT_EQ(cfg.getCmTsw(), Services::MotorConfigManager::CM_DEFAULT_TSW);
     EXPECT_EQ(cfg.getCmTFast(), 0x19u);
     cfg.setCmRegulation(true, 20, 0x2A, 0, 0);

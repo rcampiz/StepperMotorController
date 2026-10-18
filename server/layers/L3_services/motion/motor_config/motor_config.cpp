@@ -122,7 +122,7 @@ void MotorConfigManager::setTval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t
 
 void MotorConfigManager::setCmRegulation(bool predEn, uint8_t tsw, uint8_t tFast,
                                          uint8_t tonMin, uint8_t toffMin) {
-    m_config.cmPredEn = predEn ? 1 : 0;
+    m_config.cmPredEn = predEn ? 2 : 1;
     m_config.cmTswPlus1 = (tsw == 0xFF) ? 0 : static_cast<uint8_t>((tsw & 0x1F) + 1);
     m_config.cmTFast = tFast;
     m_config.cmTonMin = tonMin & 0x7F;
