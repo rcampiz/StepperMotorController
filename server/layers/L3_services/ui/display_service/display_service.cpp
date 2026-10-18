@@ -183,10 +183,21 @@ void DisplayService::triggerEstop()
 void DisplayService::attemptClear()
 {
     char why[48] = {};
+    // Was this stop the host watchdog firing (the host went away)? Then clearing here hands
+    // the board to the person at it: the watchdog goes off, or it would fire again a moment
+    // later with no host to feed it. The host arms it again when it next connects. A host
+    // that is still feeding heartbeats keeps its watchdog.
+    Services::Safety::HeartbeatStatus hb{};
+    Services::Safety::getHeartbeatStatus(hb);
     const auto r = Services::Safety::clearFault(why, sizeof why);
     if (r == Services::Safety::Result::OK) {
         motion.stepper.event.post(EventType::ESTOP_CLEAR, EVT_SOURCE_LCD);
-        m_estopScreen.setMessage("cleared");
+        if (hb.enabled && hb.timedOut) {
+            Services::Safety::setHeartbeatTimeout(0);
+            m_estopScreen.setMessage("cleared, host watchdog off");
+        } else {
+            m_estopScreen.setMessage("cleared");
+        }
     } else if (r == Services::Safety::Result::FAULT_ACTIVE) {
         m_estopScreen.setMessage(why);                      // e.g. "Hardware fault active: UVLO"
     } else {
