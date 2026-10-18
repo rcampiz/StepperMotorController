@@ -238,7 +238,8 @@ TEST(saver_moves_its_mark_and_any_key_leaves_it) {
     rig.mgr.push(&saver);
     rig.frame();
     const uint32_t black = rig.panel.countColor(0x0000);
-    EXPECT_TRUE(black > 240u * 320u - 3000u);            // a dark panel with one small mark
+    EXPECT_TRUE(black > 240u * 320u / 2);                // mostly black: band, card, nothing else
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::MAGENTA) > 500);   // stripes and the aberration
     for (int i = 0; i < 40; i++) rig.frame();
     rig.dump("saver");
     EXPECT_TRUE(rig.panel.countColor(UI::Theme::CYAN) > 0);
