@@ -383,7 +383,7 @@ class FakeBoard:
         self._lines("MOTOR_DEBUG", [
             "STATUS=7E03 (%s Idle)" % ("HiZ" if self.hi_z else "Active"),
             "KVAL: HOLD=29 RUN=29 ACC=29 DEC=29",
-            "ACC=500 DEC=500 MAXSPD=800 POS=%d" % self.position])
+            "ACC=500 DEC=500 MAXSPD=800 POS=%d" % self.position, "ADC_OUT=2"])
 
     def _c_SYST_VER_Q(self, name, args):
         self._lines("VERSION", ["Stepper Motor Controller v%s" % self.FW, "Build: sim",

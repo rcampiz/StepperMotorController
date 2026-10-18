@@ -594,6 +594,7 @@ void MotorController::getDebugInfo(MotorDebugParams& info)
     const uint32_t stepModeReg = m_driver->getParam(MotorReg::STEP_MODE);
     info.stepMode = static_cast<uint8_t>(stepModeReg & 0x07);
     info.driveMode = (stepModeReg & 0x08U) ? 1 : 0;   // CM_VM: 1 = current mode
+    info.adcOut = static_cast<uint8_t>(m_driver->getParam(MotorReg::ADC_OUT) & 0x1FU);
 }
 
 void MotorController::bind(IMotorDriver& driver, Platform::IClock& clock)

@@ -54,6 +54,7 @@ namespace MotorReg {
     constexpr uint8_t KVAL_ACC   = 0x0B;
     constexpr uint8_t KVAL_DEC   = 0x0C;
     constexpr uint8_t INT_SPEED  = 0x0D;
+    constexpr uint8_t ADC_OUT    = 0x12;   // 5-bit reading of the ADCIN pin (read-only)
     constexpr uint8_t OCD_TH     = 0x13;
     constexpr uint8_t STALL_TH   = 0x14;
     constexpr uint8_t FS_SPD     = 0x15;

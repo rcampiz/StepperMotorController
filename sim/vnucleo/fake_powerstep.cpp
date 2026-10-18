@@ -47,6 +47,7 @@ void FakePowerStep::resetRegisters() {
     regs_[Drivers::MotorReg::INT_SPEED] = 0x0408;
     regs_[Drivers::MotorReg::OCD_TH] = 0x08;
     regs_[Drivers::MotorReg::STALL_TH] = 0x10;
+    regs_[Drivers::MotorReg::ADC_OUT] = 2;       // a 12 V supply on the shield divider
     regs_[Drivers::MotorReg::STEP_MODE] = 0x07;
     regs_[Drivers::MotorReg::ALARM_EN] = 0xFF;
     regs_[Drivers::MotorReg::CONFIG] = 0x2C88;

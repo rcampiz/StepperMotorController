@@ -65,9 +65,10 @@ def test_motor_config_view_from_json_and_text():
 def test_motor_debug_view():
     dbg = V.motor_debug(_json_lines("MOTOR_DEBUG", [
         "STATUS=7E03 (HiZ Idle UVLO)", "KVAL: HOLD=10 RUN=20 ACC=30 DEC=40",
-        "ACC=34 DEC=35 MAXSPD=52 POS=-1200"]))
+        "ACC=34 DEC=35 MAXSPD=52 POS=-1200", "ADC_OUT=4"]))
     assert dbg["status"] == 0x7E03 and dbg["kval"] == (0x10, 0x20, 0x30, 0x40)
     assert (dbg["acc_raw"], dbg["dec_raw"], dbg["maxspd_raw"], dbg["position"]) == (34, 35, 52, -1200)
+    assert dbg["adc_out"] == 4 and U.supply_volts_from_adc(4) == 20.0
 
 
 def test_encoder_view_both_formats():

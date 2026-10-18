@@ -295,6 +295,14 @@ class DriverPanel(QWidget):
             "The faders of the inactive mode are greyed out; the graph follows the active mode.")
         self._drive_mode_combo.currentIndexChanged.connect(self._on_drive_mode_changed)
         mode_row.addWidget(self._drive_mode_combo)
+        mode_row.addSpacing(24)
+        self._adc_label = QLabel("Supply sense: --")
+        self._adc_label.setFont(QFont("Consolas", 9))
+        self._adc_label.setToolTip(
+            "powerSTEP01 ADC_OUT: a 5-bit reading of the ADCIN pin, which the shield ties to a "
+            "divider on the motor supply. About 5 V per count, so take it as a coarse supply "
+            "check, not a measurement. Updated by Refresh.")
+        mode_row.addWidget(self._adc_label)
         mode_row.addStretch()
         main_layout.addLayout(mode_row)
 
@@ -887,6 +895,9 @@ class DriverPanel(QWidget):
             self._kval_run_slider.setValue(U.kval_to_percent(r))
             self._kval_acc_slider.setValue(U.kval_to_percent(a))
             self._kval_dec_slider.setValue(U.kval_to_percent(d))
+        if "adc_out" in dbg:
+            self._adc_label.setText("Supply sense: ADC_OUT %d (~%.0f V)"
+                                    % (dbg["adc_out"], U.supply_volts_from_adc(dbg["adc_out"])))
         if "acc_raw" in dbg:
             self._acc_spin.setValue(U.acc_sps2_from_raw(dbg["acc_raw"]))
             self._dec_spin.setValue(U.acc_sps2_from_raw(dbg["dec_raw"]))

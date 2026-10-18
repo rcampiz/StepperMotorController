@@ -119,3 +119,14 @@ def maxspd_raw_from_sps(sps: float) -> int:
 
 def maxspd_sps_from_raw(raw: int) -> int:
     return round(raw * MAXSPD_FACTOR)
+
+
+# powerSTEP01 ADC_OUT: 5-bit reading of the ADCIN pin, which the X-NUCLEO-IHM03A1 ties to a
+# divider on the motor supply. One count is coarse (about 1/32 of full scale). The scale
+# below is a single-point bench calibration (2026-10-18: ADC_OUT = 2 at 12.51 V, taken as
+# 2.5 counts for a truncating converter); treat the result as a supply-present indicator.
+ADC_OUT_VOLTS_PER_COUNT = 5.0
+
+
+def supply_volts_from_adc(raw: int) -> float:
+    return round(raw * ADC_OUT_VOLTS_PER_COUNT, 1)

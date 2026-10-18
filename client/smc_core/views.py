@@ -24,6 +24,7 @@ _MOTION = re.compile(r"\bACC=(\d+)\s+DEC=(\d+)\s+MAXSPD=(\d+)")
 _SPEEDS = re.compile(r"MINSPD=(\d+)\s+FS_SPD=(\d+)")
 _STATUS = re.compile(r"STATUS=([0-9A-Fa-f]{4})")
 _POS = re.compile(r"POS=(-?\d+)")
+_ADC = re.compile(r"ADC_OUT=(\d+)")
 _OCD = re.compile(r"OCD_TH=([0-9A-Fa-f]+)")
 _STALL = re.compile(r"STALL_TH=([0-9A-Fa-f]+)")
 _FAULTS = re.compile(r"Faults:\s*OCD=(\d+)\s+TH_SD=(\d+)\s+TH_W=(\d+)\s+UVLO=(\d+)\s+"
@@ -38,7 +39,7 @@ def _text(resp_or_text) -> str:
 
 def motor_debug(resp_or_text) -> Dict[str, Any]:
     """DBG:MOTOR -> {status, kval: (hold, run, acc, dec), acc_raw, dec_raw, maxspd_raw,
-    position, text}. Missing fields are absent."""
+    position, adc_out, text}. Missing fields are absent."""
     text = _text(resp_or_text)
     out: Dict[str, Any] = {"text": text}
     m = _STATUS.search(text)
@@ -53,6 +54,9 @@ def motor_debug(resp_or_text) -> Dict[str, Any]:
     m = _POS.search(text)
     if m:
         out["position"] = int(m.group(1))
+    m = _ADC.search(text)
+    if m:
+        out["adc_out"] = int(m.group(1))
     return out
 
 
