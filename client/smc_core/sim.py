@@ -338,12 +338,16 @@ class FakeBoard:
     def _start_move(self, target: int, speed_arg) -> None:
         """Positioning moves take time: the tick loop walks position to target."""
         sps = int(float(speed_arg)) if speed_arg not in (None, "") else self.move_speed_sps
-        self.move_usteps_per_s = max(sps, 1) * (1 << self.step_mode)
+        self.move_usteps_per_s = max(sps, 1) * (1 << self._eff_step_mode())
         self.target = target
         self.hi_z = False
 
+    def _eff_step_mode(self) -> int:
+        """The resolution in force: in current mode the powerSTEP01 runs 1/16 at most."""
+        return min(self.step_mode, 4) if self.drive_current else self.step_mode
+
     def _usteps_per_rev(self) -> int:
-        return self.full_steps * (1 << self.step_mode)
+        return self.full_steps * (1 << self._eff_step_mode())
 
     def _enc_count(self) -> int:
         """The encoder follows the motor: enc_ppr counts per revolution."""
@@ -379,7 +383,7 @@ class FakeBoard:
         self._ok(name, "HI-Z")
 
     def _c_DRV_STEP_MODE_Q(self, name, args):
-        self._ok(name, data={"step_mode": self.step_mode, "microsteps": 1 << self.step_mode,
+        self._ok(name, data={"step_mode": self._eff_step_mode(), "microsteps": 1 << self._eff_step_mode(),
                              "drive_mode": "current" if self.drive_current else "voltage"})
 
     def _c_DRV_FULL_STEPS_Q(self, name, args):

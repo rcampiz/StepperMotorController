@@ -176,7 +176,7 @@ TEST(step_mode_is_a_message_answered_by_the_motor_task) {
 
 TEST(apply_config_is_a_motor_task_job_that_writes_step_mode_in_hiz_or_via_the_safe_path) {
     Rig r;
-    const uint8_t original = Services::motion.stepper.config.getStepMode();
+    const uint8_t original = Services::motion.stepper.config.getConfiguredStepMode();
     bool ok = false;
     // Comms side: the job is queued, nothing touches the driver until the Motor task runs
     Services::motion.stepper.config.setStepMode(5);
@@ -208,7 +208,7 @@ TEST(current_mode_writes_tval_and_the_cm_vm_bit_through_the_hiz_path) {
     bool ok = false;
     auto& cfg = Services::motion.stepper.config;
     const uint8_t origMode = cfg.getDriveMode();
-    const uint8_t origStep = cfg.getStepMode();
+    const uint8_t origStep = cfg.getConfiguredStepMode();
     cfg.setStepMode(5);
     cfg.setDriveMode(1);
     cfg.setTval(0x05, 0x11, 0x12, 0x13);
@@ -221,7 +221,7 @@ TEST(current_mode_writes_tval_and_the_cm_vm_bit_through_the_hiz_path) {
     EXPECT_TRUE(r.svc.lastJobResult(ok));
     EXPECT_TRUE(ok);
     EXPECT_EQ(r.drv.params[Drivers::MotorReg::KVAL_RUN], 0x11u);              // TVAL_RUN shares the address
-    EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0x0Fu, 0x0Du);     // 1/32 + CM_VM
+    EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0x0Fu, 0x0Cu);     // 1/32 asked: 1/16 (current-mode max) + CM_VM
     EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0xF0u, 0xC0u);     // SYNC out, 8 per full step
     EXPECT_EQ(r.drv.params[Drivers::MotorReg::CONFIG], 0x8000u | (20u << 10) | 0x088u);   // low bits kept
     EXPECT_EQ(r.drv.params[Drivers::MotorReg::T_FAST], 0x2Au);

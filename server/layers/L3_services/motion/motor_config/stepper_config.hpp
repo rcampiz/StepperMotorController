@@ -62,6 +62,7 @@ public:
 
     // Step mode
     uint8_t getStepMode() const { return m_mgr.getStepMode(); }
+    uint8_t getConfiguredStepMode() const { return m_mgr.getConfiguredStepMode(); }   ///< as asked; getStepMode() is what runs
     void setStepMode(uint8_t m) { m_mgr.setStepMode(m); }
 
     // Physical motor parameters

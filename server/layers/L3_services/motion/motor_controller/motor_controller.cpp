@@ -552,7 +552,8 @@ bool MotorController::applyConfig()
     // in Hi-Z (boot, reinit, output disabled), read-modify-write to keep CM_VM and SYNC bits,
     // and verify. Otherwise report it so the caller uses the Motor task's Hi-Z-safe path.
     // STEP_MODE[2:0] = microstep mode, bit 3 = CM_VM (current mode); both only writable in Hi-Z.
-    const uint32_t wanted = STEP_MODE_SYNC_8FS | (cfg.stepMode & 0x07U) | (currentMode ? 0x08U : 0U);
+    // The resolution in force (1/16 at most in current mode), not the raw configured one
+    const uint32_t wanted = STEP_MODE_SYNC_8FS | (motion.stepper.config.getStepMode() & 0x07U) | (currentMode ? 0x08U : 0U);
     uint32_t stepMode = m_driver->getParam(MotorReg::STEP_MODE);
     bool stepModeOk = (stepMode & 0xFFU) == wanted;
     // CONFIG[15:10] in current mode (PRED_EN, TSW) is Hi-Z-only as well; untouched in
@@ -581,6 +582,10 @@ bool MotorController::applyConfig()
 bool MotorController::setStepModeSafe(uint8_t mode,
                                        uint8_t& readback)
 {
+    // In current mode the chip runs 1/16 at most: write what it will actually do, so the
+    // register, the readback and every conversion agree
+    mode = MotorConfigManager::effectiveStepMode(mode, motion.stepper.config.isCurrentMode());
+
     // Disable outputs before touching STEP_MODE (the Motor task used to do this)
     m_driver->hardHiZ();
     m_clock->delayMs(5);

@@ -75,6 +75,7 @@ void CommandParser::cmdDrvStepModeQuery() {
   Harness::MotorDebugParams info = {};
   m_dispatcher.motorGetDebugInfo(info);
   uint8_t mode = info.stepMode;
+  if (info.driveMode && mode > 4) mode = 4;   // current mode runs 1/16 at most, whatever the register holds
   uint32_t ustepsPerRev =
       static_cast<uint32_t>(m_dispatcher.getFullStepsPerRev()) * (1U << mode);
 

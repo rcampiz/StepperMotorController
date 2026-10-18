@@ -19,6 +19,8 @@ from PySide6.QtCore import Qt, Slot, Signal
 from smc_core import commands as C
 from PySide6.QtGui import QFont
 
+CURRENT_MODE_MAX_STEP_MODE = 4      # powerSTEP01 current mode: 1/16 at most
+
 
 # (register value, display label, denominator)
 STEP_MODES = [
@@ -165,6 +167,8 @@ class StepModePanel(QWidget):
         if "step_mode" not in data:
             return
         self._chip_mode = int(data["step_mode"])
+        if "drive_mode" in data:
+            self._current_mode = str(data["drive_mode"]) == "current"
         self._render_current()
 
     def _render_current(self):
@@ -175,8 +179,15 @@ class StepModePanel(QWidget):
         text = f"1/{1 << shown} microstep (reg={shown})"
         if chip is None:
             text += "  [config]"
-        if chip is not None and cfg is not None and chip != cfg:
-            text += f"  -- config says 1/{1 << cfg}: apply again with the motor idle"
+        # In current mode the powerSTEP01 runs 1/16 at most: the chip at 1/16 with 1/32..1/128
+        # configured is right, not a mismatch (the firmware converts with the 1/16)
+        expected = cfg
+        if cfg is not None and getattr(self, "_current_mode", False):
+            expected = min(cfg, CURRENT_MODE_MAX_STEP_MODE)
+        if chip is not None and cfg is not None and chip == expected and expected != cfg:
+            text += f"  -- current mode runs 1/16 at most (config 1/{1 << cfg})"
+        if chip is not None and expected is not None and chip != expected:
+            text += f"  -- config says 1/{1 << expected}: apply again with the motor idle"
             self._current_label.setStyleSheet("color: #ff4040;")
         else:
             self._current_label.setStyleSheet("color: #ff9900;")

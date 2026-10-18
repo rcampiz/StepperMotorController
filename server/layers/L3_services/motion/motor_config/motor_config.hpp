@@ -283,7 +283,18 @@ public:
     uint16_t getDeceleration() const { return m_config.deceleration; }
     uint16_t getMaxSpeed() const { return m_config.maxSpeed; }
     FaultEnableFlags getFaultEnable() const { return m_config.faultEnable; }
-    uint8_t getStepMode() const { return m_config.stepMode > 7 ? 7 : m_config.stepMode; }
+    /// powerSTEP01 in current mode microsteps at 1/16 at most: STEP_SEL 1/32..1/128 run as
+    /// 1/16 while the register still reads back what was written. So a configured 1/128 moved
+    /// the motor 8x too far (bench 2026-10-18: a 1-rev jog turned 8 revs). The step mode in
+    /// force, and every conversion from it, is the effective one.
+    static constexpr uint8_t MAX_CURRENT_MODE_STEP_MODE = 4;    // 1/16
+    static uint8_t effectiveStepMode(uint8_t mode, bool currentMode) {
+        const uint8_t m = mode > 7 ? 7 : mode;
+        return (currentMode && m > MAX_CURRENT_MODE_STEP_MODE) ? MAX_CURRENT_MODE_STEP_MODE : m;
+    }
+    uint8_t getStepMode() const { return effectiveStepMode(m_config.stepMode, isCurrentMode()); }
+    /// What was asked for (kept, so going back to voltage mode restores it)
+    uint8_t getConfiguredStepMode() const { return m_config.stepMode > 7 ? 7 : m_config.stepMode; }
     uint8_t getEncFilterType() const { return m_config.encFilterType; }
     uint8_t getEncFilterParam() const { return m_config.encFilterParam; }
     uint8_t getEncSmaWindow() const { return m_config.encSmaWindow; }

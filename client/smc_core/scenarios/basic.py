@@ -86,7 +86,9 @@ def heartbeat_loss(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
 def step_mode_readback(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     before = ctx.call(C.step_mode_query())
     ctx.require("read current", before.success, before.error_message or "")
-    original = int(before.data.get("step_mode", 0))
+    current_mode = str(before.data.get("drive_mode", "voltage")) == "current"
+    configured = V.motor_config(ctx.call(C.driver_config())).get("step_mode")
+    original = int(configured if configured is not None else before.data.get("step_mode", 0))
     ctx.measure("original", original)
     try:
         for mode in params["modes"]:
@@ -95,8 +97,11 @@ def step_mode_readback(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
             q = ctx.call(C.step_mode_query())
             cfg = V.motor_config(ctx.call(C.driver_config()))
             got = int(q.data.get("step_mode", -1)) if q.success else -1
-            ctx.check(f"mode {mode}", got == int(mode) and cfg.get("step_mode") == int(mode),
-                      f"DRV:STEP_MODE?={got} DRV:CFG?={cfg.get('step_mode')}")
+            # the chip runs the resolution in force (current mode: 1/16 at most); the config
+            # keeps what was asked
+            want = min(int(mode), 4) if current_mode else int(mode)
+            ctx.check(f"mode {mode}", got == want and cfg.get("step_mode") == int(mode),
+                      f"DRV:STEP_MODE?={got} (expected {want}) DRV:CFG?={cfg.get('step_mode')}")
     finally:
         ctx.call(C.cfg_step_mode(original))
         ctx.call(C.cfg_apply())

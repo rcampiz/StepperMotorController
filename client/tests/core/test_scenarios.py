@@ -91,12 +91,22 @@ def test_resonance_sweep_measures_each_speed(board):
 
 def test_resonance_map_sweeps_each_mode_and_restores_the_original(board):
     board._fake.step_mode = 7
+    board._fake.drive_current = False          # voltage mode: 1/32 is real (current mode caps at 1/16)
     r = run(board, "resonance_map", modes=[3, 5], rpm_from=60, rpm_to=70, rpm_step=10,
             dwell_s=0.3, settle_s=0.05)
     assert r.ok, (r.summary, r.checks)
     assert r.measurements["mode_8"]["usteps_per_rev"] == 1600
     assert set(r.measurements["mode_32"]["std"]) == {"60", "70"}
     assert board._fake.step_mode == 7
+
+
+def test_resonance_map_in_current_mode_maps_1_16_once_for_the_finer_modes(board):
+    board._fake.step_mode = 7                  # the fake starts in current mode
+    r = run(board, "resonance_map", modes=[3, 5, 7], rpm_from=60, rpm_to=60, rpm_step=10,
+            dwell_s=0.2, settle_s=0.05)
+    assert r.ok, (r.summary, r.checks)
+    assert sorted(k for k in r.measurements if k.startswith("mode_")) == ["mode_16", "mode_8"]
+    assert board._fake.step_mode == 7          # the configured 1/128 restored
 
 
 def test_position_capture_reads_the_rings_and_finds_the_oscillation(board):

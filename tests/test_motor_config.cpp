@@ -53,6 +53,29 @@ TEST(save_then_reload_round_trips_through_the_store) {
     EXPECT_EQ(again.getStepMode(), 3u);
 }
 
+TEST(current_mode_runs_at_most_1_16_and_conversions_follow) {
+    // Bench 2026-10-18: 1/128 configured in current mode, the chip ran 1/16, and a 1-rev jog
+    // (25600 microsteps) turned the shaft 8 times. Conversions must use the resolution in force.
+    FakeConfigStore store;
+    Services::MotorConfigManager cfg;
+    cfg.init(store);
+    cfg.setStepMode(7);
+    cfg.setDriveMode(0);                                // voltage: 1/128 as asked
+    EXPECT_EQ(cfg.getStepMode(), 7u);
+    EXPECT_EQ(cfg.getMicrostepsPerRev(), 25600u);
+    cfg.setDriveMode(1);                                // current: 1/16
+    EXPECT_EQ(cfg.getStepMode(), 4u);
+    EXPECT_EQ(cfg.getMicrostepsPerRev(), 3200u);
+    EXPECT_EQ(cfg.getConfiguredStepMode(), 7u);         // kept for voltage mode
+    cfg.setStepMode(3);                                 // 1/8 is within reach in current mode
+    EXPECT_EQ(cfg.getStepMode(), 3u);
+    cfg.setStepMode(7);
+    cfg.setDriveMode(0);                                // back to voltage: 1/128 again
+    EXPECT_EQ(cfg.getMicrostepsPerRev(), 25600u);
+    EXPECT_EQ(Services::MotorConfigManager::effectiveStepMode(6, true), 4u);
+    EXPECT_EQ(Services::MotorConfigManager::effectiveStepMode(9, false), 7u);
+}
+
 TEST(a_pre_v4_64_byte_blob_is_migrated_with_regulation_at_chip_defaults) {
     // Forge a V3 blob: the V4 prefix fields with a V3 header and a 60-byte CRC
     FakeConfigStore store;
@@ -71,7 +94,7 @@ TEST(a_pre_v4_64_byte_blob_is_migrated_with_regulation_at_chip_defaults) {
     EXPECT_TRUE(cfg.init(store));
     EXPECT_TRUE(cfg.isValid());
     EXPECT_EQ(cfg.getMaxSpeed(), 87u);
-    EXPECT_EQ(cfg.getStepMode(), 7u);
+    EXPECT_EQ(cfg.getConfiguredStepMode(), 7u);
     EXPECT_EQ(cfg.getTvalRun(), 0x11u);
     EXPECT_TRUE(cfg.isCurrentMode());
     EXPECT_TRUE(cfg.getCmPredEn());                              // the firmware default is on
@@ -119,7 +142,7 @@ TEST(nearly_full_store_is_compacted_at_boot_and_keeps_the_record) {
     Services::MotorConfigManager again;
     EXPECT_TRUE(again.init(store));
     EXPECT_EQ(store.erases, 1);                  // compacted while nothing moves
-    EXPECT_EQ(again.getStepMode(), 6u);
+    EXPECT_EQ(again.getConfiguredStepMode(), 6u);
     EXPECT_EQ(store.free_bytes, 4096u - sizeof(Services::MotorConfig));   // the record went back in as entry 0
 }
 
