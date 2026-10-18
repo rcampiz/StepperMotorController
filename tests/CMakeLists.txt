@@ -152,3 +152,12 @@ smc_add_test(test_screen_snapshots test_screen_snapshots.cpp
     stubs/trace_stub.cpp
     ${SERVER}/layers/L3_services/infra/telemetry_store/telemetry_store.cpp)
 target_include_directories(test_screen_snapshots PRIVATE ${SERVER}/layers/L3_services)
+
+# --- LCD Trace screen (cyberpunk chrome) over a stub trace ring serving realistic entries.
+smc_add_test(test_screen_trace test_screen_trace.cpp
+    ${SERVER}/layers/L3_services/ui/screens/trace_screen.cpp
+    ${SERVER}/layers/L3_services/ui/menu_screen/menu_screen.cpp
+    ${SERVER}/layers/L3_services/ui/screen_manager/screen_manager.cpp
+    ${SERVER}/layers/L3_services/ui/chrome/chrome.cpp
+    stubs/trace_screen_stub.cpp)
+target_include_directories(test_screen_trace PRIVATE ${SERVER}/layers/L3_services)
