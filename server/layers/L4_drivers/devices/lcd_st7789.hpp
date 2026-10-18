@@ -15,6 +15,9 @@
 
 namespace Drivers {
 
+#include "L4_drivers/devices/font_8x12.hpp"
+#include "L4_drivers/devices/font_12x16.hpp"
+
 // 5x7 bitmap font (ASCII 32-126)
 // Each character is 5 columns, each column is 7 bits (LSB = top)
 static const uint8_t FONT_5X7[][5] = {
@@ -383,48 +386,16 @@ public:
         uint16_t fgInv = ~fg;  // INVON compensation
         uint16_t bgInv = ~bg;
 
-        if (scale == 3) {
-            // Medium: 8×12 via selective doubling of cols 1,3 and rows 0,1,3,5
-            static constexpr uint8_t COL_SRC[] = {0, 1, 1, 2, 3, 3, 4};
-            static constexpr uint8_t ROW_DUP[] = {2, 2, 1, 2, 1, 2, 1}; // 11 data rows + 1 spacing
-
-            if (x + MED_CHAR_W > WIDTH || y + MED_CHAR_H > HEIGHT) return;
-
-            uint8_t buf[MED_CHAR_W * MED_CHAR_H * 2]; // 192 bytes
-            uint16_t idx = 0;
-
-            for (uint8_t srcRow = 0; srcRow < 7; srcRow++) {
-                for (uint8_t d = 0; d < ROW_DUP[srcRow]; d++) {
-                    for (uint8_t oc = 0; oc < 7; oc++) {
-                        uint16_t color = (glyph[COL_SRC[oc]] & (1 << srcRow)) ? fgInv : bgInv;
-                        buf[idx++] = static_cast<uint8_t>(color >> 8);
-                        buf[idx++] = static_cast<uint8_t>(color & 0xFF);
-                    }
-                    buf[idx++] = static_cast<uint8_t>(bgInv >> 8);
-                    buf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
-                }
-            }
-            // Spacing row
-            for (uint8_t c = 0; c < MED_CHAR_W; c++) {
-                buf[idx++] = static_cast<uint8_t>(bgInv >> 8);
-                buf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
-            }
-
-            m_spi.lock();
-            m_spi.setMode(Board::SPIMode::Mode0);
-            m_spi.setPrescaler(m_prescaler);
-            csLow();
-            setWindowLocked(x, y, static_cast<uint16_t>(x + MED_CHAR_W - 1),
-                            static_cast<uint16_t>(y + MED_CHAR_H - 1));
-            m_spi.writeOnly(buf, idx);
-            csHigh();
-            m_spi.unlock();
+        if (scale == 3 || scale == 2) {
+            // Medium (8x12) and large (12x16): the bitmap fonts, one-character runs
+            char one[2] = { c, '\0' };
+            if (scale == 3) drawStringMedium(x, y, one, fg, bg);
+            else            drawStringLarge(x, y, one, fg, bg);
             return;
         }
 
-        // Scale 1 or 2: uniform pixel doubling
-        if (scale < 1) scale = 1;
-        if (scale > 2) scale = 2;
+        // Scale 1: the 5x7 font in a 6x8 cell
+        scale = 1;
 
         uint16_t charW = CHAR_WIDTH * scale;
         uint16_t charH = CHAR_HEIGHT * scale;
@@ -483,14 +454,11 @@ public:
                     uint8_t scale = 1) override {
         if (str == nullptr) return;
 
-        // Medium font: separate rendering path
-        if (scale == 3) {
-            drawStringMedium(x, y, str, fg, bg);
-            return;
-        }
+        // Medium (8x12) and large (12x16): the bitmap fonts
+        if (scale == 3) { drawStringMedium(x, y, str, fg, bg); return; }
+        if (scale == 2) { drawStringLarge(x, y, str, fg, bg); return; }
 
-        if (scale < 1) scale = 1;
-        if (scale > 2) scale = 2;
+        scale = 1;
         uint16_t cw = CHAR_WIDTH * scale;
         uint16_t ch = CHAR_HEIGHT * scale;
 
@@ -725,75 +693,59 @@ public:
     }
 
     /**
-     * @brief Draw a string using medium font (8×12 from 5×7 base)
-     *
-     * Cols 1 and 3 doubled, rows 0/1/3/5 doubled → 7+1=8 wide, 11+1=12 tall.
-     * Row buffer: 30 chars × 8px × 2 bytes = 480 bytes (fits WIDTH*2).
+     * @brief Draw a string in the 8x12 bitmap font (Consolas 12 px, 1-bit); wraps at the
+     *        right edge. One SPI window per line segment, rows streamed from a row buffer.
      */
-    void drawStringMedium(uint16_t x, uint16_t y, const char* str,
-                          uint16_t fg, uint16_t bg) {
-        static constexpr uint8_t COL_SRC[] = {0, 1, 1, 2, 3, 3, 4};
-        static constexpr uint8_t ROW_DUP[] = {2, 2, 1, 2, 1, 2, 1};
-        uint16_t cw = MED_CHAR_W;
-        uint16_t ch = MED_CHAR_H;
+    void drawStringMedium(uint16_t x, uint16_t y, const char* str, uint16_t fg, uint16_t bg) {
+        drawStringBitmap<uint8_t, MED_CHAR_W, MED_CHAR_H>(x, y, str, fg, bg, FONT_8X12);
+    }
 
-        if (str == nullptr || y + ch > HEIGHT) return;
+    /**
+     * @brief Draw a string in the 12x16 bitmap font (Consolas Bold 16 px, 1-bit); wraps.
+     */
+    void drawStringLarge(uint16_t x, uint16_t y, const char* str, uint16_t fg, uint16_t bg) {
+        drawStringBitmap<uint16_t, 12, 16>(x, y, str, fg, bg, FONT_12X16);
+    }
 
-        while (*str && y + ch <= HEIGHT) {
+    template <typename Row, uint16_t CW, uint16_t CH>
+    void drawStringBitmap(uint16_t x, uint16_t y, const char* str, uint16_t fg, uint16_t bg,
+                          const Row (*table)[CH]) {
+        if (str == nullptr || y + CH > HEIGHT) return;
+        const uint16_t fgInv = ~fg;
+        const uint16_t bgInv = ~bg;
+        uint8_t rowBuf[WIDTH * 2];
+
+        while (*str && y + CH <= HEIGHT) {
             uint16_t len = 0;
-            while (str[len] && (x + (len + 1) * cw) <= WIDTH) len++;
-            if (len == 0) { x = 0; y += ch; continue; }
-
-            uint16_t pixelW = len * cw;
-            uint16_t fgInv = ~fg;
-            uint16_t bgInv = ~bg;
-            uint8_t rowBuf[WIDTH * 2];
+            while (str[len] && (x + (len + 1) * CW) <= WIDTH) len++;
+            if (len == 0) { x = 0; y = static_cast<uint16_t>(y + CH); continue; }
+            const uint16_t pixelW = len * CW;
 
             m_spi.lock();
             m_spi.setMode(Board::SPIMode::Mode0);
             m_spi.setPrescaler(m_prescaler);
             csLow();
-            setWindowLocked(x, y, static_cast<uint16_t>(x + pixelW - 1),
-                            static_cast<uint16_t>(y + ch - 1));
-
-            for (uint8_t srcRow = 0; srcRow < 7; srcRow++) {
-                // Build one pixel row with medium column mapping
+            setWindowLocked(x, y, static_cast<uint16_t>(x + pixelW - 1), static_cast<uint16_t>(y + CH - 1));
+            for (uint16_t row = 0; row < CH; row++) {
                 uint16_t idx = 0;
                 for (uint16_t c = 0; c < len; c++) {
                     char cc = str[c];
                     if (cc < 32 || cc > 126) cc = '?';
-                    const uint8_t* glyph = FONT_5X7[cc - 32];
-                    for (uint8_t oc = 0; oc < 7; oc++) {
-                        uint16_t color = (glyph[COL_SRC[oc]] & (1 << srcRow)) ? fgInv : bgInv;
+                    const Row bits = table[cc - 32][row];
+                    for (uint16_t col = 0; col < CW; col++) {
+                        const uint16_t color = (bits & (static_cast<Row>(1) << (CW - 1 - col))) ? fgInv : bgInv;
                         rowBuf[idx++] = static_cast<uint8_t>(color >> 8);
                         rowBuf[idx++] = static_cast<uint8_t>(color & 0xFF);
                     }
-                    // Spacing column
-                    rowBuf[idx++] = static_cast<uint8_t>(bgInv >> 8);
-                    rowBuf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
-                }
-                // Send row ROW_DUP[srcRow] times (selective vertical doubling)
-                for (uint8_t d = 0; d < ROW_DUP[srcRow]; d++) {
-                    m_spi.writeOnly(rowBuf, idx);
-                }
-            }
-
-            // Spacing row (1 row)
-            {
-                uint16_t idx = 0;
-                for (uint16_t px = 0; px < pixelW; px++) {
-                    rowBuf[idx++] = static_cast<uint8_t>(bgInv >> 8);
-                    rowBuf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
                 }
                 m_spi.writeOnly(rowBuf, idx);
             }
-
             csHigh();
             m_spi.unlock();
 
             str += len;
-            x += pixelW;
-            if (*str) { x = 0; y += ch; }
+            x = static_cast<uint16_t>(x + pixelW);
+            if (*str) { x = 0; y = static_cast<uint16_t>(y + CH); }
         }
     }
 
