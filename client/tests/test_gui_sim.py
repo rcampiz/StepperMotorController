@@ -111,7 +111,7 @@ def test_step_mode_apply_reads_the_chip_back(gui):
 def test_drive_mode_apply_sends_mode_tval_and_apply(gui):
     app, w, fake = gui
     assert pump(app, lambda: w._board is not None and w._board.session_ready)
-    w._driver_panel._drive_mode_combo.setCurrentIndex(1)
+    w._driver_panel.set_drive_mode(True)
     w._driver_panel._rated_spin.setValue(2.0)               # faders capped at 2.0 A -> 0x1A
     w._driver_panel._tval_spins[1].setValue(1.3)            # 1.3 A run -> 0x11 (78 mA/unit)
     assert w._driver_panel._tval_sliders[1].value() == 0x11
@@ -198,6 +198,20 @@ def test_status_strip_follows_telemetry_and_the_tabs_are_regrouped(gui):
     tabs = [w._right_tabs.tabText(i) for i in range(w._right_tabs.count())]
     assert tabs == ["Dashboard", "Drive", "Motor", "Encoder", "Diagnostics", "Fleet"]
     assert w.minimumWidth() >= 1100
+
+
+def test_drive_mode_switch_keeps_both_fader_sets_live_and_shows_the_chip(gui):
+    app, w, fake = gui
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    p = w._driver_panel
+    assert pump(app, lambda: "CURRENT" in p._chip_mode_label.text())     # DRV:STEP_MODE? readback
+    p.set_drive_mode(False)
+    assert not p._is_current_mode() and p._kval_row.isEnabled() and p._tval_row.isEnabled()
+    assert p._apply_kval_btn.isEnabled() and p._apply_drive_btn.isEnabled()
+    p._on_apply_drive()
+    assert pump(app, lambda: "DRV:CFG:DRIVE VOLTAGE" in fake.received)
+    p.set_drive_mode(True)
+    assert p._coil_a_curve.xData is not None and len(p._coil_a_curve.xData) > 30    # 4 x 8 staircase (sim is 1/8)
 
 
 def test_tests_tab_runs_a_scenario(gui):

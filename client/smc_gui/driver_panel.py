@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QComboBox,
     QCheckBox,
+    QButtonGroup,
 )
 from PySide6.QtCore import Qt, Slot, Signal, QSettings
 
@@ -95,6 +96,7 @@ class DriverPanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._full_steps_per_rev = 200
+        self._step_mode = 7                 # from DRV:STEP_MODE?; 1/128 default
         self._syncing = False
         self._setup_ui()
 
@@ -262,7 +264,8 @@ class DriverPanel(QWidget):
         self._maxspd_spin.valueChanged.connect(self._update_kval_profile)
         for slider in self._tval_sliders:
             slider.valueChanged.connect(self._update_kval_profile)
-        self._on_drive_mode_changed(self._drive_mode_combo.currentIndex())
+            slider.valueChanged.connect(self._update_coil_waveform)
+        self._on_drive_mode_changed(1 if self._is_current_mode() else 0)
 
     # ========================================================================
     # KVAL fader group
@@ -328,15 +331,30 @@ class DriverPanel(QWidget):
         mode_lbl = QLabel("Drive mode:")
         mode_lbl.setFont(QFont("Segoe UI", 9, QFont.Bold))
         mode_row.addWidget(mode_lbl)
-        self._drive_mode_combo = QComboBox()
-        self._drive_mode_combo.addItems(["Voltage (KVAL, % of supply)", "Current (TVAL, amps)"])
-        self._drive_mode_combo.setCurrentIndex(1)       # current mode is the firmware default
-        self._drive_mode_combo.setToolTip(
-            "Voltage mode drives the coils with a duty cycle (KVAL); current mode regulates the coil "
-            "current to the TVAL references (powerSTEP01 CM_VM bit, written in Hi-Z on Apply).\n"
-            "The faders of the inactive mode are greyed out; the graph follows the active mode.")
-        self._drive_mode_combo.currentIndexChanged.connect(self._on_drive_mode_changed)
-        mode_row.addWidget(self._drive_mode_combo)
+        self._mode_voltage_btn = QPushButton("Voltage (KVAL)")
+        self._mode_current_btn = QPushButton("Current (TVAL)")
+        for b in (self._mode_voltage_btn, self._mode_current_btn):
+            b.setCheckable(True)
+            b.setMinimumWidth(130)
+            b.setStyleSheet("QPushButton:checked { background: #2d6cdf; color: white; font-weight: bold; }")
+        self._mode_current_btn.setChecked(True)          # current mode is the firmware default
+        self._mode_group = QButtonGroup(self)
+        self._mode_group.setExclusive(True)
+        self._mode_group.addButton(self._mode_voltage_btn, 0)
+        self._mode_group.addButton(self._mode_current_btn, 1)
+        self._mode_current_btn.toggled.connect(lambda on: self._on_drive_mode_changed(1 if on else 0))
+        tip = ("Voltage mode drives the coils with a duty cycle (KVAL faders); current mode regulates "
+               "the coil current to the TVAL references. Pick one, then Apply (the chip takes the "
+               "mode in Hi-Z). Both fader sets stay editable; the badge shows what the chip is in.")
+        self._mode_voltage_btn.setToolTip(tip)
+        self._mode_current_btn.setToolTip(tip)
+        mode_row.addWidget(self._mode_voltage_btn)
+        mode_row.addWidget(self._mode_current_btn)
+        self._chip_mode_label = QLabel("chip: --")
+        self._chip_mode_label.setFont(QFont("Consolas", 9, QFont.Bold))
+        self._chip_mode_label.setStyleSheet("color: #888; padding: 2px 8px; border: 1px solid #444; border-radius: 4px;")
+        self._chip_mode_label.setToolTip("Drive mode read back from the chip's STEP_MODE register (DRV:STEP_MODE?)")
+        mode_row.addWidget(self._chip_mode_label)
         mode_row.addSpacing(24)
         self._adc_label = QLabel("ADCIN raw: --")
         self._adc_label.setFont(QFont("Consolas", 9))
@@ -736,20 +754,22 @@ class DriverPanel(QWidget):
     # ========================================================================
 
     def _is_current_mode(self) -> bool:
-        return self._drive_mode_combo.currentIndex() == 1
+        return self._mode_current_btn.isChecked()
+
+    def set_drive_mode(self, current: bool) -> None:
+        (self._mode_current_btn if current else self._mode_voltage_btn).setChecked(True)
 
     @Slot(int)
     def _on_drive_mode_changed(self, index: int):
-        """Grey out the faders of the inactive mode and redraw the profile in its unit."""
+        """Both fader sets stay live; the title and the profile follow the selected mode."""
         current = index == 1
-        self._tval_row.setEnabled(current)
-        self._cm_row.setEnabled(current)
-        self._kval_row.setEnabled(not current)
-        self._apply_kval_btn.setEnabled(not current)   # never send the idle faders' zeros
-        self._drive_group.setTitle("Coil Drive \u2014 current mode: regulated coil current (TVAL, amps)"
+        self._drive_group.setTitle("Coil Drive \u2014 current mode selected: regulated coil current (TVAL, amps)"
                                    if current else
-                                   "Coil Drive \u2014 voltage mode: duty cycle (KVAL, % of supply voltage)")
+                                   "Coil Drive \u2014 voltage mode selected: duty cycle (KVAL, % of supply voltage)")
+        self._apply_kval_btn.setText("Apply KVAL" + ("" if not current else "  (voltage mode)"))
+        self._apply_drive_btn.setText("Apply mode + TVAL" if current else "Apply mode (voltage)")
         self._update_kval_profile()
+        self._update_coil_waveform()
 
     @Slot(float)
     def _on_rated_current_changed(self, amps: float):
@@ -835,106 +855,54 @@ class DriverPanel(QWidget):
         self._kval_profile_plot.setXRange(0, t5 * 1.02)
 
     def _update_coil_waveform(self, _value=None):
-        """Redraw Phase A/B rectangular waveforms for CCW full-step drive.
+        """Draw the two phase currents over one electrical cycle, which is four full steps.
 
-        Both coils produce +/-KVAL square waves. Phase B leads Phase A
-        by 90 degrees (one quarter electrical cycle).
-
-        Full-step pattern per electrical cycle (CCW):
-          A: [+KVAL, -KVAL, -KVAL, +KVAL]
-          B: [+KVAL, +KVAL, -KVAL, -KVAL]
-
-        Step period varies by phase: static HOLD, ramping ACC/DEC,
-        constant RUN.
+        A = I cos(theta), B = I sin(theta), quantised to the selected microstep count per full
+        step (the sine table the powerSTEP01 steps through). I is the running reference: the
+        TVAL run current in amps in current mode, the KVAL run duty in % of supply in voltage
+        mode. Full-step boundaries are the dotted lines; a lower microstep count shows as a
+        coarser staircase, which is the torque ripple you hear.
         """
-        kval_hold = self._kval_hold_slider.value()   # 0-100 %
-        kval_acc = self._kval_acc_slider.value()
-        kval_run = self._kval_run_slider.value()
-        kval_dec = self._kval_dec_slider.value()
-
-        # Full-step sign pattern per electrical cycle (CCW)
-        sign_a = [+1, -1, -1, +1]
-        sign_b = [+1, +1, -1, -1]
-
-        a_x, a_y = [], []
-        b_x, b_y = [], []
-        phase_boundaries = []
-        phase_centers = []
-        t = 0.0
-        step_idx = 0  # running index into full-step pattern
-
-        def add_step(period, kval):
-            """Advance one full step and draw a constant segment."""
-            nonlocal t, step_idx
-            a_val = kval * sign_a[step_idx % 4]
-            b_val = kval * sign_b[step_idx % 4]
-            a_x.extend([t, t + period])
-            a_y.extend([a_val, a_val])
-            b_x.extend([t, t + period])
-            b_y.extend([b_val, b_val])
-            t += period
-            step_idx += 1
-
-        # --- HOLD: motor stationary, coils energized at fixed step ---
-        hold_start = t
-        hold_duration = 3.0
-        a_val = kval_hold * sign_a[step_idx % 4]
-        b_val = kval_hold * sign_b[step_idx % 4]
-        a_x.extend([t, t + hold_duration])
-        a_y.extend([a_val, a_val])
-        b_x.extend([t, t + hold_duration])
-        b_y.extend([b_val, b_val])
-        t += hold_duration
-        phase_centers.append((hold_start + t) / 2)
-        phase_boundaries.append(t)
-
-        # --- ACC: step period decreasing (speeding up) ---
-        acc_start = t
-        acc_steps = 12
-        for i in range(acc_steps):
-            frac = i / max(acc_steps - 1, 1)
-            period = 0.8 - 0.5 * frac   # 0.8 -> 0.3
-            add_step(period, kval_acc)
-        phase_centers.append((acc_start + t) / 2)
-        phase_boundaries.append(t)
-
-        # --- RUN: constant step period ---
-        run_start = t
-        run_steps = 16
-        for _ in range(run_steps):
-            add_step(0.3, kval_run)
-        phase_centers.append((run_start + t) / 2)
-        phase_boundaries.append(t)
-
-        # --- DEC: step period increasing (slowing down) ---
-        dec_start = t
-        dec_steps = 12
-        for i in range(dec_steps):
-            frac = i / max(dec_steps - 1, 1)
-            period = 0.3 + 0.5 * frac   # 0.3 -> 0.8
-            add_step(period, kval_dec)
-        phase_centers.append((dec_start + t) / 2)
-
-        # Update curves
+        import math
+        try:
+            current = self._is_current_mode()
+        except AttributeError:
+            return
+        usteps = 1 << int(getattr(self, "_step_mode", 7))
+        if current:
+            amp = U.tval_to_amps(self._tval_sliders[1].value())
+            unit = "A"
+        else:
+            amp = float(self._kval_run_slider.value())
+            unit = "% Vs"
+        n = 4 * usteps                                  # points per electrical cycle
+        a_x, a_y, b_x, b_y = [], [], [], []
+        for i in range(n + 1):
+            theta = 2.0 * math.pi * i / n
+            x = 4.0 * i / n                             # full steps
+            ya, yb = amp * math.cos(theta), amp * math.sin(theta)
+            if i > 0 and usteps < 64:                   # staircase: hold the previous value up to x
+                a_x.append(x); a_y.append(a_y[-1])
+                b_x.append(x); b_y.append(b_y[-1])
+            a_x.append(x); a_y.append(ya)
+            b_x.append(x); b_y.append(yb)
         self._coil_a_curve.setData(a_x, a_y)
         self._coil_a_fill.setData(a_x, a_y)
         self._coil_b_curve.setData(b_x, b_y)
         self._coil_b_fill.setData(b_x, b_y)
-
-        # Y range
-        y_max = max(kval_hold, kval_acc, kval_run, kval_dec, 10)
-        y_lim = y_max * 1.15
+        y_lim = max(amp, 0.1) * 1.2
         self._coil_a_plot.setYRange(-y_lim, y_lim)
         self._coil_b_plot.setYRange(-y_lim, y_lim)
-        self._coil_a_plot.setXRange(0, t)
-
-        # Phase labels & separators
-        for i, cx in enumerate(phase_centers):
-            self._coil_phase_labels_a[i].setPos(cx, y_lim * 0.92)
-            self._coil_phase_labels_b[i].setPos(cx, y_lim * 0.92)
-        for i, bx in enumerate(phase_boundaries):
-            self._coil_separators_a[i].setValue(bx)
-            self._coil_separators_b[i].setValue(bx)
+        self._coil_a_plot.setXRange(0, 4)
+        self._coil_a_plot.setLabel('left', 'A (%s)' % unit, **{'font-size': '8pt', 'color': '#ffcc00'})
+        self._coil_b_plot.setLabel('left', 'B (%s)' % unit, **{'font-size': '8pt', 'color': '#00ccff'})
+        self._coil_b_plot.setLabel('bottom', 'full steps (one electrical cycle, 1/%d microstep)' % usteps,
+                                   **{'font-size': '8pt', 'color': '#888'})
+        for i, (la, lb) in enumerate(zip(self._coil_phase_labels_a, self._coil_phase_labels_b)):
+            la.setText("%d\u00b0" % (90 * i)); lb.setText("%d\u00b0" % (90 * i))
+            la.setPos(i + 0.5, y_lim * 0.95); lb.setPos(i + 0.5, y_lim * 0.95)
+        for i, (sa, sb) in enumerate(zip(self._coil_separators_a, self._coil_separators_b)):
+            sa.setValue(i + 1); sb.setValue(i + 1)
 
     def _update_motion_profile(self):
         """Redraw the trapezoidal speed profile."""
@@ -997,7 +965,7 @@ class DriverPanel(QWidget):
         """DRV:CFG? view: drive mode, KVAL duties, TVAL references and the current-mode
         regulation (the saved config, not the chip)."""
         if "drive_mode" in cfg:
-            self._drive_mode_combo.setCurrentIndex(1 if cfg["drive_mode"] == "current" else 0)
+            self.set_drive_mode(cfg["drive_mode"] == "current")
         if "kval" in cfg:
             for slider, raw in zip((self._kval_hold_slider, self._kval_run_slider,
                                     self._kval_acc_slider, self._kval_dec_slider), cfg["kval"]):
@@ -1108,7 +1076,16 @@ class DriverPanel(QWidget):
 
     @Slot(dict)
     def update_drv_config(self, data: dict):
-        """Update motor configuration (full_steps_per_rev) for RPM conversion."""
+        """Update motor configuration (full_steps_per_rev, step mode, the chip's drive mode)."""
+        if "drive_mode" in data:
+            current = data["drive_mode"] == "current"
+            self._chip_mode_label.setText("chip: %s" % ("CURRENT" if current else "VOLTAGE"))
+            self._chip_mode_label.setStyleSheet(
+                "color: %s; padding: 2px 8px; border: 1px solid #444; border-radius: 4px;"
+                % ("#00cc66" if current else "#4a9eff"))
+        if "step_mode" in data:
+            self._step_mode = int(data["step_mode"]) & 7
+            self._update_coil_waveform()
         if "full_steps_per_rev" in data:
             self._full_steps_per_rev = data["full_steps_per_rev"]
             f = self._full_steps_per_rev
