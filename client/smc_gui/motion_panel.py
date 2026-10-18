@@ -48,17 +48,17 @@ ACCEL_UNITS = list(U.ACCEL_UNITS)
 # ─────────────────────────────────────────────────────────────────────────────
 
 # Colors
-_BOX_BG = "#2a3a4a"
-_BOX_BORDER = "#4a6a8a"
-_BOX_TEXT = "#ddeeff"
-_ARROW_COLOR = "#4a9eff"
-_FEEDBACK_COLOR = "#ffaa00"
-_MONITOR_COLOR = "#666666"
-_LABEL_COLOR = "#aabbcc"
+_BOX_BG = "#101830"
+_BOX_BORDER = "#386488"
+_BOX_TEXT = "#d8e4f0"
+_ARROW_COLOR = "#00f0ff"
+_FEEDBACK_COLOR = "#ffe400"
+_MONITOR_COLOR = "#485068"
+_LABEL_COLOR = "#8090a8"
 
 _BOX_STYLE = (
     "background-color: {bg}; color: {fg}; border: 2px solid {border}; "
-    "border-radius: 6px; padding: 4px 10px; font-weight: bold; "
+    "border-radius: 0px; padding: 4px 10px; font-weight: bold; "
     "font-size: 10px;"
 )
 _ARROW_STYLE = (

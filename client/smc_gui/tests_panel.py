@@ -10,6 +10,8 @@ import logging
 
 from PySide6.QtCore import Signal, Slot
 import pyqtgraph as pg
+
+from smc_gui import theme
 from PySide6.QtWidgets import (QCheckBox, QFileDialog, QHBoxLayout, QLabel, QListWidget, QPlainTextEdit,
                                QPushButton, QSplitter, QVBoxLayout, QWidget)
 from PySide6.QtCore import Qt
@@ -84,7 +86,7 @@ class TestsPanel(QWidget):
         graph_row.addStretch()
         rv.addLayout(graph_row)
         self._plot = pg.PlotWidget()
-        self._plot.setBackground("#1e1e1e")
+        self._plot.setBackground(theme.BASE)
         self._plot.setLabel("left", "velocity ripple (std, counts/s)")
         self._plot.setLabel("bottom", "RPM")
         self._plot.showGrid(x=True, y=True, alpha=0.3)

@@ -7,17 +7,12 @@ fixed minimum width and no wrapping, so the strip never reflows when a value cha
 
 from typing import Dict, Optional
 
+from smc_gui import theme
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
-STATE_COLOURS = {
-    "IDLE": ("#1f3b1f", "#7dff7d"),
-    "ARMED": ("#3b3b1f", "#ffe97d"),
-    "RUNNING": ("#1f2e3b", "#7dc8ff"),
-    "FAULT": ("#3b1f1f", "#ff7d7d"),
-    "ESTOP": ("#4d1a1a", "#ff6666"),
-}
+STATE_COLOURS = theme.STATE_COLOURS
 FAULT_FLAGS = (("ocd", "OCD"), ("thermal_sd", "TH_SD"), ("thermal_warn", "TH_WARN"), ("uvlo", "UVLO"),
                ("stall_a", "STALL_A"), ("stall_b", "STALL_B"), ("cmd_err", "CMD_ERR"))
 
@@ -27,12 +22,12 @@ class _Chip(QFrame):
         super().__init__(parent)
         self.setFrameShape(QFrame.StyledPanel)
         self.setMinimumWidth(min_width)
-        self.setStyleSheet("QFrame { background: #262626; border: 1px solid #3a3a3a; border-radius: 6px; }")
+        self.setStyleSheet("QFrame { background: %s; border: 1px solid %s; border-radius: 0px; }" % (theme.PANEL, theme.GRID_MAJ))
         v = QVBoxLayout(self)
         v.setContentsMargins(10, 4, 10, 4)
         v.setSpacing(0)
         t = QLabel(title)
-        t.setStyleSheet("color: #888; font-size: 9px; border: none; background: transparent;")
+        t.setStyleSheet("color: %s; font-size: 9px; border: none; background: transparent; letter-spacing: 1px;" % theme.MUTED)
         v.addWidget(t)
         self.value = QLabel("--")
         self.value.setFont(QFont("Consolas", 11, QFont.Bold))

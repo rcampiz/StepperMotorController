@@ -46,35 +46,35 @@ class EncoderDial(QWidget):
         side = min(self.width(), self.height())
         cx, cy = self.width() / 2.0, self.height() / 2.0
         r = side / 2.0 - 10
-        p.setPen(QPen(QColor("#3a3a3a"), 2))
-        p.setBrush(QBrush(QColor("#1e1e1e")))
+        p.setPen(QPen(QColor("#386488"), 2))
+        p.setBrush(QBrush(QColor("#0c0e1a")))
         p.drawEllipse(QPointF(cx, cy), r, r)
         # ticks: a bright one every 90 degrees, faint ones every 10
         for deg in range(0, 360, 10):
             major = deg % 90 == 0
             a = math.radians(deg - 90)
             inner = r - (14 if major else 7)
-            p.setPen(QPen(QColor("#888" if major else "#444"), 2 if major else 1))
+            p.setPen(QPen(QColor("#00f0ff" if major else "#386488"), 2 if major else 1))
             p.drawLine(QPointF(cx + inner * math.cos(a), cy + inner * math.sin(a)),
                        QPointF(cx + r * math.cos(a), cy + r * math.sin(a)))
         # index mark at angle 0 (top): filled when the index pulse has been seen
-        p.setPen(QPen(QColor("#ffcc00"), 1))
-        p.setBrush(QBrush(QColor("#ffcc00")) if self._index_seen else Qt.NoBrush)
+        p.setPen(QPen(QColor("#ffe400"), 1))
+        p.setBrush(QBrush(QColor("#ffe400")) if self._index_seen else Qt.NoBrush)
         p.drawEllipse(QPointF(cx, cy - r - 6), 4, 4)
         # needle
         a = math.radians(self.angle_deg - 90)
-        p.setPen(QPen(QColor("#4a9eff"), 3))
+        p.setPen(QPen(QColor("#ff18d8"), 3))
         p.drawLine(QPointF(cx, cy), QPointF(cx + (r - 18) * math.cos(a), cy + (r - 18) * math.sin(a)))
         p.setPen(Qt.NoPen)
-        p.setBrush(QBrush(QColor("#4a9eff")))
+        p.setBrush(QBrush(QColor("#ff18d8")))
         p.drawEllipse(QPointF(cx, cy), 5, 5)
         # text: revolutions and angle, velocity in rpm
-        p.setPen(QPen(QColor("#ddd")))
+        p.setPen(QPen(QColor("#d8e4f0")))
         p.setFont(QFont("Consolas", 11, QFont.Bold))
         revs = self._count / float(self._cpr)
         p.drawText(QRectF(cx - r, cy + r * 0.25, 2 * r, 22), Qt.AlignCenter, "%.3f rev" % revs)
         p.setFont(QFont("Consolas", 9))
-        p.setPen(QPen(QColor("#888")))
+        p.setPen(QPen(QColor("#8090a8")))
         p.drawText(QRectF(cx - r, cy + r * 0.25 + 22, 2 * r, 18), Qt.AlignCenter,
                    "%.1f°   %d cnt   %.1f rpm" % (self.angle_deg, self._count, self._velocity * 60.0 / self._cpr))
         p.end()

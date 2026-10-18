@@ -46,7 +46,7 @@ FADER_STYLE = """
         border-radius: 4px;
     }
     QSlider::add-page:vertical {
-        background: #4a9eff;
+        background: #00f0ff;
         border-radius: 6px;
     }
     QSlider::sub-page:vertical {
@@ -55,7 +55,7 @@ FADER_STYLE = """
     }
 """
 
-FADER_STYLE_GREEN = FADER_STYLE.replace('#4a9eff', '#00cc66')
+FADER_STYLE_GREEN = FADER_STYLE.replace('#00f0ff', '#00cc66')
 
 # Fader limits for current mode: the chip's TVAL goes to 0x7F (9.9 A) but the motor's
 # nameplate current is the real ceiling, so the faders stop at a user-set rating.
@@ -535,7 +535,7 @@ class DriverPanel(QWidget):
             self._kval_profile_seps.append(sep)
         # Data curves
         self._kval_profile_curve = self._kval_profile_plot.plot(
-            pen=pg.mkPen(color='#4a9eff', width=2), name="KVAL (% Vs)")
+            pen=pg.mkPen(color='#00f0ff', width=2), name="KVAL (% Vs)")
         self._kval_profile_fill = self._kval_profile_plot.plot(
             pen=pg.mkPen(None), brush=pg.mkBrush(74, 158, 255, 40), fillLevel=0)
         self._kval_speed_curve = self._kval_profile_plot.plot(
@@ -1102,7 +1102,7 @@ class DriverPanel(QWidget):
             self._chip_mode_label.setText("chip: %s" % ("CURRENT" if current else "VOLTAGE"))
             self._chip_mode_label.setStyleSheet(
                 "color: %s; padding: 2px 8px; border: 1px solid #444; border-radius: 4px;"
-                % ("#00cc66" if current else "#4a9eff"))
+                % ("#00cc66" if current else "#00f0ff"))
         if "step_mode" in data:
             self._step_mode = int(data["step_mode"]) & 7
             self._update_coil_waveform()

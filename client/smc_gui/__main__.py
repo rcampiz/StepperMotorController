@@ -24,22 +24,6 @@ def _setup_logging(debug: bool, log_file: str = None) -> None:
                         datefmt="%H:%M:%S", handlers=handlers)
 
 
-def apply_dark_palette(app) -> None:
-    from PySide6.QtGui import QColor, QPalette
-    palette = QPalette()
-    for role, rgb in ((QPalette.Window, (53, 53, 53)), (QPalette.WindowText, (255, 255, 255)),
-                      (QPalette.Base, (25, 25, 25)), (QPalette.AlternateBase, (53, 53, 53)),
-                      (QPalette.ToolTipBase, (255, 255, 255)), (QPalette.ToolTipText, (255, 255, 255)),
-                      (QPalette.Text, (255, 255, 255)), (QPalette.Button, (53, 53, 53)),
-                      (QPalette.ButtonText, (255, 255, 255)), (QPalette.BrightText, (255, 0, 0)),
-                      (QPalette.Link, (42, 130, 218)), (QPalette.Highlight, (42, 130, 218)),
-                      (QPalette.HighlightedText, (0, 0, 0))):
-        palette.setColor(role, QColor(*rgb))
-    for role in (QPalette.WindowText, QPalette.Text, QPalette.ButtonText):
-        palette.setColor(QPalette.Disabled, role, QColor(127, 127, 127))
-    app.setPalette(palette)
-
-
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="smc-gui", description="Stepper motor controller GUI")
     ap.add_argument("--sim", action="store_true", help="connect to the in-process fake board")
@@ -57,7 +41,8 @@ def main(argv=None) -> int:
     app.setApplicationName("STM32 Motor Controller")
     app.setApplicationVersion("0.2.0")
     app.setStyle("Fusion")
-    apply_dark_palette(app)
+    from smc_gui.theme import apply_theme
+    apply_theme(app)
     window = MainWindow()
     window.show()
     if args.sim:

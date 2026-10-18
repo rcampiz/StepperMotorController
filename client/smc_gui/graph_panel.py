@@ -29,11 +29,12 @@ from PySide6.QtGui import QFont
 
 import pyqtgraph as pg
 
+from smc_gui import theme
 from smc_gui.encoder_dial import EncoderDial
 
 
 # Match the dark theme of the rest of the app
-pg.setConfigOptions(background="#1e1e1e", foreground="#d4d4d4", antialias=True)
+pg.setConfigOptions(background=theme.BASE, foreground=theme.TEXT, antialias=True)
 
 # Encoder counts per revolution (quadrature mode: PPR × 4)
 ENCODER_CPR = 4000  # 1000 PPR × 4 quadrature
@@ -451,7 +452,7 @@ class GraphPanel(QWidget):
         self._plot = pg.PlotWidget()
         self._plot.setLabel("bottom", "Time", units="s")
         # Major and minor grid: a GridItem draws both tick levels, the finer one fainter
-        grid = pg.GridItem(pen=pg.mkPen(110, 110, 110, 140), textPen=None)
+        grid = pg.GridItem(pen=pg.mkPen(56, 100, 136, 150), textPen=None)
         self._plot.addItem(grid)
 
         self._curves = {}

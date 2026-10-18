@@ -51,7 +51,7 @@ FADER_STYLE = """
         border-radius: 4px;
     }
     QSlider::add-page:vertical {
-        background: #4a9eff;
+        background: #00f0ff;
         border-radius: 6px;
     }
     QSlider::sub-page:vertical {
@@ -60,7 +60,7 @@ FADER_STYLE = """
     }
 """
 
-FADER_STYLE_ORANGE = FADER_STYLE.replace('#4a9eff', '#ff9900')
+FADER_STYLE_ORANGE = FADER_STYLE.replace('#00f0ff', '#ff9900')
 
 
 class MotorControlPanel(QWidget):
