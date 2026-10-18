@@ -34,7 +34,9 @@ def _fit_sine(t_s: List[float], y: List[float], f_hz: float) -> Tuple[float, flo
 
 def _run_sine(ctx: ScenarioContext, base_sps: int, amp_sps: int, f_hz: float, cycles: float,
               timeout_s: float) -> List[Tuple[int, int, int, int]]:
-    dur_ms = int(min(20000, max(1500, cycles / f_hz * 1000.0)))
+    # 100 samples per test whatever its length: keep tests short so the sample interval stays
+    # well above the Nyquist rate of the highest frequency (6 s -> 60 ms -> fine to 3 Hz)
+    dur_ms = int(min(6000, max(2500, cycles / f_hz * 1000.0)))
     start = ctx.call(C.sysid_sine(base_sps, amp_sps, int(round(f_hz * 1000)), 1, dur_ms, 500))
     ctx.require(f"sine {f_hz} Hz start", start.success, start.error_message or "")
     deadline = time.monotonic() + dur_ms / 1000.0 + timeout_s
@@ -58,9 +60,19 @@ def _run_sine(ctx: ScenarioContext, base_sps: int, amp_sps: int, f_hz: float, cy
 
 def _response(samples: List[Tuple[int, int, int, int]], f_hz: float) -> Dict[str, float]:
     """gain, lag_ms and noise (counts/s) of the reported velocity against the setpoint."""
-    t_s = [s[0] / 1000.0 for s in samples]
-    sp = [float(s[1]) for s in samples]
-    ac = [float(s[2]) for s in samples]
+    # The firmware logs 100 samples over the test including its settle; rows outside the
+    # active sine carry a zero setpoint, and pos_error saturates when the encoder count and
+    # the motor position have drifted apart, so only the setpoint says which rows are live.
+    live = [s for s in samples if s[1] != 0]
+    # The sine starts from standstill: the first half second is the acceleration transient
+    if live:
+        t0 = live[0][0]
+        live = [s for s in live if s[0] - t0 >= 500]
+    if len(live) < 8:
+        return {"gain": 0.0, "lag_ms": 0.0, "noise": 0.0, "samples": len(live)}
+    t_s = [s[0] / 1000.0 for s in live]
+    sp = [float(s[1]) for s in live]
+    ac = [float(s[2]) for s in live]
     a_sp, p_sp, _ = _fit_sine(t_s, sp, f_hz)
     a_ac, p_ac, noise = _fit_sine(t_s, ac, f_hz)
     gain = a_ac / a_sp if a_sp > 0 else 0.0
@@ -113,8 +125,8 @@ def _restore_requests(cfg: Dict[str, Any]) -> List[C.Request]:
                          "too, recommends the least lag at target_hz whose noise stays within "
                          "noise_factor of the quietest, and applies it when apply is true "
                          "(CTRL:ENC:FILT:SAVE keeps it). Restores the chain otherwise.",
-          params={"baseline_rpm": 90, "amplitude_rpm": 20, "freqs_hz": [0.3, 0.6, 1.0, 1.5, 2.0, 3.0, 5.0],
-                  "cycles": 4, "target_hz": 2.0, "mode": "configured", "noise_factor": 1.5,
+          params={"baseline_rpm": 90, "amplitude_rpm": 20, "freqs_hz": [0.3, 0.5, 1.0, 1.5, 2.0, 3.0],
+                  "cycles": 3, "target_hz": 2.0, "mode": "configured", "noise_factor": 1.5,
                   "apply": False, "timeout_s": 10},
           moves_motor=True)
 def filter_bode(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
