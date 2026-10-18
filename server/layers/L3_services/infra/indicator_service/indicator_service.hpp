@@ -1,13 +1,15 @@
 /**
  * @file indicator_service.hpp
- * @brief Motion indicator rendering service
+ * @brief Motion indicator: heading arrow that fills with the speed, three concentric turn
+ *        rings, direction chevrons, a readout and the way-out hint.
  *
- * Renders a directional arrow and/or rotation circle indicator on the LCD.
- * Supports partial screen updates (only redraws bounding box of previous frame).
+ * draw() only records the target (Comms task, returns at once). tick() runs on the Display
+ * task at 20 Hz: it eases angle, speed and turn toward the target and repaints only what
+ * changed, row by row from the top, starting on the panel's tearing edge so the write stays
+ * ahead of the scan. Each row is a few spans (left ring band, arrow disc, right ring band);
+ * the shapes' edges are worked out once per row and every pixel is a couple of compares.
  *
- * Layering: Parser -> DisplayTask API -> IndicatorService -> Graphics -> LCD driver
- *
- * No RTOS headers. No FreeRTOS types. LCD injected at init time.
+ * No RTOS headers. LCD injected at init time.
  */
 
 #ifndef INDICATOR_SERVICE_HPP
@@ -23,102 +25,87 @@ class IndicatorService : public Services::IIndicatorRenderer {
 public:
     using Params = Services::IndicatorParams;
 
-    /**
-     * @brief Inject LCD reference. Called once from composition root.
-     * @param lcd Pointer to initialized ICanvas instance (not owned).
-     */
     void init(Services::ICanvas* lcd);
 
-    /**
-     * @brief Draw/update the motion indicator with partial screen update.
-     *
-     * Clears previous bounding box, draws new indicator, stores new bbox.
-     * Idle params (rotation_dir=0, has_translation=false) clear the indicator.
-     *
-     * @param p Indicator parameters
-     */
+    /// New target (any task); the Display task animates toward it
     void draw(const Params& p) override;
 
-    /**
-     * @brief Clear the indicator area.
-     *
-     * Equivalent to draw({0, 0, false}).
-     */
-    void clear();
+    /// One animation step and the repaint it needs (Display task, remote mode)
+    void tick() override;
+
+    /// The screen was drawn by someone else: the next tick starts from a clear panel
     void invalidate() override;
+
+    /// Hide the indicator (target with no translation and no turn)
+    void clear();
+
+    // --- geometry (public for the host tests) ---------------------------------------------
+    static constexpr int16_t CX = Services::Canvas::WIDTH / 2;
+    static constexpr int16_t CY = Services::Canvas::HEIGHT / 2;
+    static constexpr uint8_t RING_COUNT = 3;       ///< one per third of the turn magnitude
+    static constexpr int16_t RING_OUT_R = 95;      ///< outer edge of the outer ring
+    static constexpr int16_t RING_PITCH = 6;       ///< outer edge to outer edge
+    static constexpr int16_t RING_W_MAX = 4;       ///< a ring's width when its step is complete
+    static constexpr int16_t CHEV = 14;            ///< chevron length and width
+    static constexpr int16_t ZONE_OUT = 102;       ///< ring zone: rings and chevrons
+    static constexpr int16_t ZONE_IN = 75;
+    static constexpr int16_t ARROW_R = 72;         ///< arrow disc (inside ZONE_IN)
+    static constexpr uint16_t READOUT_Y = CY + ZONE_OUT + 6;
+    static constexpr uint16_t HINT_Y = Services::Canvas::HEIGHT - 12;
+
+    static constexpr uint16_t ARROW_COLOR   = 0xF8DB;  // Theme::MAGENTA outline
+    static constexpr uint16_t FILL_COLOR    = 0x079F;  // Theme::CYAN speed fill
+    static constexpr uint16_t RING_LIT      = 0x079F;  // Theme::CYAN
+    static constexpr uint16_t RING_UNLIT    = 0x3B31;  // Theme::GRID_MAJ hairline
+    static constexpr uint16_t CHEVRON_COLOR = 0xF8DB;  // Theme::MAGENTA
+    static constexpr uint16_t BG_COLOR      = 0x0842;  // Theme::BG
+    static constexpr uint16_t HINT_COLOR    = 0x4A8D;  // Theme::DIM
+
+    /// The eased state, for tests
+    float currentAngle() const { return m_angle; }
+    float currentSpeed() const { return m_speed; }
+    float currentTurn() const { return m_turn; }
 
 private:
     Services::ICanvas* m_lcd = nullptr;
 
-    // Previous bounding box for partial screen clear
-    int16_t  m_prevBboxX = 0;
-    int16_t  m_prevBboxY = 0;
-    uint16_t m_prevBboxW = 0;
-    uint16_t m_prevBboxH = 0;
-    bool     m_hasDrawn = false;
-    bool     m_screenCleared = false;  // First-draw full screen clear
+    // Target, packed so a 32-bit store from the Comms task is atomic on the M4
+    volatile uint32_t m_target = 0;          // 0 = nothing requested yet
+    static uint32_t pack(const Params& p);
 
-    // Previous draw params for incremental redraw optimization
-    Params   m_prevParams = {0, 0, false, 100, 100};
-    char     m_readout[24] = {};
-    void drawReadout(const Params& p);
-    bool     m_prevHadRing = false;
+    // Eased state
+    float m_angle = 0.0f;                    // degrees, clockwise from up
+    float m_speed = 0.0f;                    // 0..100
+    float m_turn = 0.0f;                     // 0..100
 
-    // Dirty rectangle support: previous arrow screen-space vertices
-    int16_t  m_prevArrowVerts[7][2] = {};
-    int      m_prevNumArrowVerts = 0;
-    bool     m_compositedValid = false;  // True after first full composited render
+    // What is on the panel
+    bool m_screenValid = false;
+    bool m_arrowShown = false;
+    int16_t m_arrowAngle = -1;               // 1024ths, as drawn
+    int16_t m_arrowFill = -1;                // px of fill, as drawn
+    bool m_ringsShown = false;
+    uint8_t m_ringW[RING_COUNT] = {};        // px, as drawn
+    bool m_ringLit[RING_COUNT] = {};
+    int8_t m_chevDir = 0;
+    char m_readout[48] = {};
 
-    // Current bounding box being accumulated during draw
-    int16_t  m_curMinX = 0;
-    int16_t  m_curMinY = 0;
-    int16_t  m_curMaxX = 0;
-    int16_t  m_curMaxY = 0;
+    // Per-frame geometry (screen coordinates)
+    float m_outerHead[3][2];
+    float m_outerShaft[4][2];
+    float m_innerHead[3][2];
+    float m_innerShaft[4][2];
+    float m_tailX = 0, m_tailY = 0, m_axisX = 0, m_axisY = 0, m_fillLen = 0;
+    float m_chev[4][3][2];
+    int32_t m_ringOut2[RING_COUNT] = {};
+    int32_t m_ringIn2[RING_COUNT] = {};
 
-    // Indicator geometry constants
-    static constexpr int16_t SCREEN_CX = Services::Canvas::WIDTH / 2;
-    static constexpr int16_t SCREEN_CY = Services::Canvas::HEIGHT / 2;
-
-    // Arrow: sized to fit inside the circle ring
-    static constexpr int16_t ARROW_HALF_LEN = 55;    // Half of total arrow length
-    static constexpr int16_t ARROW_HEAD_LEN = 28;    // Arrowhead triangle height
-    static constexpr int16_t ARROW_HEAD_HALF_W = 20;  // Arrowhead half-width at base
-    static constexpr int16_t ARROW_SHAFT_HALF_W = 5;  // Shaft half-width (thin)
-
-    // Circle ring: bold, drawn via fillRing (direct scanline)
-    static constexpr int16_t RING_OUTER_R = 95;   // Outer radius of ring
-    static constexpr uint8_t RING_COUNT = 5;      // concentric rings, one per 20 % of turn
-    static constexpr int16_t RING_W_MAX = 6;      // a ring's width when its step is complete
-    static constexpr int16_t RING_PITCH = 7;      // outer edge to outer edge (1 px gap at full width)
-    static constexpr int16_t RING_INNER_R = RING_OUTER_R - (RING_COUNT - 1) * RING_PITCH - RING_W_MAX;   // inside the innermost ring
-
-    // Chevrons: bold triangular markers on circumference
-    static constexpr int16_t CHEVRON_SIZE = 22;    // Chevron triangle size
-
-    // Composited renderer windows
-    static constexpr int16_t COMPOSITED_HALF_W =
-        RING_OUTER_R + (CHEVRON_SIZE / 2) + 1;  // 107 (ring + chevron protrusion)
-    static constexpr int16_t ARROW_COMPOSITED_HALF_W =
-        ARROW_HALF_LEN + 2;                      // 57 (arrow only, no ring)
-
-    static constexpr uint16_t ARROW_COLOR   = 0xF8DB;  // Theme::MAGENTA
-    static constexpr uint16_t CIRCLE_COLOR  = 0x3B31;  // Theme::GRID_MAJ, an unlit ring's hairline
-    static constexpr uint16_t ARC_COLOR     = 0x079F;  // Theme::CYAN, a lit ring
-    static constexpr uint16_t CHEVRON_COLOR = 0xF8DB;  // Theme::MAGENTA
-    static constexpr uint16_t BG_COLOR      = 0x0842;  // Theme::BG
-
-    void clearPreviousBbox();
-    void resetBbox();
-    void expandBbox(int16_t x, int16_t y);
-    void storeBbox();
-
-    void drawComposited(const Params& p);
-    void drawArrow(uint16_t angle_deg);
-    void drawRing();
-    void drawChevrons(int8_t direction);
+    void buildArrow(uint16_t angle1024, float fillLen);
+    void buildRings(const uint8_t* widths);
+    void buildChevrons(int8_t dir);
+    void renderFrame(bool rings, bool arrow, bool ringsShown, bool arrowShown);
+    void renderReadout(int16_t speedPct, int16_t turnPct, int8_t dir);
 };
 
-// Static global instance (no heap allocation)
 extern IndicatorService g_indicatorService;
 
 } // namespace Services

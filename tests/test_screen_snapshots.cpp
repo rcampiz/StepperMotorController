@@ -270,36 +270,52 @@ TEST(recovery_cycles_full_fields_and_pops_itself_when_done) {
     EXPECT_TRUE(rec.finished());
 }
 
+static void settle(Services::IndicatorService& ind, int ticks = 25) {
+    for (int i = 0; i < ticks; i++) ind.tick();
+}
+
 TEST(motion_indicator_shows_heading_speed_and_turn_magnitudes) {
     Rig rig;
     Services::IndicatorService ind;
     ind.init(&rig.lcd);
     ind.draw({45, 1, true, 73, 40});                      // heading 45 deg, CW turn, 73 % speed, 40 % turn
+    EXPECT_TRUE(ind.currentSpeed() == 0.0f);              // draw() only sets the target
+    settle(ind);
+    EXPECT_TRUE(ind.currentSpeed() == 73.0f && ind.currentTurn() == 40.0f && ind.currentAngle() == 45.0f);
     rig.dump("indicator");
-    const uint32_t lit40 = rig.panel.countColor(0x079F, 20, 60, 200, 200);   // two full rings
-    const uint32_t dim40 = rig.panel.countColor(0x3B31, 20, 60, 200, 200);   // three hairlines
-    EXPECT_TRUE(lit40 > 0 && dim40 > 0);
-    EXPECT_TRUE(rig.panel.countColor(0xF8DB, 20, 60, 200, 40) > 50);        // the top chevron
-    ind.draw({45, 1, true, 73, 50});                      // half way into the third ring
-    const uint32_t lit50 = rig.panel.countColor(0x079F, 20, 60, 200, 200);
-    EXPECT_TRUE(lit50 > lit40);                           // it has widened
-    EXPECT_TRUE(rig.panel.countColor(0xF8DB, 60, 100, 120, 120) > 200);     // magenta outline
-    const uint32_t fill73 = rig.panel.countColor(0x079F, 64, 104, 112, 112);  // cyan fill, inside the rings
-    EXPECT_TRUE(fill73 > 300);
+    const uint32_t lit40 = rig.panel.countColor(0x079F, 20, 60, 200, 32);    // top band: rings only
+    const uint32_t unlit40 = rig.panel.countColor(0x3B31, 20, 60, 200, 200);
+    EXPECT_TRUE(lit40 > 0 && unlit40 > 0);                // one full ring, one partial, one hairline
+    EXPECT_TRUE(rig.panel.countColor(0xF8DB, 60, 100, 120, 120) > 150);     // magenta outline
+    const uint32_t fill73 = rig.panel.countColor(0x079F, 70, 110, 100, 100);
+    EXPECT_TRUE(fill73 > 200);                            // cyan fill
+    EXPECT_TRUE(rig.panel.countColor(0xF8DB, 20, 50, 200, 30) > 20);         // the top chevron
+    EXPECT_TRUE(rig.panel.countColor(0x4A8D, 0, 300, 240, 20) > 20);         // the way-out hint
+    // settled and unchanged: nothing is sent
     const uint32_t before = rig.panel.pixelsWritten;
-    ind.draw({45, 1, true, 73, 50});
-    EXPECT_EQ(rig.panel.pixelsWritten, before);           // unchanged: nothing sent
-    ind.draw({45, 1, true, 20, 50});                      // less fill: only the arrow window
-    EXPECT_TRUE(rig.panel.pixelsWritten - before < 120u * 120u);
-    EXPECT_TRUE(rig.panel.countColor(0x079F, 64, 104, 112, 112) < fill73 / 2);
+    settle(ind, 5);
+    EXPECT_EQ(rig.panel.pixelsWritten, before);
+    // a speed change repaints only the arrow disc, a little at a time
+    ind.draw({45, 1, true, 20, 40});
+    ind.tick();
+    const uint32_t first = rig.panel.pixelsWritten - before;
+    printf("  indicator: one easing step of the arrow %u px\n", first);
+    EXPECT_TRUE(first > 0 && first < 19000u);              // the arrow disc and the readout, not the rings
+    EXPECT_TRUE(ind.currentSpeed() > 20.0f && ind.currentSpeed() < 73.0f);  // eased, not jumped
+    settle(ind);
     rig.dump("indicator_20");
-    ind.draw({45, -1, true, 20, 100});                    // 100 %: every ring lit, full width
-    EXPECT_TRUE(rig.panel.countColor(0x3B31, 20, 60, 200, 200) == 0);
-    EXPECT_TRUE(rig.panel.countColor(0x079F, 20, 60, 200, 200) > lit50 * 3 / 2);
+    EXPECT_TRUE(rig.panel.countColor(0x079F, 70, 110, 100, 100) < fill73);
+    // full turn: every ring lit, no hairline left
+    ind.draw({45, -1, true, 20, 100});
+    settle(ind);
     rig.dump("indicator_full");
-    ind.draw({45, -1, true, 0, 0});                       // 0 %: five hairlines, an empty arrow
-    EXPECT_TRUE(rig.panel.countColor(0x079F, 20, 60, 200, 200) < 40);
-    rig.dump("indicator_ccw");
+    EXPECT_TRUE(rig.panel.countColor(0x3B31, 20, 60, 200, 200) == 0);
+    EXPECT_TRUE(rig.panel.countColor(0x079F, 20, 60, 200, 32) > lit40);
+    // nothing to show: the zones go dark
+    ind.clear();
+    settle(ind);
+    EXPECT_TRUE(rig.panel.countColor(0x079F, 20, 60, 200, 200) == 0);
+    EXPECT_TRUE(rig.panel.countColor(0xF8DB, 20, 60, 200, 200) == 0);
 }
 
 TEST(graph_screen_draws_a_trace_from_telemetry) {

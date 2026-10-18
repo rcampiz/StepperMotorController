@@ -29,6 +29,9 @@ public:
 
     /** @brief The screen was drawn by someone else: the next draw starts from a clear panel */
     virtual void invalidate() {}
+
+    /** @brief One animation step (Display task, remote mode); draw() only sets the target */
+    virtual void tick() {}
 };
 
 } // namespace Services

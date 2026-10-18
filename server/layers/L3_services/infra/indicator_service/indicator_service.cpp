@@ -1,10 +1,6 @@
 /**
  * @file indicator_service.cpp
- * @brief Motion indicator rendering service implementation
- *
- * Uses a composited single-pass scanline renderer for ring+arrow cases.
- * Every pixel is computed to its final color and streamed in one SPI
- * transaction, eliminating visible flicker between frames.
+ * @brief Motion indicator: eased target, span rows, repaint of what changed only.
  */
 
 #include "L3_services/infra/indicator_service/indicator_service.hpp"
@@ -14,572 +10,312 @@
 #include <stdio.h>
 #include <string.h>
 
-// ============================================================================
-// Triangle edge-equation helpers (file-local)
-// ============================================================================
+namespace Services {
+
+IndicatorService g_indicatorService;
 
 namespace {
 
-struct TriEdges {
-    int32_t a0, b0, c0;
-    int32_t a1, b1, c1;
-    int32_t a2, b2, c2;
-    int16_t minY, maxY;
+constexpr float EASE = 0.45f;                // share of the remaining distance per 50 ms tick
+
+// Arrow, unrotated, heading up (y grows downward), around the centre
+constexpr float HALF_LEN = 55.0f;
+constexpr float HEAD_LEN = 26.0f;
+constexpr float HEAD_HALF_W = 18.0f;
+constexpr float SHAFT_HALF_W = 5.0f;
+constexpr float OUTLINE = 2.0f;
+
+inline int floorToInt(float v) {
+    int i = static_cast<int>(v);
+    return (static_cast<float>(i) > v) ? i - 1 : i;
+}
+
+/// x-extent of a convex polygon on the horizontal line y (pixel centres covered: [x0, x1])
+bool polySpan(const float (*v)[2], int n, float y, int& x0, int& x1) {
+    float lo = 1e9f, hi = -1e9f;
+    for (int i = 0; i < n; i++) {
+        const float* a = v[i];
+        const float* b = v[(i + 1) % n];
+        if ((a[1] <= y && y < b[1]) || (b[1] <= y && y < a[1])) {
+            float x = a[0] + (y - a[1]) * (b[0] - a[0]) / (b[1] - a[1]);
+            if (x < lo) lo = x;
+            if (x > hi) hi = x;
+        }
+    }
+    if (hi < lo) return false;
+    x0 = floorToInt(lo - 0.5f) + 1;          // first pixel whose centre is >= lo
+    x1 = floorToInt(hi - 0.5f);              // last pixel whose centre is <= hi
+    return x1 >= x0;
+}
+
+inline float sinDeg1024(uint16_t a) { return static_cast<float>(Graphics::sin_q15(a)) / 32768.0f; }
+inline float cosDeg1024(uint16_t a) { return static_cast<float>(Graphics::cos_q15(a)) / 32768.0f; }
+
+inline float wrapDiff(float d) {             // into (-180, 180]
+    while (d > 180.0f) d -= 360.0f;
+    while (d <= -180.0f) d += 360.0f;
+    return d;
+}
+
+inline float ease(float cur, float target) {
+    float d = target - cur;
+    if (d < 0.5f && d > -0.5f) return target;
+    return cur + d * EASE;
+}
+
+struct Row {                                 // one row's spans for a shape set
+    int x0, x1;
+    bool on;
 };
 
-void initTriEdges(TriEdges& e,
-    int16_t x0, int16_t y0,
-    int16_t x1, int16_t y1,
-    int16_t x2, int16_t y2)
-{
-    // Half-plane edge equations: sign(a*px + b*py + c) = which side
-    e.a0 = y0 - y1; e.b0 = x1 - x0;
-    e.c0 = static_cast<int32_t>(x0) * y1 - static_cast<int32_t>(x1) * y0;
-    e.a1 = y1 - y2; e.b1 = x2 - x1;
-    e.c1 = static_cast<int32_t>(x1) * y2 - static_cast<int32_t>(x2) * y1;
-    e.a2 = y2 - y0; e.b2 = x0 - x2;
-    e.c2 = static_cast<int32_t>(x2) * y0 - static_cast<int32_t>(x0) * y2;
+} // namespace
 
-    e.minY = y0; if (y1 < e.minY) e.minY = y1; if (y2 < e.minY) e.minY = y2;
-    e.maxY = y0; if (y1 > e.maxY) e.maxY = y1; if (y2 > e.maxY) e.maxY = y2;
+// ------------------------------------------------------------------------------------------
+uint32_t IndicatorService::pack(const Params& p) {
+    uint32_t angle = p.angle_deg % 360u;
+    uint32_t dir = static_cast<uint32_t>(p.rotation_dir + 1) & 0x3u;
+    uint32_t sp = p.speed_pct > 100 ? 100u : p.speed_pct;
+    uint32_t rt = p.rot_pct > 100 ? 100u : p.rot_pct;
+    return (1u << 31) | (angle) | (dir << 9) | ((p.has_translation ? 1u : 0u) << 11) | (sp << 12) | (rt << 19);
 }
-
-inline bool testTri(const TriEdges& e, int16_t px, int16_t py) {
-    int32_t d0 = e.a0 * px + e.b0 * py + e.c0;
-    int32_t d1 = e.a1 * px + e.b1 * py + e.c1;
-    if ((d0 < 0) != (d1 < 0) && d0 != 0 && d1 != 0) return false; // early exit
-    int32_t d2 = e.a2 * px + e.b2 * py + e.c2;
-    bool has_neg = (d0 < 0) | (d1 < 0) | (d2 < 0);
-    bool has_pos = (d0 > 0) | (d1 > 0) | (d2 > 0);
-    return !(has_neg & has_pos);
-}
-
-} // anonymous namespace
-
-namespace Services {
-
-// Static global instance
-IndicatorService g_indicatorService;
 
 void IndicatorService::init(Services::ICanvas* lcd) {
     m_lcd = lcd;
-
 }
-
-// ============================================================================
-// Main draw entry point
-// ============================================================================
 
 void IndicatorService::draw(const Params& p) {
-    if (m_lcd == nullptr) return;
-
-    // First draw: clear entire screen to black
-    if (!m_screenCleared) {
-        m_lcd->fillScreen(BG_COLOR);
-        m_screenCleared = true;
-    }
-
-    bool curHasRing = (p.rotation_dir != 0);
-    bool curHasArrow = p.has_translation;
-
-    if (curHasRing || curHasArrow) {
-        // Composited renderer for all visible content (ring+arrow or arrow-only).
-        // On mode transition (ring ↔ arrow-only), clear old area and invalidate.
-        if (m_hasDrawn && curHasRing != m_prevHadRing) {
-            clearPreviousBbox();
-            m_compositedValid = false;
-        }
-        drawComposited(p);
-
-        // Store bbox matching the composited window for future clears
-        int16_t halfW = curHasRing ? COMPOSITED_HALF_W : ARROW_COMPOSITED_HALF_W;
-        m_prevBboxX = static_cast<int16_t>(SCREEN_CX - halfW);
-        m_prevBboxY = static_cast<int16_t>(SCREEN_CY - halfW);
-        m_prevBboxW = static_cast<uint16_t>(2 * halfW + 1);
-        m_prevBboxH = static_cast<uint16_t>(2 * halfW + 1);
-        m_hasDrawn = true;
-    } else {
-        // Idle — clear previous content
-        clearPreviousBbox();
-        m_compositedValid = false;
-        m_hasDrawn = false;
-    }
-
-    m_prevHadRing = curHasRing;
-    m_prevParams = p;
-}
-
-void IndicatorService::invalidate() {
-    m_screenCleared = false;
-    m_compositedValid = false;
-    m_hasDrawn = false;
-    m_readout[0] = '\0';
+    m_target = pack(p);
 }
 
 void IndicatorService::clear() {
-    draw({0, 0, false, 100, 100});
+    draw({0, 0, false, 0, 0});
 }
 
-// ============================================================================
-// Composited single-pass renderer
-// ============================================================================
+void IndicatorService::invalidate() {
+    m_screenValid = false;
+}
 
-void IndicatorService::drawComposited(const Params& p) {
-    bool hasRing = (p.rotation_dir != 0);
-    bool hasArrow = p.has_translation;
+// ------------------------------------------------------------------------------------------
+void IndicatorService::tick() {
+    const uint32_t t = m_target;
+    if (m_lcd == nullptr || (t & (1u << 31)) == 0) return;      // nothing requested yet
 
-    // --- Check if anything actually changed ---
-    bool ringChanged = (p.rotation_dir != m_prevParams.rotation_dir) ||
-                       (p.rot_pct != m_prevParams.rot_pct);
-    bool arrowChanged = (p.angle_deg != m_prevParams.angle_deg) ||
-                        (p.has_translation != m_prevParams.has_translation) ||
-                        (p.speed_pct != m_prevParams.speed_pct);
-    bool needFullRedraw = ringChanged || !m_compositedValid;
+    const auto tAngle = static_cast<float>(t & 0x1FFu);
+    const int8_t tDir = static_cast<int8_t>(((t >> 9) & 0x3u)) - 1;
+    const bool tTrans = ((t >> 11) & 1u) != 0;
+    const auto tSpeed = static_cast<float>(tTrans ? ((t >> 12) & 0x7Fu) : 0u);
+    const auto tTurn = static_cast<float>(tDir != 0 ? ((t >> 19) & 0x7Fu) : 0u);
 
-    if (!needFullRedraw && !arrowChanged) {
-        return;  // Nothing changed — skip render entirely
-    }
-    // The arrow keeps its length; it fills from the tail up to the speed magnitude
-    const int16_t halfLen = ARROW_HALF_LEN;
-    uint8_t speedPct = p.speed_pct > 100 ? 100 : p.speed_pct;
-    int32_t fillLen = static_cast<int32_t>(2 * ARROW_HALF_LEN) * speedPct / 100;   // px from the tail
-    int16_t axisX = 0, axisY = 0, tailX = 0, tailY = 0;                          // set with the arrow
-    // Turn magnitude as concentric rings from the outside in, each worth 100 / RING_COUNT
-    // percent: rings below the level are lit at full width, the ring at the level grows
-    // in width through its step until the next ring starts, the rest are dim hairlines.
-    uint8_t rotPct = p.rot_pct > 100 ? 100 : p.rot_pct;
-    const uint16_t step = 100 / RING_COUNT;
-    auto fullRings = static_cast<uint8_t>(rotPct / step);          // lit at full width
-    uint16_t partial = rotPct - fullRings * step;                  // 0..step-1 into the next
+    // Ease toward the target; the angle the short way round
+    float d = wrapDiff(tAngle - m_angle);
+    m_angle = (d < 0.5f && d > -0.5f) ? tAngle : m_angle + d * EASE;
+    if (m_angle >= 360.0f) m_angle -= 360.0f;
+    if (m_angle < 0.0f) m_angle += 360.0f;
+    m_speed = ease(m_speed, tSpeed);
+    m_turn = ease(m_turn, tTurn);
 
-    // --- Precompute arrow triangle edge equations ---
-    int numArrow = 0;
-    TriEdges arrowE[3];
-    int16_t newVerts[7][2];
-    int newNumVerts = 0;
-
-    if (hasArrow) {
-        uint16_t angle = Graphics::deg_to_angle1024(p.angle_deg);
-
-        int16_t tipX = 0, tipY = static_cast<int16_t>(-halfLen);
-        auto headBaseY = static_cast<int16_t>(-halfLen + ARROW_HEAD_LEN);
-        int16_t headRX = ARROW_HEAD_HALF_W, headRY = headBaseY;
-        auto headLX = static_cast<int16_t>(-ARROW_HEAD_HALF_W), headLY = headBaseY;
-        int16_t sTRX = ARROW_SHAFT_HALF_W, sTRY = headBaseY;
-        auto sTLX = static_cast<int16_t>(-ARROW_SHAFT_HALF_W), sTLY = headBaseY;
-        int16_t sBRX = ARROW_SHAFT_HALF_W, sBRY = halfLen;
-        auto sBLX = static_cast<int16_t>(-ARROW_SHAFT_HALF_W), sBLY = halfLen;
-
-        int16_t rt[2], rhr[2], rhl[2], rstr[2], rstl[2], rsbr[2], rsbl[2];
-        // Axis from the tail to the tip (Q15 unit vector) and the tail on screen
-        axisX = Graphics::sin_q15(angle);
-        axisY = static_cast<int16_t>(-Graphics::cos_q15(angle));
-        {
-            int16_t tx, ty;
-            Graphics::rotate_point(0, halfLen, angle, tx, ty);
-            tailX = static_cast<int16_t>(tx + SCREEN_CX);
-            tailY = static_cast<int16_t>(ty + SCREEN_CY);
-        }
-        Graphics::rotate_point(tipX, tipY, angle, rt[0], rt[1]);
-        Graphics::rotate_point(headRX, headRY, angle, rhr[0], rhr[1]);
-        Graphics::rotate_point(headLX, headLY, angle, rhl[0], rhl[1]);
-        Graphics::rotate_point(sTRX, sTRY, angle, rstr[0], rstr[1]);
-        Graphics::rotate_point(sTLX, sTLY, angle, rstl[0], rstl[1]);
-        Graphics::rotate_point(sBRX, sBRY, angle, rsbr[0], rsbr[1]);
-        Graphics::rotate_point(sBLX, sBLY, angle, rsbl[0], rsbl[1]);
-
-        // Offset to screen center
-        rt[0] += SCREEN_CX;  rt[1] += SCREEN_CY;
-        rhr[0] += SCREEN_CX; rhr[1] += SCREEN_CY;
-        rhl[0] += SCREEN_CX; rhl[1] += SCREEN_CY;
-        rstr[0] += SCREEN_CX; rstr[1] += SCREEN_CY;
-        rstl[0] += SCREEN_CX; rstl[1] += SCREEN_CY;
-        rsbr[0] += SCREEN_CX; rsbr[1] += SCREEN_CY;
-        rsbl[0] += SCREEN_CX; rsbl[1] += SCREEN_CY;
-
-        // Store vertices for dirty rect computation
-        newVerts[0][0] = rt[0];   newVerts[0][1] = rt[1];
-        newVerts[1][0] = rhr[0];  newVerts[1][1] = rhr[1];
-        newVerts[2][0] = rhl[0];  newVerts[2][1] = rhl[1];
-        newVerts[3][0] = rstr[0]; newVerts[3][1] = rstr[1];
-        newVerts[4][0] = rstl[0]; newVerts[4][1] = rstl[1];
-        newVerts[5][0] = rsbr[0]; newVerts[5][1] = rsbr[1];
-        newVerts[6][0] = rsbl[0]; newVerts[6][1] = rsbl[1];
-        newNumVerts = 7;
-
-        // Arrowhead
-        initTriEdges(arrowE[0], rt[0], rt[1], rhr[0], rhr[1], rhl[0], rhl[1]);
-        // Shaft right half
-        initTriEdges(arrowE[1], rstr[0], rstr[1], rsbr[0], rsbr[1], rsbl[0], rsbl[1]);
-        // Shaft left half
-        initTriEdges(arrowE[2], rstr[0], rstr[1], rsbl[0], rsbl[1], rstl[0], rstl[1]);
-        numArrow = 3;
+    if (!m_screenValid) {
+        m_lcd->waitForVSync();
+        m_lcd->fillScreen(BG_COLOR);
+        m_lcd->blitTextLine(CX - 60, HINT_Y, 120, 8, "hold CENTER 2s: menu", HINT_COLOR, BG_COLOR);
+        m_arrowShown = m_ringsShown = false;
+        m_arrowAngle = m_arrowFill = -1;
+        memset(m_ringW, 0, sizeof m_ringW);
+        memset(m_ringLit, 0, sizeof m_ringLit);
+        m_chevDir = 0;
+        m_readout[0] = '\0';
+        m_screenValid = true;
     }
 
-    // --- Precompute chevron triangle edge equations ---
-    int numChev = 0;
-    TriEdges chevE[4];
+    // What the panel should show now
+    const bool arrowShown = tTrans;
+    const bool ringsShown = tTrans || tDir != 0;
+    auto angle1024 = static_cast<int16_t>(static_cast<int32_t>(m_angle * 1024.0f / 360.0f + 0.5f) & 0x3FF);
+    auto fillPx = static_cast<int16_t>(m_speed * (2.0f * HALF_LEN) / 100.0f + 0.5f);
 
-    if (hasRing) {
-        static constexpr uint16_t chevAngles[4] = {0, 90, 180, 270};
-        auto midR = static_cast<int16_t>(RING_OUTER_R - RING_W_MAX / 2);   // on the outer ring
-
-        for (int i = 0; i < 4; i++) {
-            uint16_t posAngle = Graphics::deg_to_angle1024(chevAngles[i]);
-
-            int16_t cx, cy;
-            Graphics::rotate_point(0, static_cast<int16_t>(-midR), posAngle, cx, cy);
-            cx += SCREEN_CX; cy += SCREEN_CY;
-
-            uint16_t tangentAngle;
-            if (p.rotation_dir > 0) {
-                tangentAngle = Graphics::deg_to_angle1024(
-                    static_cast<uint16_t>((chevAngles[i] + 90) % 360));
-            } else {
-                tangentAngle = Graphics::deg_to_angle1024(
-                    static_cast<uint16_t>((chevAngles[i] + 270) % 360));
-            }
-
-            int16_t tipDx, tipDy;
-            Graphics::rotate_point(0, static_cast<int16_t>(-CHEVRON_SIZE),
-                                   tangentAngle, tipDx, tipDy);
-
-            int16_t baseDx, baseDy;
-            Graphics::rotate_point(0, static_cast<int16_t>(-CHEVRON_SIZE / 2),
-                                   posAngle, baseDx, baseDy);
-
-            auto tx = static_cast<int16_t>(cx + tipDx);
-            auto ty = static_cast<int16_t>(cy + tipDy);
-            auto b1x = static_cast<int16_t>(cx + baseDx);
-            auto b1y = static_cast<int16_t>(cy + baseDy);
-            auto b2x = static_cast<int16_t>(cx - baseDx);
-            auto b2y = static_cast<int16_t>(cy - baseDy);
-
-            initTriEdges(chevE[i], tx, ty, b1x, b1y, b2x, b2y);
-        }
-        numChev = 4;
-    }
-
-    // --- Determine render region (full window or dirty rect) ---
-    int16_t halfW = hasRing ? COMPOSITED_HALF_W : ARROW_COMPOSITED_HALF_W;
-    int16_t rMinX, rMinY, rMaxX, rMaxY;
-
-    if (needFullRedraw) {
-        // Full composited render (ring toggle or first draw)
-        rMinX = -halfW; rMinY = -halfW;
-        rMaxX = halfW;  rMaxY = halfW;
-        m_compositedValid = true;
-    } else {
-        // Fixed-size arrow region — consistent frame time eliminates jitter.
-        // The arrow's max vertex radius is ~55px; ARROW_COMPOSITED_HALF_W (57)
-        // always covers the full arrow at any rotation with margin.
-        int16_t arrowHalf = ARROW_COMPOSITED_HALF_W;
-        rMinX = -arrowHalf; rMinY = -arrowHalf;
-        rMaxX = arrowHalf;  rMaxY = arrowHalf;
-    }
-
-    // Save arrow vertices for next frame's dirty rect
-    for (int i = 0; i < newNumVerts; i++) {
-        m_prevArrowVerts[i][0] = newVerts[i][0];
-        m_prevArrowVerts[i][1] = newVerts[i][1];
-    }
-    m_prevNumArrowVerts = newNumVerts;
-
-    // --- Precompute combined Y-range of all arrow triangles for early-out ---
-    int16_t arrowYmin = 32767, arrowYmax = -32768;
-    for (int i = 0; i < numArrow; i++) {
-        if (arrowE[i].minY < arrowYmin) arrowYmin = arrowE[i].minY;
-        if (arrowE[i].maxY > arrowYmax) arrowYmax = arrowE[i].maxY;
-    }
-
-    // --- Stream scanlines for the render region ---
-    auto outerR2 = static_cast<int32_t>(RING_OUTER_R) * RING_OUTER_R;
-    auto innerR2 = static_cast<int32_t>(RING_INNER_R) * RING_INNER_R;    // inside every ring
-    int32_t ringOut2[RING_COUNT], ringIn2[RING_COUNT];
-    bool ringLit[RING_COUNT];
+    uint8_t widths[RING_COUNT];
+    bool lit[RING_COUNT];
+    const float step = 100.0f / RING_COUNT;
     for (uint8_t i = 0; i < RING_COUNT; i++) {
-        int32_t ro = RING_OUTER_R - i * RING_PITCH;
-        int32_t w;
-        if (i < fullRings)        { w = RING_W_MAX; ringLit[i] = true; }
-        else if (i == fullRings)  { w = 1 + static_cast<int32_t>(partial) * (RING_W_MAX - 1) / (step - 1);
-                                    ringLit[i] = partial > 0 || rotPct >= 100; }
-        else                      { w = 1; ringLit[i] = false; }
-        if (rotPct >= 100) { w = RING_W_MAX; ringLit[i] = true; }
-        int32_t ri = ro - w;
-        ringOut2[i] = ro * ro;
-        ringIn2[i] = ri * ri;
+        float into = m_turn - step * i;                         // how far into ring i's third
+        if (into >= step - 0.25f)   { widths[i] = RING_W_MAX; lit[i] = true; }
+        else if (into > 0.25f)      { widths[i] = static_cast<uint8_t>(1 + (into / step) * (RING_W_MAX - 1) + 0.5f); lit[i] = true; }
+        else                        { widths[i] = 1; lit[i] = false; }
+    }
+    const int8_t chevDir = ringsShown ? tDir : 0;
+
+    const bool arrowDirty = arrowShown != m_arrowShown ||
+                            (arrowShown && (angle1024 != m_arrowAngle || fillPx != m_arrowFill));
+    bool ringsDirty = ringsShown != m_ringsShown || chevDir != m_chevDir;
+    for (uint8_t i = 0; i < RING_COUNT && !ringsDirty; i++) {
+        ringsDirty = ringsShown && (widths[i] != m_ringW[i] || lit[i] != m_ringLit[i]);
     }
 
-    auto ww = static_cast<uint16_t>(rMaxX - rMinX + 1);
-    auto wh = static_cast<uint16_t>(rMaxY - rMinY + 1);
-    auto wx = static_cast<uint16_t>(SCREEN_CX + rMinX);
-    auto wy = static_cast<uint16_t>(SCREEN_CY + rMinY);
-
-    static uint8_t scanline[2 * (2 * COMPOSITED_HALF_W + 1)];
-
-    // Sync to V-blank to avoid tearing
-    m_lcd->waitForVSync();
-
-    m_lcd->streamBitmapStart(wx, wy, ww, wh);
-
-    for (int16_t dy = rMinY; dy <= rMaxY; dy++) {
-        auto screenY = static_cast<int16_t>(SCREEN_CY + dy);
-        auto dy2 = static_cast<int32_t>(dy) * dy;
-
-        // Y-range early-out: skip arrow triangle tests for scanlines
-        // entirely above or below all arrow geometry
-        bool arrowOnScanline = (numArrow > 0 &&
-                                screenY >= arrowYmin && screenY <= arrowYmax);
-
-        for (int16_t dx = rMinX; dx <= rMaxX; dx++) {
-            auto screenX = static_cast<int16_t>(SCREEN_CX + dx);
-            auto dist2 = static_cast<int32_t>(dx) * dx + dy2;
-
-            uint16_t color = BG_COLOR;
-
-            if (hasRing && dist2 <= outerR2 && dist2 >= innerR2) {
-                // The ring zone: the direction chevrons first, then which ring, if any, and
-                // whether it is lit
-                for (uint8_t i = 0; i < numChev; i++) {
-                    if (screenY >= chevE[i].minY && screenY <= chevE[i].maxY &&
-                        testTri(chevE[i], screenX, screenY)) {
-                        color = CHEVRON_COLOR;
-                        break;
-                    }
-                }
-                for (uint8_t i = 0; color == BG_COLOR && i < RING_COUNT; i++) {
-                    if (dist2 <= ringOut2[i] && dist2 >= ringIn2[i]) {
-                        color = ringLit[i] ? ARC_COLOR : CIRCLE_COLOR;
-                        break;
-                    }
-                }
-            } else {
-                bool isInterior = (!hasRing || dist2 < innerR2);
-
-                // Check arrow (highest z-order, interior only): a magenta outline, the
-                // inside filled cyan from the tail up to the speed magnitude
-                if (arrowOnScanline && isInterior) {
-                    auto inArrow = [&](int16_t x, int16_t y) {
-                        for (int i = 0; i < numArrow; i++) {
-                            if (y >= arrowE[i].minY && y <= arrowE[i].maxY && testTri(arrowE[i], x, y)) return true;
-                        }
-                        return false;
-                    };
-                    if (inArrow(screenX, screenY)) {
-                        bool edge = !inArrow(static_cast<int16_t>(screenX - 2), screenY) ||
-                                    !inArrow(static_cast<int16_t>(screenX + 2), screenY) ||
-                                    !inArrow(screenX, static_cast<int16_t>(screenY - 2)) ||
-                                    !inArrow(screenX, static_cast<int16_t>(screenY + 2));
-                        if (edge) {
-                            color = ARROW_COLOR;
-                        } else {
-                            int32_t along = (static_cast<int32_t>(screenX - tailX) * axisX +
-                                             static_cast<int32_t>(screenY - tailY) * axisY) >> 15;
-                            color = (along <= fillLen) ? ARC_COLOR : BG_COLOR;
-                        }
-                    }
-                }
-
-                // Check chevrons (inner + outer protrusions)
-                if (color == BG_COLOR && hasRing) {
-                    for (int i = 0; i < numChev; i++) {
-                        if (screenY >= chevE[i].minY && screenY <= chevE[i].maxY &&
-                            testTri(chevE[i], screenX, screenY)) {
-                            color = CHEVRON_COLOR;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            int idx = (dx - rMinX) * 2;
-            scanline[idx]     = static_cast<uint8_t>(color >> 8);
-            scanline[idx + 1] = static_cast<uint8_t>(color & 0xFF);
-        }
-
-        m_lcd->streamBitmapData(scanline, ww * 2);
+    if (arrowDirty || ringsDirty) {
+        if (arrowShown) buildArrow(static_cast<uint16_t>(angle1024), static_cast<float>(fillPx));
+        if (ringsShown) { buildRings(widths); buildChevrons(chevDir); }
+        renderFrame(ringsDirty, arrowDirty, ringsShown, arrowShown);
+        m_arrowShown = arrowShown;
+        m_arrowAngle = angle1024;
+        m_arrowFill = fillPx;
+        m_ringsShown = ringsShown;
+        memcpy(m_ringW, widths, sizeof m_ringW);
+        memcpy(m_ringLit, lit, sizeof m_ringLit);
+        m_chevDir = chevDir;
     }
-
-    m_lcd->streamBitmapEnd();
-    drawReadout(p);
+    renderReadout(arrowShown ? static_cast<int16_t>(m_speed + 0.5f) : -1,
+                  tDir != 0 ? static_cast<int16_t>(m_turn + 0.5f) : -1, tDir);
 }
 
-void IndicatorService::drawReadout(const Params& p) {
-    // Magnitudes under the ring, repainted only when the text changes
-    char buf[24];
-    const char* turn = p.rotation_dir > 0 ? "CW" : (p.rotation_dir < 0 ? "CCW" : "--");
-    snprintf(buf, sizeof buf, "V %3u%%   R %3u%% %s", static_cast<unsigned>(p.has_translation ? p.speed_pct : 0),
-             static_cast<unsigned>(p.rotation_dir != 0 ? p.rot_pct : 0), turn);
+// ------------------------------------------------------------------------------------------
+void IndicatorService::buildArrow(uint16_t a, float fillLen) {
+    const float s = sinDeg1024(a), c = cosDeg1024(a);
+    auto rot = [&](float x, float y, float* out) {             // clockwise in screen coordinates
+        out[0] = CX + x * c - y * s;
+        out[1] = CY + x * s + y * c;
+    };
+    const float baseY = -HALF_LEN + HEAD_LEN;
+    rot(0.0f, -HALF_LEN, m_outerHead[0]);
+    rot(HEAD_HALF_W, baseY, m_outerHead[1]);
+    rot(-HEAD_HALF_W, baseY, m_outerHead[2]);
+    rot(-SHAFT_HALF_W, baseY - 2.0f, m_outerShaft[0]);
+    rot(SHAFT_HALF_W, baseY - 2.0f, m_outerShaft[1]);
+    rot(SHAFT_HALF_W, HALF_LEN, m_outerShaft[2]);
+    rot(-SHAFT_HALF_W, HALF_LEN, m_outerShaft[3]);
+    // Inner shapes: the outline is what lies between outer and inner
+    rot(0.0f, -HALF_LEN + 2.5f * OUTLINE, m_innerHead[0]);
+    rot(HEAD_HALF_W - 2.5f * OUTLINE, baseY - OUTLINE, m_innerHead[1]);
+    rot(-(HEAD_HALF_W - 2.5f * OUTLINE), baseY - OUTLINE, m_innerHead[2]);
+    rot(-(SHAFT_HALF_W - OUTLINE), baseY - OUTLINE - 2.0f, m_innerShaft[0]);
+    rot(SHAFT_HALF_W - OUTLINE, baseY - OUTLINE - 2.0f, m_innerShaft[1]);
+    rot(SHAFT_HALF_W - OUTLINE, HALF_LEN - OUTLINE, m_innerShaft[2]);
+    rot(-(SHAFT_HALF_W - OUTLINE), HALF_LEN - OUTLINE, m_innerShaft[3]);
+    // Fill axis: from the tail toward the tip
+    m_tailX = CX - HALF_LEN * s;                                // rot(0, HALF_LEN)
+    m_tailY = CY + HALF_LEN * c;
+    m_axisX = s;                                                 // rot of (0,-1)
+    m_axisY = -c;
+    m_fillLen = fillLen;
+}
+
+void IndicatorService::buildRings(const uint8_t* widths) {
+    for (uint8_t i = 0; i < RING_COUNT; i++) {
+        int32_t ro = RING_OUT_R - i * RING_PITCH;
+        int32_t ri = ro - widths[i];
+        m_ringOut2[i] = ro * ro;
+        m_ringIn2[i] = ri * ri;
+    }
+}
+
+void IndicatorService::buildChevrons(int8_t dir) {
+    if (dir == 0) return;
+    const float mid = RING_OUT_R - RING_W_MAX / 2.0f;
+    for (uint8_t k = 0; k < 4; k++) {
+        const uint16_t a = static_cast<uint16_t>(k * 256);      // 0, 90, 180, 270 degrees
+        const float s = sinDeg1024(a), c = cosDeg1024(a);
+        const float cx = CX + mid * s, cy = CY - mid * c;       // on the ring, clockwise from up
+        const float rx = s, ry = -c;                            // radial, outward
+        const float tx = (dir > 0) ? c : -c, ty = (dir > 0) ? s : -s;   // tangent, turn direction
+        m_chev[k][0][0] = cx + tx * CHEV;          m_chev[k][0][1] = cy + ty * CHEV;
+        m_chev[k][1][0] = cx + rx * (CHEV / 2.0f); m_chev[k][1][1] = cy + ry * (CHEV / 2.0f);
+        m_chev[k][2][0] = cx - rx * (CHEV / 2.0f); m_chev[k][2][1] = cy - ry * (CHEV / 2.0f);
+    }
+}
+
+// ------------------------------------------------------------------------------------------
+void IndicatorService::renderFrame(bool rings, bool arrow, bool ringsShown, bool arrowShown) {
+    static uint8_t buf[Services::Canvas::WIDTH * 2];
+    auto put = [&](int x0, int x1, uint16_t y) {
+        if (x1 < x0) return;
+        m_lcd->streamBitmapStart(static_cast<uint16_t>(x0), y, static_cast<uint16_t>(x1 - x0 + 1), 1);
+        m_lcd->streamBitmapData(buf, static_cast<size_t>(x1 - x0 + 1) * 2);
+        m_lcd->streamBitmapEnd();
+    };
+    auto set = [&](int i, uint16_t colour) {
+        buf[i * 2] = static_cast<uint8_t>(colour >> 8);
+        buf[i * 2 + 1] = static_cast<uint8_t>(colour & 0xFF);
+    };
+
+    const int top = CY - (rings ? ZONE_OUT : ARROW_R);
+    const int bottom = CY + (rings ? ZONE_OUT : ARROW_R);
+    m_lcd->waitForVSync();                                     // start on the tearing edge
+    for (int y = top; y <= bottom; y++) {
+        const int dy = y - CY;
+        const int32_t dy2 = static_cast<int32_t>(dy) * dy;
+        const float yc = static_cast<float>(y) + 0.5f;
+
+        // --- ring zone: left and right bands, or one span above and below the inner edge
+        if (rings && dy2 <= static_cast<int32_t>(ZONE_OUT) * ZONE_OUT) {
+            const int xo = Graphics::isqrt16(static_cast<int32_t>(ZONE_OUT) * ZONE_OUT - dy2);
+            int xi = -1;
+            if (dy2 < static_cast<int32_t>(ZONE_IN) * ZONE_IN) {
+                xi = Graphics::isqrt16(static_cast<int32_t>(ZONE_IN) * ZONE_IN - dy2);
+            }
+            Row chev[4] = {};
+            if (ringsShown && m_chevDir != 0) {
+                for (int k = 0; k < 4; k++) chev[k].on = polySpan(m_chev[k], 3, yc, chev[k].x0, chev[k].x1);
+            }
+            auto ringColour = [&](int x) -> uint16_t {
+                if (!ringsShown) return BG_COLOR;
+                for (int k = 0; k < 4; k++) {
+                    if (chev[k].on && x >= chev[k].x0 && x <= chev[k].x1) return CHEVRON_COLOR;
+                }
+                const int dx = x - CX;
+                const int32_t d2 = static_cast<int32_t>(dx) * dx + dy2;
+                for (uint8_t i = 0; i < RING_COUNT; i++) {
+                    if (d2 <= m_ringOut2[i] && d2 > m_ringIn2[i]) return m_ringLit[i] ? RING_LIT : RING_UNLIT;
+                }
+                return BG_COLOR;
+            };
+            auto band = [&](int x0, int x1) {
+                for (int x = x0; x <= x1; x++) set(x - x0, ringColour(x));
+                put(x0, x1, static_cast<uint16_t>(y));
+            };
+            if (xi < 0) {
+                band(CX - xo, CX + xo);
+            } else {
+                band(CX - xo, CX - xi - 1);
+                band(CX + xi + 1, CX + xo);
+            }
+        }
+
+        // --- arrow disc
+        if (arrow && dy2 <= static_cast<int32_t>(ARROW_R) * ARROW_R) {
+            const int xa = Graphics::isqrt16(static_cast<int32_t>(ARROW_R) * ARROW_R - dy2);
+            Row oh = {}, os = {}, ih = {}, is = {};
+            if (arrowShown) {
+                oh.on = polySpan(m_outerHead, 3, yc, oh.x0, oh.x1);
+                os.on = polySpan(m_outerShaft, 4, yc, os.x0, os.x1);
+                ih.on = polySpan(m_innerHead, 3, yc, ih.x0, ih.x1);
+                is.on = polySpan(m_innerShaft, 4, yc, is.x0, is.x1);
+            }
+            const float rowAlong = (yc - m_tailY) * m_axisY;
+            const int x0 = CX - xa, x1 = CX + xa;
+            for (int x = x0; x <= x1; x++) {
+                uint16_t c = BG_COLOR;
+                if ((ih.on && x >= ih.x0 && x <= ih.x1) || (is.on && x >= is.x0 && x <= is.x1)) {
+                    const float along = (static_cast<float>(x) + 0.5f - m_tailX) * m_axisX + rowAlong;
+                    c = (along <= m_fillLen && m_fillLen > 0.5f) ? FILL_COLOR : BG_COLOR;
+                } else if ((oh.on && x >= oh.x0 && x <= oh.x1) || (os.on && x >= os.x0 && x <= os.x1)) {
+                    c = ARROW_COLOR;
+                }
+                set(x - x0, c);
+            }
+            put(x0, x1, static_cast<uint16_t>(y));
+        }
+    }
+}
+
+void IndicatorService::renderReadout(int16_t speedPct, int16_t turnPct, int8_t dir) {
+    char buf[48];
+    char v[16], r[24];
+    if (speedPct >= 0) snprintf(v, sizeof v, "V %3d%%", speedPct); else snprintf(v, sizeof v, "V   --");
+    if (turnPct >= 0) snprintf(r, sizeof r, "R %3d%% %s", turnPct, dir > 0 ? "CW " : "CCW");
+    else snprintf(r, sizeof r, "R   --    ");
+    snprintf(buf, sizeof buf, "%s   %s", v, r);
     if (strcmp(buf, m_readout) == 0) return;
     snprintf(m_readout, sizeof m_readout, "%s", buf);
-    auto y = static_cast<uint16_t>(SCREEN_CY + RING_OUTER_R + 10);
-    m_lcd->blitTextLine(static_cast<uint16_t>(SCREEN_CX - 66), y, 132, 8, buf, ARC_COLOR, BG_COLOR);
-}
-
-// ============================================================================
-// Bounding box management
-// ============================================================================
-
-void IndicatorService::clearPreviousBbox() {
-    if (!m_hasDrawn || m_lcd == nullptr) return;
-    if (m_prevBboxW == 0 || m_prevBboxH == 0) return;
-
-    uint16_t x = (m_prevBboxX < 0) ? 0 : static_cast<uint16_t>(m_prevBboxX);
-    uint16_t y = (m_prevBboxY < 0) ? 0 : static_cast<uint16_t>(m_prevBboxY);
-    uint16_t w = m_prevBboxW;
-    uint16_t h = m_prevBboxH;
-
-    if (x + w > Services::Canvas::WIDTH)  w = Services::Canvas::WIDTH - x;
-    if (y + h > Services::Canvas::HEIGHT) h = Services::Canvas::HEIGHT - y;
-
-    m_lcd->fillRect(x, y, w, h, BG_COLOR);
-}
-
-void IndicatorService::resetBbox() {
-    m_curMinX = 32767;
-    m_curMinY = 32767;
-    m_curMaxX = -32768;
-    m_curMaxY = -32768;
-}
-
-void IndicatorService::expandBbox(int16_t x, int16_t y) {
-    if (x < m_curMinX) m_curMinX = x;
-    if (y < m_curMinY) m_curMinY = y;
-    if (x > m_curMaxX) m_curMaxX = x;
-    if (y > m_curMaxY) m_curMaxY = y;
-}
-
-void IndicatorService::storeBbox() {
-    if (m_curMinX > m_curMaxX) {
-        m_prevBboxW = 0;
-        m_prevBboxH = 0;
-        return;
-    }
-
-    m_prevBboxX = static_cast<int16_t>(m_curMinX - 1);
-    m_prevBboxY = static_cast<int16_t>(m_curMinY - 1);
-    m_prevBboxW = static_cast<uint16_t>(m_curMaxX - m_curMinX + 3);
-    m_prevBboxH = static_cast<uint16_t>(m_curMaxY - m_curMinY + 3);
-
-    if (m_prevBboxX < 0) {
-        m_prevBboxW = static_cast<uint16_t>(m_prevBboxW + m_prevBboxX);
-        m_prevBboxX = 0;
-    }
-    if (m_prevBboxY < 0) {
-        m_prevBboxH = static_cast<uint16_t>(m_prevBboxH + m_prevBboxY);
-        m_prevBboxY = 0;
-    }
-    if (m_prevBboxX + m_prevBboxW > Services::Canvas::WIDTH) {
-        m_prevBboxW = static_cast<uint16_t>(Services::Canvas::WIDTH - m_prevBboxX);
-    }
-    if (m_prevBboxY + m_prevBboxH > Services::Canvas::HEIGHT) {
-        m_prevBboxH = static_cast<uint16_t>(Services::Canvas::HEIGHT - m_prevBboxY);
-    }
-}
-
-// ============================================================================
-// Arrow rendering (used for arrow-only case, no ring)
-// ============================================================================
-
-void IndicatorService::drawArrow(uint16_t angle_deg) {
-    uint16_t angle = Graphics::deg_to_angle1024(angle_deg);
-
-    int16_t tipX = 0, tipY = -ARROW_HALF_LEN;
-    auto headBaseY = static_cast<int16_t>(-ARROW_HALF_LEN + ARROW_HEAD_LEN);
-    int16_t headRX = ARROW_HEAD_HALF_W, headRY = headBaseY;
-    auto headLX = static_cast<int16_t>(-ARROW_HEAD_HALF_W), headLY = headBaseY;
-    int16_t shaftTRX = ARROW_SHAFT_HALF_W, shaftTRY = headBaseY;
-    auto shaftTLX = static_cast<int16_t>(-ARROW_SHAFT_HALF_W), shaftTLY = headBaseY;
-    int16_t shaftBRX = ARROW_SHAFT_HALF_W, shaftBRY = ARROW_HALF_LEN;
-    auto shaftBLX = static_cast<int16_t>(-ARROW_SHAFT_HALF_W), shaftBLY = ARROW_HALF_LEN;
-
-    int16_t rtipX, rtipY;
-    int16_t rheadRX, rheadRY, rheadLX, rheadLY;
-    int16_t rsTRX, rsTRY, rsTLX, rsTLY;
-    int16_t rsBRX, rsBRY, rsBLX, rsBLY;
-
-    Graphics::rotate_point(tipX, tipY, angle, rtipX, rtipY);
-    Graphics::rotate_point(headRX, headRY, angle, rheadRX, rheadRY);
-    Graphics::rotate_point(headLX, headLY, angle, rheadLX, rheadLY);
-    Graphics::rotate_point(shaftTRX, shaftTRY, angle, rsTRX, rsTRY);
-    Graphics::rotate_point(shaftTLX, shaftTLY, angle, rsTLX, rsTLY);
-    Graphics::rotate_point(shaftBRX, shaftBRY, angle, rsBRX, rsBRY);
-    Graphics::rotate_point(shaftBLX, shaftBLY, angle, rsBLX, rsBLY);
-
-    rtipX += SCREEN_CX;    rtipY += SCREEN_CY;
-    rheadRX += SCREEN_CX;  rheadRY += SCREEN_CY;
-    rheadLX += SCREEN_CX;  rheadLY += SCREEN_CY;
-    rsTRX += SCREEN_CX;    rsTRY += SCREEN_CY;
-    rsTLX += SCREEN_CX;    rsTLY += SCREEN_CY;
-    rsBRX += SCREEN_CX;    rsBRY += SCREEN_CY;
-    rsBLX += SCREEN_CX;    rsBLY += SCREEN_CY;
-
-    expandBbox(rtipX, rtipY);
-    expandBbox(rheadRX, rheadRY);
-    expandBbox(rheadLX, rheadLY);
-    expandBbox(rsBRX, rsBRY);
-    expandBbox(rsBLX, rsBLY);
-
-    Graphics::fillTriangle(*m_lcd,
-        rtipX, rtipY, rheadRX, rheadRY, rheadLX, rheadLY, ARROW_COLOR);
-    Graphics::fillTriangle(*m_lcd,
-        rsTRX, rsTRY, rsBRX, rsBRY, rsBLX, rsBLY, ARROW_COLOR);
-    Graphics::fillTriangle(*m_lcd,
-        rsTRX, rsTRY, rsBLX, rsBLY, rsTLX, rsTLY, ARROW_COLOR);
-}
-
-// ============================================================================
-// Legacy individual draw methods (kept for arrow-only fallback)
-// ============================================================================
-
-void IndicatorService::drawRing() {
-    Graphics::fillRing(*m_lcd, SCREEN_CX, SCREEN_CY, RING_OUTER_R, RING_INNER_R,
-                        CIRCLE_COLOR);
-    expandBbox(static_cast<int16_t>(SCREEN_CX - RING_OUTER_R),
-               static_cast<int16_t>(SCREEN_CY - RING_OUTER_R));
-    expandBbox(static_cast<int16_t>(SCREEN_CX + RING_OUTER_R),
-               static_cast<int16_t>(SCREEN_CY + RING_OUTER_R));
-}
-
-void IndicatorService::drawChevrons(int8_t direction) {
-    static constexpr uint16_t chevronAngles[4] = {0, 90, 180, 270};
-    auto midR = static_cast<int16_t>((RING_OUTER_R + RING_INNER_R) / 2);
-
-    for (int i = 0; i < 4; i++) {
-        uint16_t posAngle = Graphics::deg_to_angle1024(chevronAngles[i]);
-        int16_t cx, cy;
-        Graphics::rotate_point(0, static_cast<int16_t>(-midR), posAngle, cx, cy);
-        cx += SCREEN_CX; cy += SCREEN_CY;
-
-        uint16_t tangentAngle;
-        if (direction > 0) {
-            tangentAngle = Graphics::deg_to_angle1024(
-                static_cast<uint16_t>((chevronAngles[i] + 90) % 360));
-        } else {
-            tangentAngle = Graphics::deg_to_angle1024(
-                static_cast<uint16_t>((chevronAngles[i] + 270) % 360));
-        }
-
-        int16_t tipDx, tipDy;
-        Graphics::rotate_point(0, static_cast<int16_t>(-CHEVRON_SIZE), tangentAngle,
-                               tipDx, tipDy);
-        int16_t baseDx, baseDy;
-        Graphics::rotate_point(0, static_cast<int16_t>(-CHEVRON_SIZE / 2), posAngle,
-                               baseDx, baseDy);
-
-        auto tx = static_cast<int16_t>(cx + tipDx);
-        auto ty = static_cast<int16_t>(cy + tipDy);
-        auto b1x = static_cast<int16_t>(cx + baseDx);
-        auto b1y = static_cast<int16_t>(cy + baseDy);
-        auto b2x = static_cast<int16_t>(cx - baseDx);
-        auto b2y = static_cast<int16_t>(cy - baseDy);
-
-        expandBbox(tx, ty);
-        expandBbox(b1x, b1y);
-        expandBbox(b2x, b2y);
-
-        Graphics::fillTriangle(*m_lcd, tx, ty, b1x, b1y, b2x, b2y, CHEVRON_COLOR);
-    }
+    m_lcd->blitTextLine(CX - 66, READOUT_Y, 132, 8, buf, RING_LIT, BG_COLOR);
 }
 
 } // namespace Services

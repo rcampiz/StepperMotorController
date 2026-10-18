@@ -291,6 +291,10 @@ void DisplayService::tick()
         m_lastMode = mode;
     }
 
+    if (mode == UI::UIMode::REMOTE && m_indicator != nullptr) {
+        m_indicator->tick();                 // eases toward the host's last indicator target
+    }
+
     if (m_lcd != nullptr && mode == UI::UIMode::LOCAL) {
         careTick(m_clock->getTickMs());
         updateStatusLine();

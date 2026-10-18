@@ -284,6 +284,9 @@ class DisplayPanel(QWidget):
         opts_row.addWidget(self._ind_clear_btn)
 
         ind_layout.addLayout(opts_row)
+        exit_note = QLabel("On the board: hold CENTER 2 s to return to the menu.")
+        exit_note.setStyleSheet("color: #8090a8; font-size: 10px;")
+        ind_layout.addWidget(exit_note)
 
         layout.addWidget(ind_group)
 
