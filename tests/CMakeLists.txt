@@ -107,3 +107,12 @@ smc_add_test(test_motor_service test_motor_service.cpp
 # --- Phase 3 step 1: index snapshot is never torn (seqlock in L4 Encoder).
 smc_add_test(test_seq_snapshot test_seq_snapshot.cpp
     ${SERVER}/layers/L4_drivers/devices/encoder.cpp)
+
+# --- LCD screens rendered through the real L4 driver into a simulated panel (tests/fakes/panel_sim.hpp).
+smc_add_test(test_screen_snapshots test_screen_snapshots.cpp
+    ${SERVER}/layers/L3_services/ui/menu_screen/menu_screen.cpp
+    ${SERVER}/layers/L3_services/ui/screens/encoder_screen.cpp
+    ${SERVER}/layers/L3_services/ui/screens/graph_screen.cpp
+    ${SERVER}/layers/L3_services/ui/screen_manager/screen_manager.cpp
+    ${SERVER}/layers/L3_services/infra/telemetry_store/telemetry_store.cpp)
+target_include_directories(test_screen_snapshots PRIVATE ${SERVER}/layers/L3_services)
