@@ -14,6 +14,7 @@
 #include "L3_services/ui/menu_screen/menu_screen.hpp"
 #include "L3_services/ui/screens/encoder_screen.hpp"
 #include "L3_services/ui/screens/graph_screen.hpp"
+#include "L3_services/ui/screens/device_info_screen.hpp"
 #include "L3_services/ui/screen_manager/screen_manager.hpp"
 #include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include "L3_services/ui/theme.hpp"
@@ -145,6 +146,27 @@ TEST(encoder_screen_shows_the_dial_and_the_count) {
     rig.dump("encoder");
     printf("  encoder: first frame %u px, one update %u px\n", first, rig.panel.pixelsWritten - first);
     EXPECT_TRUE(rig.panel.countColor(0x0000) < 240u * 320u);  // something other than black is drawn
+}
+
+TEST(device_info_repaints_only_the_live_cells) {
+    EXPECT_TRUE(initStore());
+    Rig rig;
+    UI::MenuScreen root("Main Menu");
+    UI::DeviceInfoScreen info;
+    rig.start(&root);
+    rig.mgr.push(&info);
+    rig.frame();
+    const uint32_t first = rig.panel.pixelsWritten;
+    rig.frame();
+    EXPECT_EQ(rig.panel.pixelsWritten, first);                 // same telemetry: nothing sent
+    Protocol::SystemTelemetry sys = {};
+    sys.uptimeTicks = 61000; sys.freeHeap = 12345; sys.cpuLoad = 7;
+    Services::g_telemetryStore.writeSystem(sys);
+    rig.frame();
+    rig.dump("device_info");
+    const uint32_t cost = rig.panel.pixelsWritten - first;
+    printf("  device info: first frame %u px, live update %u px\n", first, cost);
+    EXPECT_TRUE(cost <= 3u * 116u * 16u);                      // three value cells at most
 }
 
 TEST(graph_screen_draws_a_trace_from_telemetry) {

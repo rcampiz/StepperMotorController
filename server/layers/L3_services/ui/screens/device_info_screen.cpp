@@ -1,113 +1,79 @@
 /**
  * @file device_info_screen.cpp
- * @brief Device info / persistent memory viewer screen implementation
+ * @brief Device info: static rows once, live rows when their text changes.
  */
 
 #include "ui/screens/device_info_screen.hpp"
+#include "ui/chrome/chrome.hpp"
+#include "ui/theme.hpp"
 #include "harness/defs/harness_l3_l4.hpp"
 #include "L3_services/config/device_config/device_config.hpp"
 #include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include <stdio.h>
+#include <string.h>
 
 namespace UI {
 
-// Layout (scale=3 medium font: 8px wide, 12px tall)
-static constexpr uint8_t TEXT_SCALE = 3;
-static constexpr uint16_t MARGIN = 6;
-static constexpr uint16_t LINE_H = 15;
-static constexpr uint16_t LABEL_COLOR = 0x07FF;  // Cyan
-static constexpr uint16_t VALUE_COLOR = 0xFFFF;   // White
-static constexpr uint16_t BG_COLOR = 0x0000;      // Black
-static constexpr uint16_t VALUE_X = 72;           // After 8-char labels at 8px
+static constexpr uint16_t ROWS_Y = Theme::CONTENT_Y + 4;
+static constexpr uint16_t ROW_UPTIME = 4, ROW_HEAP = 5, ROW_CPU = 6;   // after a 1-row gap
+
+static uint16_t rowY(uint16_t i) { return static_cast<uint16_t>(ROWS_Y + i * Chrome::ROW_H); }
 
 void DeviceInfoScreen::onActivate()
 {
     m_needsRedraw = true;
+    m_full = true;
+    m_uptime[0] = m_heap[0] = m_cpu[0] = '\0';
 }
 
 void DeviceInfoScreen::render(Services::ICanvas& lcd)
 {
-    uint16_t y = MARGIN;
-    char buf[32];
-
-    // Title
-    lcd.drawString(MARGIN, y, "Device Info", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
-    y += LINE_H + 4;
-    lcd.drawHLine(MARGIN, y, Services::Canvas::WIDTH - 2 * MARGIN, LABEL_COLOR);
-    y += 6;
-
-    // Device ID
-    lcd.drawString(MARGIN, y, "ID:", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
-    snprintf(buf, sizeof(buf), "%u", Services::g_deviceConfig.getDeviceId());
-    lcd.drawString(VALUE_X, y, buf, VALUE_COLOR, BG_COLOR, TEXT_SCALE);
-    y += LINE_H;
-
-    // Wheel Role
-    lcd.drawString(MARGIN, y, "Role:", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
-    lcd.drawString(VALUE_X, y, Services::roleToString(Services::g_deviceConfig.getRole()),
-                   VALUE_COLOR, BG_COLOR, TEXT_SCALE);
-    y += LINE_H;
-
-    // Default Mode
-    lcd.drawString(MARGIN, y, "Mode:", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
-    const char* mode = Services::g_deviceConfig.getDefaultMode() == 0 ? "OPEN_LOOP" : "CLOSED";
-    lcd.drawString(VALUE_X, y, mode, VALUE_COLOR, BG_COLOR, TEXT_SCALE);
-    y += LINE_H;
-
-    // Separator
-    y += 4;
-    lcd.drawHLine(MARGIN, y, Services::Canvas::WIDTH - 2 * MARGIN, 0x8410);
-    y += 6;
-
-    // System info from telemetry
     Protocol::TelemetrySnapshot telem = Services::g_telemetryStore.getSnapshot();
+    char buf[16];
 
-    // Uptime
-    lcd.drawString(MARGIN, y, "Uptime:", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
+    if (m_full) {
+        m_full = false;
+        snprintf(buf, sizeof buf, "%u", Services::g_deviceConfig.getDeviceId());
+        Chrome::fieldRow(lcd, rowY(0), "Device id", buf, Chrome::RowState::NORMAL);
+        Chrome::fieldRow(lcd, rowY(1), "Wheel", Services::roleToString(Services::g_deviceConfig.getRole()),
+                         Chrome::RowState::NORMAL, Theme::YELLOW);
+        Chrome::fieldRow(lcd, rowY(2), "Mode",
+                         Services::g_deviceConfig.getDefaultMode() == 0 ? "OPEN LOOP" : "CLOSED",
+                         Chrome::RowState::NORMAL);
+        Chrome::fieldRow(lcd, rowY(3), "Config", Services::g_deviceConfig.isValid() ? "saved" : "defaults",
+                         Chrome::RowState::NORMAL, Services::g_deviceConfig.isValid() ? Theme::GREEN : Theme::ORANGE);
+        Chrome::fieldRow(lcd, rowY(ROW_UPTIME), "Uptime", "", Chrome::RowState::NORMAL);
+        Chrome::fieldRow(lcd, rowY(ROW_HEAP), "Free heap", "", Chrome::RowState::NORMAL);
+        Chrome::fieldRow(lcd, rowY(ROW_CPU), "CPU load", "", Chrome::RowState::NORMAL);
+        Chrome::drawDeck(lcd, static_cast<uint16_t>(rowY(7) + 6), Theme::CONTENT_BOTTOM);
+    }
+
     uint32_t secs = telem.system.uptimeTicks / 1000;
-    uint32_t mins = secs / 60;
-    secs %= 60;
-    uint32_t hrs = mins / 60;
-    mins %= 60;
-    snprintf(buf, sizeof(buf), "%luh%lum%lus",
-             static_cast<unsigned long>(hrs),
-             static_cast<unsigned long>(mins),
-             static_cast<unsigned long>(secs));
-    lcd.drawString(VALUE_X, y, buf, VALUE_COLOR, BG_COLOR, TEXT_SCALE);
-    y += LINE_H;
-
-    // Free Heap
-    lcd.drawString(MARGIN, y, "Heap:", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
-    snprintf(buf, sizeof(buf), "%lu B", static_cast<unsigned long>(telem.system.freeHeap));
-    lcd.drawString(VALUE_X, y, buf, VALUE_COLOR, BG_COLOR, TEXT_SCALE);
-    y += LINE_H;
-
-    // CPU Load
-    lcd.drawString(MARGIN, y, "CPU:", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
-    snprintf(buf, sizeof(buf), "%u%%", telem.system.cpuLoad);
-    lcd.drawString(VALUE_X, y, buf, VALUE_COLOR, BG_COLOR, TEXT_SCALE);
-    y += LINE_H;
-
-    // Config validity
-    y += 6;
-    lcd.drawString(MARGIN, y, "Config:", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
-    if (Services::g_deviceConfig.isValid()) {
-        lcd.drawString(VALUE_X, y, "Valid", 0x07E0, BG_COLOR, TEXT_SCALE);  // Green
-    } else {
-        lcd.drawString(VALUE_X, y, "Defaults", 0xFBE0, BG_COLOR, TEXT_SCALE);  // Yellow
+    uint32_t mins = secs / 60; secs %= 60;
+    uint32_t hrs = mins / 60;  mins %= 60;
+    snprintf(buf, sizeof buf, "%luh%02lum%02lus", static_cast<unsigned long>(hrs),
+             static_cast<unsigned long>(mins), static_cast<unsigned long>(secs));
+    if (strcmp(buf, m_uptime) != 0) {
+        snprintf(m_uptime, sizeof m_uptime, "%s", buf);
+        Chrome::fieldRow(lcd, rowY(ROW_UPTIME), "Uptime", buf, Chrome::RowState::NORMAL, 0, false);
+    }
+    snprintf(buf, sizeof buf, "%lu B", static_cast<unsigned long>(telem.system.freeHeap));
+    if (strcmp(buf, m_heap) != 0) {
+        snprintf(m_heap, sizeof m_heap, "%s", buf);
+        Chrome::fieldRow(lcd, rowY(ROW_HEAP), "Free heap", buf, Chrome::RowState::NORMAL, 0, false);
+    }
+    snprintf(buf, sizeof buf, "%u%%", telem.system.cpuLoad);
+    if (strcmp(buf, m_cpu) != 0) {
+        snprintf(m_cpu, sizeof m_cpu, "%s", buf);
+        Chrome::fieldRow(lcd, rowY(ROW_CPU), "CPU load", buf, Chrome::RowState::NORMAL,
+                         telem.system.cpuLoad > 80 ? Theme::ORANGE : 0, false);
     }
 }
 
 InputResult DeviceInfoScreen::handleInput(JoyDirection dir, bool pressed)
 {
-    if (!pressed) {
-        return InputResult::HANDLED;
-    }
-
-    if (dir == JoyDirection::LEFT) {
-        return InputResult::EXIT_SCREEN;
-    }
-
+    if (!pressed) return InputResult::HANDLED;
+    if (dir == JoyDirection::LEFT) return InputResult::EXIT_SCREEN;
     return InputResult::HANDLED;
 }
 

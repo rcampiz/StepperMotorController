@@ -48,6 +48,20 @@ void drawCorners(Services::ICanvas& lcd, uint16_t x, uint16_t y, uint16_t w, uin
 void fillAround(Services::ICanvas& lcd, uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                 uint16_t tx, uint16_t ty, uint16_t tw, uint16_t th, uint16_t color);
 
+/// How a list row is drawn
+enum class RowState : uint8_t { NORMAL, SELECTED, EDITING, DISABLED };
+
+/// Row height of fieldRow (16 px bar, 1 px separator, 1 px gap)
+constexpr uint16_t ROW_H = 18;
+
+/// A list row at (MARGIN, y): label left, value right-aligned, bar colour by state. Two
+/// text boxes, so a value change repaints only the value cell when `labelToo` is false.
+void fieldRow(Services::ICanvas& lcd, uint16_t y, const char* label, const char* value,
+              RowState state, uint16_t valueColor = 0, bool labelToo = true);
+
+/// One small-font hint line across the content width (blank text clears it)
+void hintLine(Services::ICanvas& lcd, uint16_t y, const char* text, uint16_t color);
+
 /// A medium-font (8x12) text box: the text with `bg` behind it, then `bg` around it up to
 /// (x, y, w, h). Text is clipped to the box width.
 void textBox(Services::ICanvas& lcd, uint16_t x, uint16_t y, uint16_t w, uint16_t h,

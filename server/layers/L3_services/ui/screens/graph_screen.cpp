@@ -300,18 +300,10 @@ InputResult GraphScreen::handleInput(JoyDirection dir, bool pressed)
     }
 
     switch (dir) {
-        case JoyDirection::LEFT: {
-            auto ch = static_cast<uint8_t>(m_channel);
-            if (ch == 0) ch = NUM_CHANNELS - 1;
-            else ch--;
-            m_channel = static_cast<Channel>(ch);
-            m_count = 0;
-            m_head = 0;
-            m_yScaleMode = YScaleMode::DYNAMIC;
-            m_needsRedraw = true;
-            return InputResult::HANDLED;
-        }
+        case JoyDirection::LEFT:
+            return InputResult::EXIT_SCREEN;
 
+        case JoyDirection::CENTER:
         case JoyDirection::RIGHT: {
             auto ch = static_cast<uint8_t>(m_channel);
             ch = (ch + 1) % NUM_CHANNELS;
@@ -332,9 +324,6 @@ InputResult GraphScreen::handleInput(JoyDirection dir, bool pressed)
                 m_yScaleMode = YScaleMode::DYNAMIC;
             }
             return InputResult::HANDLED;
-
-        case JoyDirection::CENTER:
-            return InputResult::EXIT_SCREEN;
 
         default:
             return InputResult::HANDLED;

@@ -1,12 +1,9 @@
 /**
  * @file config_screen.hpp
- * @brief Driver configuration screen
+ * @brief Driver configuration from the joystick: step mode, KVAL, OCD, stall, ramps, save.
  *
- * Edit powerSTEP01 parameters: step mode, KVAL, OCD, stall thresholds.
- * Changes applied to RAM immediately, saved to flash on explicit Save.
- * All changes go through Services::motion.motorConfig.
- *
- * No RTOS headers.
+ * UP/DOWN pick a row, CENTER opens it for editing (LEFT/RIGHT adjust, CENTER closes),
+ * LEFT goes back. The Save row writes the configuration to flash.
  */
 
 #ifndef CONFIG_SCREEN_HPP
@@ -25,6 +22,9 @@ public:
     void onActivate() override;
     bool needsFullRedraw() const override { return m_needsRedraw; }
     void clearRedrawFlag() override { m_needsRedraw = false; }
+    bool usesChrome() const override { return true; }
+    const char* title() const override { return "Driver Config"; }
+    const char* centerHint() const override { return "EDIT"; }
 
 private:
     static constexpr uint8_t NUM_FIELDS = 9;
@@ -39,11 +39,16 @@ private:
     static constexpr uint8_t FIELD_SAVE = 8;
 
     uint8_t m_selectedField = 0;
+    bool m_editing = false;
     bool m_needsRedraw = true;
-    bool m_saved = false;  // Show "Saved!" feedback briefly
+    bool m_full = true;
+    bool m_hintDirty = true;
+    uint16_t m_rowsDirty = 0;
+    bool m_saved = false;      // "saved" shown on the Save row until the next change
 
-    void renderField(Services::ICanvas& lcd, uint8_t field, uint16_t y, bool selected);
+    void renderField(Services::ICanvas& lcd, uint8_t field);
     void adjustField(uint8_t field, int8_t delta);
+    void markRow(uint8_t field) { m_rowsDirty = static_cast<uint16_t>(m_rowsDirty | (1u << field)); }
 };
 
 } // namespace UI

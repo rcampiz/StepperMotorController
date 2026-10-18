@@ -25,6 +25,7 @@ public:
     void onActivate() override;
     bool needsFullRedraw() const override { return m_needsRedraw; }
     void clearRedrawFlag() override { m_needsRedraw = false; }
+    const char* centerHint() const override { return "CHANNEL"; }
 
 private:
     static constexpr uint8_t NUM_CHANNELS = 4;

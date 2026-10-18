@@ -1,9 +1,11 @@
 /**
  * @file config_screen.cpp
- * @brief Driver configuration screen implementation
+ * @brief Driver config rows with an edit mode; rows repaint only when they change.
  */
 
 #include "ui/screens/config_screen.hpp"
+#include "ui/chrome/chrome.hpp"
+#include "ui/theme.hpp"
 #include "harness/defs/harness_l3_l4.hpp"
 #include "L3_services/motion/motion.hpp"
 #include "L3_services/config/config_service/config_service.hpp"
@@ -11,125 +13,69 @@
 
 namespace UI {
 
-// Layout (scale=3 medium font: 8px wide, 12px tall)
-static constexpr uint8_t TEXT_SCALE = 3;
-static constexpr uint16_t MARGIN = 6;
-static constexpr uint16_t LINE_H = 15;
-static constexpr uint16_t FIELD_H = 18;
-static constexpr uint16_t FIELD_PAD = 3;
-static constexpr uint16_t FIELDS_START_Y = 28;
-static constexpr uint16_t VALUE_X = 56;   // After 7-char labels at 8px
+static constexpr uint16_t FIELDS_Y = Theme::CONTENT_Y + 4;
+static constexpr uint16_t HINT_Y   = FIELDS_Y + 9 * Chrome::ROW_H + 4;
 
-// Colors
-static constexpr uint16_t LABEL_COLOR = 0x07FF;
-static constexpr uint16_t VALUE_COLOR = 0xFFFF;
-static constexpr uint16_t BG_COLOR = 0x0000;
-static constexpr uint16_t SEL_BG = 0x001F;
-static constexpr uint16_t OK_COLOR = 0x07E0;
+static const char* const STEP_MODE_NAMES[] = {"Full", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64", "1/128"};
 
-// Step mode names
-static const char* stepModeNames[] = {
-    "Full", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64", "1/128"
-};
+static uint16_t fieldY(uint8_t i) { return static_cast<uint16_t>(FIELDS_Y + i * Chrome::ROW_H); }
 
 void ConfigScreen::onActivate()
 {
     m_needsRedraw = true;
+    m_full = true;
     m_selectedField = 0;
+    m_editing = false;
     m_saved = false;
+    m_hintDirty = true;
 }
 
-void ConfigScreen::renderField(Services::ICanvas& lcd, uint8_t field, uint16_t y, bool selected)
+void ConfigScreen::renderField(Services::ICanvas& lcd, uint8_t field)
 {
-    uint16_t fg = VALUE_COLOR;
-    uint16_t bg = selected ? SEL_BG : BG_COLOR;
-    uint16_t itemW = Services::Canvas::WIDTH - 2 * MARGIN;
-    char buf[32];
-
-    lcd.fillRect(MARGIN, y, itemW, FIELD_H - 2, bg);
-
     const auto& cfg = Services::motion.stepper.config.getConfig();
-
+    char val[14];
+    const char* label = "";
+    uint16_t color = 0;
+    val[0] = '\0';
     switch (field) {
-        case FIELD_STEP_MODE: {
-            lcd.drawString(MARGIN + FIELD_PAD, y + FIELD_PAD, "Step:", fg, bg, TEXT_SCALE);
-            uint8_t mode = cfg.stepMode > 7 ? 7 : cfg.stepMode;
-            snprintf(buf, sizeof(buf), "< %s >", stepModeNames[mode]);
-            lcd.drawString(VALUE_X, y + FIELD_PAD, buf, fg, bg, TEXT_SCALE);
-            break;
-        }
+        case FIELD_STEP_MODE: label = "Step mode"; snprintf(val, sizeof val, "%s", STEP_MODE_NAMES[cfg.stepMode > 7 ? 7 : cfg.stepMode]); break;
+        case FIELD_KVAL_HOLD: label = "KVAL hold";  snprintf(val, sizeof val, "%u%%", static_cast<unsigned>(cfg.kvalHold) * 100 / 256); break;
+        case FIELD_KVAL_RUN:  label = "KVAL run";   snprintf(val, sizeof val, "%u%%", static_cast<unsigned>(cfg.kvalRun) * 100 / 256); break;
+        case FIELD_OCD:       label = "OCD";        snprintf(val, sizeof val, "%u mA", (static_cast<unsigned>(cfg.ocdThreshold) + 1) * 375); break;
+        case FIELD_STALL:     label = "Stall";      snprintf(val, sizeof val, "%u mV", (static_cast<unsigned>(cfg.stallThreshold) + 1) * 3125 / 100); break;
+        case FIELD_ACC:       label = "Accel";      snprintf(val, sizeof val, "%lu", static_cast<unsigned long>(Services::Config::accelRawToPhysical(cfg.acceleration))); break;
+        case FIELD_DEC:       label = "Decel";      snprintf(val, sizeof val, "%lu", static_cast<unsigned long>(Services::Config::accelRawToPhysical(cfg.deceleration))); break;
+        case FIELD_MAXSPD:    label = "Max speed";  snprintf(val, sizeof val, "%lu", static_cast<unsigned long>(Services::Config::maxSpeedRawToPhysical(cfg.maxSpeed))); break;
+        case FIELD_SAVE:      label = "Save to flash"; snprintf(val, sizeof val, "%s", m_saved ? "saved" : ""); color = Theme::GREEN; break;
+        default: break;
+    }
+    Chrome::RowState st = Chrome::RowState::NORMAL;
+    if (field == m_selectedField) st = m_editing ? Chrome::RowState::EDITING : Chrome::RowState::SELECTED;
+    Chrome::fieldRow(lcd, fieldY(field), label, val, st, color);
+}
 
-        case FIELD_KVAL_HOLD: {
-            lcd.drawString(MARGIN + FIELD_PAD, y + FIELD_PAD, "KHold:", fg, bg, TEXT_SCALE);
-            auto pct = static_cast<uint16_t>(cfg.kvalHold) * 100 / 256;
-            snprintf(buf, sizeof(buf), "< %u%% >", pct);
-            lcd.drawString(VALUE_X, y + FIELD_PAD, buf, fg, bg, TEXT_SCALE);
-            break;
-        }
-
-        case FIELD_KVAL_RUN: {
-            lcd.drawString(MARGIN + FIELD_PAD, y + FIELD_PAD, "KRun:", fg, bg, TEXT_SCALE);
-            auto pct = static_cast<uint16_t>(cfg.kvalRun) * 100 / 256;
-            snprintf(buf, sizeof(buf), "< %u%% >", pct);
-            lcd.drawString(VALUE_X, y + FIELD_PAD, buf, fg, bg, TEXT_SCALE);
-            break;
-        }
-
-        case FIELD_OCD: {
-            lcd.drawString(MARGIN + FIELD_PAD, y + FIELD_PAD, "OCD:", fg, bg, TEXT_SCALE);
-            uint16_t mA = (static_cast<uint16_t>(cfg.ocdThreshold) + 1) * 375;
-            snprintf(buf, sizeof(buf), "< %u mA >", mA);
-            lcd.drawString(VALUE_X, y + FIELD_PAD, buf, fg, bg, TEXT_SCALE);
-            break;
-        }
-
-        case FIELD_STALL: {
-            lcd.drawString(MARGIN + FIELD_PAD, y + FIELD_PAD, "Stall:", fg, bg, TEXT_SCALE);
-            uint16_t mV = (static_cast<uint16_t>(cfg.stallThreshold) + 1) * 3125 / 100;
-            snprintf(buf, sizeof(buf), "< %u mV >", mV);
-            lcd.drawString(VALUE_X, y + FIELD_PAD, buf, fg, bg, TEXT_SCALE);
-            break;
-        }
-
-        case FIELD_ACC: {
-            lcd.drawString(MARGIN + FIELD_PAD, y + FIELD_PAD, "Accel:", fg, bg, TEXT_SCALE);
-            uint32_t phys = Services::Config::accelRawToPhysical(cfg.acceleration);
-            snprintf(buf, sizeof(buf), "< %lu s/s2 >", (unsigned long)phys);
-            lcd.drawString(VALUE_X, y + FIELD_PAD, buf, fg, bg, TEXT_SCALE);
-            break;
-        }
-
-        case FIELD_DEC: {
-            lcd.drawString(MARGIN + FIELD_PAD, y + FIELD_PAD, "Decel:", fg, bg, TEXT_SCALE);
-            uint32_t phys = Services::Config::accelRawToPhysical(cfg.deceleration);
-            snprintf(buf, sizeof(buf), "< %lu s/s2 >", (unsigned long)phys);
-            lcd.drawString(VALUE_X, y + FIELD_PAD, buf, fg, bg, TEXT_SCALE);
-            break;
-        }
-
-        case FIELD_MAXSPD: {
-            lcd.drawString(MARGIN + FIELD_PAD, y + FIELD_PAD, "MaxSp:", fg, bg, TEXT_SCALE);
-            uint32_t phys = Services::Config::maxSpeedRawToPhysical(cfg.maxSpeed);
-            snprintf(buf, sizeof(buf), "< %lu s/s >", (unsigned long)phys);
-            lcd.drawString(VALUE_X, y + FIELD_PAD, buf, fg, bg, TEXT_SCALE);
-            break;
-        }
-
-        case FIELD_SAVE:
-            if (m_saved) {
-                lcd.drawString(MARGIN + FIELD_PAD, y + FIELD_PAD, "Saved!", OK_COLOR, bg, TEXT_SCALE);
-            } else {
-                lcd.drawString(MARGIN + FIELD_PAD, y + FIELD_PAD, "Save to Flash", fg, bg, TEXT_SCALE);
-            }
-            break;
+void ConfigScreen::render(Services::ICanvas& lcd)
+{
+    if (m_full) {
+        m_full = false;
+        m_rowsDirty = 0xFFFF;
+        Chrome::drawDeck(lcd, HINT_Y + 14, Theme::CONTENT_BOTTOM);
+    }
+    for (uint8_t i = 0; i < NUM_FIELDS; i++) {
+        if (m_rowsDirty & (1u << i)) renderField(lcd, i);
+    }
+    m_rowsDirty = 0;
+    if (m_hintDirty) {
+        m_hintDirty = false;
+        Chrome::hintLine(lcd, HINT_Y, m_editing ? "LEFT/RIGHT adjust   CENTER done"
+                                                : "Changes apply now; Save keeps them", Theme::DIM);
     }
 }
 
 void ConfigScreen::adjustField(uint8_t field, int8_t delta)
 {
     auto& cfg = Services::motion.stepper.config.getConfigMutable();
-    m_saved = false;
-
+    if (m_saved) { m_saved = false; markRow(FIELD_SAVE); }
     switch (field) {
         case FIELD_STEP_MODE: {
             auto mode = static_cast<int8_t>(cfg.stepMode) + delta;
@@ -138,25 +84,20 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
             Services::motion.stepper.config.setStepMode(static_cast<uint8_t>(mode));
             break;
         }
-
         case FIELD_KVAL_HOLD: {
-            auto val = static_cast<int16_t>(cfg.kvalHold) + delta;
+            auto val = static_cast<int16_t>(cfg.kvalHold) + delta * 3;
             if (val < 0) val = 0;
             if (val > 255) val = 255;
-            Services::motion.stepper.config.setKval(
-                static_cast<uint8_t>(val), cfg.kvalRun, cfg.kvalAcc, cfg.kvalDec);
+            Services::motion.stepper.config.setKval(static_cast<uint8_t>(val), cfg.kvalRun, cfg.kvalAcc, cfg.kvalDec);
             break;
         }
-
         case FIELD_KVAL_RUN: {
-            auto val = static_cast<int16_t>(cfg.kvalRun) + delta;
+            auto val = static_cast<int16_t>(cfg.kvalRun) + delta * 3;
             if (val < 0) val = 0;
             if (val > 255) val = 255;
-            Services::motion.stepper.config.setKval(
-                cfg.kvalHold, static_cast<uint8_t>(val), cfg.kvalAcc, cfg.kvalDec);
+            Services::motion.stepper.config.setKval(cfg.kvalHold, static_cast<uint8_t>(val), cfg.kvalAcc, cfg.kvalDec);
             break;
         }
-
         case FIELD_OCD: {
             auto val = static_cast<int16_t>(cfg.ocdThreshold) + delta;
             if (val < 0) val = 0;
@@ -164,7 +105,6 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
             Services::motion.stepper.config.setOcdThreshold(static_cast<uint8_t>(val));
             break;
         }
-
         case FIELD_STALL: {
             auto val = static_cast<int16_t>(cfg.stallThreshold) + delta;
             if (val < 0) val = 0;
@@ -172,98 +112,66 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
             Services::motion.stepper.config.setStallThreshold(static_cast<uint8_t>(val));
             break;
         }
-
         case FIELD_ACC: {
-            // Adjust by ±50 steps/s^2 in physical units
             uint32_t phys = Services::Config::accelRawToPhysical(cfg.acceleration);
             auto newPhys = static_cast<int32_t>(phys) + (delta * 50);
-            if (newPhys < 15) newPhys = 15;        // Min ~1 raw
-            if (newPhys > 59590) newPhys = 59590;  // Max 12-bit raw (4095)
-            uint16_t raw = Services::Config::accelPhysicalToRaw(static_cast<uint32_t>(newPhys));
-            cfg.acceleration = raw;
+            if (newPhys < 15) newPhys = 15;
+            if (newPhys > 59590) newPhys = 59590;
+            cfg.acceleration = Services::Config::accelPhysicalToRaw(static_cast<uint32_t>(newPhys));
             break;
         }
-
         case FIELD_DEC: {
             uint32_t phys = Services::Config::accelRawToPhysical(cfg.deceleration);
             auto newPhys = static_cast<int32_t>(phys) + (delta * 50);
             if (newPhys < 15) newPhys = 15;
             if (newPhys > 59590) newPhys = 59590;
-            uint16_t raw = Services::Config::accelPhysicalToRaw(static_cast<uint32_t>(newPhys));
-            cfg.deceleration = raw;
+            cfg.deceleration = Services::Config::accelPhysicalToRaw(static_cast<uint32_t>(newPhys));
             break;
         }
-
         case FIELD_MAXSPD: {
             uint32_t phys = Services::Config::maxSpeedRawToPhysical(cfg.maxSpeed);
             auto newPhys = static_cast<int32_t>(phys) + (delta * 50);
-            if (newPhys < 16) newPhys = 16;         // Min ~1 raw
-            if (newPhys > 15625) newPhys = 15625;   // Max 10-bit raw (1023)
-            uint16_t raw = Services::Config::maxSpeedPhysicalToRaw(static_cast<uint32_t>(newPhys));
-            cfg.maxSpeed = raw;
+            if (newPhys < 16) newPhys = 16;
+            if (newPhys > 15625) newPhys = 15625;
+            cfg.maxSpeed = Services::Config::maxSpeedPhysicalToRaw(static_cast<uint32_t>(newPhys));
             break;
         }
-
         default:
             break;
     }
-}
-
-void ConfigScreen::render(Services::ICanvas& lcd)
-{
-    uint16_t y = MARGIN;
-    lcd.drawString(MARGIN, y, "Driver Config", LABEL_COLOR, BG_COLOR, TEXT_SCALE);
-    y += LINE_H + 2;
-    lcd.drawHLine(MARGIN, y, Services::Canvas::WIDTH - 2 * MARGIN, LABEL_COLOR);
-    y = FIELDS_START_Y;
-
-    for (uint8_t i = 0; i < NUM_FIELDS; i++) {
-        renderField(lcd, i, y, (i == m_selectedField));
-        y += FIELD_H;
-    }
+    markRow(field);
 }
 
 InputResult ConfigScreen::handleInput(JoyDirection dir, bool pressed)
 {
-    if (!pressed) {
-        return InputResult::HANDLED;
-    }
+    if (!pressed) return InputResult::HANDLED;
 
     switch (dir) {
         case JoyDirection::UP:
-            if (m_selectedField > 0) {
-                m_selectedField--;
-                m_saved = false;
-            }
+        case JoyDirection::DOWN: {
+            if (m_editing) { m_editing = false; m_hintDirty = true; }
+            uint8_t prev = m_selectedField;
+            if (dir == JoyDirection::UP && m_selectedField > 0) m_selectedField--;
+            if (dir == JoyDirection::DOWN && m_selectedField < NUM_FIELDS - 1) m_selectedField++;
+            markRow(prev); markRow(m_selectedField);
             return InputResult::HANDLED;
-
-        case JoyDirection::DOWN:
-            if (m_selectedField < NUM_FIELDS - 1) {
-                m_selectedField++;
-                m_saved = false;
-            }
-            return InputResult::HANDLED;
-
+        }
         case JoyDirection::LEFT:
-            if (m_selectedField <= FIELD_MAXSPD) {
-                adjustField(m_selectedField, -1);
-                return InputResult::HANDLED;
-            }
+            if (m_editing) { adjustField(m_selectedField, -1); return InputResult::HANDLED; }
             return InputResult::EXIT_SCREEN;
-
         case JoyDirection::RIGHT:
-            if (m_selectedField <= FIELD_MAXSPD) {
-                adjustField(m_selectedField, 1);
-                return InputResult::HANDLED;
-            }
+            if (m_editing) { adjustField(m_selectedField, 1); return InputResult::HANDLED; }
+            if (m_selectedField != FIELD_SAVE) { m_editing = true; m_hintDirty = true; markRow(m_selectedField); }
             return InputResult::HANDLED;
-
         case JoyDirection::CENTER:
+            if (m_editing) { m_editing = false; m_hintDirty = true; markRow(m_selectedField); return InputResult::HANDLED; }
             if (m_selectedField == FIELD_SAVE) {
                 m_saved = Services::motion.configStore.saveToFlash();
+                markRow(FIELD_SAVE);
+                return InputResult::HANDLED;
             }
+            m_editing = true; m_hintDirty = true; markRow(m_selectedField);
             return InputResult::HANDLED;
-
         default:
             return InputResult::UNHANDLED;
     }

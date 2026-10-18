@@ -6,6 +6,7 @@
 #include "ui/chrome/chrome.hpp"
 #include "ui/theme.hpp"
 #include <string.h>
+#include <stdio.h>
 
 namespace UI {
 namespace Chrome {
@@ -105,6 +106,49 @@ void drawCorners(Services::ICanvas& lcd, uint16_t x, uint16_t y, uint16_t w, uin
     lcd.fillRect(x, y1, len, 1, color);  lcd.fillRect(x, static_cast<uint16_t>(y1 - len + 1), 1, len, color);
     lcd.fillRect(static_cast<uint16_t>(x1 - len + 1), y1, len, 1, color);
     lcd.fillRect(x1, static_cast<uint16_t>(y1 - len + 1), 1, len, color);
+}
+
+void fieldRow(Services::ICanvas& lcd, uint16_t y, const char* label, const char* value,
+              RowState state, uint16_t valueColor, bool labelToo)
+{
+    constexpr uint16_t X = MARGIN, W = WIDTH - 2 * MARGIN, H = ROW_H - 2;
+    constexpr uint16_t LABEL_W = 112;                       // 13 chars + pad
+    constexpr uint16_t VALUE_X = X + LABEL_W, VALUE_W = W - LABEL_W;
+    uint16_t bg, fgLabel, fgValue;
+    switch (state) {
+        case RowState::SELECTED: bg = MAGENTA; fgLabel = TEXT; fgValue = TEXT; break;
+        case RowState::EDITING:  bg = CYAN;    fgLabel = BG;   fgValue = BG;   break;
+        case RowState::DISABLED: bg = BG;      fgLabel = DIM;  fgValue = DIM;  break;
+        default:                 bg = BG;      fgLabel = TEXT; fgValue = (valueColor != 0) ? valueColor : CYAN; break;
+    }
+    if (state == RowState::NORMAL && valueColor != 0) fgValue = valueColor;
+
+    char text[20];
+    if (labelToo) {
+        text[0] = (state == RowState::SELECTED || state == RowState::EDITING) ? '>' : ' ';
+        text[1] = ' ';
+        size_t n = strlen(label);
+        if (n > 11) n = 11;
+        memcpy(text + 2, label, n);
+        text[2 + n] = '\0';
+        textBox(lcd, X, y, LABEL_W, H, 4, 2, text, fgLabel, bg);
+        lcd.fillRect(X, static_cast<uint16_t>(y + H), W, 1, GRID);
+        lcd.fillRect(X, static_cast<uint16_t>(y + H + 1), W, 1, BG);
+    }
+    // Value right-aligned, wrapped in < > while editing
+    char vbuf[16];
+    if (state == RowState::EDITING) snprintf(vbuf, sizeof vbuf, "<%s>", value);
+    else                            snprintf(vbuf, sizeof vbuf, "%s", value);
+    size_t vn = strlen(vbuf);
+    if (vn > 13) vn = 13;
+    vbuf[vn] = '\0';
+    auto tw = static_cast<uint16_t>(vn * MED_W);
+    textBox(lcd, VALUE_X, y, VALUE_W, H, static_cast<uint16_t>(VALUE_W - tw - 6), 2, vbuf, fgValue, bg);
+}
+
+void hintLine(Services::ICanvas& lcd, uint16_t y, const char* text, uint16_t color)
+{
+    lcd.blitTextLine(MARGIN, y, static_cast<uint16_t>(WIDTH - 2 * MARGIN), SMALL_H, text, color, BG);
 }
 
 void fillAround(Services::ICanvas& lcd, uint16_t x, uint16_t y, uint16_t w, uint16_t h,
