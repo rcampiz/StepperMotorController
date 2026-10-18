@@ -291,6 +291,7 @@ void CommandParser::dispatchSystem(const char *suffix,
       {"ECHO", &CommandParser::cmdEcho},
       {"HB:TIMEOUT", &CommandParser::cmdSetHeartbeat},
       {"TLM:RATE", &CommandParser::cmdTelemetryRate},
+      {"TLM:FMT", &CommandParser::cmdTelemetryFormat},
       {"BAUD", &CommandParser::cmdSetBaud},
       {"EVT:EN", &CommandParser::cmdEventEnable},
       {"DELAY", &CommandParser::cmdSystDelay},
@@ -301,6 +302,7 @@ void CommandParser::dispatchSystem(const char *suffix,
       {"ECHO?", &CommandParser::cmdEchoQuery},
       {"HB:STAT?", &CommandParser::cmdGetHeartbeatStatus},
       {"TLM:RATE?", &CommandParser::cmdTelemetryRateQuery},
+      {"TLM:FMT?", &CommandParser::cmdTelemetryFormatQuery},
       {"VER?", &CommandParser::cmdVersion},
       {"HELP?", &CommandParser::cmdHelp},
       {"EVT:DIS", &CommandParser::cmdEventDisable},
@@ -788,8 +790,10 @@ void CommandParser::emitTelemetry(const Protocol::TelemetrySnapshot &snap) {
     StatusJsonView v;
     fillStatusView(snap, v);
     char buf[STATUS_JSON_BUF];
-    int n = renderStatusJson(buf, sizeof(buf), snap, v, TELEMETRY_JSON_HEAD);
-    if (n >= 0 && n < static_cast<int>(sizeof(buf))) {
+    int n = m_telemetryCompact ? renderCompactJson(buf, COMPACT_JSON_BUF, snap, v)
+                               : renderStatusJson(buf, sizeof(buf), snap, v, TELEMETRY_JSON_HEAD);
+    const size_t limit = m_telemetryCompact ? COMPACT_JSON_BUF : sizeof(buf);
+    if (n >= 0 && n < static_cast<int>(limit)) {
       m_transport.println(buf);
     }
     return;

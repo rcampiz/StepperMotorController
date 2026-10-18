@@ -88,6 +88,22 @@ def test_bitmap_upload_is_base64_text_through_the_real_handler(board):
     board.request(C.ui_mode(False))
 
 
+def test_compact_telemetry_runs_at_50_ms_on_the_real_firmware_code():
+    with vnucleo.boards(1) as procs:
+        b = connect(procs[0][0], telemetry_period_ms=50, telemetry_compact=True)
+        try:
+            q = b.request(C.telemetry_format_query())
+            assert q.success and q.data["format"] == "compact"
+            r = b.request(C.telemetry_rate_query())
+            assert r.success and r.data["period_ms"] == 50               # below the full floor (139)
+            b.request(C.fault_clear()); b.request(C.mot_enable())
+            assert b.request(C.mot_move(1600, 1)).success
+            assert wait(lambda: b.last_status.get("motor", {}).get("position") == 1600, 5.0)
+            assert "system" in b.last_status                             # merged, never partial
+        finally:
+            b.close()
+
+
 def test_telemetry_push_and_event_seq(board):
     seqs = []
     board.subscribe("event", lambda ev: seqs.append(ev.seq))

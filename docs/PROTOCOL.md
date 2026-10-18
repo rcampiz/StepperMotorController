@@ -75,7 +75,7 @@ receive-ring overflow), `DBG_LOCKED` (bring-up command before `DBG:UNLOCK`), `MO
 | Line | When | ASCII | JSON |
 |---|---|---|---|
 | Event | motor fault/stall edges, motion done, following supervisor | `!<TYPE> status=0x<hex4> [detail=<text>]` | `{"kind":"event","type":"<TYPE>","seq":<n>,"ts_ms":<n>,"data":{"status":<n>[,"detail":"<text>"]}}` |
-| Telemetry push | every `SYST:TLM:RATE <ms>` ms (20..5000, 0 = off; off at boot; the ack returns the clamped value and `min_ms`, the floor at the current baud rate: one worst-case status line may use at most 80 % of the link, 139 ms at 115200, so the Encoder task is never starved by the push) | `TELEM: pos=<i> spd=<u> enc=<i> vel=<i>` | `{"kind":"telemetry","data":{...}}` where `data` is byte-for-byte the `DIAG:STAT?` `data` object (section 8), so a client receiving pushes never polls |
+| Telemetry push | every `SYST:TLM:RATE <ms>` ms (20..5000, 0 = off; off at boot; the ack returns the clamped value and `min_ms`, the floor at the current baud rate: one worst-case line may use at most 80 % of the link, 139 ms at 115200 for the full object and 42 ms for the compact one, so the Encoder task is never starved by the push) | `TELEM: pos=<i> spd=<u> enc=<i> vel=<i>` | `{"kind":"telemetry","data":{...}}` where `data` is byte-for-byte the `DIAG:STAT?` `data` object (section 8), so a client receiving pushes never polls. After `SYST:TLM:FMT COMPACT` the push carries only the live fields with the same names and nesting (`state`, `tick`, `motor.position/speed/busy/hi_z`, `encoder.count/velocity`, `control.following_error`, `heartbeat.remaining_ms`; about 170 bytes, no `system` key): the client merges it into its last full object and asks `DIAG:STAT?` for the rest at its own pace. `SYST:TLM:FMT?` reports the format and the floor; send the format before the rate. |
 | Joystick | board joystick in LOCAL UI mode | `EVENT JOY <LEFT\|RIGHT\|UP\|DOWN\|CENTER> pressed\|released` | same |
 | Banner | power-up and Comms start | 5 lines starting with a blank line and `====` | same |
 
@@ -166,6 +166,9 @@ verify state instead).
 
 13. (2026-10-18) `SYST:HB:TIMEOUT 0` is refused with `ERROR INVALID_STATE` unless the motor is
     in Hi-Z, and uploads feed the watchdog from their own traffic (section 4).
+14. (2026-10-18) `SYST:TLM:FMT FULL|COMPACT` and `SYST:TLM:FMT?`: the compact telemetry push
+    (section 2) cuts a push from about 900 bytes to about 170 and lowers the rate floor to
+    42 ms at 115200; switching back to FULL raises a too-fast period to the full floor.
 
 Reserved for a later version:
 
@@ -224,6 +227,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `SYST:ECHO` | 1 | SYST:ECHO <ON\|OFF> | `OK <status>` | — | `cmdEcho` (system_handlers.cpp) |
 | `SYST:HB:TIMEOUT` | 1 | SYST:HB:TIMEOUT <timeout_ms> | ASCII: `OK <plain lines>`; JSON `SET_HEARTBEAT` keys: `accepted`, `enabled`, `requested` | — | `cmdSetHeartbeat` (safety_handlers.cpp) |
 | `SYST:TLM:RATE` | 1 | SYST:TLM:RATE <ms> | ASCII: `OK <plain lines>`; JSON `TLM_RATE` keys: `accepted`, `enabled`, `min_ms`, `requested` | — | `cmdTelemetryRate` (system_handlers.cpp) |
+| `SYST:TLM:FMT` | 1 | SYST:TLM:FMT <FULL\|COMPACT> | ASCII: `OK <plain lines>`; JSON `TLM_FMT` keys: `format`, `min_ms`, `period_ms` | `Telemetry format must be FULL or COMPACT` | `cmdTelemetryFormat` (system_handlers.cpp) |
 | `SYST:BAUD` | 1 | SYST:BAUD <115200\|230400\|460800\|921600> | ASCII: `OK <plain lines>`; JSON `SET_BAUD` keys: `baud` | `Supported: 115200, 230400, 460800, 921600` | `cmdSetBaud` (system_handlers.cpp) |
 | `SYST:EVT:EN` | 0 | — | ASCII: `OK <formatted text>` | `Invalid mask (0-255)` | `cmdEventEnable` (system_handlers.cpp) |
 | `SYST:DELAY` | 1 | SYST:DELAY <ms> | ASCII: `OK <formatted text>`; JSON `SYST:DELAY` keys: `transport_delay_ms` | `Delay must be 0-1000 ms` | `cmdSystDelay` (system_handlers.cpp) |
@@ -232,6 +236,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `SYST:ECHO?` | 0 | — | JSON `ECHO` keys: `echo` | — | `cmdEchoQuery` (system_handlers.cpp) |
 | `SYST:HB:STAT?` | 0 | — | ASCII: `OK <plain lines>`; JSON `GET_HEARTBEAT_STATUS` keys: `enabled`, `last_seq`, `remaining_ms`, `timed_out`, `timeout_ms` | — | `cmdGetHeartbeatStatus` (safety_handlers.cpp) |
 | `SYST:TLM:RATE?` | 0 | — | ASCII: `OK <plain lines>`; JSON `TLM_RATE` keys: `enabled`, `period_ms` | — | `cmdTelemetryRateQuery` (system_handlers.cpp) |
+| `SYST:TLM:FMT?` | 0 | — | ASCII: `OK <plain lines>`; JSON `TLM_FMT` keys: `format`, `min_ms` | — | `cmdTelemetryFormatQuery` (system_handlers.cpp) |
 | `SYST:VER?` | 0 | — | ASCII: `<lines> then OK <n>`; JSON `VERSION` keys: `count`, `lines` | — | `cmdVersion` (system_handlers.cpp) |
 | `SYST:HELP?` | 0 | — | ASCII: `<lines> then OK <n>`; JSON `HELP` keys: `count`, `lines` | — | `cmdHelp` (system_handlers.cpp) |
 | `SYST:EVT:DIS` | 0 | — | ASCII: `OK ` | — | `cmdEventDisable` (system_handlers.cpp) |

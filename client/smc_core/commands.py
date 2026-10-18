@@ -200,6 +200,15 @@ def telemetry_rate(ms: int) -> Request: return request("SYST:TLM:RATE", int(ms))
 @builds("SYST:TLM:RATE?")
 def telemetry_rate_query() -> Request: return request("SYST:TLM:RATE?")
 
+@builds("SYST:TLM:FMT")
+def telemetry_format(compact: bool) -> Request:
+    """JSON pushes carry the compact live object (state, motor position/speed/busy/hi_z,
+    encoder count/velocity, following error, watchdog remaining) or the full DIAG:STAT? one."""
+    return request("SYST:TLM:FMT", "COMPACT" if compact else "FULL")
+
+@builds("SYST:TLM:FMT?")
+def telemetry_format_query() -> Request: return request("SYST:TLM:FMT?")
+
 @builds("SYST:BAUD")
 def baud(rate: int) -> Request:
     if int(rate) not in (115200, 230400, 460800, 921600):

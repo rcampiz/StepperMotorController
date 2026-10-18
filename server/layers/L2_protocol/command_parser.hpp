@@ -242,6 +242,7 @@ private:
   char m_buffer[CMD_BUFFER_SIZE];
   size_t m_bufIndex;
   ResponseFormat m_format;       // Current response format (ASCII or JSON)
+  bool m_telemetryCompact = false;   // SYST:TLM:FMT: JSON pushes carry the compact object
   bool m_echo = true;            // F7: terminal echo; off by default in JSON mode, SYST:ECHO ON|OFF
   char m_currentCmd[32];         // Current command being processed (for JSON echo)
 
@@ -314,6 +315,9 @@ private:
   // Telemetry push (F9)
   void cmdTelemetryRate(const ParsedCommand &cmd);
   void cmdTelemetryRateQuery();
+  void cmdTelemetryFormat(const ParsedCommand &cmd);
+  void cmdTelemetryFormatQuery();
+  uint32_t telemetryFloorMs() const;   ///< smallest push period for the active line size
   /// Fill the DIAG:STAT? view (shared by the JSON telemetry push)
   void fillStatusView(const TelemetrySnapshot &snap, StatusJsonView &v);
 

@@ -333,6 +333,7 @@ class MainWindow(QMainWindow):
             heartbeat_period_s=period_ms / 1000.0,
             heartbeat_timeout_ms=max(self._connection_panel.watchdog_ms, 3 * period_ms),
             telemetry_period_ms=self._connection_panel.telemetry_ms,
+            telemetry_compact=self._connection_panel.telemetry_compact,
             clear_fault_on_connect=True,      # a comms-timeout ESTOP from the last session
         )
         self._liveness.max_age_s = max(0.2, 4 * period_ms / 1000.0)

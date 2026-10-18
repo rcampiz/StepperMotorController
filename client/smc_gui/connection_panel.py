@@ -127,9 +127,17 @@ class ConnectionPanel(QWidget):
         self._tlm_spin.setValue(BoardConfig.telemetry_period_ms)
         self._tlm_spin.setSuffix(" ms")
         self._tlm_spin.setToolTip(
-            "Telemetry push period. One status line is ~900 bytes: 100 ms uses ~78 % of "
-            "115200 baud on its own (docs/review/LINK_BUDGET.md).")
+            "Telemetry push period. A full status line is ~900 bytes: 100 ms uses ~78 % of "
+            "115200 baud on its own (docs/review/LINK_BUDGET.md); the firmware floors the period "
+            "at 139 ms for full lines and 42 ms for compact ones.")
         inner.addWidget(self._tlm_spin)
+        self._tlm_compact_cb = QCheckBox("Compact")
+        self._tlm_compact_cb.setChecked(BoardConfig.telemetry_compact)
+        self._tlm_compact_cb.setToolTip(
+            "Push only the live fields (state, position, speed, Hi-Z, encoder count and "
+            "velocity, following error, watchdog): ~170 bytes per push, so 50 ms fits the link. "
+            "The full status is still refreshed once a second.")
+        inner.addWidget(self._tlm_compact_cb)
 
         inner.addStretch()
 
@@ -157,6 +165,11 @@ class ConnectionPanel(QWidget):
     def telemetry_ms(self) -> int:
         """Telemetry push period in milliseconds."""
         return self._tlm_spin.value()
+
+    @property
+    def telemetry_compact(self) -> bool:
+        """Compact telemetry pushes (SYST:TLM:FMT COMPACT)."""
+        return self._tlm_compact_cb.isChecked()
 
     def set_connected(self, connected: bool):
         """Update connection state."""

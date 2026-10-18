@@ -37,9 +37,11 @@ Reading it:
   firmware's Comms task spends most of its time transmitting.
 - The new defaults (status every 200 ms, heartbeat every 100 ms) bring the receive
   direction to about half the link. Both are visible settings in the GUI connection bar
-  and `--tlm-ms` on the CLI. A compact telemetry line (a few fields, about 80 bytes) would
-  allow 10 Hz again for under 10 % of the link; that is a firmware/protocol proposal, not
-  part of this change.
+  and `--tlm-ms` on the CLI. The compact telemetry line exists since 2026-10-18
+  (`SYST:TLM:FMT COMPACT`, PROTOCOL.md section 2): the live fields only, about 170 bytes
+  with the full object's key names, so 50 ms costs about 30 % of a 115200 link; the client
+  merges it into its last full status and refreshes the full object once a second
+  (`BoardConfig.telemetry_compact`, `--tlm-compact`, the connection bar's Compact box).
 
 ## Watchdog default (S-5)
 

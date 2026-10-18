@@ -49,6 +49,7 @@ class FakeBoard:
         self.hb_timeout_ms = 0
         self.last_hb = time.monotonic()
         self.tlm_ms = 0
+        self.tlm_compact = False
         self.events_on = False
         self.seq = 0
         self.received: List[str] = []           # every command line, in order
@@ -259,6 +260,15 @@ class FakeBoard:
         self.last_hb = time.monotonic()
         self._ok("SET_HEARTBEAT", data={"requested": ms, "accepted": self.hb_timeout_ms,
                                         "enabled": self.hb_timeout_ms > 0})
+
+    def _c_SYST_TLM_FMT(self, name, args):
+        self.tlm_compact = args[0].upper() == "COMPACT"
+        self._ok("TLM_FMT", data={"format": "compact" if self.tlm_compact else "full",
+                                  "period_ms": self.tlm_ms, "min_ms": 42 if self.tlm_compact else 139})
+
+    def _c_SYST_TLM_FMT_Q(self, name, args):
+        self._ok("TLM_FMT", data={"format": "compact" if self.tlm_compact else "full",
+                                  "min_ms": 42 if self.tlm_compact else 139})
 
     def _c_SYST_TLM_RATE(self, name, args):
         ms = int(args[0])
@@ -494,7 +504,14 @@ class FakeBoard:
                 if self.tlm_ms > 0 and now >= next_tlm and not self.silent:
                     next_tlm = now + self.tlm_ms / 1000.0
                     if self.json:
-                        self.t.feed_line(json.dumps({"kind": "telemetry", "data": self.status()},
+                        st = self.status()
+                        if self.tlm_compact:
+                            st = {"state": st["state"], "tick": st["tick"],
+                                  "motor": {k: st["motor"][k] for k in ("position", "speed", "busy", "hi_z")},
+                                  "encoder": {k: st["encoder"][k] for k in ("count", "velocity")},
+                                  "control": {"following_error": st["control"]["following_error"]},
+                                  "heartbeat": {"remaining_ms": st["heartbeat"]["remaining_ms"]}}
+                        self.t.feed_line(json.dumps({"kind": "telemetry", "data": st},
                                                     separators=(",", ":")))
                     else:
                         self.t.feed_line("TELEM: pos=%d spd=%d enc=%d vel=%d" % (

@@ -364,6 +364,57 @@ TEST(json_telemetry_push_carries_exactly_the_diag_stat_data_object) {
     EXPECT_TRUE(tlm.find("\"rx_overflow_lines\":") != std::string::npos);
 }
 
+TEST(compact_json_worst_case_fits_its_buffer_with_margin) {
+    Protocol::TelemetrySnapshot snap{};
+    snap.motor.position = INT32_MIN; snap.motor.speed = UINT32_MAX;
+    snap.motor.busy = true; snap.motor.hiZ = true;
+    snap.encoder.count = INT64_MIN; snap.encoder.velocity = INT32_MIN;
+    snap.control.followingError = INT32_MIN;
+    Protocol::StatusJsonView v;
+    v.stateStr = "RUNNING_XXXXXXXXXXXXXXXX"; v.tick = UINT32_MAX; v.hbRemainingMs = UINT32_MAX;
+    char buf[Protocol::COMPACT_JSON_BUF];
+    int n = Protocol::renderCompactJson(buf, sizeof(buf), snap, v);
+    EXPECT_TRUE(n > 200);
+    EXPECT_TRUE(n < static_cast<int>(sizeof(buf)) - 32);
+    std::string js(buf);
+    int depth = 0;
+    for (char c : js) { if (c == '{') ++depth; if (c == '}') --depth; EXPECT_TRUE(depth >= 0); }
+    EXPECT_EQ(depth, 0);
+    EXPECT_TRUE(js.find("\"system\"") == std::string::npos);      // the client's "compact" marker
+    EXPECT_TRUE(js.find("\"count\":-9223372036854775808") != std::string::npos);
+}
+
+TEST(tlm_fmt_compact_switches_the_push_and_its_rate_floor_but_not_diag_stat) {
+    BoundRig r;
+    r.transport.baud = 115200;
+    r.run("FMT JSON");
+    std::string out = r.run("SYST:TLM:FMT COMPACT");
+    EXPECT_TRUE(out.find("\"format\":\"compact\"") != std::string::npos);
+    EXPECT_TRUE(out.find("\"min_ms\":42") != std::string::npos);
+    Protocol::TelemetrySnapshot snap{};
+    snap.motor.position = 1234;
+    r.transport.out.clear();
+    r.proc.emitTelemetry(snap);
+    std::string tlm = r.transport.out;
+    const std::string th = Protocol::TELEMETRY_JSON_HEAD;
+    EXPECT_TRUE(tlm.compare(0, th.size(), th) == 0);
+    EXPECT_TRUE(tlm.find("\"position\":1234") != std::string::npos);
+    EXPECT_TRUE(tlm.find("\"following_error\":") != std::string::npos);
+    EXPECT_TRUE(tlm.find("\"rx_overflow_lines\":") == std::string::npos);
+    EXPECT_TRUE(tlm.size() < 220);
+    std::string stat = r.run("DIAG:STAT?");                            // the full object on request
+    EXPECT_TRUE(stat.find("\"rx_overflow_lines\":") != std::string::npos);
+    out = r.run("SYST:TLM:FMT?");
+    EXPECT_TRUE(out.find("\"format\":\"compact\"") != std::string::npos);
+    out = r.run("SYST:TLM:FMT FULL");
+    EXPECT_TRUE(out.find("\"min_ms\":139") != std::string::npos);
+    r.transport.out.clear();
+    r.proc.emitTelemetry(snap);
+    EXPECT_TRUE(r.transport.out.find("\"rx_overflow_lines\":") != std::string::npos);
+    out = r.run("SYST:TLM:FMT SMALL");
+    EXPECT_TRUE(out.find("ERROR") != std::string::npos);
+}
+
 TEST(ascii_mode_keeps_the_short_telem_line) {
     BoundRig r;
     Protocol::TelemetrySnapshot snap{};

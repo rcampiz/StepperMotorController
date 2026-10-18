@@ -836,6 +836,36 @@
       "persists": false
     },
     {
+      "name": "SYST:TLM:FMT",
+      "prefix": "SYST",
+      "handler": "cmdTelemetryFormat",
+      "file": "system_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "SYST:TLM:FMT <FULL|COMPACT>"
+      ],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [
+        {
+          "command": "TLM_FMT",
+          "keys": [
+            "format",
+            "min_ms",
+            "period_ms"
+          ]
+        }
+      ],
+      "errors": [
+        "Telemetry format must be FULL or COMPACT"
+      ],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false
+    },
+    {
       "name": "SYST:BAUD",
       "prefix": "SYST",
       "handler": "cmdSetBaud",
@@ -1027,6 +1057,31 @@
           "keys": [
             "enabled",
             "period_ms"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false
+    },
+    {
+      "name": "SYST:TLM:FMT?",
+      "prefix": "SYST",
+      "handler": "cmdTelemetryFormatQuery",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<plain lines>"
+      ],
+      "json": [
+        {
+          "command": "TLM_FMT",
+          "keys": [
+            "format",
+            "min_ms"
           ]
         }
       ],

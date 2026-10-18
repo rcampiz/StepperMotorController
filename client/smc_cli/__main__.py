@@ -53,7 +53,7 @@ def _open(args, heartbeat: bool) -> Board:
     live = Liveness(max_age_s=0.25)
     live.touch()
     cfg = BoardConfig(heartbeat=heartbeat, heartbeat_timeout_ms=args.hb_timeout,
-                      telemetry_period_ms=args.tlm_ms)
+                      telemetry_period_ms=args.tlm_ms, telemetry_compact=args.tlm_compact)
     board = Board(transport, cfg, liveness=live if heartbeat else None, name=name)
     board._cli_liveness = live
     if not board.open(wait=True, timeout=args.connect_timeout):
@@ -297,6 +297,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="firmware watchdog ms")
         p.add_argument("--tlm-ms", type=int, default=BoardConfig.telemetry_period_ms,
                        help="telemetry push period ms")
+        p.add_argument("--tlm-compact", action="store_true",
+                       help="compact telemetry pushes (live fields only, ~170 B; allows 50 ms)")
         p.add_argument("--connect-timeout", type=float, default=5.0)
 
     sub.add_parser("ports").set_defaults(fn=cmd_ports)

@@ -137,6 +137,26 @@ int renderStatusJson(char* buf, size_t bufSize,
       v.modeStr, v.encStatusStr, v.anyError ? "true" : "false");
 }
 
+int renderCompactJson(char* buf, size_t bufSize,
+                      const TelemetrySnapshot& snap, const StatusJsonView& v) {
+  char encCountStr[24];
+  i64toa(snap.encoder.count, encCountStr, sizeof(encCountStr));
+  return snprintf(
+      buf, bufSize,
+      "%s"
+      "{\"state\":\"%s\",\"tick\":%lu,"
+      "\"motor\":{\"position\":%ld,\"speed\":%lu,\"busy\":%s,\"hi_z\":%s},"
+      "\"encoder\":{\"count\":%s,\"velocity\":%ld},"
+      "\"control\":{\"following_error\":%ld},"
+      "\"heartbeat\":{\"remaining_ms\":%lu}}}",
+      TELEMETRY_JSON_HEAD, v.stateStr, static_cast<unsigned long>(v.tick),
+      static_cast<long>(snap.motor.position), static_cast<unsigned long>(snap.motor.speed),
+      snap.motor.busy ? "true" : "false", snap.motor.hiZ ? "true" : "false",
+      encCountStr, static_cast<long>(snap.encoder.velocity),
+      static_cast<long>(snap.control.followingError),
+      static_cast<unsigned long>(v.hbRemainingMs));
+}
+
 // Everything DIAG:STAT? reports beyond the snapshot; shared with the F9 telemetry push so
 // both carry exactly the same `data` object.
 void CommandParser::fillStatusView(const TelemetrySnapshot &snap, StatusJsonView &v) {
@@ -226,7 +246,7 @@ void CommandParser::cmdTelemetryRate(const ParsedCommand &cmd) {
   }
   auto requested = static_cast<uint32_t>(atol(cmd.args[0]));
   // Floor from the line rate: a push may not use more than 80 % of the link (status_json.hpp)
-  const uint32_t floorMs = telemetryPeriodFloorMs(m_transport.baudRate());
+  const uint32_t floorMs = telemetryFloorMs();
   const uint32_t wanted = (requested > 0 && requested < floorMs) ? floorMs : requested;
   uint32_t accepted = m_dispatcher.setTelemetryPeriod(wanted);
   if (m_format == ResponseFormat::JSON) {
@@ -242,6 +262,60 @@ void CommandParser::cmdTelemetryRate(const ParsedCommand &cmd) {
     char buf[48];
     snprintf(buf, sizeof(buf), "OK TLM_RATE %lu", static_cast<unsigned long>(accepted));
     m_transport.println(buf);
+  }
+}
+
+uint32_t CommandParser::telemetryFloorMs() const {
+  return telemetryPeriodFloorMs(m_transport.baudRate(),
+                                m_telemetryCompact ? COMPACT_JSON_BUF : STATUS_JSON_BUF);
+}
+
+// SYST:TLM:FMT FULL|COMPACT - what a JSON telemetry push carries (ASCII keeps TELEM:)
+void CommandParser::cmdTelemetryFormat(const ParsedCommand &cmd) {
+  if (cmd.argCount < 1) {
+    respondErr("Usage: SYST:TLM:FMT <FULL|COMPACT>");
+    return;
+  }
+  const char *a = cmd.args[0];
+  bool compact;
+  if (strcmp(a, "COMPACT") == 0 || strcmp(a, "compact") == 0) {
+    compact = true;
+  } else if (strcmp(a, "FULL") == 0 || strcmp(a, "full") == 0) {
+    compact = false;
+  } else {
+    respondErr("Telemetry format must be FULL or COMPACT");
+    return;
+  }
+  m_telemetryCompact = compact;
+  // Back to the full line: a period chosen for the compact floor would starve the encoder
+  const uint32_t floorMs = telemetryFloorMs();
+  uint32_t period = m_dispatcher.getTelemetryPeriod();
+  if (period > 0 && period < floorMs) {
+    period = m_dispatcher.setTelemetryPeriod(floorMs);
+  }
+  if (m_format == ResponseFormat::JSON) {
+    char buf[96];
+    snprintf(buf, sizeof(buf), "{\"format\":\"%s\",\"period_ms\":%lu,\"min_ms\":%lu}",
+             compact ? "compact" : "full", static_cast<unsigned long>(period),
+             static_cast<unsigned long>(floorMs));
+    respondJsonOk("TLM_FMT", buf);
+  } else {
+    char buf[48];
+    snprintf(buf, sizeof(buf), "OK TLM_FMT %s %lu", compact ? "COMPACT" : "FULL",
+             static_cast<unsigned long>(period));
+    m_transport.println(buf);
+  }
+}
+
+void CommandParser::cmdTelemetryFormatQuery() {
+  if (m_format == ResponseFormat::JSON) {
+    char buf[64];
+    snprintf(buf, sizeof(buf), "{\"format\":\"%s\",\"min_ms\":%lu}",
+             m_telemetryCompact ? "compact" : "full",
+             static_cast<unsigned long>(telemetryFloorMs()));
+    respondJsonOk("TLM_FMT", buf);
+  } else {
+    m_transport.println(m_telemetryCompact ? "OK COMPACT" : "OK FULL");
   }
 }
 

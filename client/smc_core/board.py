@@ -47,6 +47,19 @@ from .transport.base import ITransport, TransportError
 log = logging.getLogger("smc_core.board")
 
 Clock = Callable[[], float]
+
+
+def _merge_status(base: Dict[str, Any], part: Dict[str, Any]) -> Dict[str, Any]:
+    """The last full status with a compact push's fields written over it (one level deep)."""
+    out = dict(base)
+    for k, v in part.items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            merged = dict(out[k])
+            merged.update(v)
+            out[k] = merged
+        else:
+            out[k] = v
+    return out
 MULTILINE_END = "OK "          # ASCII: "OK <n>" closes a multi-line reply
 
 
@@ -67,6 +80,11 @@ class BoardConfig:
     heartbeat_timeout_ms: int = 500           # firmware watchdog (S-5; see docs/review/LINK_BUDGET.md)
     heartbeat_misses_for_loss: int = 3
     telemetry_period_ms: int = 200            # SYST:TLM:RATE; 0 = no telemetry (5 Hz: link budget)
+    # SYST:TLM:FMT COMPACT: pushes carry only the live fields (about 170 bytes instead of 900),
+    # which allows 50 ms at 115200; the Board merges them into its last full status and
+    # refreshes the full object itself every full_status_period_s.
+    telemetry_compact: bool = False
+    full_status_period_s: float = 1.0
     # Commands that write internal flash stall the MCU ~1-2 s (128 KB sector erase). The
     # board widens the watchdog to this value around them and restores it after; it never
     # disarms it. 0 = do not widen.
@@ -468,6 +486,8 @@ class Board:
                 self._emit("unsolicited", frame.text)
         elif k == FrameKind.TELEMETRY:
             data = parse_telemetry(frame)
+            if "system" not in data and self.last_status:
+                data = _merge_status(self.last_status, data)     # compact push: live fields only
             self.last_status = data
             self._emit("telemetry", data, now)
         elif k == FrameKind.EVENT:
@@ -555,6 +575,7 @@ class Board:
                 self._service_latest()
                 self._service_queue_one()
                 self._service_heartbeat()
+                self._service_full_status()
             except TransportError as e:
                 self._link_lost(str(e))
             except Exception:  # noqa: BLE001
@@ -674,7 +695,10 @@ class Board:
         if self.config.events:
             self._execute(C.events_enable(), "setup")
         if self.config.telemetry_period_ms > 0:
+            if self.config.telemetry_compact:           # format first: it sets the rate floor
+                self._execute(C.telemetry_format(True), "setup")
             self._execute(C.telemetry_rate(self.config.telemetry_period_ms), "setup")
+            self._full_next = 0.0
         if self.config.heartbeat:
             self._hb_next = 0.0
             self._service_heartbeat()                       # first feed, then arm
@@ -720,6 +744,23 @@ class Board:
             self._job_running = False
             self._job_cancel.clear()
         ticket._finish(result)
+
+    _full_next = 0.0
+
+    def _service_full_status(self) -> None:
+        """Compact pushes carry the live fields only: refresh the full DIAG:STAT? object (faults,
+        heartbeat, system counters) at a slow fixed rate so every consumer stays complete."""
+        if not (self.config.telemetry_compact and self.config.telemetry_period_ms > 0
+                and self._link_up and self._session_ready.is_set()):
+            return
+        now = self._clock()
+        if now < self._full_next:
+            return
+        self._full_next = now + max(0.2, self.config.full_status_period_s)
+        resp = self._execute(C.status(), "status")
+        if resp.success and resp.data:
+            self.last_status = resp.data
+            self._emit("telemetry", resp.data, self._clock())
 
     def _service_heartbeat(self) -> None:
         if not self.config.heartbeat or not self._link_up:

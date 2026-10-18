@@ -80,6 +80,24 @@ def test_telemetry_is_pushed_not_polled(rig):
     assert "DIAG:STAT?" not in rig.tx()
 
 
+def test_compact_telemetry_is_merged_into_the_last_full_status():
+    rig = Rig(telemetry_compact=True, telemetry_period_ms=20, full_status_period_s=0.3)
+    try:
+        rig.open()
+        assert rig.fake.tlm_compact and rig.fake.tlm_ms == 20
+        i = rig.fake.received.index("SYST:TLM:FMT COMPACT")
+        assert "SYST:TLM:RATE 20" in rig.fake.received[i:]            # format first, then the rate
+        rig.fake.position = 777
+        assert wait_for(lambda: rig.board.last_status.get("motor", {}).get("position") == 777, 2.0)
+        st = rig.board.last_status
+        assert "system" in st and "ocd" in st["motor"]                # full fields kept from DIAG:STAT?
+        n = len(rig.seen["telemetry"])
+        assert wait_for(lambda: "DIAG:STAT?" in rig.fake.received[-40:], 2.0)   # periodic full refresh
+        assert wait_for(lambda: len(rig.seen["telemetry"]) > n + 5, 2.0)
+    finally:
+        rig.close()
+
+
 def test_watchdog_disarm_is_refused_unless_the_motor_is_in_hi_z(rig):     # F2
     rig.open()
     rig.fake.hi_z = False
