@@ -32,6 +32,7 @@ from smc_gui.telemetry_panel import TelemetryPanel
 from smc_gui.driver_panel import DriverPanel
 from smc_gui.protection_panel import ProtectionPanel
 from smc_gui.stepmode_panel import StepModePanel
+from smc_gui.fleet_panel import FleetPanel
 from smc_gui.graph_panel import GraphPanel
 from smc_gui.display_panel import DisplayPanel
 from smc_gui.motion_panel import MotionPanel
@@ -185,14 +186,9 @@ class MainWindow(QMainWindow):
         diag.addTab(self._display_panel, "Display")
         self._right_tabs.addTab(diag, "Diagnostics")
 
-        # Fleet: four boards (FL/FR/RL/RR) and the controller; the core (smc_core.fleet,
-        # kinematics) exists, the page is the next step
-        fleet = QLabel("Fleet: four boards with roles FL / FR / RL / RR and a gamepad "
-                       "controller.\nThe core already drives a fleet (smc fleet ...); the page "
-                       "is being built.")
-        fleet.setAlignment(Qt.AlignCenter)
-        fleet.setStyleSheet("color: #888;")
-        self._right_tabs.addTab(fleet, "Fleet")
+        # Fleet: four boards (FL/FR/RL/RR) driven as one base, the Pi's role on this PC
+        self._fleet_panel = FleetPanel()
+        self._right_tabs.addTab(self._fleet_panel, "Fleet")
 
         splitter.addWidget(self._right_tabs)
 
@@ -1062,5 +1058,6 @@ class MainWindow(QMainWindow):
             except Exception as e:  # noqa: BLE001
                 log.warning("ESTOP on close failed: %s", e)
             self._board = None
+        self._fleet_panel.shutdown()
         self._on_disconnect_clicked()
         event.accept()
