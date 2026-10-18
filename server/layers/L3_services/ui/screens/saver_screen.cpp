@@ -6,6 +6,7 @@
 #include "ui/screens/saver_screen.hpp"
 #include "ui/theme.hpp"
 #include "harness/defs/harness_l3_l4.hpp"
+#include <string.h>
 
 namespace UI {
 
@@ -244,27 +245,39 @@ constexpr Glyph TITLE_GLYPHS[] = {
     {'O', {0x3E, 0x41, 0x41, 0x41, 0x3E}}, {'C', {0x3E, 0x41, 0x41, 0x41, 0x22}},
     {'N', {0x7F, 0x04, 0x08, 0x10, 0x7F}}, {'L', {0x7F, 0x40, 0x40, 0x40, 0x40}},
 };
-constexpr const char* TITLE_TEXT = "STEPPER MOTOR CONTROLLER";
+// The whole name at once, three centred lines
+constexpr const char* TITLE_LINES[3] = {"STEPPER", "MOTOR", "CONTROLLER"};
 constexpr int16_t TITLE_CELL = 3;                       // 15 x 21 glyphs
 constexpr int16_t TITLE_ADV = 6 * TITLE_CELL;
-constexpr int16_t TITLE_LEN = 24;
-constexpr int16_t TITLE_W = TITLE_LEN * TITLE_ADV;
-constexpr int16_t TITLE_H = 7 * TITLE_CELL;
-constexpr int16_t TITLE_SPEED = 3;                      // px per frame
+constexpr int16_t TITLE_LINE_H = 7 * TITLE_CELL;
+constexpr int16_t TITLE_PITCH = TITLE_LINE_H + 6;       // line to line
+constexpr int16_t TITLE_W = 10 * TITLE_ADV - TITLE_CELL; // the longest line, CONTROLLER
+constexpr int16_t TITLE_H = 2 * TITLE_PITCH + TITLE_LINE_H;
+// Fade in, hold, fade out (frames at 20 Hz)
+constexpr uint16_t FADE_FRAMES = 16;
+constexpr uint16_t HOLD_TITLE_FRAMES = 80;
 
 const uint8_t* glyphFor(char c) {
     for (const Glyph& g : TITLE_GLYPHS) if (g.c == c) return g.cols;
     return nullptr;
 }
 
-/// Is title pixel (tx, ty) inked? (tx, ty relative to the title's top-left)
+/// Is title pixel (tx, ty) inked? (tx, ty relative to the title block's top-left)
 bool titleInk(int16_t tx, int16_t ty) {
     if (tx < 0 || ty < 0 || tx >= TITLE_W || ty >= TITLE_H) return false;
-    const int16_t idx = tx / TITLE_ADV;
-    const int16_t col = (tx % TITLE_ADV) / TITLE_CELL;
+    const int16_t line = ty / TITLE_PITCH;
+    const int16_t ly = ty % TITLE_PITCH;
+    if (ly >= TITLE_LINE_H) return false;
+    const char* text = TITLE_LINES[line];
+    const int16_t len = static_cast<int16_t>(strlen(text));
+    const int16_t lineW = static_cast<int16_t>(len * TITLE_ADV - TITLE_CELL);
+    const int16_t lx = static_cast<int16_t>(tx - (TITLE_W - lineW) / 2);
+    if (lx < 0 || lx >= lineW) return false;
+    const int16_t idx = lx / TITLE_ADV;
+    const int16_t col = (lx % TITLE_ADV) / TITLE_CELL;
     if (col > 4) return false;
-    const uint8_t* g = glyphFor(TITLE_TEXT[idx]);
-    return g != nullptr && (g[col] & (1u << (ty / TITLE_CELL))) != 0;
+    const uint8_t* g = glyphFor(text[idx]);
+    return g != nullptr && (g[col] & (1u << (ly / TITLE_CELL))) != 0;
 }
 
 } // namespace
@@ -323,8 +336,10 @@ void SaverScreen::synthNewScene()
         m_starX[i] = sx;
         m_starY[i] = sy;
     }
-    m_titleX = -1000;                                   // no title until its turn
-    m_titleY = static_cast<int16_t>(12 + nextRandom() % (m_horizon > 120 ? m_horizon - 120 : 10));
+    // The title's place this scene: centred give or take 12 px, high in the sky
+    m_titleX = static_cast<int16_t>((W - TITLE_W) / 2 - 12 + static_cast<int16_t>(nextRandom() % 25));
+    m_titleY = static_cast<int16_t>(10 + nextRandom() % 14);
+    m_titleAlpha = 0;
 }
 
 uint16_t SaverScreen::synthUpper(int16_t x, int16_t y) const
@@ -448,8 +463,8 @@ void SaverScreen::synthSunBox(Services::ICanvas& lcd)
     int16_t x1 = static_cast<int16_t>(m_sunX + m_sunR);
     if (x0 < 0) x0 = 0;
     if (x1 > W - 1) x1 = W - 1;
-    // Keep clear of the title band while it passes (it repaints its own rows)
-    if (m_titleX > -TITLE_W && y0 < m_titleY + TITLE_H + 2) y0 = static_cast<int16_t>(m_titleY + TITLE_H + 2);
+    // Keep clear of the title while it shows (it repaints its own rows)
+    if (m_titleAlpha > 0 && y0 < m_titleY + TITLE_H + 3) y0 = static_cast<int16_t>(m_titleY + TITLE_H + 3);
     if (y0 >= m_horizon) return;
     const uint16_t w = static_cast<uint16_t>(x1 - x0 + 1);
     lcd.streamBitmapStart(static_cast<uint16_t>(x0), static_cast<uint16_t>(y0), w,
@@ -467,27 +482,41 @@ void SaverScreen::synthSunBox(Services::ICanvas& lcd)
 
 void SaverScreen::synthTitle(Services::ICanvas& lcd)
 {
-    // The title band: the scene underneath, the title over it with a magenta and a cyan
-    // ghost 2 px either side (chromatic aberration), all composited row by row
+    // The title's box: the scene underneath, the title blended over it at m_titleAlpha with a
+    // magenta and a cyan ghost 2 px either side (chromatic aberration), composited row by row.
+    // At alpha 0 it is just the scene, stars put back.
     static uint8_t row[W * 2];
+    const int16_t x0 = static_cast<int16_t>(m_titleX - 3);
+    const int16_t w = static_cast<int16_t>(TITLE_W + 6);
     const int16_t y0 = static_cast<int16_t>(m_titleY - 1);
     const int16_t rows = static_cast<int16_t>(TITLE_H + 2);
-    lcd.streamBitmapStart(0, static_cast<uint16_t>(y0), W, static_cast<uint16_t>(rows));
+    const int a = m_titleAlpha;
+    lcd.streamBitmapStart(static_cast<uint16_t>(x0), static_cast<uint16_t>(y0), static_cast<uint16_t>(w),
+                          static_cast<uint16_t>(rows));
     for (int16_t y = y0; y < y0 + rows; y++) {
         const int16_t ty = static_cast<int16_t>(y - m_titleY);
-        for (int16_t x = 0; x < W; x++) {
+        for (int16_t x = x0; x < x0 + w; x++) {
             const int16_t tx = static_cast<int16_t>(x - m_titleX);
-            uint16_t c;
-            if (titleInk(tx, ty)) c = TITLE;
-            else if (titleInk(static_cast<int16_t>(tx + 2), ty)) c = TITLE_L;
-            else if (titleInk(static_cast<int16_t>(tx - 2), ty)) c = TITLE_R;
-            else c = synthUpper(x, y);
-            row[x * 2] = static_cast<uint8_t>(c >> 8);
-            row[x * 2 + 1] = static_cast<uint8_t>(c & 0xFF);
+            const uint16_t bg = synthUpper(x, y);
+            uint16_t c = bg;
+            if (a > 0) {
+                if (titleInk(tx, ty)) c = mix(bg, TITLE, a);
+                else if (titleInk(static_cast<int16_t>(tx + 2), ty)) c = mix(bg, TITLE_L, a);
+                else if (titleInk(static_cast<int16_t>(tx - 2), ty)) c = mix(bg, TITLE_R, a);
+            }
+            row[(x - x0) * 2] = static_cast<uint8_t>(c >> 8);
+            row[(x - x0) * 2 + 1] = static_cast<uint8_t>(c & 0xFF);
         }
-        lcd.streamBitmapData(row, sizeof row);
+        lcd.streamBitmapData(row, static_cast<size_t>(w) * 2);
     }
     lcd.streamBitmapEnd();
+    if (a == 0) {                                        // the stars that were under it
+        for (uint8_t i = 0; i < STAR_COUNT; i++) {
+            if (m_starX[i] >= x0 && m_starX[i] < x0 + w && m_starY[i] >= y0 && m_starY[i] < y0 + rows) {
+                lcd.drawPixel(m_starX[i], m_starY[i], (i % 3) ? STAR_DIM : STAR);
+            }
+        }
+    }
 }
 
 void SaverScreen::synthTwinkle(Services::ICanvas& lcd)
@@ -495,7 +524,8 @@ void SaverScreen::synthTwinkle(Services::ICanvas& lcd)
     const Palette& P = PALETTES[m_palette];
     for (int k = 0; k < 3; k++) {
         const uint8_t i = static_cast<uint8_t>(nextRandom() % STAR_COUNT);
-        if (m_titleX > -TITLE_W && m_starY[i] >= m_titleY - 1 && m_starY[i] <= m_titleY + TITLE_H) continue;
+        if (m_titleAlpha > 0 && m_starX[i] >= m_titleX - 3 && m_starX[i] < m_titleX + TITLE_W + 3 &&
+            m_starY[i] >= m_titleY - 1 && m_starY[i] <= m_titleY + TITLE_H) continue;
         const uint32_t r = nextRandom() % 4;
         const uint16_t c = (r == 0) ? m_sky[m_starY[i]] : (r == 1 ? STAR : (r == 2 ? STAR_DIM : P.glow));
         lcd.drawPixel(m_starX[i], m_starY[i], c);
@@ -515,15 +545,17 @@ void SaverScreen::renderSynthwave(Services::ICanvas& lcd)
     m_frame++;
     m_phase += 0.05f;                          // the floor comes toward the viewer
     if (m_phase >= 1.0f) m_phase -= 1.0f;
-    // The title sweeps across once per scene, starting a few seconds in
-    if (m_frame == TITLE_START_FRAME) m_titleX = W;
     lcd.waitForVSync();
-    if (m_titleX > -TITLE_W) {
-        synthTitle(lcd);
-        m_titleX = static_cast<int16_t>(m_titleX - TITLE_SPEED);
-        if (m_titleX <= -TITLE_W) {
-            synthTitle(lcd);                   // one last pass leaves the scene clean
-            m_titleX = -1000;
+    // Once per scene the name fades in, holds and fades out
+    if (m_frame >= TITLE_START_FRAME && m_frame <= TITLE_START_FRAME + 2 * FADE_FRAMES + HOLD_TITLE_FRAMES) {
+        const uint16_t t = static_cast<uint16_t>(m_frame - TITLE_START_FRAME);
+        uint16_t a;
+        if (t < FADE_FRAMES) a = static_cast<uint16_t>((t + 1) * 256 / FADE_FRAMES);
+        else if (t < FADE_FRAMES + HOLD_TITLE_FRAMES) a = 256;
+        else a = static_cast<uint16_t>((2 * FADE_FRAMES + HOLD_TITLE_FRAMES - t) * 256 / FADE_FRAMES);
+        if (a != m_titleAlpha) {
+            m_titleAlpha = a;
+            synthTitle(lcd);
         }
     }
     if ((m_frame & 1) == 0) {

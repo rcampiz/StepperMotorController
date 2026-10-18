@@ -7,8 +7,9 @@
  *    wireframe mountains or a lit skyline, and a perspective grid that scrolls toward the
  *    viewer. Every 30 s a new scene: another palette (sunset, Blade Runner amber, cyber,
  *    acid), horizon height, sun size and place, so no pixel holds one picture. Once per
- *    scene "STEPPER MOTOR CONTROLLER" sweeps across in block letters with a magenta and a
- *    cyan ghost. Per frame only the floor, the sun's box and the title band are repainted.
+ *    scene "STEPPER / MOTOR / CONTROLLER" fades in on three lines in block letters with a
+ *    magenta and a cyan ghost, holds 4 s and fades out. Per frame only the floor and the
+ *    sun's box are repainted (and the title's box while it fades).
  *  - HOTLINE: a diagonal stripe band and a blocky SMC card with chromatic aberration,
  *    relaid every 2 s, with VHS glitch slices in between.
  *  - BLANK: a black panel, nothing sent.
@@ -57,8 +58,9 @@ private:
     uint8_t m_palette = 0;
     bool m_city = false;
     uint32_t m_seedScene = 0;
-    int16_t m_titleX = -1000;              // the title's left edge while it passes
-    int16_t m_titleY = 40;
+    int16_t m_titleX = 31;                 // the title block's top-left this scene
+    int16_t m_titleY = 12;
+    uint16_t m_titleAlpha = 0;             // 0 = not shown, 256 = full
     uint8_t m_ridge[240] = {};             // mountain / building height above the horizon per column
     uint8_t m_bldStart[240] = {};          // skyline: the column each building starts at
     uint16_t m_sky[240] = {};              // sky colour per row (horizon < 240)

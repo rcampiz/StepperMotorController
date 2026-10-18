@@ -251,7 +251,7 @@ TEST(saver_styles_animate_and_any_key_leaves) {
     EXPECT_TRUE(perTwo > 2u * 240u * 80u && perTwo < 240u * 320u);    // the floor and the sun box, not the sky
     for (int i = 0; i < 10; i++) rig.frame();
     rig.dump("saver_synth_later");
-    // the title passes 5 s in; a new scene at 30 s has another palette and horizon
+    // the title fades in 5 s in and holds; a new scene at 30 s has another palette and horizon
     for (int i = 0; i < 128; i++) rig.frame();
     rig.dump("saver_synth_title");
     const uint16_t ink = static_cast<uint16_t>(((240 >> 3) << 11) | ((240 >> 2) << 5) | (255 >> 3));
