@@ -192,6 +192,47 @@ class DriverPanel(QWidget):
         spin.valueChanged.connect(lambda amps: slider.setValue(U.tval_from_amps(amps)))
         return ch, slider, spin
 
+    def _create_scaled_fader(self, name, description, min_raw, max_raw, scale, default_raw,
+                             tooltip):
+        """Vertical fader over a raw register range with a spinbox in physical units
+        (value = raw x scale). Returns (layout, slider, spinbox); the slider holds the raw value.
+        """
+        ch = QVBoxLayout()
+        ch.setSpacing(4)
+        name_lbl = QLabel(name + "  \u24d8")
+        name_lbl.setAlignment(Qt.AlignCenter)
+        name_lbl.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        name_lbl.setToolTip(tooltip)
+        ch.addWidget(name_lbl)
+        slider = QSlider(Qt.Vertical)
+        slider.setRange(min_raw, max_raw)
+        slider.setValue(default_raw)
+        slider.setTickPosition(QSlider.TicksBothSides)
+        slider.setTickInterval(max(1, (max_raw - min_raw) // 8))
+        slider.setMinimumHeight(100)
+        slider.setFixedWidth(60)
+        slider.setStyleSheet(FADER_STYLE_GREEN)
+        slider.setToolTip(tooltip)
+        ch.addWidget(slider, alignment=Qt.AlignHCenter)
+        spin = QDoubleSpinBox()
+        spin.setRange(min_raw * scale, max_raw * scale)
+        spin.setDecimals(1 if scale < 1 else 0)
+        spin.setSingleStep(scale)
+        spin.setValue(default_raw * scale)
+        spin.setSuffix(" \u00b5s")
+        spin.setAlignment(Qt.AlignCenter)
+        spin.setFont(QFont("Consolas", 9))
+        spin.setMinimumWidth(70)
+        spin.setToolTip(tooltip)
+        ch.addWidget(spin)
+        desc_lbl = QLabel(description)
+        desc_lbl.setAlignment(Qt.AlignCenter)
+        desc_lbl.setStyleSheet("font-size: 9px; color: #888;")
+        ch.addWidget(desc_lbl)
+        slider.valueChanged.connect(lambda raw: spin.setValue(raw * scale))
+        spin.valueChanged.connect(lambda v: slider.setValue(int(round(v / scale))))
+        return ch, slider, spin
+
     def _create_rpm_spinbox(self, min_val, max_val, suffix):
         """Create a QDoubleSpinBox for RPM / RPM/s display."""
         spin = QDoubleSpinBox()
@@ -358,69 +399,70 @@ class DriverPanel(QWidget):
         main_layout.addLayout(tval_row)
 
         # Current-mode regulation: how the chip chops the current (PRED_EN/TSW in CONFIG,
-        # Hi-Z on Apply; T_FAST, TON_MIN, TOFF_MIN with the motor stopped). Chip defaults
-        # unless changed; the bench sweep scenario tells whether a setting helped.
+        # Hi-Z on Apply; T_FAST, TON_MIN, TOFF_MIN with the motor stopped). Faders in
+        # microseconds over the raw register ranges; chip defaults unless changed. The
+        # resonance_sweep scenario (Tests tab) tells whether a setting helped.
         self._cm_row = QWidget()
-        cm = QHBoxLayout(self._cm_row)
-        cm.setContentsMargins(0, 0, 0, 0)
+        cm_v = QVBoxLayout(self._cm_row)
+        cm_v.setContentsMargins(0, 0, 0, 0)
+        head = QHBoxLayout()
         cm_lbl = QLabel("Current regulation:")
         cm_lbl.setFont(QFont("Segoe UI", 9, QFont.Bold))
-        cm.addWidget(cm_lbl)
-        self._pred_cb = QCheckBox("Predictive control")
+        head.addWidget(cm_lbl)
+        self._pred_cb = QCheckBox("Predictive current control")
         self._pred_cb.setChecked(True)                    # firmware default
         self._pred_cb.setToolTip("PRED_EN: the chip predicts the next PWM period from the last one "
-                                 "so the current follows the sine more closely at speed. Off by default.")
-        cm.addWidget(self._pred_cb)
-        cm.addWidget(QLabel("Switching:"))
-        self._tsw_spin = QSpinBox()
-        self._tsw_spin.setRange(4, 128)
-        self._tsw_spin.setSingleStep(4)
-        self._tsw_spin.setValue(48)
-        self._tsw_spin.setSuffix(" \u00b5s")
-        self._tsw_spin.setToolTip("TSW: target switching period, 4 to 128 \u00b5s in 4 \u00b5s steps "
-                                  "(48 \u00b5s = 21 kHz default). Shorter = higher chopper frequency.")
-        cm.addWidget(self._tsw_spin)
-        cm.addWidget(QLabel("Fast step:"))
-        self._fast_step_spin = QSpinBox()
-        self._fast_step_spin.setRange(2, 32)
-        self._fast_step_spin.setSingleStep(2)
-        self._fast_step_spin.setValue(4)
-        self._fast_step_spin.setSuffix(" \u00b5s")
-        self._fast_step_spin.setToolTip("T_FAST[7:4] FAST_STEP: longest fast-decay step when the "
-                                        "current must fall quickly (default 4 \u00b5s).")
-        cm.addWidget(self._fast_step_spin)
-        cm.addWidget(QLabel("Fast decay:"))
-        self._toff_fast_spin = QSpinBox()
-        self._toff_fast_spin.setRange(2, 32)
-        self._toff_fast_spin.setSingleStep(2)
-        self._toff_fast_spin.setValue(20)
-        self._toff_fast_spin.setSuffix(" \u00b5s")
-        self._toff_fast_spin.setToolTip("T_FAST[3:0] TOFF_FAST: fast-decay time at the start of each "
-                                        "off period (default 20 \u00b5s). More fast decay tracks a "
-                                        "falling sine better, at the cost of ripple.")
-        cm.addWidget(self._toff_fast_spin)
-        cm.addWidget(QLabel("Min on/off:"))
-        self._ton_min_spin = QDoubleSpinBox()
-        self._ton_min_spin.setRange(0.5, 64.0)
-        self._ton_min_spin.setSingleStep(0.5)
-        self._ton_min_spin.setDecimals(1)
-        self._ton_min_spin.setValue(21.0)
-        self._ton_min_spin.setSuffix(" \u00b5s")
-        self._ton_min_spin.setToolTip("TON_MIN: shortest on time of a PWM period (default 21 \u00b5s).")
-        cm.addWidget(self._ton_min_spin)
-        self._toff_min_spin = QDoubleSpinBox()
-        self._toff_min_spin.setRange(0.5, 64.0)
-        self._toff_min_spin.setSingleStep(0.5)
-        self._toff_min_spin.setDecimals(1)
-        self._toff_min_spin.setValue(21.0)
-        self._toff_min_spin.setSuffix(" \u00b5s")
-        self._toff_min_spin.setToolTip("TOFF_MIN: shortest off time of a PWM period (default 21 \u00b5s).")
-        cm.addWidget(self._toff_min_spin)
+                                 "so the current lands on the reference instead of overshooting it. "
+                                 "Firmware default on (bench 2026-10-18: less ripple at every speed).")
+        head.addWidget(self._pred_cb)
+        head.addStretch()
+        cm_v.addLayout(head)
+
+        cm = QHBoxLayout()
+        faders2 = QHBoxLayout()
+        faders2.setSpacing(16)
+        ch, self._tsw_slider, self._tsw_spin = self._create_scaled_fader(
+            "TSW", "Switching\nperiod", 1, 32, 4.0, 48,
+            "TSW: target switching period, 4 to 128 \u00b5s in 4 \u00b5s steps (48 \u00b5s = 21 kHz "
+            "default). Shorter = higher chopper frequency, finer current control, more switching heat.")
+        faders2.addLayout(ch)
+        ch, self._fast_step_slider, self._fast_step_spin = self._create_scaled_fader(
+            "FAST STEP", "Fast decay\nstep", 1, 16, 2.0, 4,
+            "T_FAST[7:4] FAST_STEP: longest fast-decay step when the current must fall quickly "
+            "(default 4 \u00b5s).")
+        faders2.addLayout(ch)
+        ch, self._toff_fast_slider, self._toff_fast_spin = self._create_scaled_fader(
+            "FAST DECAY", "Fast decay\ntime", 1, 16, 2.0, 20,
+            "T_FAST[3:0] TOFF_FAST: fast-decay time at the start of each off period (default "
+            "20 \u00b5s). More fast decay follows a falling sine better, at the cost of ripple.")
+        faders2.addLayout(ch)
+        ch, self._ton_min_slider, self._ton_min_spin = self._create_scaled_fader(
+            "MIN ON", "Shortest\non time", 1, 128, 0.5, 42,
+            "TON_MIN: shortest on time of a PWM period, 0.5 to 64 \u00b5s (default 21 \u00b5s).")
+        faders2.addLayout(ch)
+        ch, self._toff_min_slider, self._toff_min_spin = self._create_scaled_fader(
+            "MIN OFF", "Shortest\noff time", 1, 128, 0.5, 42,
+            "TOFF_MIN: shortest off time of a PWM period, 0.5 to 64 \u00b5s (default 21 \u00b5s).")
+        faders2.addLayout(ch)
+        cm.addLayout(faders2)
+        cbtn = QVBoxLayout()
+        cbtn.addStretch()
         self._apply_cm_btn = QPushButton("Apply regulation")
         self._apply_cm_btn.setToolTip("DRV:CFG:PRED, DRV:CFG:DECAY, DRV:CFG:APPLY (needs the motor idle)")
         self._apply_cm_btn.clicked.connect(self._on_apply_cm)
-        cm.addWidget(self._apply_cm_btn)
-        cm.addStretch()
+        cbtn.addWidget(self._apply_cm_btn)
+        self._cm_defaults_btn = QPushButton("Chip defaults")
+        self._cm_defaults_btn.setToolTip("Set the faders to the powerSTEP01 defaults (48, 4, 20, 21, 21 \u00b5s); "
+                                         "Apply to send them.")
+        self._cm_defaults_btn.clicked.connect(self._on_cm_defaults)
+        cbtn.addWidget(self._cm_defaults_btn)
+        cnote = QLabel("Chopper timing in \u00b5s over the raw register ranges;\n"
+                       "run the resonance_sweep scenario to compare settings by numbers")
+        cnote.setStyleSheet("font-size: 8px; color: #888;")
+        cbtn.addWidget(cnote)
+        cbtn.addStretch()
+        cm.addLayout(cbtn)
+        cm_v.addLayout(cm)
         main_layout.addWidget(self._cm_row)
         self._on_rated_current_changed(self._rated_spin.value())
 
@@ -931,6 +973,15 @@ class DriverPanel(QWidget):
             C.cfg_tval(*(sl.value() for sl in self._tval_sliders)),
             C.cfg_apply(),
         ])
+
+    @Slot()
+    def _on_cm_defaults(self):
+        self._pred_cb.setChecked(True)
+        self._tsw_spin.setValue(48)
+        self._fast_step_spin.setValue(4)
+        self._toff_fast_spin.setValue(20)
+        self._ton_min_spin.setValue(21.0)
+        self._toff_min_spin.setValue(21.0)
 
     @Slot()
     def _on_apply_cm(self):
