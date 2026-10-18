@@ -66,12 +66,13 @@ public:
     void streamEnd() override;
 
     /// Joystick navigation constants (polls at 20 Hz)
-    static constexpr uint8_t LONG_PRESS_POLLS  = 20;   ///< 1000 ms CENTER -> main menu
+    static constexpr uint8_t LONG_PRESS_POLLS  = 40;   ///< 2000 ms CENTER -> main menu
     static constexpr uint8_t HOLD_DELAY_POLLS  = 8;    ///< 400 ms before auto-repeat
     static constexpr uint8_t HOLD_REPEAT_POLLS = 2;    ///< 100 ms between repeats
 
 private:
     void handleJoystick();
+    void updateStatusLine();
     void populateImageMenu();
     static bool onImageActionSelect(uint8_t index);
     static bool onImageMenuSelect(uint8_t index);

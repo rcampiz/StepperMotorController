@@ -5,7 +5,13 @@
 
 #include "L3_services/ui/display_service/display_service.hpp"
 #include "harness/trace/interface_trace.hpp"
+#include "L3_services/infra/telemetry_store/telemetry_store.hpp"
+#include "L3_services/motion/motion.hpp"
+#include "L3_services/config/device_config/device_config.hpp"
+#include "L3_services/ui/screens/encoder_screen.hpp"
+#include "L3_services/ui/theme.hpp"
 #include <stdio.h>
+#include <string.h>
 
 namespace Services {
 
@@ -205,9 +211,40 @@ void DisplayService::tick()
     handleJoystick();
 
     if (m_lcd != nullptr && m_uiMode->getMode() == UI::UIMode::LOCAL) {
+        updateStatusLine();
         ITRACE(Harness::ITrace::L4_LCD, "[UI>L4]", "lcd.render");
         m_screenManager.render();
     }
+}
+
+void DisplayService::updateStatusLine()
+{
+    static const char* const STEP_NAMES[] = {"1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64", "1/128"};
+    Protocol::TelemetrySnapshot t = Services::g_telemetryStore.getSnapshot();
+    UI::StatusLine s = {};
+
+    // Left: drive state and the encoder's speed in rpm (the shaft, not the command)
+    long rpm = static_cast<long>(static_cast<int64_t>(t.encoder.velocity) * 60 / UI::ENCODER_CPR);
+    if (rpm < 0) rpm = -rpm;
+    const char* state;
+    if (t.motor.stalled)   { state = "STALL"; s.leftColor = UI::Theme::RED; }
+    else if (t.motor.hiZ)  { state = "HiZ";   s.leftColor = UI::Theme::DIM; }
+    else if (t.motor.busy) { state = "RUN";   s.leftColor = UI::Theme::GREEN; }
+    else                   { state = "HOLD";  s.leftColor = UI::Theme::CYAN; }
+    snprintf(s.left, sizeof(s.left), "%s %ldrpm", state, rpm);
+
+    // Middle: drive mode and microstep setting
+    const auto& cfg = Services::motion.stepper.config;
+    snprintf(s.mid, sizeof(s.mid), "%s %s", cfg.getDriveMode() ? "CM" : "VM", STEP_NAMES[cfg.getStepMode()]);
+    s.midColor = UI::Theme::VIOLET;
+
+    // Right: the wheel this board drives, or OK when it has no role yet
+    const char* role = Services::roleToString(Services::g_deviceConfig.getRole());
+    bool hasRole = role != nullptr && role[0] != '\0' && strcmp(role, "NONE") != 0 && strcmp(role, "UNASSIGNED") != 0;
+    snprintf(s.right, sizeof(s.right), "%s", hasRole ? role : "OK");
+    s.rightColor = hasRole ? UI::Theme::YELLOW : UI::Theme::GREEN;
+
+    m_screenManager.setStatus(s);
 }
 
 // ---------------------------------------------------------------------------

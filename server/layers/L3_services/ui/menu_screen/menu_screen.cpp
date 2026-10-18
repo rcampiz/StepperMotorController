@@ -4,26 +4,22 @@
  */
 
 #include "ui/menu_screen/menu_screen.hpp"
+#include "ui/chrome/chrome.hpp"
+#include "ui/theme.hpp"
 #include "harness/defs/harness_l3_l4.hpp"
 #include <string.h>
 
 namespace UI {
 
-// Layout constants (medium font: 8×12 char cell)
-static constexpr uint16_t MARGIN_LEFT = 8;
-static constexpr uint16_t MARGIN_TOP = 4;
-static constexpr uint16_t TITLE_HEIGHT = 18;
-static constexpr uint16_t ITEM_HEIGHT = 22;
-static constexpr uint16_t ITEM_PADDING = 4;
-static constexpr uint8_t  TEXT_SCALE = 3;  // Medium (8×12)
-
-// Colors
-static constexpr uint16_t COLOR_TITLE = 0x07FF;      // Cyan
-static constexpr uint16_t COLOR_ITEM = 0xFFFF;       // White
-static constexpr uint16_t COLOR_ITEM_DISABLED = 0x8410; // Gray
-static constexpr uint16_t COLOR_SELECTED_BG = 0x001F;   // Blue
-static constexpr uint16_t COLOR_SELECTED_FG = 0xFFFF;   // White
-static constexpr uint16_t COLOR_BG = 0x0000;         // Black
+// Layout: items are 18 px rows under the chrome; the selected one carries a pink bar.
+// An item is "> Name" or "  Name" in one text box, so moving the selection repaints just
+// the two rows that changed and no pixel twice (the old fill-then-text flashed).
+static constexpr uint16_t ITEM_X = Theme::MARGIN;
+static constexpr uint16_t ITEM_W = Theme::WIDTH - 2 * Theme::MARGIN;
+static constexpr uint16_t ITEM_HEIGHT = 18;
+static constexpr uint16_t ITEM_PAD_X = 6;
+static constexpr uint16_t ITEM_PAD_Y = 2;
+static constexpr uint16_t ITEMS_Y = Theme::CONTENT_Y + 2;
 
 MenuScreen::MenuScreen(const char* title)
     : m_itemCount(0)
@@ -32,6 +28,8 @@ MenuScreen::MenuScreen(const char* title)
     , m_selectionCallback(nullptr)
     , m_needsRedraw(true)
     , m_dirty(true)
+    , m_fullPending(true)
+    , m_prevSelected(0)
 {
     memset(m_title, 0, sizeof(m_title));
     memset(m_items, 0, sizeof(m_items));
@@ -51,6 +49,7 @@ void MenuScreen::setTitle(const char* title)
     }
     m_needsRedraw = true;
     m_dirty = true;
+    m_fullPending = true;
 }
 
 bool MenuScreen::addItem(const char* name, MenuCallback callback, bool enabled)
@@ -68,6 +67,7 @@ bool MenuScreen::addItem(const char* name, MenuCallback callback, bool enabled)
     m_itemCount++;
     m_needsRedraw = true;
     m_dirty = true;
+    m_fullPending = true;
     return true;
 }
 
@@ -78,6 +78,7 @@ void MenuScreen::clearItems()
     m_scrollOffset = 0;
     m_needsRedraw = true;
     m_dirty = true;
+    m_fullPending = true;
 }
 
 void MenuScreen::setSelectedIndex(uint8_t index)
@@ -94,71 +95,72 @@ void MenuScreen::onActivate()
 {
     m_needsRedraw = true;
     m_dirty = true;
+    m_fullPending = true;
+}
+
+uint8_t MenuScreen::visibleCount() const
+{
+    return static_cast<uint8_t>((Theme::CONTENT_BOTTOM - ITEMS_Y) / ITEM_HEIGHT);
+}
+
+uint16_t MenuScreen::itemY(uint8_t visibleSlot) const
+{
+    return static_cast<uint16_t>(ITEMS_Y + visibleSlot * ITEM_HEIGHT);
 }
 
 void MenuScreen::render(Services::ICanvas& lcd)
 {
-    // Skip render if nothing changed — menu is static between inputs
     if (!m_dirty) return;
     m_dirty = false;
 
-    uint16_t y = MARGIN_TOP;
-
-    // Draw title if set
-    if (m_title[0] != '\0') {
-        lcd.drawString(MARGIN_LEFT, y, m_title, COLOR_TITLE, COLOR_BG, TEXT_SCALE);
-        y += TITLE_HEIGHT;
-
-        // Draw separator line
-        lcd.drawHLine(MARGIN_LEFT, y, Services::Canvas::WIDTH - 2 * MARGIN_LEFT, COLOR_TITLE);
-        y += 4;
+    const uint8_t visible = visibleCount();
+    if (m_fullPending) {
+        m_fullPending = false;
+        uint8_t shown = 0;
+        for (uint8_t i = 0; i < visible && (m_scrollOffset + i) < m_itemCount; i++, shown++) {
+            renderItem(lcd, static_cast<uint8_t>(m_scrollOffset + i), (m_scrollOffset + i) == m_selectedIndex);
+        }
+        // Scroll marks at the right edge, small font
+        lcd.drawString(Theme::WIDTH - 6, ITEMS_Y, m_scrollOffset > 0 ? "^" : " ",
+                       Theme::CYAN, Theme::BG, Theme::FONT_SMALL);
+        bool more = (m_scrollOffset + visible) < m_itemCount;
+        lcd.drawString(Theme::WIDTH - 6, static_cast<uint16_t>(itemY(visible) - 10), more ? "v" : " ",
+                       Theme::CYAN, Theme::BG, Theme::FONT_SMALL);
+        // The floor under a short list
+        auto floorTop = static_cast<uint16_t>(itemY(shown) + 6);
+        if (!more && floorTop + 30 < Theme::CONTENT_BOTTOM) {
+            Chrome::drawDeck(lcd, floorTop, Theme::CONTENT_BOTTOM);
+        }
+        m_prevSelected = m_selectedIndex;
+        return;
     }
 
-    // Calculate visible items
-    uint8_t visibleCount = MENU_VISIBLE_ITEMS;
-    if (m_title[0] != '\0') {
-        visibleCount -= 1; // Reduce for title
+    // Selection moved within the visible window: repaint the row that lost the bar and the
+    // row that gained it
+    if (m_prevSelected != m_selectedIndex && m_prevSelected < m_itemCount) {
+        renderItem(lcd, m_prevSelected, false);
     }
-
-    // Draw visible items
-    for (uint8_t i = 0; i < visibleCount && (m_scrollOffset + i) < m_itemCount; i++) {
-        uint8_t itemIndex = m_scrollOffset + i;
-        bool selected = (itemIndex == m_selectedIndex);
-        renderItem(lcd, itemIndex, y, selected);
-        y += ITEM_HEIGHT;
-    }
-
-    // Draw scroll indicators if needed
-    if (m_scrollOffset > 0) {
-        // Up arrow indicator
-        lcd.drawString(Services::Canvas::WIDTH - 20, MARGIN_TOP + TITLE_HEIGHT + 4, "^", COLOR_TITLE, COLOR_BG, TEXT_SCALE);
-    }
-    if (m_scrollOffset + visibleCount < m_itemCount) {
-        // Down arrow indicator
-        lcd.drawString(Services::Canvas::WIDTH - 20, Services::Canvas::HEIGHT - 20, "v", COLOR_TITLE, COLOR_BG, TEXT_SCALE);
-    }
+    renderItem(lcd, m_selectedIndex, true);
+    m_prevSelected = m_selectedIndex;
 }
 
-void MenuScreen::renderItem(Services::ICanvas& lcd, uint8_t itemIndex, uint16_t y, bool selected)
+void MenuScreen::renderItem(Services::ICanvas& lcd, uint8_t itemIndex, bool selected)
 {
+    if (itemIndex < m_scrollOffset || itemIndex >= m_scrollOffset + visibleCount()) return;
     const MenuItem& item = m_items[itemIndex];
-    uint16_t itemWidth = Services::Canvas::WIDTH - 2 * MARGIN_LEFT;
+    uint16_t y = itemY(static_cast<uint8_t>(itemIndex - m_scrollOffset));
 
-    uint16_t fg, bg;
-    if (selected) {
-        fg = COLOR_SELECTED_FG;
-        bg = COLOR_SELECTED_BG;
-        // Draw selection background
-        lcd.fillRect(MARGIN_LEFT, y, itemWidth, ITEM_HEIGHT - 2, bg);
-    } else {
-        fg = item.enabled ? COLOR_ITEM : COLOR_ITEM_DISABLED;
-        bg = COLOR_BG;
-        // Clear item area
-        lcd.fillRect(MARGIN_LEFT, y, itemWidth, ITEM_HEIGHT - 2, bg);
-    }
+    char text[MENU_ITEM_NAME_LEN + 2];
+    text[0] = selected ? '>' : ' ';
+    text[1] = ' ';
+    strncpy(text + 2, item.name, MENU_ITEM_NAME_LEN - 1);
+    text[MENU_ITEM_NAME_LEN + 1] = '\0';
 
-    // Draw item text
-    lcd.drawString(MARGIN_LEFT + ITEM_PADDING, y + ITEM_PADDING, item.name, fg, bg, TEXT_SCALE);
+    uint16_t fg = selected ? Theme::TEXT : (item.enabled ? Theme::TEXT : Theme::DIM);
+    uint16_t bg = selected ? Theme::PINK : Theme::BG;
+    Chrome::textBox(lcd, ITEM_X, y, ITEM_W, ITEM_HEIGHT - 2, ITEM_PAD_X, ITEM_PAD_Y, text, fg, bg);
+    lcd.fillRect(ITEM_X, static_cast<uint16_t>(y + ITEM_HEIGHT - 2), ITEM_W, 1, Theme::GRID);
+    lcd.fillRect(ITEM_X, static_cast<uint16_t>(y + ITEM_HEIGHT - 1), ITEM_W, 1, Theme::BG);
 }
 
 InputResult MenuScreen::handleInput(JoyDirection dir, bool pressed)
@@ -217,19 +219,17 @@ InputResult MenuScreen::handleInput(JoyDirection dir, bool pressed)
 
 void MenuScreen::ensureSelectionVisible()
 {
-    uint8_t visibleCount = MENU_VISIBLE_ITEMS;
-    if (m_title[0] != '\0') {
-        visibleCount -= 1;
-    }
+    const uint8_t visible = visibleCount();
+    const uint8_t before = m_scrollOffset;
 
-    // Scroll up if selection is above visible area
     if (m_selectedIndex < m_scrollOffset) {
         m_scrollOffset = m_selectedIndex;
     }
-
-    // Scroll down if selection is below visible area
-    if (m_selectedIndex >= m_scrollOffset + visibleCount) {
-        m_scrollOffset = m_selectedIndex - visibleCount + 1;
+    if (m_selectedIndex >= m_scrollOffset + visible) {
+        m_scrollOffset = static_cast<uint8_t>(m_selectedIndex - visible + 1);
+    }
+    if (m_scrollOffset != before) {
+        m_fullPending = true;          // every row moved
     }
 }
 

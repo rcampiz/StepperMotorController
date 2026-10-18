@@ -5,6 +5,8 @@
 
 #include "ui/screen_manager/screen_manager.hpp"
 #include "harness/defs/harness_l3_l4.hpp"
+#include "ui/theme.hpp"
+#include <string.h>
 
 namespace UI {
 
@@ -83,14 +85,35 @@ void ScreenManager::render()
         return;
     }
 
-    // Clear screen on transitions or when screen requests it
+    // Transitions and requested full redraws repaint the whole panel: start at the tearing
+    // edge so the fill races ahead of the scan instead of being cut by it.
     if (m_needsClear || screen->needsFullRedraw()) {
-        m_lcd->fillScreen(Services::Canvas::BLACK);
+        m_lcd->waitForVSync();
+        if (screen->usesChrome()) {
+            m_lcd->fillScreen(Theme::BG);
+            Chrome::drawTitleBand(*m_lcd, screen->title());
+            Chrome::drawFooter(*m_lcd, m_depth > 1, screen->centerHint());
+            m_statusDirty = true;
+        } else {
+            m_lcd->fillScreen(Services::Canvas::BLACK);
+        }
         m_needsClear = false;
         screen->clearRedrawFlag();
     }
 
+    if (m_statusDirty && screen->usesChrome()) {
+        Chrome::drawStatusBar(*m_lcd, m_status);
+        m_statusDirty = false;
+    }
+
     screen->render(*m_lcd);
+}
+
+void ScreenManager::setStatus(const StatusLine& s)
+{
+    if (memcmp(&s, &m_status, sizeof(StatusLine)) == 0) return;
+    m_status = s;
+    m_statusDirty = true;
 }
 
 void ScreenManager::handleInput(JoyDirection dir, bool pressed)

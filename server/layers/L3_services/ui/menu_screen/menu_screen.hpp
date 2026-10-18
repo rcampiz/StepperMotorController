@@ -61,6 +61,9 @@ public:
     void onActivate() override;
     bool needsFullRedraw() const override { return m_needsRedraw; }
     void clearRedrawFlag() override { m_needsRedraw = false; }
+    bool usesChrome() const override { return true; }
+    const char* title() const override { return m_title; }
+    const char* centerHint() const override { return "OPEN"; }
 
     /**
      * @brief Set menu title
@@ -114,10 +117,14 @@ private:
     uint8_t m_scrollOffset;  // First visible item index
     MenuCallback m_selectionCallback;
     bool m_needsRedraw;
-    bool m_dirty;  // Per-frame render gate (skip render when nothing changed)
+    bool m_dirty;          // Something to draw this frame
+    bool m_fullPending;    // Draw every item (activation, scroll, item list change)
+    uint8_t m_prevSelected; // The item that lost the selection bar, to repaint
 
     void ensureSelectionVisible();
-    void renderItem(Services::ICanvas& lcd, uint8_t itemIndex, uint16_t y, bool selected);
+    void renderItem(Services::ICanvas& lcd, uint8_t itemIndex, bool selected);
+    uint8_t visibleCount() const;
+    uint16_t itemY(uint8_t visibleSlot) const;
 };
 
 } // namespace UI

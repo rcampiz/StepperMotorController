@@ -16,6 +16,7 @@
 #include "L3_services/ui/screens/graph_screen.hpp"
 #include "L3_services/ui/screen_manager/screen_manager.hpp"
 #include "L3_services/infra/telemetry_store/telemetry_store.hpp"
+#include "L3_services/ui/theme.hpp"
 #include "F_platform/boundary/iclock.hpp"
 #include "F_platform/boundary/ilock.hpp"
 #include <sys/stat.h>
@@ -45,7 +46,14 @@ struct Rig {
     PanelSim panel;
     Drivers::LCD lcd;
     UI::ScreenManager mgr;
-    Rig() : panel(dc), lcd(panel, cs, dc, nreset, te) { MKDIR("screens"); }
+    Rig() : panel(dc), lcd(panel, cs, dc, nreset, te) {
+        MKDIR("screens");
+        UI::StatusLine s = {};
+        snprintf(s.left, sizeof s.left, "RUN 150rpm"); s.leftColor = UI::Theme::GREEN;
+        snprintf(s.mid, sizeof s.mid, "CM 1/8");        s.midColor = UI::Theme::VIOLET;
+        snprintf(s.right, sizeof s.right, "FL");        s.rightColor = UI::Theme::YELLOW;
+        mgr.setStatus(s);
+    }
     void start(UI::IScreen* root) { mgr.init(root, &lcd); }
     void frame() { mgr.render(); }
     void key(UI::JoyDirection d) { mgr.handleInput(d, true); }
@@ -78,12 +86,48 @@ TEST(menu_paints_every_item_and_the_selection_bar) {
     rig.dump("menu");
     const uint32_t firstFrame = rig.panel.pixelsWritten;
     EXPECT_TRUE(firstFrame >= 240u * 320u);                 // the whole panel was painted once
+    EXPECT_TRUE(firstFrame < 240u * 320u * 2);              // but nowhere near twice
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::PINK, 0, UI::Theme::CONTENT_Y, 240, 20) > 500);  // bar on item 0
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::CYAN, 0, 0, 240, 26) > 500);                     // the title tab
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::PANEL, 0, UI::Theme::FOOTER_Y, 240, 13) > 1000); // the footer
     rig.key(UI::JoyDirection::DOWN);
     rig.frame();
     rig.dump("menu_down");
     const uint32_t moveCost = rig.panel.pixelsWritten - firstFrame;
     printf("  menu: first frame %u px, one selection move %u px\n", firstFrame, moveCost);
-    EXPECT_TRUE(moveCost < 240u * 320u);                    // a selection move is not a full repaint
+    EXPECT_TRUE(moveCost <= 2u * 228u * 18u);               // two rows, each painted once
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::PINK, 0, UI::Theme::CONTENT_Y, 240, 20) == 0);   // bar moved off item 0
+    rig.frame();
+    EXPECT_EQ(rig.panel.pixelsWritten - firstFrame, moveCost);   // nothing changes: nothing is sent
+    // A status change repaints only the status strip
+    UI::StatusLine s = {};
+    snprintf(s.left, sizeof s.left, "HOLD 0rpm"); s.leftColor = UI::Theme::CYAN;
+    snprintf(s.mid, sizeof s.mid, "CM 1/8"); snprintf(s.right, sizeof s.right, "FL");
+    const uint32_t beforeStatus = rig.panel.pixelsWritten;
+    rig.mgr.setStatus(s);
+    rig.frame();
+    EXPECT_TRUE(rig.panel.pixelsWritten - beforeStatus < 240u * 12u);
+}
+
+TEST(a_long_menu_scrolls_and_the_back_hint_appears_below_the_root) {
+    Rig rig;
+    UI::MenuScreen root("Main Menu");
+    root.addItem("Only");
+    UI::MenuScreen menu("Images");
+    char names[20][8];
+    for (int i = 0; i < 20; i++) { snprintf(names[i], 8, "Img %d", i); menu.addItem(names[i]); }
+    rig.start(&root);
+    rig.frame();
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::CYAN, 4, UI::Theme::FOOTER_Y, 56, 13) == 0);  // no "<" at the root
+    rig.mgr.push(&menu);
+    rig.frame();
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::CYAN, 4, UI::Theme::FOOTER_Y, 56, 13) > 0);   // "<BACK"
+    for (int i = 0; i < 16; i++) rig.key(UI::JoyDirection::DOWN);
+    rig.frame();
+    rig.dump("menu_scrolled");
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::PINK, 0, UI::Theme::CONTENT_Y, 240, 265) > 500);  // selection visible
+    rig.key(UI::JoyDirection::LEFT);
+    EXPECT_EQ(rig.mgr.depth(), 1);
 }
 
 TEST(encoder_screen_shows_the_dial_and_the_count) {

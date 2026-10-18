@@ -13,6 +13,7 @@
 #define SCREEN_MANAGER_HPP
 
 #include "ui/screen.hpp"
+#include "ui/chrome/chrome.hpp"
 #include <stdint.h>
 
 namespace UI {
@@ -76,7 +77,12 @@ public:
      */
     void handleInput(JoyDirection dir, bool pressed);
 
+    /// The status line chrome screens show; redrawn on the next render when it changed
+    void setStatus(const StatusLine& s);
+
 private:
+    StatusLine m_status = {};
+    bool m_statusDirty = true;
     IScreen* m_stack[SCREEN_STACK_MAX] = {};
     uint8_t m_depth = 0;
     Services::ICanvas* m_lcd = nullptr;

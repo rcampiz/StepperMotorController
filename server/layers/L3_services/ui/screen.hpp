@@ -86,6 +86,20 @@ public:
      * @brief Clear the needs-redraw flag after rendering
      */
     virtual void clearRedrawFlag() {}
+
+    /**
+     * @brief Whether the ScreenManager frames this screen with the shared chrome
+     *        (title band, status line, footer; see ui/chrome). A chrome screen draws only
+     *        between Theme::CONTENT_Y and Theme::CONTENT_BOTTOM. Full-screen views
+     *        (boot colours, images, the saver) return false and own the whole panel.
+     */
+    virtual bool usesChrome() const { return false; }
+
+    /// Title for the band (chrome screens)
+    virtual const char* title() const { return nullptr; }
+
+    /// What CENTER does here, for the footer ("SELECT", "ZERO", "PAUSE"...). nullptr: nothing.
+    virtual const char* centerHint() const { return "SELECT"; }
 };
 
 } // namespace UI
