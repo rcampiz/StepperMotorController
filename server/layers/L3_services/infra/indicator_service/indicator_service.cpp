@@ -132,8 +132,11 @@ void IndicatorService::drawComposited(const Params& p) {
     if (!needFullRedraw && !arrowChanged) {
         return;  // Nothing changed — skip render entirely
     }
-    // Arrow length by the translation magnitude: 30 % of full at 0, full at 100
-    auto halfLen = static_cast<int16_t>(ARROW_HALF_LEN * (30 + 70 * (p.speed_pct > 100 ? 100 : p.speed_pct) / 100) / 100);
+    // The arrow keeps its length; it fills from the tail up to the speed magnitude
+    const int16_t halfLen = ARROW_HALF_LEN;
+    uint8_t speedPct = p.speed_pct > 100 ? 100 : p.speed_pct;
+    int32_t fillLen = static_cast<int32_t>(2 * ARROW_HALF_LEN) * speedPct / 100;   // px from the tail
+    int16_t axisX = 0, axisY = 0, tailX = 0, tailY = 0;                          // set with the arrow
     // Turn magnitude as concentric rings from the outside in, each worth 100 / RING_COUNT
     // percent: rings below the level are lit at full width, the ring at the level grows
     // in width through its step until the next ring starts, the rest are dim hairlines.
@@ -161,6 +164,15 @@ void IndicatorService::drawComposited(const Params& p) {
         auto sBLX = static_cast<int16_t>(-ARROW_SHAFT_HALF_W), sBLY = halfLen;
 
         int16_t rt[2], rhr[2], rhl[2], rstr[2], rstl[2], rsbr[2], rsbl[2];
+        // Axis from the tail to the tip (Q15 unit vector) and the tail on screen
+        axisX = Graphics::sin_q15(angle);
+        axisY = static_cast<int16_t>(-Graphics::cos_q15(angle));
+        {
+            int16_t tx, ty;
+            Graphics::rotate_point(0, halfLen, angle, tx, ty);
+            tailX = static_cast<int16_t>(tx + SCREEN_CX);
+            tailY = static_cast<int16_t>(ty + SCREEN_CY);
+        }
         Graphics::rotate_point(tipX, tipY, angle, rt[0], rt[1]);
         Graphics::rotate_point(headRX, headRY, angle, rhr[0], rhr[1]);
         Graphics::rotate_point(headLX, headLY, angle, rhl[0], rhl[1]);
@@ -337,13 +349,26 @@ void IndicatorService::drawComposited(const Params& p) {
             } else {
                 bool isInterior = (!hasRing || dist2 < innerR2);
 
-                // Check arrow (highest z-order, interior only)
+                // Check arrow (highest z-order, interior only): a magenta outline, the
+                // inside filled cyan from the tail up to the speed magnitude
                 if (arrowOnScanline && isInterior) {
-                    for (int i = 0; i < numArrow; i++) {
-                        if (screenY >= arrowE[i].minY && screenY <= arrowE[i].maxY &&
-                            testTri(arrowE[i], screenX, screenY)) {
+                    auto inArrow = [&](int16_t x, int16_t y) {
+                        for (int i = 0; i < numArrow; i++) {
+                            if (y >= arrowE[i].minY && y <= arrowE[i].maxY && testTri(arrowE[i], x, y)) return true;
+                        }
+                        return false;
+                    };
+                    if (inArrow(screenX, screenY)) {
+                        bool edge = !inArrow(static_cast<int16_t>(screenX - 2), screenY) ||
+                                    !inArrow(static_cast<int16_t>(screenX + 2), screenY) ||
+                                    !inArrow(screenX, static_cast<int16_t>(screenY - 2)) ||
+                                    !inArrow(screenX, static_cast<int16_t>(screenY + 2));
+                        if (edge) {
                             color = ARROW_COLOR;
-                            break;
+                        } else {
+                            int32_t along = (static_cast<int32_t>(screenX - tailX) * axisX +
+                                             static_cast<int32_t>(screenY - tailY) * axisY) >> 15;
+                            color = (along <= fillLen) ? ARC_COLOR : BG_COLOR;
                         }
                     }
                 }

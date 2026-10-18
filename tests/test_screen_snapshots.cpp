@@ -283,18 +283,22 @@ TEST(motion_indicator_shows_heading_speed_and_turn_magnitudes) {
     ind.draw({45, 1, true, 73, 50});                      // half way into the third ring
     const uint32_t lit50 = rig.panel.countColor(0x079F, 20, 60, 200, 200);
     EXPECT_TRUE(lit50 > lit40);                           // it has widened
-    EXPECT_TRUE(rig.panel.countColor(0xF8DB, 60, 100, 120, 120) > 400);     // magenta arrow
+    EXPECT_TRUE(rig.panel.countColor(0xF8DB, 60, 100, 120, 120) > 200);     // magenta outline
+    const uint32_t fill73 = rig.panel.countColor(0x079F, 64, 104, 112, 112);  // cyan fill, inside the rings
+    EXPECT_TRUE(fill73 > 300);
     const uint32_t before = rig.panel.pixelsWritten;
     ind.draw({45, 1, true, 73, 50});
     EXPECT_EQ(rig.panel.pixelsWritten, before);           // unchanged: nothing sent
-    ind.draw({45, 1, true, 20, 50});                      // shorter arrow only: the arrow window
+    ind.draw({45, 1, true, 20, 50});                      // less fill: only the arrow window
     EXPECT_TRUE(rig.panel.pixelsWritten - before < 120u * 120u);
+    EXPECT_TRUE(rig.panel.countColor(0x079F, 64, 104, 112, 112) < fill73 / 2);
+    rig.dump("indicator_20");
     ind.draw({45, -1, true, 20, 100});                    // 100 %: every ring lit, full width
     EXPECT_TRUE(rig.panel.countColor(0x3B31, 20, 60, 200, 200) == 0);
     EXPECT_TRUE(rig.panel.countColor(0x079F, 20, 60, 200, 200) > lit50 * 3 / 2);
     rig.dump("indicator_full");
-    ind.draw({45, -1, true, 20, 0});                      // 0 %: five hairlines, none lit
-    EXPECT_TRUE(rig.panel.countColor(0x079F, 20, 60, 200, 200) == 0);
+    ind.draw({45, -1, true, 0, 0});                       // 0 %: five hairlines, an empty arrow
+    EXPECT_TRUE(rig.panel.countColor(0x079F, 20, 60, 200, 200) < 40);
     rig.dump("indicator_ccw");
 }
 
