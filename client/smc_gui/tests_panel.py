@@ -9,13 +9,26 @@ import json
 import logging
 
 from PySide6.QtCore import Signal, Slot
-from PySide6.QtWidgets import (QFileDialog, QHBoxLayout, QLabel, QListWidget, QPlainTextEdit,
+import pyqtgraph as pg
+from PySide6.QtWidgets import (QCheckBox, QFileDialog, QHBoxLayout, QLabel, QListWidget, QPlainTextEdit,
                                QPushButton, QSplitter, QVBoxLayout, QWidget)
 from PySide6.QtCore import Qt
 
 from smc_core import runner
 
 log = logging.getLogger("tests_panel")
+
+
+class StepsAxis(pg.AxisItem):
+    """Top axis of the ripple graph: full steps per second for the RPM below it. The ratio is
+    the motor's full steps per revolution, so one axis serves every microstep mode."""
+
+    def __init__(self, full_steps: int = 200):
+        super().__init__(orientation="top")
+        self.full_steps = full_steps
+
+    def tickStrings(self, values, scale, spacing):
+        return ["%.0f" % (v / 60.0 * self.full_steps) for v in values]
 
 
 class TestsPanel(QWidget):
@@ -57,7 +70,30 @@ class TestsPanel(QWidget):
         row.addStretch()
         rv.addLayout(row)
         rv.addWidget(QLabel("Results"))
-        rv.addWidget(self._output, 3)
+        rv.addWidget(self._output, 2)
+        # Ripple graph for resonance_sweep / resonance_map: RPM on the bottom axis, one curve
+        # per microstep mode; the top axis (full steps/s) is optional, same ratio for every mode
+        graph_row = QHBoxLayout()
+        graph_row.addWidget(QLabel("Ripple vs speed"))
+        self._steps_axis_cb = QCheckBox("full steps/s on the top axis")
+        self._steps_axis_cb.toggled.connect(self._replot)
+        graph_row.addWidget(self._steps_axis_cb)
+        self._save_graph_btn = QPushButton("Save graph...")
+        self._save_graph_btn.clicked.connect(self._on_save_graph)
+        graph_row.addWidget(self._save_graph_btn)
+        graph_row.addStretch()
+        rv.addLayout(graph_row)
+        self._plot = pg.PlotWidget()
+        self._plot.setBackground("#1e1e1e")
+        self._plot.setLabel("left", "velocity ripple (std, counts/s)")
+        self._plot.setLabel("bottom", "RPM")
+        self._plot.showGrid(x=True, y=True, alpha=0.3)
+        self._legend = self._plot.addLegend(offset=(10, 10))
+        self._steps_axis = StepsAxis()
+        self._plot.getPlotItem().setAxisItems({"top": self._steps_axis})
+        self._plot.getPlotItem().showAxis("top", False)
+        self._graph_result = None
+        rv.addWidget(self._plot, 2)
         split = QSplitter(Qt.Horizontal)
         split.addWidget(left)
         split.addWidget(right)
@@ -113,6 +149,55 @@ class TestsPanel(QWidget):
         shown = {k: v for k, v in result.measurements.items() if k not in ("samples", "traceback")}
         if shown:
             self._output.appendPlainText("    " + json.dumps(shown))
+        if any(k.startswith(("rpm_", "mode_")) for k in result.measurements):
+            self._graph_result = result
+            self._replot()
+
+    _PENS = ("#4a9eff", "#00cc66", "#ffcc00", "#ff6b6b", "#c678dd", "#56b6c2", "#e5c07b", "#ffffff")
+
+    @staticmethod
+    def curves_of(measurements: dict):
+        """[(label, [(rpm, std)...])] from a resonance_sweep or resonance_map result."""
+        out = []
+        modes = sorted((v for k, v in measurements.items() if k.startswith("mode_") and isinstance(v, dict)),
+                       key=lambda v: v.get("ratio", 0))
+        for v in modes:
+            pts = sorted((int(r), float(sd)) for r, sd in v.get("std", {}).items())
+            label = "1/%d (%d \u00b5steps/rev, peak %s rpm)" % (v.get("ratio", 0), v.get("usteps_per_rev", 0),
+                                                                v.get("peak_rpm", "?"))
+            out.append((label, pts))
+        single = sorted((int(k[4:]), float(v["vel_std"])) for k, v in measurements.items()
+                        if k.startswith("rpm_") and isinstance(v, dict) and "vel_std" in v)
+        if single:
+            out.append(("sweep (peak %s rpm)" % measurements.get("worst_rpm", "?"), single))
+        return out
+
+    @Slot()
+    def _replot(self):
+        self._plot.clear()
+        self._legend.clear()
+        res = self._graph_result
+        if res is None:
+            return
+        self._steps_axis.full_steps = int(res.measurements.get("full_steps", 200))
+        self._plot.getPlotItem().showAxis("top", self._steps_axis_cb.isChecked())
+        self._plot.setLabel("top", "full steps/s" if self._steps_axis_cb.isChecked() else None)
+        for i, (label, pts) in enumerate(self.curves_of(res.measurements)):
+            if not pts:
+                continue
+            self._plot.plot([p[0] for p in pts], [p[1] for p in pts], name=label,
+                            pen=pg.mkPen(self._PENS[i % len(self._PENS)], width=2), symbol="o", symbolSize=5,
+                            symbolBrush=self._PENS[i % len(self._PENS)])
+
+    @Slot()
+    def _on_save_graph(self):
+        if self._graph_result is None:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Save graph", "ripple.png", "PNG (*.png)")
+        if path:
+            from pyqtgraph.exporters import ImageExporter
+            ImageExporter(self._plot.getPlotItem()).export(path)
+            self._output.appendPlainText(f"graph saved to {path}")
 
     @property
     def results(self):

@@ -220,50 +220,112 @@ def drive_mode_chip(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
         ctx.check("original drive mode restored", got == original, f"drive_mode={got}")
 
 
+def _ripple_rows(ctx: ScenarioContext, lo: int, hi: int, step: int, dwell: float, settle: float,
+                 full: int) -> Dict[int, Dict[str, Any]]:
+    """RUN at each RPM and sample CTRL:ENC? for dwell seconds: {rpm: {samples, vel_mean,
+    vel_std, p2p, rpm_meas}} in encoder counts/s. The motor must be enabled; leaves it running
+    at the last speed (the caller stops it)."""
+    import statistics
+    rows: Dict[int, Dict[str, Any]] = {}
+    cpr = _chip_geometry(ctx)["encoder_cpr"] or 4000
+    for rpm in range(lo, hi + 1, step):
+        sps = int(round(rpm / 60.0 * full))
+        ctx.require(f"run {rpm} rpm", ctx.call(C.mot_run(sps, 1)).success)
+        ctx.sleep(settle)
+        vel = []
+        t_end = time.monotonic() + dwell
+        while time.monotonic() < t_end:
+            e = ctx.call(C.encoder())
+            if e.success:
+                vel.append(int(e.data.get("velocity", 0)))
+            ctx.sleep(0.04)
+        if len(vel) < 5:
+            ctx.check(f"{rpm} rpm sampled", False, f"{len(vel)} samples")
+            continue
+        rows[rpm] = {"samples": len(vel), "vel_mean": round(statistics.mean(vel), 1),
+                     "vel_std": round(statistics.pstdev(vel), 1), "p2p": max(vel) - min(vel),
+                     "rpm_meas": round(statistics.mean(vel) / cpr * 60, 1)}
+    return rows
+
+
+def _no_fault(ctx: ScenarioContext, name: str) -> None:
+    m = _status(ctx).get("motor", {})
+    ctx.check(name, not any(m.get(k) for k in ("ocd", "uvlo", "thermal_warn", "thermal_sd")), str(m))
+
+
 @scenario("resonance_sweep", "RUN at each RPM from rpm_from to rpm_to (step rpm_step), dwell, and "
                               "record the encoder velocity ripple (std and peak-to-peak, counts/s) "
                               "per speed; reports the worst band. Compare drive settings by numbers.",
           params={"rpm_from": 40, "rpm_to": 120, "rpm_step": 5, "dwell_s": 2.0, "settle_s": 1.0},
           moves_motor=True)
 def resonance_sweep(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
-    import statistics
+    lo, hi, step = int(params["rpm_from"]), int(params["rpm_to"]), max(1, int(params["rpm_step"]))
+    full = _chip_geometry(ctx)["full_steps_per_rev"]
+    ctx.measure("full_steps", full)
+    ctx.call(C.fault_clear())
+    ctx.require("enable", ctx.call(C.mot_enable()).success)
+    try:
+        rows = _ripple_rows(ctx, lo, hi, step, float(params["dwell_s"]), float(params["settle_s"]), full)
+        ctx.call(C.mot_stop())
+        ctx.sleep(0.5)
+        for rpm, row in rows.items():
+            ctx.measure(f"rpm_{rpm}", row)
+        if rows:
+            worst = max(rows, key=lambda r: rows[r]["vel_std"])
+            ctx.measure("worst_rpm", worst)
+            ctx.measure("worst_std", rows[worst]["vel_std"])
+        _no_fault(ctx, "no driver fault during the sweep")
+    finally:
+        ctx.call(C.mot_stop())
+        ctx.call(C.mot_disable())
+
+
+@scenario("resonance_map", "The resonance sweep at each microstep mode in `modes` (0 = full step "
+                            "... 7 = 1/128), through DRV:CFG:STEPMODE + APPLY in Hi-Z; reports the "
+                            "peak RPM per mode and restores the original mode. Full step usually "
+                            "stalls above ~50 RPM, so it is not in the default list.",
+          params={"modes": [1, 2, 3, 4, 5, 6, 7], "rpm_from": 40, "rpm_to": 130, "rpm_step": 5,
+                  "dwell_s": 1.5, "settle_s": 0.7},
+          moves_motor=True)
+def resonance_map(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     lo, hi, step = int(params["rpm_from"]), int(params["rpm_to"]), max(1, int(params["rpm_step"]))
     dwell, settle = float(params["dwell_s"]), float(params["settle_s"])
     geom = _chip_geometry(ctx)
-    full = geom["full_steps_per_rev"]
+    full, original = geom["full_steps_per_rev"], geom["step_mode"]
+    ctx.measure("full_steps", full)
+    ctx.measure("original_mode", original)
     ctx.call(C.fault_clear())
-    ctx.require("enable", ctx.call(C.mot_enable()).success)
-    worst = (0.0, 0)
+
+    def set_mode(m: int) -> bool:
+        ctx.call(C.mot_disable())
+        ctx.call(C.cfg_step_mode(m))
+        a = ctx.call(C.cfg_apply())
+        q = ctx.call(C.step_mode_query())
+        got = int(q.data.get("step_mode", -1)) if q.success else -1
+        return ctx.check(f"chip at 1/{1 << m}", a.success and got == m,
+                         f"APPLY {a.error_message or 'ok'}, DRV:STEP_MODE?={got}")
+
     try:
-        for rpm in range(lo, hi + 1, step):
-            sps = int(round(rpm / 60.0 * full))
-            ctx.require(f"run {rpm} rpm", ctx.call(C.mot_run(sps, 1)).success)
-            ctx.sleep(settle)
-            vel = []
-            t_end = time.monotonic() + dwell
-            while time.monotonic() < t_end:
-                e = ctx.call(C.encoder())
-                if e.success:
-                    vel.append(int(e.data.get("velocity", 0)))
-                ctx.sleep(0.04)
-            if len(vel) < 5:
-                ctx.check(f"{rpm} rpm sampled", False, f"{len(vel)} samples")
+        for m in [int(x) & 7 for x in params["modes"]]:
+            if not set_mode(m):
                 continue
-            std = round(statistics.pstdev(vel), 1)
-            ctx.measure(f"rpm_{rpm}", {"samples": len(vel), "vel_mean": round(statistics.mean(vel), 1),
-                                       "vel_std": std, "p2p": max(vel) - min(vel)})
-            if std > worst[0]:
-                worst = (std, rpm)
-        ctx.call(C.mot_stop())
-        ctx.sleep(0.5)
-        ctx.measure("worst_rpm", worst[1])
-        ctx.measure("worst_std", worst[0])
-        st = _status(ctx)
-        m = st.get("motor", {})
-        ctx.check("no driver fault during the sweep",
-                  not any(m.get(k) for k in ("ocd", "uvlo", "thermal_warn", "thermal_sd")), str(m))
+            ctx.require("enable", ctx.call(C.mot_enable()).success)
+            ctx.sleep(0.3)
+            rows = _ripple_rows(ctx, lo, hi, step, dwell, settle, full)
+            ctx.call(C.mot_stop())
+            ctx.sleep(0.5)
+            if not rows:
+                continue
+            peak = max(rows, key=lambda r: rows[r]["vel_std"])
+            ctx.measure(f"mode_{1 << m}", {"mode": m, "ratio": 1 << m,
+                                          "usteps_per_rev": full * (1 << m),
+                                          "std": {str(r): v["vel_std"] for r, v in rows.items()},
+                                          "p2p": {str(r): v["p2p"] for r, v in rows.items()},
+                                          "peak_rpm": peak, "peak_std": rows[peak]["vel_std"]})
+        _no_fault(ctx, "no driver fault during the map")
     finally:
         ctx.call(C.mot_stop())
+        set_mode(original)
         ctx.call(C.mot_disable())
 
 

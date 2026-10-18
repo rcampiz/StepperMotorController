@@ -161,6 +161,22 @@ def test_sysid_panel_runs_its_tests_through_the_core_scenario(gui):
     assert "CTRL:SYSID:STEP 800 1 1000 100" in fake.received
 
 
+def test_tests_tab_graphs_a_resonance_map(gui):
+    app, w, fake = gui
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    w._tests_panel.start("resonance_map", {"modes": [4, 7], "rpm_from": 60, "rpm_to": 80, "rpm_step": 10,
+                                           "dwell_s": 0.2, "settle_s": 0.05})
+    assert pump(app, lambda: w._tests_panel.results, timeout=20.0)
+    res = w._tests_panel.results[0]
+    assert res.ok, (res.summary, res.checks)
+    curves = w._tests_panel.curves_of(res.measurements)
+    assert [c[0].split(" ")[0] for c in curves] == ["1/16", "1/128"]
+    assert [p[0] for p in curves[0][1]] == [60, 70, 80]
+    assert len(w._tests_panel._plot.getPlotItem().listDataItems()) == 2
+    w._tests_panel._steps_axis_cb.setChecked(True)
+    assert w._tests_panel._plot.getPlotItem().getAxis("top").isVisible()
+
+
 def test_tests_tab_runs_a_scenario(gui):
     app, w, fake = gui
     assert pump(app, lambda: w._board is not None and w._board.session_ready)
