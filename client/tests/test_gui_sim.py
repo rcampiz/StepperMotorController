@@ -258,6 +258,19 @@ def test_controller_drives_the_motor_from_the_drive_tab(gui):
     w._controller_panel.set_driving(False)
 
 
+def test_motor_profile_applies_to_the_board_and_sets_the_rating(gui):
+    app, w, fake = gui
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    assert pump(app, lambda: "DRV:CFG?" in fake.received)
+    w._profile_panel.select("generic-nema17-1.7A")
+    w._profile_panel._save_cb.setChecked(True)
+    w._profile_panel._on_apply()
+    assert pump(app, lambda: "DRV:CFG:SAVE" in fake.received, timeout=5.0), fake.received[-8:]
+    assert any(r.startswith("DRV:CFG:TVAL 04 0F") for r in fake.received)
+    assert fake.step_mode == 4
+    assert pump(app, lambda: abs(w._driver_panel.rated_current() - 1.7) < 1e-6, timeout=5.0), w._driver_panel.rated_current()
+
+
 def test_tests_tab_runs_a_scenario(gui):
     app, w, fake = gui
     assert pump(app, lambda: w._board is not None and w._board.session_ready)

@@ -34,6 +34,9 @@ from smc_gui.driver_panel import DriverPanel
 from smc_gui.protection_panel import ProtectionPanel
 from smc_gui.stepmode_panel import StepModePanel
 from smc_gui.controller_panel import ControllerPanel
+from smc_gui.motor_profile_panel import MotorProfilePanel
+from smc_core import motors
+from smc_core import views as V
 from smc_gui.fleet_panel import FleetPanel
 from smc_core.drive_map import SingleMotorDriver
 from smc_gui.graph_panel import GraphPanel
@@ -163,7 +166,11 @@ class MainWindow(QMainWindow):
         drive_v.setContentsMargins(0, 0, 0, 0)
         drive_v.addWidget(self._motion_panel, 1)
         drive_v.addWidget(self._controller_panel)
-        self._right_tabs.addTab(drive_page, "Drive")
+        drive_scroll = QScrollArea()
+        drive_scroll.setWidgetResizable(True)
+        drive_scroll.setFrameShape(QScrollArea.NoFrame)
+        drive_scroll.setWidget(drive_page)
+        self._right_tabs.addTab(drive_scroll, "Drive")
         self._stick_driver = None
 
         # Motor: the driver (current, regulation), step mode and protection on one page
@@ -173,6 +180,10 @@ class MainWindow(QMainWindow):
         motor_page = QWidget()
         motor_v = QVBoxLayout(motor_page)
         motor_v.setContentsMargins(4, 4, 4, 4)
+        self._profile_panel = MotorProfilePanel()
+        self._profile_panel.apply_requested.connect(self._on_profile_apply)
+        self._profile_panel.export_requested.connect(self._on_profile_export)
+        motor_v.addWidget(self._profile_panel)
         motor_v.addWidget(self._driver_panel)
         chip_row = QHBoxLayout()
         chip_row.addWidget(self._stepmode_panel, 1)
@@ -619,6 +630,29 @@ class MainWindow(QMainWindow):
         for i, req in enumerate(requests):
             self._call(req, last_tag if (last_tag and i == len(requests) - 1) else tag)
 
+    @Slot(list, object)
+    def _on_profile_apply(self, requests: list, profile):
+        """A motor profile: its DRV:CFG commands, APPLY (and SAVE), then the panels refresh.
+        The profile's rating caps the TVAL faders and its bands steer the controller."""
+        if self._bridge is None:
+            return
+        self._pending_rating = profile.rated_current_a or None   # set once the board has it
+        if profile.resonance_bands_rpm:
+            self._controller_panel.stick.bands_rpm = list(profile.resonance_bands_rpm)
+        self._call_all(requests, "GENERIC", last_tag="APPLY_PARAMS")
+
+    @Slot(str, str)
+    def _on_profile_export(self, name: str, title: str):
+        """The board's DRV:CFG? as a profile file in the user's folder."""
+        if self._bridge is None:
+            return
+        def job(ctx):
+            cfg = V.motor_config(ctx.call(C.driver_config()))
+            p = motors.export_profile(cfg, name, title, rated_current_a=self._driver_panel.rated_current(),
+                                      resonance_bands_rpm=list(self._controller_panel.stick.bands_rpm))
+            return motors.save_profile(p)
+        self._bridge.job(job, "EXPORT_PROFILE")
+
     @Slot(object)
     def _on_kval_apply(self, req: C.Request):
         """KVAL + DRV:CFG:APPLY: update the config and push it to the driver."""
@@ -824,6 +858,9 @@ class MainWindow(QMainWindow):
             self._telemetry_panel.show_raw_response("MOTOR_DEBUG", dbg["text"])
             self._status_bar.showMessage("Parameters refreshed", 2000)
 
+        elif tag == "EXPORT_PROFILE":
+            self._status_bar.showMessage("Profile saved: %s" % response, 8000)
+            self._profile_panel.reload()
         elif tag == "REFRESH_ENC":
             self._telemetry_panel.update_encoder_data(V.encoder(response))
 
@@ -844,6 +881,9 @@ class MainWindow(QMainWindow):
 
         elif tag == "APPLY_PARAMS":
             self._status_bar.showMessage("Parameters applied", 2000)
+            if getattr(self, "_pending_rating", None):
+                self._driver_panel.set_rated_current(self._pending_rating)
+                self._pending_rating = None
             self._queue_refresh()
 
         elif tag == "APPLY_STEPMODE":

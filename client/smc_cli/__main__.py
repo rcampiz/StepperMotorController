@@ -8,6 +8,9 @@ smc: the command-line frontend (Raspberry Pi and bench). Same core as the GUI.
     smc estop     (--port P | --sim)            fast-path ESTOP and its confirmation
     smc test list
     smc test run NAME (--port P | --sim) [-p key=value ...] [--out results.jsonl]
+    smc motor list                              motor profiles (client files + ~/.smc/motors)
+    smc motor show NAME                         one profile and the commands it sends
+    smc motor apply NAME (--port P | --sim) [--save]   configure the board from a profile
     smc fleet check  --config fleet.json        open four boards, verify corners, show a frame
     smc fleet estop  --config fleet.json        stop the whole base (all writes, then confirms)
     smc fleet drive  --config fleet.json --vx 0.2 [--vy 0] [--wz 0] [--seconds 2]
@@ -241,6 +244,41 @@ def _fleet_loop(fleet, seconds: float) -> None:
         time.sleep(0.02)
 
 
+def cmd_motor_list(args) -> int:
+    from smc_core import motors
+    _out({"profiles": [{"name": p.name, "title": p.label, "rated_current_a": p.rated_current_a,
+                        "drive_mode": p.drive_mode, "source": p.source} for p in motors.list_profiles()]})
+    return 0
+
+
+def cmd_motor_show(args) -> int:
+    from smc_core import motors
+    p = motors.load_profile(args.name)
+    _out({"name": p.name, "profile": p.to_dict(), "commands": [r.line for r in p.requests()]})
+    return 0
+
+
+def cmd_motor_apply(args) -> int:
+    from smc_core import motors
+    p = motors.load_profile(args.name)
+    reqs = p.requests()
+    if args.save:
+        reqs.append(C.cfg_save())
+    board = _open(args, heartbeat=False)
+    try:
+        sent = []
+        for req in reqs:
+            resp = _wait(board, board.submit(req), timeout=10.0)
+            sent.append({"command": req.line, "ok": resp.success, "message": resp.error_message or ""})
+            if not resp.success:
+                _out({"profile": p.name, "applied": False, "sent": sent})
+                return 1
+        _out({"profile": p.name, "applied": True, "saved": bool(args.save), "sent": sent})
+        return 0
+    finally:
+        board.close()
+
+
 def cmd_fleet_check(args) -> int:
     fleet = _fleet(args)
     try:
@@ -322,6 +360,12 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--full", action="store_true", help="print the whole result")
     p.add_argument("--timeout", type=float, default=120.0)
     p.set_defaults(fn=cmd_test_run)
+    m = sub.add_parser("motor").add_subparsers(dest="mcmd", required=True)
+    m.add_parser("list").set_defaults(fn=cmd_motor_list)
+    p = m.add_parser("show"); p.add_argument("name"); p.set_defaults(fn=cmd_motor_show)
+    p = m.add_parser("apply"); board_args(p); p.add_argument("name")
+    p.add_argument("--save", action="store_true", help="DRV:CFG:SAVE afterwards")
+    p.set_defaults(fn=cmd_motor_apply)
     fl = sub.add_parser("fleet").add_subparsers(dest="fcmd", required=True)
     for name, fn in (("check", cmd_fleet_check), ("estop", cmd_fleet_estop), ("drive", cmd_fleet_drive)):
         p = fl.add_parser(name)

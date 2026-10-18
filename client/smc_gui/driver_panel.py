@@ -773,6 +773,12 @@ class DriverPanel(QWidget):
     def _is_current_mode(self) -> bool:
         return self._mode_current_btn.isChecked()
 
+    def set_rated_current(self, amps: float) -> None:
+        self._rated_spin.setValue(min(max(float(amps), 0.1), MOTOR_RATED_A_MAX))
+
+    def rated_current(self) -> float:
+        return float(self._rated_spin.value())
+
     def set_drive_mode(self, current: bool) -> None:
         (self._mode_current_btn if current else self._mode_voltage_btn).setChecked(True)
 
