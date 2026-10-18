@@ -276,18 +276,25 @@ TEST(motion_indicator_shows_heading_speed_and_turn_magnitudes) {
     ind.init(&rig.lcd);
     ind.draw({45, 1, true, 73, 40});                      // heading 45 deg, CW turn, 73 % speed, 40 % turn
     rig.dump("indicator");
-    const uint32_t arc = rig.panel.countColor(0x079F, 20, 60, 200, 200);     // cyan arc
-    const uint32_t ring = rig.panel.countColor(0x3B31, 20, 60, 200, 200);    // base ring
-    EXPECT_TRUE(arc > 0 && ring > 0);
-    EXPECT_TRUE(arc * 100 / (arc + ring) > 30 && arc * 100 / (arc + ring) < 50);   // about 40 %
+    const uint32_t lit40 = rig.panel.countColor(0x079F, 20, 60, 200, 200);   // two full rings
+    const uint32_t dim40 = rig.panel.countColor(0x3B31, 20, 60, 200, 200);   // three hairlines
+    EXPECT_TRUE(lit40 > 0 && dim40 > 0);
+    EXPECT_TRUE(rig.panel.countColor(0xF8DB, 20, 60, 200, 40) > 50);        // the top chevron
+    ind.draw({45, 1, true, 73, 50});                      // half way into the third ring
+    const uint32_t lit50 = rig.panel.countColor(0x079F, 20, 60, 200, 200);
+    EXPECT_TRUE(lit50 > lit40);                           // it has widened
     EXPECT_TRUE(rig.panel.countColor(0xF8DB, 60, 100, 120, 120) > 400);     // magenta arrow
     const uint32_t before = rig.panel.pixelsWritten;
-    ind.draw({45, 1, true, 73, 40});
+    ind.draw({45, 1, true, 73, 50});
     EXPECT_EQ(rig.panel.pixelsWritten, before);           // unchanged: nothing sent
-    ind.draw({45, 1, true, 20, 40});                      // shorter arrow only: the arrow window
+    ind.draw({45, 1, true, 20, 50});                      // shorter arrow only: the arrow window
     EXPECT_TRUE(rig.panel.pixelsWritten - before < 120u * 120u);
-    ind.draw({45, -1, true, 20, 100});                    // full CCW arc
+    ind.draw({45, -1, true, 20, 100});                    // 100 %: every ring lit, full width
     EXPECT_TRUE(rig.panel.countColor(0x3B31, 20, 60, 200, 200) == 0);
+    EXPECT_TRUE(rig.panel.countColor(0x079F, 20, 60, 200, 200) > lit50 * 3 / 2);
+    rig.dump("indicator_full");
+    ind.draw({45, -1, true, 20, 0});                      // 0 %: five hairlines, none lit
+    EXPECT_TRUE(rig.panel.countColor(0x079F, 20, 60, 200, 200) == 0);
     rig.dump("indicator_ccw");
 }
 

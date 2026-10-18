@@ -54,23 +54,6 @@ inline bool testTri(const TriEdges& e, int16_t px, int16_t py) {
     return !(has_neg & has_pos);
 }
 
-// Angle of (dx, dy) from straight up, clockwise, 0-359 (screen y grows downward)
-constexpr uint8_t ATAN_64[65] = { 0, 1, 2, 3, 4, 4, 5, 6, 7, 8, 9, 10, 11, 11, 12, 13, 14, 15, 16, 17, 17, 18, 19,
-    20, 21, 21, 22, 23, 24, 24, 25, 26, 27, 27, 28, 29, 29, 30, 31, 31, 32, 33, 33, 34, 35, 35, 36, 36, 37, 37,
-    38, 39, 39, 40, 40, 41, 41, 42, 42, 43, 43, 44, 44, 45, 45 };
-
-uint16_t clockwiseDeg(int16_t dx, int16_t dy) {
-    int32_t x = dx, y = -dy;                       // y up
-    if (x == 0 && y == 0) return 0;
-    int32_t ax = x < 0 ? -x : x, ay = y < 0 ? -y : y;
-    int32_t t = (ax >= ay) ? ATAN_64[ay * 64 / ax] : 90 - ATAN_64[ax * 64 / ay];   // from +x, ccw
-    int32_t ccw;                                   // from +x axis, counter-clockwise
-    if (x >= 0 && y >= 0) ccw = t;
-    else if (x < 0 && y >= 0) ccw = 180 - t;
-    else if (x < 0) ccw = 180 + t;
-    else ccw = 360 - t;
-    return static_cast<uint16_t>((450 - ccw) % 360);   // from up, clockwise
-}
 } // anonymous namespace
 
 namespace Services {
@@ -151,8 +134,13 @@ void IndicatorService::drawComposited(const Params& p) {
     }
     // Arrow length by the translation magnitude: 30 % of full at 0, full at 100
     auto halfLen = static_cast<int16_t>(ARROW_HALF_LEN * (30 + 70 * (p.speed_pct > 100 ? 100 : p.speed_pct) / 100) / 100);
-    // The rotation arc: this many degrees of the ring from the top, in the turn direction
-    auto arcDeg = static_cast<uint16_t>(360 * (p.rot_pct > 100 ? 100 : p.rot_pct) / 100);
+    // Turn magnitude as concentric rings from the outside in, each worth 100 / RING_COUNT
+    // percent: rings below the level are lit at full width, the ring at the level grows
+    // in width through its step until the next ring starts, the rest are dim hairlines.
+    uint8_t rotPct = p.rot_pct > 100 ? 100 : p.rot_pct;
+    const uint16_t step = 100 / RING_COUNT;
+    auto fullRings = static_cast<uint8_t>(rotPct / step);          // lit at full width
+    uint16_t partial = rotPct - fullRings * step;                  // 0..step-1 into the next
 
     // --- Precompute arrow triangle edge equations ---
     int numArrow = 0;
@@ -215,7 +203,7 @@ void IndicatorService::drawComposited(const Params& p) {
 
     if (hasRing) {
         static constexpr uint16_t chevAngles[4] = {0, 90, 180, 270};
-        auto midR = static_cast<int16_t>((RING_OUTER_R + RING_INNER_R) / 2);
+        auto midR = static_cast<int16_t>(RING_OUTER_R - RING_W_MAX / 2);   // on the outer ring
 
         for (int i = 0; i < 4; i++) {
             uint16_t posAngle = Graphics::deg_to_angle1024(chevAngles[i]);
@@ -287,7 +275,21 @@ void IndicatorService::drawComposited(const Params& p) {
 
     // --- Stream scanlines for the render region ---
     auto outerR2 = static_cast<int32_t>(RING_OUTER_R) * RING_OUTER_R;
-    auto innerR2 = static_cast<int32_t>(RING_INNER_R) * RING_INNER_R;
+    auto innerR2 = static_cast<int32_t>(RING_INNER_R) * RING_INNER_R;    // inside every ring
+    int32_t ringOut2[RING_COUNT], ringIn2[RING_COUNT];
+    bool ringLit[RING_COUNT];
+    for (uint8_t i = 0; i < RING_COUNT; i++) {
+        int32_t ro = RING_OUTER_R - i * RING_PITCH;
+        int32_t w;
+        if (i < fullRings)        { w = RING_W_MAX; ringLit[i] = true; }
+        else if (i == fullRings)  { w = 1 + static_cast<int32_t>(partial) * (RING_W_MAX - 1) / (step - 1);
+                                    ringLit[i] = partial > 0 || rotPct >= 100; }
+        else                      { w = 1; ringLit[i] = false; }
+        if (rotPct >= 100) { w = RING_W_MAX; ringLit[i] = true; }
+        int32_t ri = ro - w;
+        ringOut2[i] = ro * ro;
+        ringIn2[i] = ri * ri;
+    }
 
     auto ww = static_cast<uint16_t>(rMaxX - rMinX + 1);
     auto wh = static_cast<uint16_t>(rMaxY - rMinY + 1);
@@ -317,10 +319,21 @@ void IndicatorService::drawComposited(const Params& p) {
             uint16_t color = BG_COLOR;
 
             if (hasRing && dist2 <= outerR2 && dist2 >= innerR2) {
-                // Ring band: the base ring, with the arc lit for the rotation magnitude
-                uint16_t a = clockwiseDeg(dx, dy);
-                if (p.rotation_dir < 0) a = static_cast<uint16_t>((360 - a) % 360);
-                color = (a < arcDeg) ? ARC_COLOR : CIRCLE_COLOR;
+                // The ring zone: the direction chevrons first, then which ring, if any, and
+                // whether it is lit
+                for (uint8_t i = 0; i < numChev; i++) {
+                    if (screenY >= chevE[i].minY && screenY <= chevE[i].maxY &&
+                        testTri(chevE[i], screenX, screenY)) {
+                        color = CHEVRON_COLOR;
+                        break;
+                    }
+                }
+                for (uint8_t i = 0; color == BG_COLOR && i < RING_COUNT; i++) {
+                    if (dist2 <= ringOut2[i] && dist2 >= ringIn2[i]) {
+                        color = ringLit[i] ? ARC_COLOR : CIRCLE_COLOR;
+                        break;
+                    }
+                }
             } else {
                 bool isInterior = (!hasRing || dist2 < innerR2);
 

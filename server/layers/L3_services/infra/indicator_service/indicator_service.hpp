@@ -86,7 +86,10 @@ private:
 
     // Circle ring: bold, drawn via fillRing (direct scanline)
     static constexpr int16_t RING_OUTER_R = 95;   // Outer radius of ring
-    static constexpr int16_t RING_INNER_R = 87;   // Inner radius (8px ring thickness)
+    static constexpr uint8_t RING_COUNT = 5;      // concentric rings, one per 20 % of turn
+    static constexpr int16_t RING_W_MAX = 6;      // a ring's width when its step is complete
+    static constexpr int16_t RING_PITCH = 7;      // outer edge to outer edge (1 px gap at full width)
+    static constexpr int16_t RING_INNER_R = RING_OUTER_R - (RING_COUNT - 1) * RING_PITCH - RING_W_MAX;   // inside the innermost ring
 
     // Chevrons: bold triangular markers on circumference
     static constexpr int16_t CHEVRON_SIZE = 22;    // Chevron triangle size
@@ -98,8 +101,8 @@ private:
         ARROW_HALF_LEN + 2;                      // 57 (arrow only, no ring)
 
     static constexpr uint16_t ARROW_COLOR   = 0xF8DB;  // Theme::MAGENTA
-    static constexpr uint16_t CIRCLE_COLOR  = 0x3B31;  // Theme::GRID_MAJ, the ring's base
-    static constexpr uint16_t ARC_COLOR     = 0x079F;  // Theme::CYAN, the rotation magnitude
+    static constexpr uint16_t CIRCLE_COLOR  = 0x3B31;  // Theme::GRID_MAJ, an unlit ring's hairline
+    static constexpr uint16_t ARC_COLOR     = 0x079F;  // Theme::CYAN, a lit ring
     static constexpr uint16_t CHEVRON_COLOR = 0xF8DB;  // Theme::MAGENTA
     static constexpr uint16_t BG_COLOR      = 0x0842;  // Theme::BG
 
