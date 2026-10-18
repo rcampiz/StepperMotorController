@@ -134,6 +134,18 @@ smc_add_test(test_screen_dispatcher test_screen_dispatcher.cpp
     stubs/trace_stub.cpp)
 target_include_directories(test_screen_dispatcher PRIVATE ${SERVER}/layers/L3_services)
 
+# --- LCD Task Monitor (stats, trace timeline, legend) under the chrome, on a fake ITaskStats and trace ring.
+smc_add_test(test_screen_tasks test_screen_tasks.cpp
+    ${SERVER}/layers/L3_services/ui/screens/task_monitor_screen.cpp
+    ${SERVER}/layers/L3_services/ui/menu_screen/menu_screen.cpp
+    ${SERVER}/layers/L3_services/ui/screen_manager/screen_manager.cpp
+    ${SERVER}/layers/L3_services/ui/chrome/chrome.cpp
+    ${SERVER}/layers/L3_services/infra/telemetry_store/telemetry_store.cpp
+    ${SERVER}/harness/pins/itask_stats.cpp
+    stubs/trace_stub.cpp
+    stubs/tasks_deps_stub.cpp)
+target_include_directories(test_screen_tasks PRIVATE ${SERVER}/layers/L3_services)
+
 # --- LCD screens rendered through the real L4 driver into a simulated panel (tests/fakes/panel_sim.hpp).
 smc_add_test(test_screen_snapshots test_screen_snapshots.cpp
     ${SERVER}/layers/L3_services/ui/menu_screen/menu_screen.cpp
