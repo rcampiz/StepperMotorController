@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
     QLabel, QLineEdit, QPlainTextEdit, QPushButton, QSlider, QVBoxLayout, QWidget,
 )
 
+from smc_core import commands as C
 from smc_core import kinematics as K
 from smc_core.board import BoardConfig
 from smc_core.fleet import Fleet, FleetConfig, FleetError, ROLES
@@ -33,6 +34,7 @@ from smc_gui import theme
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 VNUCLEO_EXE = os.path.join(ROOT, "build-vnucleo", "vnucleo.exe" if os.name == "nt" else "vnucleo")
+_HEARTBEAT = C.heartbeat(0).name            # the log hides these unless asked
 
 
 class FleetBridge(QObject):
@@ -542,7 +544,7 @@ class FleetPanel(QWidget):
     # --- log -----------------------------------------------------------------------------
     @Slot(float, str, str)
     def _on_tx(self, t: float, role: str, line: str):
-        if line.startswith("SYST:HB") and not self._log_hb.isChecked():
+        if line.startswith(_HEARTBEAT) and not self._log_hb.isChecked():
             return
         text = "%10.3f  %s  %s" % (t, role, line)
         self._log_lines.append(text)
