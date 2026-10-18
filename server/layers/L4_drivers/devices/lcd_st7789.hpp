@@ -10,6 +10,7 @@
 #define LCD_ST7789_HPP
 
 #include <stdint.h>
+#include <stddef.h>
 #include "harness/defs/harness_l4_l5.hpp"
 #include "L4_drivers/boundary/icanvas.hpp"
 
@@ -121,6 +122,10 @@ static const uint8_t FONT_5X7[][5] = {
 class LCD : public Drivers::ICanvas {
 public:
     static constexpr uint16_t WIDTH = 240;
+    // Panel voltages (see init()): the values to adjust if blacks are not black
+    static constexpr uint8_t VCOM = 0x19;      // VCOMS: 0.725 V
+    static constexpr uint8_t VGH_VGL = 0x35;   // GCTRL: VGH 13.26 V, VGL -10.43 V
+    static constexpr uint8_t VRH = 0x12;       // VRHS: GVDD 4.45 V
     static constexpr uint16_t HEIGHT = 320;
 
     // Row offset: GFX01M2 is 240x320, uses full ST7789 RAM (no offset)
@@ -175,6 +180,28 @@ public:
 
         writeCmd(0x3A);  // Color mode
         writeData(0x55); // 16-bit RGB565
+
+        // Panel operating point. Without these the ST7789 runs on its reset defaults, which
+        // do not suit this 240x320 IPS glass: blacks come out grey-blue and blotchy and the
+        // DC bias encourages image sticking. Values: the common ST7789V 240x320 IPS reference
+        // set (Sitronix application values, as used by most modules of this size).
+        static const uint8_t PORCH[]  = {0x0C, 0x0C, 0x00, 0x33, 0x33};
+        static const uint8_t PWCTRL[] = {0xA4, 0xA1};
+        static const uint8_t GAMMA_P[] = {0xD0, 0x04, 0x0D, 0x11, 0x13, 0x2B, 0x3F,
+                                          0x54, 0x4C, 0x18, 0x0D, 0x0B, 0x1F, 0x23};
+        static const uint8_t GAMMA_N[] = {0xD0, 0x04, 0x0C, 0x11, 0x13, 0x2C, 0x3F,
+                                          0x44, 0x51, 0x2F, 0x1F, 0x1F, 0x20, 0x23};
+        writeCmdData(0xB2, PORCH, sizeof PORCH);    // PORCTRL: front/back porch
+        writeCmdData(0xB7, VGH_VGL);                // GCTRL: gate high/low voltage
+        writeCmdData(0xBB, VCOM);                   // VCOMS: common electrode voltage
+        writeCmdData(0xC0, 0x2C);                   // LCMCTRL
+        writeCmdData(0xC2, 0x01);                   // VDVVRHEN: VDV/VRH from the commands below
+        writeCmdData(0xC3, VRH);                    // VRHS: GVDD
+        writeCmdData(0xC4, 0x20);                   // VDVS
+        writeCmdData(0xC6, 0x0F);                   // FRCTRL2: 60 Hz
+        writeCmdData(0xD0, PWCTRL, sizeof PWCTRL);  // PWCTRL1: AVDD 6.8 V, AVCL -4.8 V, VDS 2.3 V
+        writeCmdData(0xE0, GAMMA_P, sizeof GAMMA_P); // positive gamma
+        writeCmdData(0xE1, GAMMA_N, sizeof GAMMA_N); // negative gamma
 
         writeCmd(0x21);  // Inversion on (required for IPS panel driving)
 
@@ -1088,6 +1115,16 @@ private:
         m_spi.transfer(data);
         csHigh();
         m_spi.unlock();
+    }
+
+    void writeCmdData(uint8_t cmd, const uint8_t* data, size_t len) {
+        writeCmd(cmd);
+        for (size_t i = 0; i < len; i++) writeData(data[i]);
+    }
+
+    void writeCmdData(uint8_t cmd, uint8_t data) {
+        writeCmd(cmd);
+        writeData(data);
     }
 
     void delayMs(uint32_t ms) {

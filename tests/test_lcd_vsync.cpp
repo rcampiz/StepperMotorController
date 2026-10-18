@@ -40,6 +40,26 @@ TEST(bitmap_stream_locks_the_bus_per_chunk_and_continues_with_ramwrc) {
     EXPECT_FALSE(lcd.isStreaming());
 }
 
+// The panel's operating point is set at init: VCOM, gate voltages, GVDD, gamma
+TEST(lcd_init_sets_the_panel_voltages_and_gamma) {
+    FakeSPIBus spi; FakeGPIO cs, dc, nreset, te;
+    Drivers::LCD lcd(spi, cs, dc, nreset, te);
+    lcd.init();
+    auto follows = [&](uint8_t cmd, uint8_t value) {
+        for (size_t i = 0; i + 1 < spi.tx.size(); i++) {
+            if (spi.tx[i] == cmd && spi.tx[i + 1] == value) return true;
+        }
+        return false;
+    };
+    EXPECT_TRUE(follows(0xBB, Drivers::LCD::VCOM));
+    EXPECT_TRUE(follows(0xB7, Drivers::LCD::VGH_VGL));
+    EXPECT_TRUE(follows(0xC3, Drivers::LCD::VRH));
+    EXPECT_TRUE(follows(0xD0, 0xA4));
+    EXPECT_TRUE(follows(0xE0, 0xD0) && follows(0xE1, 0xD0));
+    // and the display is switched on last
+    EXPECT_EQ(spi.tx.back(), 0x29);
+}
+
 TEST(lcd_without_tearing_sync_is_a_no_op) {
     FakeSPIBus spi; FakeGPIO cs, dc, nreset, te;
     Drivers::LCD lcd(spi, cs, dc, nreset, te);

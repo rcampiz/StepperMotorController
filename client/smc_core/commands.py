@@ -501,7 +501,7 @@ def disp_text(x: int, y: int, fg: int, bg: int, text: str) -> Request:
 @builds("UI:DISP:RECT")
 def disp_rect(x: int, y: int, w: int, h: int, color: int, fill: bool = False) -> Request:
     return request("UI:DISP:RECT", int(x), int(y), int(w), int(h), _hex4(color),
-                   1 if fill else None)
+                   "fill" if fill else None)          # the firmware matches the word, not 1
 
 @builds("UI:DISP:LINE")
 def disp_line(x1: int, y1: int, x2: int, y2: int, color: int) -> Request:
