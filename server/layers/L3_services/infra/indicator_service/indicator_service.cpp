@@ -109,6 +109,13 @@ void IndicatorService::draw(const Params& p) {
     m_prevParams = p;
 }
 
+void IndicatorService::invalidate() {
+    m_screenCleared = false;
+    m_compositedValid = false;
+    m_hasDrawn = false;
+    m_readout[0] = '\0';
+}
+
 void IndicatorService::clear() {
     draw({0, 0, false, 100, 100});
 }

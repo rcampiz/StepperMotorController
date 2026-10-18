@@ -222,7 +222,15 @@ void DisplayService::handleJoystick()
             m_uiMode->reportJoyEvent(event);
             m_lastDir = dir;
         }
-        m_centerHoldCount = 0;
+        // The way out from the board itself: hold CENTER 2 s, the same gesture as "home"
+        // in local mode. The host's next drawing command finds the board in LOCAL mode.
+        if (dir == UI::JoyDirection::CENTER) {
+            if (++m_centerHoldCount == LONG_PRESS_POLLS) {
+                m_uiMode->setMode(UI::UIMode::LOCAL);
+            }
+        } else {
+            m_centerHoldCount = 0;
+        }
         return;
     }
 
@@ -271,7 +279,19 @@ void DisplayService::tick()
     }
     handleJoystick();
 
-    if (m_lcd != nullptr && m_uiMode->getMode() == UI::UIMode::LOCAL) {
+    // Leaving remote mode (joystick hold or UI:MODE LOCAL): the host drew over the menu, so
+    // repaint it from the top and let the indicator start clean next time
+    const UI::UIMode mode = m_uiMode->getMode();
+    if (mode != m_lastMode) {
+        if (mode == UI::UIMode::LOCAL) {
+            m_screenManager.popToRoot();
+            m_lastInputMs = m_clock->getTickMs();
+        }
+        if (m_indicator != nullptr) m_indicator->invalidate();
+        m_lastMode = mode;
+    }
+
+    if (m_lcd != nullptr && mode == UI::UIMode::LOCAL) {
         careTick(m_clock->getTickMs());
         updateStatusLine();
         ITRACE(Harness::ITrace::L4_LCD, "[UI>L4]", "lcd.render");

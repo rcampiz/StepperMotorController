@@ -282,6 +282,17 @@ def test_vcom_slider_and_black_test_screen(gui):
     assert "UI:MODE REMOTE" in fake.received
 
 
+def test_gui_notices_the_board_was_taken_back_to_its_menu(gui):
+    app, w, fake = gui
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    w._on_indicator_send_requested(90, 1, True, 50, 50)
+    assert pump(app, lambda: getattr(fake, "ui_mode", "") == "REMOTE", timeout=3.0)
+    fake.ui_mode = "LOCAL"                                   # someone held CENTER on the board
+    assert pump(app, lambda: not w._remote_mode_sent, timeout=4.0)
+    w._on_indicator_send_requested(80, 1, True, 50, 50)     # the next one takes the LCD again
+    assert pump(app, lambda: fake.ui_mode == "REMOTE", timeout=3.0)
+
+
 def test_tests_tab_runs_a_scenario(gui):
     app, w, fake = gui
     assert pump(app, lambda: w._board is not None and w._board.session_ready)

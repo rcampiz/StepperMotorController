@@ -26,6 +26,9 @@ public:
 
     /** @brief Draw/update the motion indicator */
     virtual void draw(const IndicatorParams& p) = 0;
+
+    /** @brief The screen was drawn by someone else: the next draw starts from a clear panel */
+    virtual void invalidate() {}
 };
 
 } // namespace Services

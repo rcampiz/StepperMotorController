@@ -114,6 +114,7 @@ private:
     UI::RecoveryScreen   m_recoveryScreen;
     UI::ScreenCareScreen m_careScreen;
     uint32_t m_lastInputMs = 0;      ///< for the saver's quiet time
+    UI::UIMode m_lastMode = UI::UIMode::LOCAL;  ///< to repaint when remote mode ends
     bool     m_bootHandoff = false;  ///< boot colour test -> saver after BOOT_SCREEN_MS
     uint32_t m_bootShownMs = 0;
     static constexpr uint32_t BOOT_SCREEN_MS = 5000;

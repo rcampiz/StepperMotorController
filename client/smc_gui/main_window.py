@@ -224,6 +224,12 @@ class MainWindow(QMainWindow):
         # Status bar
         self._status_bar = QStatusBar()
         # UI dead-man stamp: the board sends heartbeats only while it is fresh (A2)
+        # While the GUI owns the LCD (remote mode) it checks once a second that the board has
+        # not been taken back to its menu from the joystick
+        self._ui_mode_timer = QTimer(self)
+        self._ui_mode_timer.setInterval(1000)
+        self._ui_mode_timer.timeout.connect(self._poll_ui_mode)
+        self._ui_mode_timer.start()
         self._liveness_timer = QTimer(self)
         self._liveness_timer.setInterval(20)
         self._liveness_timer.timeout.connect(self._on_liveness_tick)
@@ -655,6 +661,10 @@ class MainWindow(QMainWindow):
             return motors.save_profile(p)
         self._bridge.job(job, "EXPORT_PROFILE")
 
+    def _poll_ui_mode(self):
+        if self._bridge is not None and self._remote_mode_sent:
+            self._call(C.ui_mode_query(), "POLL_UI_MODE")
+
     @Slot(int)
     def _on_vcom_requested(self, code: int):
         """Panel VCOM, live; coalesced so dragging the slider sends only the newest."""
@@ -880,6 +890,12 @@ class MainWindow(QMainWindow):
             self._telemetry_panel.show_raw_response("MOTOR_DEBUG", dbg["text"])
             self._status_bar.showMessage("Parameters refreshed", 2000)
 
+        elif tag == "POLL_UI_MODE":
+            mode = str((response.data or {}).get("message", "")).upper()
+            if mode == "LOCAL" and self._remote_mode_sent:
+                self._remote_mode_sent = False
+                self._status_bar.showMessage("The board is back on its menu (joystick); "
+                                             "the next indicator or drawing takes the LCD again", 6000)
         elif tag == "EXPORT_PROFILE":
             self._status_bar.showMessage("Profile saved: %s" % response, 8000)
             self._profile_panel.reload()

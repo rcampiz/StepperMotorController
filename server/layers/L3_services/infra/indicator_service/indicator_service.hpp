@@ -45,6 +45,7 @@ public:
      * Equivalent to draw({0, 0, false}).
      */
     void clear();
+    void invalidate() override;
 
 private:
     Services::ICanvas* m_lcd = nullptr;

@@ -426,6 +426,14 @@ class FakeBoard:
     def _c_DEV_ROLE_Q(self, name, args):
         self._ok("GET_ROLE", data={"role": self.role, "role_id": 0})
 
+    def _c_UI_MODE(self, name, args):
+        if args:
+            self.ui_mode = args[0].upper()
+        self._ok(name, getattr(self, "ui_mode", "LOCAL"))
+
+    def _c_UI_MODE_Q(self, name, args):
+        self._ok(name, getattr(self, "ui_mode", "LOCAL"))
+
     def _c_UI_LCD_REG(self, name, args):
         reg = int(args[0], 16) if args else -1
         if len(args) < 2 or reg not in (0xB2, 0xB7, 0xBB, 0xC0, 0xC2, 0xC3, 0xC4, 0xC6, 0xD0, 0xE0, 0xE1):
