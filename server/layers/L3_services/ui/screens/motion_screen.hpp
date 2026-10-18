@@ -53,12 +53,12 @@ private:
     bool m_prevHiZ = true;
     bool m_prevFaulted = false;
 
-    // Jog sizes in revolutions (thousandths, so 1/8 turn is exact): what a person means by
-    // "how far", and independent of the microstep setting; converted to microsteps with the
-    // configured microsteps per revolution when the jog is sent (as MOT:MOVE <rev> REV does)
-    static constexpr int32_t JOG_MILLIREV[] = {125, 250, 500, 1000, 2000, 5000, 10000};
-    static constexpr uint8_t NUM_JOG_SIZES = 7;
-    uint8_t m_jogSizeIdx = 3;        // 1 rev
+    // Jog size in eighths of a revolution (1/8 .. 10 rev, in 1/8 steps): what a person means
+    // by "how far", and independent of the microstep setting; converted to microsteps with
+    // the microsteps per revolution in force when the jog is sent (as MOT:MOVE <rev> REV does)
+    static constexpr uint8_t JOG_EIGHTHS_MIN = 1;
+    static constexpr uint8_t JOG_EIGHTHS_MAX = 80;
+    uint8_t m_jogEighths = 8;        // 1 rev
     // Speed in RPM: what a person means by "how fast", and independent of the microstep
     // setting; converted to full steps/s with the configured steps per revolution on use
     uint16_t m_rpm = 90;             // clear of the 55-66 and 105-122 RPM resonance bands
@@ -73,19 +73,17 @@ public:
         const int64_t num = static_cast<int64_t>(millirev) * static_cast<int64_t>(ustepsPerRev);
         return static_cast<int32_t>(num >= 0 ? (num + 500) / 1000 : (num - 500) / 1000);
     }
-    /// "0.125 rev", "1 rev", with a sign prefix if given ('+', '-', or 0 for none)
-    static void formatRev(char* out, size_t size, int32_t millirev, char sign)
+    /// Eighths of a revolution as a fraction: "3/8 rev", "1 1/4 rev", "2 rev", with a sign
+    /// prefix if given ('+', '-', or 0 for none)
+    static void formatEighths(char* out, size_t size, uint8_t eighths, char sign)
     {
-        const long whole = static_cast<long>(millirev / 1000);
-        int frac = static_cast<int>(millirev % 1000);
-        char fracText[6] = "";
-        if (frac != 0) {
-            int digits = 3;
-            while (frac % 10 == 0) { frac /= 10; digits--; }
-            snprintf(fracText, sizeof fracText, ".%0*d", digits, frac);
-        }
-        if (sign != 0) snprintf(out, size, "%c%ld%s rev", sign, whole, fracText);
-        else snprintf(out, size, "%ld%s rev", whole, fracText);
+        const unsigned whole = eighths / 8u;
+        unsigned num = eighths % 8u, den = 8;
+        while (num != 0 && (num % 2) == 0) { num /= 2; den /= 2; }
+        const char sg[2] = {sign, '\0'};
+        if (num == 0) snprintf(out, size, "%s%u rev", sg, whole);
+        else if (whole == 0) snprintf(out, size, "%s%u/%u rev", sg, num, den);
+        else snprintf(out, size, "%s%u %u/%u rev", sg, whole, num, den);
     }
 
 private:

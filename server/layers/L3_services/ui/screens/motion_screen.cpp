@@ -15,7 +15,6 @@
 
 namespace UI {
 
-constexpr int32_t MotionScreen::JOG_MILLIREV[];
 
 // Layout: status block (two rows) then the fields, a hint line, the deck
 static constexpr uint16_t STATUS_Y  = Theme::CONTENT_Y + 2;
@@ -94,9 +93,9 @@ void MotionScreen::renderField(Services::ICanvas& lcd, uint8_t field, bool fault
         case FIELD_SPEED:    label = "Speed";    snprintf(val, sizeof val, "%u RPM", static_cast<unsigned>(m_rpm)); break;
         case FIELD_RUN_CW:   label = "Run CW";   break;
         case FIELD_RUN_CCW:  label = "Run CCW";  break;
-        case FIELD_JOG_SIZE: label = "Jog size"; formatRev(val, sizeof val, JOG_MILLIREV[m_jogSizeIdx], 0);   break;
-        case FIELD_JOG_CW:   label = "Jog CW";   formatRev(val, sizeof val, JOG_MILLIREV[m_jogSizeIdx], '+'); break;
-        case FIELD_JOG_CCW:  label = "Jog CCW";  formatRev(val, sizeof val, JOG_MILLIREV[m_jogSizeIdx], '-'); break;
+        case FIELD_JOG_SIZE: label = "Jog size"; formatEighths(val, sizeof val, m_jogEighths, 0);   break;
+        case FIELD_JOG_CW:   label = "Jog CW";   formatEighths(val, sizeof val, m_jogEighths, '+'); break;
+        case FIELD_JOG_CCW:  label = "Jog CCW";  formatEighths(val, sizeof val, m_jogEighths, '-'); break;
         case FIELD_STOP:     label = "STOP";     color = Theme::YELLOW; break;
         case FIELD_ENABLE:   label = hiZ ? "Enable" : "Release (Hi-Z)"; snprintf(val, sizeof val, "%s", hiZ ? "coils off" : "coils on");
                              color = hiZ ? Theme::DIM : Theme::GREEN; break;
@@ -132,15 +131,15 @@ void MotionScreen::render(Services::ICanvas& lcd)
     m_rowsDirty = 0;
     if (m_hintDirty) {
         m_hintDirty = false;
-        Chrome::hintLine(lcd, HINT_Y, m_editing ? "LEFT/RIGHT adjust   CENTER done" : "", Theme::DIM);
+        Chrome::hintLine(lcd, HINT_Y, m_editing ? "UP/DOWN or L/R adjust  CENTER done" : "", Theme::DIM);
     }
 }
 
 void MotionScreen::adjust(int8_t delta)
 {
     if (m_selectedField == FIELD_JOG_SIZE) {
-        if (delta < 0 && m_jogSizeIdx > 0) m_jogSizeIdx--;
-        if (delta > 0 && m_jogSizeIdx < NUM_JOG_SIZES - 1) m_jogSizeIdx++;
+        if (delta < 0 && m_jogEighths > JOG_EIGHTHS_MIN) m_jogEighths--;          // 1/8 rev a step
+        if (delta > 0 && m_jogEighths < JOG_EIGHTHS_MAX) m_jogEighths++;
         markRow(FIELD_JOG_SIZE); markRow(FIELD_JOG_CW); markRow(FIELD_JOG_CCW);
     } else if (m_selectedField == FIELD_SPEED) {
         const uint16_t step = (m_rpm < 100) ? 5 : 10;
@@ -158,7 +157,7 @@ void MotionScreen::activate(bool hiZ)
         case FIELD_JOG_CW:
         case FIELD_JOG_CCW: {
             // Revolutions to microsteps at the microstep setting in force now
-            const int32_t steps = milliRevToMicrosteps(JOG_MILLIREV[m_jogSizeIdx],
+            const int32_t steps = milliRevToMicrosteps(static_cast<int32_t>(m_jogEighths) * 125,
                                                        Services::motion.stepper.config.getMicrostepsPerRev());
             Services::Motion::move(m_selectedField == FIELD_JOG_CW ? steps : -steps);
             break;
@@ -178,7 +177,10 @@ InputResult MotionScreen::handleInput(JoyDirection dir, bool pressed)
     switch (dir) {
         case JoyDirection::UP:
         case JoyDirection::DOWN: {
-            if (m_editing) { m_editing = false; m_hintDirty = true; }
+            if (m_editing) {                         // UP = more, DOWN = less; held, they repeat
+                adjust(dir == JoyDirection::UP ? 1 : -1);
+                return InputResult::HANDLED;
+            }
             uint8_t prev = m_selectedField;
             if (dir == JoyDirection::UP && m_selectedField > 0) m_selectedField--;
             if (dir == JoyDirection::DOWN && m_selectedField < NUM_FIELDS - 1) m_selectedField++;

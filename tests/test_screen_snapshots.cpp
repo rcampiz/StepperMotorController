@@ -326,10 +326,15 @@ TEST(motion_jog_is_sized_in_revolutions_at_the_microstep_setting) {
     EXPECT_EQ(UI::MotionScreen::milliRevToMicrosteps(10000, 51200), 512000);
     EXPECT_EQ(UI::MotionScreen::milliRevToMicrosteps(-500, 3200), -1600);
     char buf[20];
-    UI::MotionScreen::formatRev(buf, sizeof buf, 125, '+');  EXPECT_TRUE(strcmp(buf, "+0.125 rev") == 0);
-    UI::MotionScreen::formatRev(buf, sizeof buf, 250, 0);    EXPECT_TRUE(strcmp(buf, "0.25 rev") == 0);
-    UI::MotionScreen::formatRev(buf, sizeof buf, 1000, '-'); EXPECT_TRUE(strcmp(buf, "-1 rev") == 0);
-    UI::MotionScreen::formatRev(buf, sizeof buf, 10000, 0);  EXPECT_TRUE(strcmp(buf, "10 rev") == 0);
+    UI::MotionScreen::formatEighths(buf, sizeof buf, 1, '+');  EXPECT_TRUE(strcmp(buf, "+1/8 rev") == 0);
+    UI::MotionScreen::formatEighths(buf, sizeof buf, 2, 0);    EXPECT_TRUE(strcmp(buf, "1/4 rev") == 0);
+    UI::MotionScreen::formatEighths(buf, sizeof buf, 3, 0);    EXPECT_TRUE(strcmp(buf, "3/8 rev") == 0);
+    UI::MotionScreen::formatEighths(buf, sizeof buf, 8, '-');  EXPECT_TRUE(strcmp(buf, "-1 rev") == 0);
+    UI::MotionScreen::formatEighths(buf, sizeof buf, 10, '+'); EXPECT_TRUE(strcmp(buf, "+1 1/4 rev") == 0);
+    UI::MotionScreen::formatEighths(buf, sizeof buf, 13, 0);   EXPECT_TRUE(strcmp(buf, "1 5/8 rev") == 0);
+    UI::MotionScreen::formatEighths(buf, sizeof buf, 80, 0);   EXPECT_TRUE(strcmp(buf, "10 rev") == 0);
+    // 1/8 rev at 1/16 (3200 microsteps a turn, current mode) is exactly 400 microsteps
+    EXPECT_EQ(UI::MotionScreen::milliRevToMicrosteps(3 * 125, 3200), 1200);
 }
 
 TEST(motion_indicator_shows_heading_speed_and_turn_magnitudes) {
