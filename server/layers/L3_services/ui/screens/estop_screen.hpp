@@ -27,7 +27,7 @@ public:
     void setProgress(uint8_t pct) { m_progress = pct > 100 ? 100 : pct; }
     void setMessage(const char* msg);
 
-    static constexpr uint16_t BAR_X = 20, BAR_Y = 236, BAR_W = 200, BAR_H = 14;
+    static constexpr uint16_t BAR_X = 20, BAR_Y = 200, BAR_W = 200, BAR_H = 12;
 
 private:
     bool m_needsRedraw = true;

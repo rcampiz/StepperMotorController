@@ -356,17 +356,20 @@ TEST(estop_page_shows_the_latch_and_fills_the_clear_bar) {
     rig.start(&root);
     rig.mgr.push(&page);
     rig.frame();
-    EXPECT_TRUE(rig.panel.countColor(0xF906, 0, 40, 240, 50) > 1000);    // the red block title
-    EXPECT_TRUE(rig.panel.countColor(0xFF20, 0, 0, 240, 22) > 2000);     // hazard band
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::RED, 0, 30, 240, 46) > 1000);       // the red block title
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::MAGENTA, 0, 30, 240, 46) > 100);    // its ghost
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::YELLOW, 0, 0, 240, 18) > 1500);     // hazard band
+    const uint32_t empty = rig.panel.countColor(UI::Theme::PANEL, UI::EstopScreen::BAR_X, UI::EstopScreen::BAR_Y,
+                                                UI::EstopScreen::BAR_W, UI::EstopScreen::BAR_H);
     page.setProgress(60);
     rig.frame();
-    const uint32_t filled = rig.panel.countColor(0xFF20, UI::EstopScreen::BAR_X, UI::EstopScreen::BAR_Y,
-                                                 UI::EstopScreen::BAR_W, UI::EstopScreen::BAR_H);
-    EXPECT_TRUE(filled > 100u * 14u && filled < 140u * 14u);             // 60 % of the bar
+    const uint32_t left = rig.panel.countColor(UI::Theme::PANEL, UI::EstopScreen::BAR_X, UI::EstopScreen::BAR_Y,
+                                               UI::EstopScreen::BAR_W, UI::EstopScreen::BAR_H);
+    EXPECT_TRUE(left * 100 / empty >= 35 && left * 100 / empty <= 45);              // 12 of 20 segments lit
     page.setMessage("Hardware fault active: UVLO");
     rig.frame();
     rig.dump("estop");
-    EXPECT_TRUE(rig.panel.countColor(UI::Theme::ORANGE, 0, 260, 240, 12) > 20);
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::ORANGE, 0, 222, 240, 12) > 20);
 }
 
 TEST(graph_screen_draws_a_trace_from_telemetry) {
