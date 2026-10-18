@@ -168,7 +168,7 @@ chip) instead of trusting the saved config, and flags a config/chip mismatch in 
 **J. Current mode vs voltage mode** (firmware + GUI). The powerSTEP01 can regulate coil
 current (CM_VM bit of STEP_MODE, writable only in Hi-Z) instead of driving a KVAL duty.
 Config blob V3 stores `driveMode` and four TVAL references in the bytes that were reserved
-(V2 blobs migrate to current mode with the 23HS22-2804 defaults: 1.0 A hold, 2.0 A run, 2.3 A acc/dec); `applyConfig()` writes TVAL or
+(V2 blobs migrate to current mode with the 23HS22-2804 defaults: 0.39 A hold, 1.72 A run, 2.03 A acc/dec); `applyConfig()` writes TVAL or
 KVAL into the shared 0x09-0x0C registers and carries the CM_VM bit through the same Hi-Z
 path as the microstep bits, so a step-mode change never flips the mode. New commands
 `DRV:CFG:DRIVE VOLTAGE|CURRENT` and `DRV:CFG:TVAL <h> <r> <a> <d>` (hex, 78 mA per unit

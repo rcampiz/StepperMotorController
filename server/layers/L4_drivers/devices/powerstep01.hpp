@@ -113,8 +113,12 @@ public:
         // When FS_SPD is at max, stall detection is effectively disabled
         setParam(Reg::FS_SPD, 0x3FF);   // Max value, disables stall detection
 
-        // GATECFG2: moderate blanking/dead time
-        // TDT[2:0]=011 (1000ns dead time), TBLANK[7:3]=01000 (500ns blanking)
+        // Gate driver for the X-NUCLEO-IHM03A1 MOSFETs (ST's X-CUBE-SPN3 values): IGATE 64 mA,
+        // TCC 500 ns, TBOOST 0. The chip's reset default (IGATE 4 mA, TCC 125 ns) cannot
+        // switch these MOSFETs cleanly: bench 2026-10-18, the shield drew 440 mA at 12.5 V
+        // with the bridges merely holding, almost independent of the current reference.
+        setParam(Reg::GATECFG1, 0x00C3);
+        // GATECFG2: TBLANK 375 ns, TDT 500 ns (dead time kept long for safety)
         setParam(Reg::GATECFG2, 0x43);
 
         // Configure motion parameters

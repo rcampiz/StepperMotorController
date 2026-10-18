@@ -409,7 +409,7 @@ class DriverPanel(QWidget):
         rating_row.addStretch()
         tbtn.addLayout(rating_row)
         tnote = QLabel("TVAL regulates the coil current in 78 mA steps (0.1 \u03a9 sense);\n"
-                       "firmware defaults (23HS22-2804): 1.0 A hold, 2.0 A run, 2.3 A acc / dec")
+                       "firmware defaults (23HS22-2804): 0.39 A hold, 1.72 A run, 2.03 A acc / dec")
         tnote.setStyleSheet("font-size: 8px; color: #888;")
         tbtn.addWidget(tnote)
         tbtn.addStretch()

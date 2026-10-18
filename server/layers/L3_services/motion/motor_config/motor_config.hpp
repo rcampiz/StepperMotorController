@@ -248,11 +248,12 @@ public:
 
     // Current mode (powerSTEP01 CM_VM): the KVAL registers become TVAL current references.
     // Defaults for the project's motor, StepperOnline 23HS22-2804-ME1K (NEMA 23, 2.8 A/phase,
-    // 0.9 ohm, 2.5 mH, 1000-line encoder): hold 1.0 A, run 2.0 A, acc/dec 2.3 A at 78 mA/LSB.
-    // Run stays under the rating so a 12 V bench supply does not clip (bench 2026-10-18).
-    static constexpr uint8_t TVAL_DEFAULT_HOLD = 0x0D;
-    static constexpr uint8_t TVAL_DEFAULT_RUN  = 0x1A;
-    static constexpr uint8_t TVAL_DEFAULT_ACC  = 0x1D;
+    // 0.9 ohm, 2.5 mH, 1000-line encoder): hold 0.39 A, run 1.72 A, acc/dec 2.03 A at 78 mA/LSB.
+    // Chosen for a battery robot (bench 2026-10-18, 12.5 V, gate drive fixed): hold 64 mA from
+    // the supply, run about 25 % below the 2.0 A setting's draw; well inside the 2.8 A rating.
+    static constexpr uint8_t TVAL_DEFAULT_HOLD = 0x05;
+    static constexpr uint8_t TVAL_DEFAULT_RUN  = 0x16;
+    static constexpr uint8_t TVAL_DEFAULT_ACC  = 0x1A;
     bool    isCurrentMode() const { return m_config.driveMode != 0; }
     uint8_t getDriveMode() const { return m_config.driveMode ? 1 : 0; }
     uint8_t getTvalHold() const { return m_config.tvalHold ? m_config.tvalHold : TVAL_DEFAULT_HOLD; }
