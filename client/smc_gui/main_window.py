@@ -7,6 +7,7 @@ turns its callbacks into Qt signals. This window builds Requests and renders rep
 """
 
 from PySide6.QtWidgets import (
+    QApplication,
     QScrollArea,
     QLabel,
     QMainWindow,
@@ -42,6 +43,7 @@ from smc_gui.status_strip import StatusStrip
 from smc_gui.rle_codec import encode_rle_rgb565
 from smc_gui.image_loader import LCD_WIDTH, LCD_HEIGHT
 from smc_gui.bridge import BoardBridge
+from smc_gui import theme
 from smc_core import commands as C
 from smc_core import views as V
 from smc_core import runner
@@ -241,6 +243,15 @@ class MainWindow(QMainWindow):
         refresh_action.triggered.connect(self._connection_panel.refresh_ports)
         conn_menu.addAction(refresh_action)
 
+        # View menu: dark / light
+        view_menu = menubar.addMenu("&View")
+        self._light_action = QAction("&Light mode", self)
+        self._light_action.setCheckable(True)
+        self._light_action.setChecked(theme.MODE == "light")
+        self._light_action.setToolTip("Light palette for daylight readability; the choice is kept")
+        self._light_action.toggled.connect(self.set_light_mode)
+        view_menu.addAction(self._light_action)
+
         # Debug menu
         debug_menu = menubar.addMenu("&Debug")
 
@@ -269,6 +280,17 @@ class MainWindow(QMainWindow):
         about_action = QAction("&About", self)
         about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
+
+    @Slot(bool)
+    def set_light_mode(self, light: bool):
+        """Switch the palette app-wide and restyle the widgets that style themselves."""
+        mode = "light" if light else "dark"
+        theme.apply_theme(QApplication.instance(), mode)
+        theme.save_mode(mode)
+        for panel in (self._status_strip, self._graph_panel, self._tests_panel):
+            panel.restyle()
+        if self._light_action.isChecked() != light:
+            self._light_action.setChecked(light)
 
     def _setup_connections(self):
         """Set up signal/slot connections."""

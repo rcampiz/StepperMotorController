@@ -38,6 +38,7 @@ def main(argv=None) -> int:
 
     QApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication([sys.argv[0]] + qt_args)
+    app.setOrganizationName("SMC")
     app.setApplicationName("STM32 Motor Controller")
     app.setApplicationVersion("0.2.0")
     app.setStyle("Fusion")

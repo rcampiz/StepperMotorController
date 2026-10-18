@@ -452,8 +452,8 @@ class GraphPanel(QWidget):
         self._plot = pg.PlotWidget()
         self._plot.setLabel("bottom", "Time", units="s")
         # Major and minor grid: a GridItem draws both tick levels, the finer one fainter
-        grid = pg.GridItem(pen=pg.mkPen(56, 100, 136, 150), textPen=None)
-        self._plot.addItem(grid)
+        self._grid = pg.GridItem(pen=pg.mkPen(theme.GRID_MAJ), textPen=None)
+        self._plot.addItem(self._grid)
 
         self._curves = {}
         for key, _label, color, dash, default_on in self.TRACE_DEFS:
@@ -631,6 +631,12 @@ class GraphPanel(QWidget):
         self._plot.enableAutoRange(axis='y')
 
     @Slot(dict)
+    def restyle(self):
+        """After a theme change: plot background, grid and the dial."""
+        self._plot.setBackground(theme.BASE)
+        self._grid.setPen(pg.mkPen(theme.GRID_MAJ))
+        self._dial.update()
+
     def update_drv_config(self, data: dict):
         if "encoder_ppr" in data:
             self._dial.set_cpr(int(data["encoder_ppr"]))

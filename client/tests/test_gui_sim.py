@@ -227,6 +227,19 @@ def test_encoder_tab_dial_follows_the_count_and_capture_button_runs_the_scenario
     assert w._tests_panel.results[0].name == "position_capture" and w._tests_panel.results[0].ok
 
 
+def test_light_mode_toggle_switches_the_palette_and_is_remembered(gui):
+    app, w, fake = gui
+    from smc_gui import theme
+    w.set_light_mode(True)
+    assert theme.MODE == "light" and theme.BG == "#f3f5f9"
+    assert "#f3f5f9" in app.styleSheet()
+    assert w._light_action.isChecked()
+    assert theme.saved_mode() == "light"
+    w.set_light_mode(False)
+    assert theme.MODE == "dark" and "#080810" in app.styleSheet()
+    assert theme.saved_mode() == "dark"
+
+
 def test_tests_tab_runs_a_scenario(gui):
     app, w, fake = gui
     assert pump(app, lambda: w._board is not None and w._board.session_ready)

@@ -12,7 +12,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
-STATE_COLOURS = theme.STATE_COLOURS
+
 FAULT_FLAGS = (("ocd", "OCD"), ("thermal_sd", "TH_SD"), ("thermal_warn", "TH_WARN"), ("uvlo", "UVLO"),
                ("stall_a", "STALL_A"), ("stall_b", "STALL_B"), ("cmd_err", "CMD_ERR"))
 
@@ -22,19 +22,22 @@ class _Chip(QFrame):
         super().__init__(parent)
         self.setFrameShape(QFrame.StyledPanel)
         self.setMinimumWidth(min_width)
-        self.setStyleSheet("QFrame { background: %s; border: 1px solid %s; border-radius: 0px; }" % (theme.PANEL, theme.GRID_MAJ))
         v = QVBoxLayout(self)
         v.setContentsMargins(10, 4, 10, 4)
         v.setSpacing(0)
-        t = QLabel(title)
-        t.setStyleSheet("color: %s; font-size: 9px; border: none; background: transparent; letter-spacing: 1px;" % theme.MUTED)
-        v.addWidget(t)
+        self.title = QLabel(title)
+        v.addWidget(self.title)
+        self.restyle()
         self.value = QLabel("--")
         self.value.setFont(QFont("Consolas", 11, QFont.Bold))
         self.value.setStyleSheet("border: none; background: transparent;")
         self.value.setTextFormat(Qt.PlainText)
         self.value.setWordWrap(False)
         v.addWidget(self.value)
+
+    def restyle(self) -> None:
+        self.setStyleSheet("QFrame { background: %s; border: 1px solid %s; border-radius: 0px; }" % (theme.PANEL, theme.GRID_MAJ))
+        self.title.setStyleSheet("color: %s; font-size: 9px; border: none; background: transparent; letter-spacing: 1px;" % theme.MUTED)
 
     def set(self, text: str, colour: Optional[str] = None, background: Optional[str] = None) -> None:
         self.value.setText(text)
@@ -70,6 +73,11 @@ class StatusStrip(QWidget):
         self.set_link(None)
         self.clear()
 
+    def restyle(self) -> None:
+        """After a theme change: every chip takes the new palette."""
+        for chip in self.findChildren(_Chip):
+            chip.restyle()
+
     def set_geometry(self, full_steps: Optional[int], cpr: Optional[int]) -> None:
         if full_steps:
             self._full_steps = int(full_steps)
@@ -93,7 +101,7 @@ class StatusStrip(QWidget):
 
     def update_status(self, data: Dict) -> None:
         state = str(data.get("state", "--"))
-        bg, fg = STATE_COLOURS.get(state, ("#333", "#ccc"))
+        bg, fg = theme.STATE_COLOURS.get(state, (theme.PANEL, theme.TEXT))
         self._state.set(state, fg, bg)
         motor = data.get("motor", {}) if isinstance(data.get("motor"), dict) else {}
         enc = data.get("encoder", {}) if isinstance(data.get("encoder"), dict) else {}

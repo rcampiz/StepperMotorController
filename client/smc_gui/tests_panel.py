@@ -130,6 +130,9 @@ class TestsPanel(QWidget):
             return
         self.start(name, params)
 
+    def restyle(self):
+        self._plot.setBackground(theme.BASE)
+
     def start(self, name: str, params: dict):
         self._running = name
         self._run_btn.setEnabled(False)
