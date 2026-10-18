@@ -140,6 +140,10 @@ void initTasks() {
 
 // Phase 5: Start scheduler — never returns
 [[noreturn]] void start() {
+  // Last early-debug line: from here USART2 carries the protocol (TX ring + RX ISR) and any
+  // later debugPrint would interleave with JSON, so the bare-metal path is retired (F16).
+  Platform::debugPrintln("Early debug retired; starting scheduler");
+  Platform::retireDebugOutput();
   s_platform.scheduler->start();
   __builtin_unreachable();
 }
