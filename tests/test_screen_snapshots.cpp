@@ -262,13 +262,21 @@ TEST(saver_styles_animate_and_any_key_leaves) {
     EXPECT_TRUE(perTwo > 2u * 240u * 80u && perTwo < 240u * 320u);    // the floor and the sun box, not the sky
     for (int i = 0; i < 10; i++) rig.frame();
     rig.dump("saver_synth_later");
-    // the title fades in 5 s in and holds; a new scene at 30 s has another palette and horizon
+    // the title fades in 5 s in and rocks; a new scene at 30 s has another palette and horizon
     for (int i = 0; i < 128; i++) rig.frame();
     rig.dump("saver_synth_title");
-    const uint16_t ink = static_cast<uint16_t>(((240 >> 3) << 11) | ((240 >> 2) << 5) | (255 >> 3));
-    EXPECT_TRUE(rig.panel.countColor(ink) > 200);              // block letters on screen
+    // the letters' hard shadows, in whichever of the three flash colours is up
+    auto c565 = [](int r, int g, int b) { return static_cast<uint16_t>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)); };
+    auto shadows = [&]() {
+        return rig.panel.countColor(c565(40, 200, 255)) + rig.panel.countColor(c565(240, 0, 150)) +
+               rig.panel.countColor(c565(255, 30, 120));
+    };
+    EXPECT_TRUE(shadows() > 300);
+    for (int i = 0; i < 21; i++) rig.frame();                  // a quarter rock later, another flash
+    rig.dump("saver_synth_title_rock");
+    EXPECT_TRUE(shadows() > 300);
     const uint8_t pal0 = saver.palette();
-    for (int i = 0; i < 480; i++) rig.frame();
+    for (int i = 0; i < 459; i++) rig.frame();
     rig.dump("saver_synth_next");
     EXPECT_TRUE(saver.palette() != pal0);
     rig.key(UI::JoyDirection::DOWN);

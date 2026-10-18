@@ -218,10 +218,6 @@ constexpr uint8_t PALETTE_COUNT = sizeof(PALETTES) / sizeof(PALETTES[0]);
 
 constexpr uint16_t STAR     = rgb(255, 255, 255);
 constexpr uint16_t STAR_DIM = rgb(150, 130, 210);
-constexpr uint16_t TITLE    = rgb(240, 240, 255);
-constexpr uint16_t TITLE_L  = rgb(255, 30, 200);     // chromatic aberration, left copy
-constexpr uint16_t TITLE_R  = rgb(30, 230, 255);     // and right copy
-
 constexpr int16_t W = 240;
 constexpr int16_t H = 320;
 constexpr float GRID_K = 150.0f;      // floor row = horizon + K / depth
@@ -240,44 +236,110 @@ inline int16_t sinApprox(int32_t a1024, int16_t amp) {       // sine from a para
 struct Glyph { char c; uint8_t cols[5]; };
 constexpr Glyph TITLE_GLYPHS[] = {
     {'S', {0x46, 0x49, 0x49, 0x49, 0x31}}, {'T', {0x01, 0x01, 0x7F, 0x01, 0x01}},
-    {'E', {0x7F, 0x49, 0x49, 0x49, 0x41}}, {'P', {0x7F, 0x09, 0x09, 0x09, 0x06}},
-    {'R', {0x7F, 0x09, 0x19, 0x29, 0x46}}, {'M', {0x7F, 0x02, 0x0C, 0x02, 0x7F}},
+    {'E', {0x7F, 0x49, 0x49, 0x49, 0x41}}, {'P', {0x7F, 0x09, 0x09, 0x09, 0x0F}},
+    {'R', {0x7F, 0x09, 0x19, 0x29, 0x4F}}, {'M', {0x7F, 0x01, 0x7E, 0x01, 0x7F}},
     {'O', {0x3E, 0x41, 0x41, 0x41, 0x3E}}, {'C', {0x3E, 0x41, 0x41, 0x41, 0x22}},
     {'N', {0x7F, 0x04, 0x08, 0x10, 0x7F}}, {'L', {0x7F, 0x40, 0x40, 0x40, 0x40}},
 };
-// The whole name at once, three centred lines
+// The whole name at once, three centred lines, in the Hotline Miami manner: tall slanted
+// block letters with a hard offset shadow and a dark outline, neon colours that flash, the
+// whole title rocking and bobbing like that game's menu.
 constexpr const char* TITLE_LINES[3] = {"STEPPER", "MOTOR", "CONTROLLER"};
-constexpr int16_t TITLE_CELL = 3;                       // 15 x 21 glyphs
-constexpr int16_t TITLE_ADV = 6 * TITLE_CELL;
-constexpr int16_t TITLE_LINE_H = 7 * TITLE_CELL;
-constexpr int16_t TITLE_PITCH = TITLE_LINE_H + 6;       // line to line
-constexpr int16_t TITLE_W = 10 * TITLE_ADV - TITLE_CELL; // the longest line, CONTROLLER
+constexpr int16_t CELL_W = 3, CELL_H = 4;               // 15 x 28 glyphs: tall and narrow
+constexpr int16_t TITLE_ADV = 6 * CELL_W;
+constexpr int16_t TITLE_LINE_H = 7 * CELL_H;
+constexpr int16_t TITLE_PITCH = TITLE_LINE_H + 5;       // line to line
+constexpr int16_t TITLE_W = 10 * TITLE_ADV - CELL_W;    // the longest line, CONTROLLER
 constexpr int16_t TITLE_H = 2 * TITLE_PITCH + TITLE_LINE_H;
+constexpr int16_t SLANT = (TITLE_LINE_H - 1) / 4;       // italic: tops lean right by up to 6 px
+constexpr int16_t SHADOW = 3;                           // shadow offset, right and down
+// The mask: the unrotated title, 2 bits a pixel (0 sky, 1 outline, 2 shadow, 3 face), with
+// a pixel of margin for the outline
+constexpr int16_t MW = TITLE_W + SLANT + SHADOW + 2;
+constexpr int16_t MH = TITLE_H + SHADOW + 2;
+constexpr int16_t MW4 = (MW + 3) / 4;                   // bytes a mask row
+uint8_t s_mask[MH * MW4];
+bool s_maskBuilt = false;
+// Rocking: up to ROCK_Q16 radians (~4 degrees) either way, over ROCK_FRAMES; a bob of BOB px
+constexpr int32_t ROCK_Q16 = 4600;
+constexpr int32_t ROCK_FRAMES = 80;
+constexpr int32_t BOB_FRAMES = 36;
+constexpr int16_t BOB = 2;
+// The box the rocking title can reach (fixed for a scene): half-width and half-height
+constexpr int16_t BOX_HW = MW / 2 + (MH / 2) * 72 / 1000 + 2;
+constexpr int16_t BOX_HH = MH / 2 + (MW / 2) * 72 / 1000 + BOB + 2;
+// Colour schemes that flash in turn, each line one step along: face top, face bottom, shadow
+struct TitleInk { uint16_t top, bottom, shadow; };
+constexpr TitleInk TITLE_INKS[3] = {
+    {rgb(255, 60, 200), rgb(255, 120, 40), rgb(40, 200, 255)},    // pink to orange, cyan shadow
+    {rgb(255, 250, 120), rgb(255, 150, 0), rgb(240, 0, 150)},     // yellow to amber, magenta
+    {rgb(90, 255, 255), rgb(30, 110, 255), rgb(255, 30, 120)},    // cyan to blue, hot pink
+};
+constexpr uint16_t TITLE_OUTLINE = rgb(14, 0, 24);
+constexpr uint16_t FLASH_FRAMES = 16;                   // a new colour step every 0.8 s
 // Fade in, hold, fade out (frames at 20 Hz)
 constexpr uint16_t FADE_FRAMES = 16;
-constexpr uint16_t HOLD_TITLE_FRAMES = 80;
+constexpr uint16_t HOLD_TITLE_FRAMES = 200;
 
 const uint8_t* glyphFor(char c) {
     for (const Glyph& g : TITLE_GLYPHS) if (g.c == c) return g.cols;
     return nullptr;
 }
 
-/// Is title pixel (tx, ty) inked? (tx, ty relative to the title block's top-left)
-bool titleInk(int16_t tx, int16_t ty) {
-    if (tx < 0 || ty < 0 || tx >= TITLE_W || ty >= TITLE_H) return false;
-    const int16_t line = ty / TITLE_PITCH;
-    const int16_t ly = ty % TITLE_PITCH;
-    if (ly >= TITLE_LINE_H) return false;
-    const char* text = TITLE_LINES[line];
-    const int16_t len = static_cast<int16_t>(strlen(text));
-    const int16_t lineW = static_cast<int16_t>(len * TITLE_ADV - TITLE_CELL);
-    const int16_t lx = static_cast<int16_t>(tx - (TITLE_W - lineW) / 2);
-    if (lx < 0 || lx >= lineW) return false;
-    const int16_t idx = lx / TITLE_ADV;
-    const int16_t col = (lx % TITLE_ADV) / TITLE_CELL;
-    if (col > 4) return false;
-    const uint8_t* g = glyphFor(text[idx]);
-    return g != nullptr && (g[col] & (1u << (ly / TITLE_CELL))) != 0;
+inline uint8_t maskAt(int16_t x, int16_t y) {
+    if (x < 0 || y < 0 || x >= MW || y >= MH) return 0;
+    return static_cast<uint8_t>((s_mask[y * MW4 + (x >> 2)] >> ((x & 3) * 2)) & 3u);
+}
+
+inline void maskSet(int16_t x, int16_t y, uint8_t v) {
+    if (x < 0 || y < 0 || x >= MW || y >= MH) return;
+    uint8_t& b = s_mask[y * MW4 + (x >> 2)];
+    const int sh = (x & 3) * 2;
+    b = static_cast<uint8_t>((b & ~(3u << sh)) | (static_cast<unsigned>(v) << sh));
+}
+
+/// Lay the letters into the mask once: faces (slanted), then the shadow behind them, then
+/// a one-pixel dark outline round both
+void buildTitleMask() {
+    if (s_maskBuilt) return;
+    memset(s_mask, 0, sizeof s_mask);
+    for (int16_t line = 0; line < 3; line++) {
+        const char* text = TITLE_LINES[line];
+        const int16_t len = static_cast<int16_t>(strlen(text));
+        const int16_t lineX = static_cast<int16_t>((TITLE_W - (len * TITLE_ADV - CELL_W)) / 2);
+        for (int16_t i = 0; i < len; i++) {
+            const uint8_t* g = glyphFor(text[i]);
+            if (g == nullptr) continue;
+            for (int16_t c = 0; c < 5; c++)
+                for (int16_t r = 0; r < 7; r++) {
+                    if ((g[c] & (1u << r)) == 0) continue;
+                    for (int16_t py = 0; py < CELL_H; py++) {
+                        const int16_t ly = static_cast<int16_t>(r * CELL_H + py);
+                        const int16_t lean = static_cast<int16_t>((TITLE_LINE_H - 1 - ly) / 4);
+                        for (int16_t px = 0; px < CELL_W; px++) {
+                            maskSet(static_cast<int16_t>(1 + lineX + i * TITLE_ADV + c * CELL_W + px + lean),
+                                    static_cast<int16_t>(1 + line * TITLE_PITCH + ly), 3);
+                        }
+                    }
+                }
+        }
+    }
+    for (int16_t y = MH - 1; y >= 0; y--)                  // shadow: faces moved right and down
+        for (int16_t x = MW - 1; x >= 0; x--)
+            if (maskAt(x, y) == 3 && maskAt(static_cast<int16_t>(x + SHADOW), static_cast<int16_t>(y + SHADOW)) == 0)
+                for (int16_t k = 1; k <= SHADOW; k++)      // a solid extrusion, not a copy
+                    if (maskAt(static_cast<int16_t>(x + k), static_cast<int16_t>(y + k)) == 0)
+                        maskSet(static_cast<int16_t>(x + k), static_cast<int16_t>(y + k), 2);
+    for (int16_t y = 0; y < MH; y++)                       // outline round faces and shadow
+        for (int16_t x = 0; x < MW; x++) {
+            if (maskAt(x, y) != 0) continue;
+            bool near = false;
+            for (int16_t dy = -1; dy <= 1 && !near; dy++)
+                for (int16_t dx = -1; dx <= 1; dx++)
+                    if (maskAt(static_cast<int16_t>(x + dx), static_cast<int16_t>(y + dy)) >= 2) { near = true; break; }
+            if (near) maskSet(x, y, 1);
+        }
+    s_maskBuilt = true;
 }
 
 } // namespace
@@ -336,9 +398,11 @@ void SaverScreen::synthNewScene()
         m_starX[i] = sx;
         m_starY[i] = sy;
     }
-    // The title's place this scene: centred give or take 12 px, high in the sky
-    m_titleX = static_cast<int16_t>((W - TITLE_W) / 2 - 12 + static_cast<int16_t>(nextRandom() % 25));
-    m_titleY = static_cast<int16_t>(10 + nextRandom() % 14);
+    // The title's place this scene (its box's top-left): centred give or take 10 px, high up
+    m_titleX = static_cast<int16_t>(W / 2 - BOX_HW - 10 + static_cast<int16_t>(nextRandom() % 21));
+    if (m_titleX < 0) m_titleX = 0;
+    if (m_titleX + 2 * BOX_HW > W) m_titleX = static_cast<int16_t>(W - 2 * BOX_HW);
+    m_titleY = static_cast<int16_t>(2 + nextRandom() % 10);
     m_titleAlpha = 0;
 }
 
@@ -464,7 +528,7 @@ void SaverScreen::synthSunBox(Services::ICanvas& lcd)
     if (x0 < 0) x0 = 0;
     if (x1 > W - 1) x1 = W - 1;
     // Keep clear of the title while it shows (it repaints its own rows)
-    if (m_titleAlpha > 0 && y0 < m_titleY + TITLE_H + 3) y0 = static_cast<int16_t>(m_titleY + TITLE_H + 3);
+    if (m_titleAlpha > 0 && y0 < m_titleY + 2 * BOX_HH) y0 = static_cast<int16_t>(m_titleY + 2 * BOX_HH);
     if (y0 >= m_horizon) return;
     const uint16_t w = static_cast<uint16_t>(x1 - x0 + 1);
     lcd.streamBitmapStart(static_cast<uint16_t>(x0), static_cast<uint16_t>(y0), w,
@@ -480,29 +544,61 @@ void SaverScreen::synthSunBox(Services::ICanvas& lcd)
     lcd.streamBitmapEnd();
 }
 
-void SaverScreen::synthTitle(Services::ICanvas& lcd)
+void SaverScreen::synthTitle(Services::ICanvas& lcd, uint16_t t)
 {
-    // The title's box: the scene underneath, the title blended over it at m_titleAlpha with a
-    // magenta and a cyan ghost 2 px either side (chromatic aberration), composited row by row.
-    // At alpha 0 it is just the scene, stars put back.
+    // The title's box: the scene underneath, the title over it at m_titleAlpha, rocked by a
+    // small angle and bobbed, composited row by row from the mask (inverse-rotating each
+    // pixel into it). At alpha 0 it is just the scene, stars put back.
+    buildTitleMask();
     static uint8_t row[W * 2];
-    const int16_t x0 = static_cast<int16_t>(m_titleX - 3);
-    const int16_t w = static_cast<int16_t>(TITLE_W + 6);
-    const int16_t y0 = static_cast<int16_t>(m_titleY - 1);
-    const int16_t rows = static_cast<int16_t>(TITLE_H + 2);
+    const int16_t x0 = m_titleX, y0 = m_titleY;
+    const int16_t w = static_cast<int16_t>(2 * BOX_HW), rows = static_cast<int16_t>(2 * BOX_HH);
     const int a = m_titleAlpha;
+
+    // This frame's angle (sin a ~ a, cos a ~ 1 - a^2/2, Q16) and bob
+    const int32_t sa = ROCK_Q16 * sinApprox(static_cast<int32_t>(t) * 1024 / ROCK_FRAMES, 1024) / 1024;
+    const int32_t ca = 65536 - (sa * sa) / (2 * 65536);
+    const int16_t bob = sinApprox(static_cast<int32_t>(t) * 1024 / BOB_FRAMES + 256, BOB);
+    // Colours: each line one step along the flash cycle, a vertical gradient on the faces
+    const uint8_t step = static_cast<uint8_t>((t / FLASH_FRAMES) % 3);
+    uint16_t face[3][TITLE_LINE_H];
+    uint16_t shadow[3];
+    for (int line = 0; line < 3; line++) {
+        const TitleInk& k = TITLE_INKS[(step + line) % 3];
+        shadow[line] = k.shadow;
+        for (int ly = 0; ly < TITLE_LINE_H; ly++) face[line][ly] = mix(k.top, k.bottom, ly * 256 / (TITLE_LINE_H - 1));
+    }
+
+    const int32_t cx = x0 + BOX_HW, cy = y0 + BOX_HH + bob;   // where the mask's centre lands
     lcd.streamBitmapStart(static_cast<uint16_t>(x0), static_cast<uint16_t>(y0), static_cast<uint16_t>(w),
                           static_cast<uint16_t>(rows));
     for (int16_t y = y0; y < y0 + rows; y++) {
-        const int16_t ty = static_cast<int16_t>(y - m_titleY);
-        for (int16_t x = x0; x < x0 + w; x++) {
-            const int16_t tx = static_cast<int16_t>(x - m_titleX);
-            const uint16_t bg = synthUpper(x, y);
-            uint16_t c = bg;
-            if (a > 0) {
-                if (titleInk(tx, ty)) c = mix(bg, TITLE, a);
-                else if (titleInk(static_cast<int16_t>(tx + 2), ty)) c = mix(bg, TITLE_L, a);
-                else if (titleInk(static_cast<int16_t>(tx - 2), ty)) c = mix(bg, TITLE_R, a);
+        const int32_t dy = y - cy;
+        // mask coordinates of the row's first pixel, Q16, then step along the row
+        int32_t mx = (MW / 2) * 65536 + (x0 - cx) * ca + dy * sa;
+        int32_t my = (MH / 2) * 65536 - (x0 - cx) * sa + dy * ca;
+        for (int16_t x = x0; x < x0 + w; x++, mx += ca, my -= sa) {
+            uint16_t c;
+            const int16_t ix = static_cast<int16_t>((mx + 32768) >> 16), iy = static_cast<int16_t>((my + 32768) >> 16);
+            const uint8_t m = a > 0 ? maskAt(ix, iy) : 0;
+            if (m == 0) {
+                c = synthUpper(x, y);
+            } else {
+                const int16_t ty = static_cast<int16_t>(iy - 1);
+                int16_t line = static_cast<int16_t>(ty / TITLE_PITCH);
+                if (line < 0) line = 0;
+                if (line > 2) line = 2;
+                if (m == 3) {
+                    int16_t ly = static_cast<int16_t>(ty - line * TITLE_PITCH);
+                    if (ly < 0) ly = 0;
+                    if (ly >= TITLE_LINE_H) ly = TITLE_LINE_H - 1;
+                    c = face[line][ly];
+                } else if (m == 2) {
+                    c = shadow[line];
+                } else {
+                    c = TITLE_OUTLINE;
+                }
+                if (a < 256) c = mix(synthUpper(x, y), c, a);
             }
             row[(x - x0) * 2] = static_cast<uint8_t>(c >> 8);
             row[(x - x0) * 2 + 1] = static_cast<uint8_t>(c & 0xFF);
@@ -524,8 +620,8 @@ void SaverScreen::synthTwinkle(Services::ICanvas& lcd)
     const Palette& P = PALETTES[m_palette];
     for (int k = 0; k < 3; k++) {
         const uint8_t i = static_cast<uint8_t>(nextRandom() % STAR_COUNT);
-        if (m_titleAlpha > 0 && m_starX[i] >= m_titleX - 3 && m_starX[i] < m_titleX + TITLE_W + 3 &&
-            m_starY[i] >= m_titleY - 1 && m_starY[i] <= m_titleY + TITLE_H) continue;
+        if (m_titleAlpha > 0 && m_starX[i] >= m_titleX && m_starX[i] < m_titleX + 2 * BOX_HW &&
+            m_starY[i] >= m_titleY && m_starY[i] < m_titleY + 2 * BOX_HH) continue;
         const uint32_t r = nextRandom() % 4;
         const uint16_t c = (r == 0) ? m_sky[m_starY[i]] : (r == 1 ? STAR : (r == 2 ? STAR_DIM : P.glow));
         lcd.drawPixel(m_starX[i], m_starY[i], c);
@@ -546,16 +642,19 @@ void SaverScreen::renderSynthwave(Services::ICanvas& lcd)
     m_phase += 0.05f;                          // the floor comes toward the viewer
     if (m_phase >= 1.0f) m_phase -= 1.0f;
     lcd.waitForVSync();
-    // Once per scene the name fades in, holds and fades out
+    // Once per scene the name fades in, rocks and flashes for a while, and fades out. It
+    // repaints on odd frames (the sun's stripes take the even ones), and once more at the end
+    // to leave the sky clean.
     if (m_frame >= TITLE_START_FRAME && m_frame <= TITLE_START_FRAME + 2 * FADE_FRAMES + HOLD_TITLE_FRAMES) {
         const uint16_t t = static_cast<uint16_t>(m_frame - TITLE_START_FRAME);
+        const uint16_t last = 2 * FADE_FRAMES + HOLD_TITLE_FRAMES;
         uint16_t a;
         if (t < FADE_FRAMES) a = static_cast<uint16_t>((t + 1) * 256 / FADE_FRAMES);
         else if (t < FADE_FRAMES + HOLD_TITLE_FRAMES) a = 256;
-        else a = static_cast<uint16_t>((2 * FADE_FRAMES + HOLD_TITLE_FRAMES - t) * 256 / FADE_FRAMES);
-        if (a != m_titleAlpha) {
+        else a = static_cast<uint16_t>((last - t) * 256 / FADE_FRAMES);
+        if ((m_frame & 1) != 0 || t == last) {
             m_titleAlpha = a;
-            synthTitle(lcd);
+            synthTitle(lcd, t);
         }
     }
     if ((m_frame & 1) == 0) {

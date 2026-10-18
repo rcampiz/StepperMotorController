@@ -7,9 +7,10 @@
  *    wireframe mountains or a lit skyline, and a perspective grid that scrolls toward the
  *    viewer. Every 30 s a new scene: another palette (sunset, Blade Runner amber, cyber,
  *    acid), horizon height, sun size and place, so no pixel holds one picture. Once per
- *    scene "STEPPER / MOTOR / CONTROLLER" fades in on three lines in block letters with a
- *    magenta and a cyan ghost, holds 4 s and fades out. Per frame only the floor and the
- *    sun's box are repainted (and the title's box while it fades).
+ *    scene "STEPPER / MOTOR / CONTROLLER" fades in on three lines, Hotline Miami style
+ *    (tall slanted block letters, hard offset shadow, dark outline, neon colours that flash),
+ *    rocks and bobs like that game's menu for 10 s and fades out. Per frame the floor and the
+ *    sun's box are repainted, and the title's box every other frame while it shows.
  *  - HOTLINE: a diagonal stripe band and a blocky SMC card with chromatic aberration,
  *    relaid every 2 s, with VHS glitch slices in between.
  *  - BLANK: a black panel, nothing sent.
@@ -71,7 +72,7 @@ private:
     void synthFloor(Services::ICanvas& lcd);
     void synthSunBox(Services::ICanvas& lcd);
     void synthTwinkle(Services::ICanvas& lcd);
-    void synthTitle(Services::ICanvas& lcd);
+    void synthTitle(Services::ICanvas& lcd, uint16_t t);
     uint16_t synthUpper(int16_t x, int16_t y) const;   // sky, sun, mountains, horizon line
     void renderSynthwave(Services::ICanvas& lcd);
 
