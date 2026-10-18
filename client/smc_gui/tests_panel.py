@@ -149,7 +149,8 @@ class TestsPanel(QWidget):
         shown = {k: v for k, v in result.measurements.items() if k not in ("samples", "traceback")}
         if shown:
             self._output.appendPlainText("    " + json.dumps(shown))
-        if any(k.startswith(("rpm_", "mode_")) for k in result.measurements) or "capture" in result.measurements:
+        if (any(k.startswith(("rpm_", "mode_")) for k in result.measurements)
+                or "capture" in result.measurements or "bode" in result.measurements):
             self._graph_result = result
             self._replot()
 
@@ -178,6 +179,21 @@ class TestsPanel(QWidget):
         self._legend.clear()
         res = self._graph_result
         if res is None:
+            return
+        bode = res.measurements.get("bode")
+        if isinstance(bode, dict) and bode:
+            # filter_bode: lag of the reported velocity against frequency, one curve per chain
+            self._plot.getPlotItem().showAxis("top", False)
+            self._plot.setLabel("bottom", "frequency (Hz)")
+            self._plot.setLabel("left", "lag of the reported velocity (ms)")
+            rec = res.measurements.get("recommended")
+            for i, (name, r) in enumerate(bode.items()):
+                label = "%s: %.0f ms at %.1f Hz, gain %.2f, noise %.1f%s" % (
+                    name, r.get("lag_at_target_ms", 0), res.measurements.get("target_hz", 0),
+                    r.get("gain_at_target", 0), r.get("noise_mean", 0), "  (recommended)" if name == rec else "")
+                pen = self._PENS[i % len(self._PENS)]
+                self._plot.plot(r["freqs"], r["lag_ms"], name=label, pen=pg.mkPen(pen, width=2 if name == rec else 1),
+                                symbol="o", symbolSize=5, symbolBrush=pen)
             return
         cap = res.measurements.get("capture")
         if isinstance(cap, dict) and cap.get("t_ms"):

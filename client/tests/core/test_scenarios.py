@@ -31,9 +31,9 @@ def run(board, name, **params):
 
 def test_registry_lists_the_builtin_scenarios():
     names = [s.name for s in runner.list_scenarios()]
-    assert names == ["bringup", "drive_mode_chip", "estop_latency", "heartbeat_loss", "motion_scale",
-                     "position_capture", "resonance_map", "resonance_sweep", "step_mode_chip",
-                     "step_mode_readback", "sysid", "telemetry_load"]
+    assert names == ["bringup", "drive_mode_chip", "estop_latency", "filter_bode", "heartbeat_loss",
+                     "motion_scale", "position_capture", "resonance_map", "resonance_sweep",
+                     "step_mode_chip", "step_mode_readback", "sysid", "telemetry_load"]
 
 
 def test_bringup_passes_and_measures_identity(board):
@@ -107,6 +107,20 @@ def test_position_capture_reads_the_rings_and_finds_the_oscillation(board):
     assert abs(cap["peak_hz"] - 120.0) <= 3.0                     # the fake's 120 Hz wobble
     assert 2.5 <= cap["peak_amp"] <= 4.5 and cap["err_std"] < 4.0
     assert board._fake.enc_rate == 1000 and not board._fake._cap_frozen   # restored, resumed
+
+
+def test_filter_bode_measures_lag_and_recommends_the_least_lagging_quiet_chain(board):
+    fake = board._fake
+    r = run(board, "filter_bode", freqs_hz=[0.5, 1.0, 2.0], cycles=2, mode="search", apply=False)
+    assert r.ok, (r.summary, r.checks, r.error)
+    bode = r.measurements["bode"]
+    conf = bode["configured"]
+    assert 60 <= conf["lag_at_target_ms"] <= 95                 # the fake's chain: 20+25+15+10+16 ms
+    assert bode["no filters"]["lag_at_target_ms"] < conf["lag_at_target_ms"]
+    assert all(0.85 <= g <= 1.05 for g in conf["gain"])
+    # "no filters" lags least but is noisier; the quiet constraint picks the biquad 20 Hz chain
+    assert r.measurements["recommended"] in ("biquad 20 Hz", "no filters")
+    assert fake.enc_filter["ema_enabled"] and fake.enc_filter["biquad_cutoff_hz"] == 10   # restored
 
 
 def test_telemetry_load_sees_the_encoder_advance(board):

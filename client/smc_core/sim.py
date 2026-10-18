@@ -52,6 +52,13 @@ class FakeBoard:
         self.tlm_ms = 0
         self.tlm_compact = False
         self.enc_rate = 1000
+        # encoder filter chain as CTRL:ENC:FILT? reports it; each stage adds lag in the sine model
+        self.enc_filter = {"meas_window_ms": 40, "sample_rate_hz": 1000, "ema_enabled": True, "ema_alpha": 100,
+                           "sma_enabled": True, "sma_window": 8, "pade_enabled": True, "pade_gain": 25,
+                           "pade_max_corr": 50, "biquad_enabled": True, "biquad_cutoff_hz": 10,
+                           "notch_enabled": False, "notch_center_hz": 25, "notch_q10": 50,
+                           "holt_enabled": False, "holt_alpha": 51, "holt_beta": 13}
+        self.sysid_sine = None                     # (base_sps, amp_sps, f_hz, dur_ms) of the last SINE
         self.idle_release_ms = 0
         self._cap_frozen = False
         self.events_on = False
@@ -434,7 +441,40 @@ class FakeBoard:
 
     def _c_CTRL_ENC_FILT_RATE(self, name, args):
         self.enc_rate = max(100, min(10000, int(args[0])))
+        self.enc_filter["sample_rate_hz"] = self.enc_rate
         self._ok("ENC_FILT", "Sample rate %d Hz" % self.enc_rate)
+
+    def _c_CTRL_ENC_FILT_Q(self, name, args):
+        self._ok("ENC_FILT", data=dict(self.enc_filter))
+
+    def _filt_stage(self, name, args, key, *fields):
+        on = args[0] in ("1", "ON", "on") if args else True
+        self.enc_filter[key + "_enabled"] = on
+        for f, a in zip(fields, args[1:]):
+            self.enc_filter[f] = int(a)
+        self._ok("ENC_FILT", "%s %s" % (key, "on" if on else "off"))
+
+    def _c_CTRL_ENC_FILT_EMA(self, name, args): self._filt_stage(name, args, "ema", "ema_alpha")
+    def _c_CTRL_ENC_FILT_SMA(self, name, args): self._filt_stage(name, args, "sma", "sma_window")
+    def _c_CTRL_ENC_FILT_PADE(self, name, args): self._filt_stage(name, args, "pade", "pade_gain", "pade_max_corr")
+    def _c_CTRL_ENC_FILT_BIQUAD(self, name, args): self._filt_stage(name, args, "biquad", "biquad_cutoff_hz")
+    def _c_CTRL_ENC_FILT_NOTCH(self, name, args): self._filt_stage(name, args, "notch", "notch_center_hz", "notch_q10")
+    def _c_CTRL_ENC_FILT_HOLT(self, name, args): self._filt_stage(name, args, "holt", "holt_alpha", "holt_beta")
+
+    def _c_CTRL_ENC_FILT_WINDOW(self, name, args):
+        self.enc_filter["meas_window_ms"] = int(args[0])
+        self._ok("ENC_FILT", "window %s ms" % args[0])
+
+    def _filter_lag_ms(self) -> float:
+        """The fake's lag model: the window plus a fixed cost per enabled stage."""
+        f = self.enc_filter
+        lag = f["meas_window_ms"] / 2.0
+        lag += 25.0 if f["ema_enabled"] else 0.0
+        lag += 15.0 if f["sma_enabled"] else 0.0
+        lag += 10.0 if f["pade_enabled"] else 0.0
+        lag += (160.0 / max(1, f["biquad_cutoff_hz"])) if f["biquad_enabled"] else 0.0
+        lag += 8.0 if f["holt_enabled"] else 0.0
+        return lag
 
     CAP_SAMPLES = 4096
 
@@ -498,8 +538,17 @@ class FakeBoard:
         self.sysid_phase, self.sysid_done_at = 2, time.monotonic() + self.sysid_run_s
         self._ok(name, "SYSID started")
 
-    _c_CTRL_SYSID_STEP = _c_CTRL_SYSID_RAMP = _c_CTRL_SYSID_SINE = _sysid_start
+    _c_CTRL_SYSID_STEP = _c_CTRL_SYSID_RAMP = _sysid_start
     _c_CTRL_SYSID_TRAPEZOID = _c_CTRL_SYSID_RECT = _sysid_start
+
+    def _c_CTRL_SYSID_SINE(self, name, args):
+        if not self._motion_allowed(name):
+            return
+        base, amp, f_mhz = int(args[0]), int(args[1]), int(args[2])
+        dur = int(args[4]) if len(args) > 4 else 10000
+        self.sysid_sine = (base, amp, f_mhz / 1000.0, dur)
+        self.sysid_phase, self.sysid_done_at = 2, time.monotonic() + self.sysid_run_s
+        self._ok(name, "SYSID started")
 
     def _sysid_phase_now(self) -> int:
         if getattr(self, "sysid_phase", 0) == 2 and time.monotonic() >= self.sysid_done_at:
@@ -525,8 +574,24 @@ class FakeBoard:
             self._err(name, "ERROR", "offset past end")
             return
         count = min(count, total - offset)
-        rows = ["%d,%d,%d,%d" % (i * 5, 800, 800 - max(0, 40 - i), max(0, 40 - i) // 4)
-                for i in range(offset, offset + count)]
+        if self.sysid_sine is not None:
+            # a sine test: setpoint around the baseline, the reported velocity 0.95x and lagging
+            # by the filter model, in encoder ticks/s (cpr / full steps per full step)
+            import math
+            base, amp, f_hz, dur = self.sysid_sine
+            tps = self.enc_ppr / float(self.full_steps)
+            dt = dur / 1000.0 / float(total)            # seconds per sample
+            lag_s = self._filter_lag_ms() / 1000.0
+            rows = []
+            for i in range(offset, offset + count):
+                t = i * dt
+                sp = (base + amp * math.sin(2 * math.pi * f_hz * t)) * tps
+                ac = (base + 0.95 * amp * math.sin(2 * math.pi * f_hz * (t - lag_s))) * tps
+                ac += 3.0 * math.sin(37.0 * t) * (0.5 if self.enc_filter["biquad_enabled"] else 1.0)
+                rows.append("%d,%d,%d,%d" % (int(round(t * 1000)), int(round(sp)), int(round(ac)), 0))
+        else:
+            rows = ["%d,%d,%d,%d" % (i * 5, 800, 800 - max(0, 40 - i), max(0, 40 - i) // 4)
+                    for i in range(offset, offset + count)]
         if self.json:
             self._lines("SYSID_DATA", rows, {"offset": offset, "samples": count, "total": total})
         else:

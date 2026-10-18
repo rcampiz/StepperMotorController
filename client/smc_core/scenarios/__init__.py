@@ -120,4 +120,4 @@ class ScenarioContext:
 
 
 # Import the built-in scenarios so they register themselves
-from . import basic, motion  # noqa: E402,F401
+from . import basic, motion, encoder  # noqa: E402,F401
