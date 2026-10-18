@@ -40,30 +40,30 @@
 
 namespace System {
 
-static Harness::PlatformResources s_platform;
+static Platform::PlatformResources s_platform;
 
 static void initOrHalt(const char *name, bool ok) {
-  Harness::debugPrint(name);
-  Harness::debugPrint("... ");
+  Platform::debugPrint(name);
+  Platform::debugPrint("... ");
   if (!ok) {
-    Harness::debugPrintln("FAIL!");
+    Platform::debugPrintln("FAIL!");
     while (true) {
     }
   }
-  Harness::debugPrintln("OK");
+  Platform::debugPrintln("OK");
 }
 
 static void logOk(const char *name) {
-  Harness::debugPrint(name);
-  Harness::debugPrintln("... OK");
+  Platform::debugPrint(name);
+  Platform::debugPrintln("... OK");
 }
 
 // Phase 1: Hardware — clocks, debug UART, microsecond clock, trace sink
 void initHardware() {
   // Composition root may see every sheet: call the L5 / Platform init contracts directly
   Harness::initClockBoard();
-  Harness::initDebugOutput();
-  Harness::debugPrintln("\n=== Early Debug ===");
+  Platform::initDebugOutput();
+  Platform::debugPrintln("\n=== Early Debug ===");
   logOk("Clock config");
   Platform::IMicrosecondClock &usClock = Platform::initMicrosecondClockTIM5();
   Services::TickTimer_Init(usClock);
@@ -74,7 +74,7 @@ void initHardware() {
 
 // Phase 2: Platform — RTOS primitives, SPI manager
 void initPlatform() {
-  initOrHalt("Platform", Harness::initPlatformBoard(s_platform));
+  initOrHalt("Platform", Platform::initPlatformBoard(s_platform));
   const auto &r = s_platform;
   initOrHalt("SPI Manager", Harness::connectSPIManager(*r.spi1Lock, *r.spi2Lock));
 }
@@ -108,13 +108,13 @@ void initTasks() {
     initOrHalt("Encoder task", Scheduler::initEncoderTask(*encResult.encoderService,
                                                           *r.clock, *r.scheduler));
   } else {
-    Harness::debugPrintln("Encoder task... SKIP");
+    Platform::debugPrintln("Encoder task... SKIP");
   }
 
   // Display
   Services::DisplaySubsystemResult dispResult;
   initOrHalt("Display", Services::initDisplaySubsystem(*r.clock, *r.deviceConfigLock, dispResult));
-  Harness::debugPrintln(dispResult.identityValid ? "Device identity... OK"
+  Platform::debugPrintln(dispResult.identityValid ? "Device identity... OK"
                                                  : "Device identity... DEFAULTS");
   initOrHalt("Display task", Scheduler::initDisplayTask(*dispResult.displayService,
                                                         *r.clock, *r.scheduler));

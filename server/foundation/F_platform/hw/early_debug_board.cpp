@@ -1,14 +1,14 @@
 /**
  * @file early_debug_board.cpp
- * @brief Implements Harness::initDebugOutput/debugPrint/debugPrintln
+ * @brief Implements Platform::initDebugOutput/debugPrint/debugPrintln
  *
- * Wraps the inline EarlyDebug functions for use through the harness contract.
+ * Wraps the inline EarlyDebug functions for use through the init contract (harness/pins/early_debug_board.hpp).
  */
 
 #include "F_platform/hw/early_debug_board.hpp"
 #include "F_platform/hw/early_debug.hpp"
 
-namespace Harness {
+namespace Platform {
 
 void initDebugOutput()
 {
@@ -25,4 +25,4 @@ void debugPrintln(const char* str)
     EarlyDebug::println(str);
 }
 
-} // namespace Harness
+} // namespace Platform

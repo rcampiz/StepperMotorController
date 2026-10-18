@@ -160,10 +160,10 @@ implementations.
 - `rtos/` — `FreeRTOSClock`, `FreeRTOSMutex`, `FreeRTOSQueue`, `FreeRTOSScheduler`,
   `FreeRTOSTaskStats`, `FreeRTOSCriticalSection`, `FreeRTOSTaskNotifier`, `FreeRTOSConfig.h`,
   `freertos_hooks.cpp` (HardFault, stack overflow, malloc failed, idle),
-  `platform_init.cpp` (`Harness::initPlatformBoard` → `PlatformResources`: 6 mutexes, 2
+  `platform_init.cpp` (`Platform::initPlatformBoard` → `PlatformResources`: 6 mutexes, 2
   queues, clock, µs clock, scheduler, stats, critical, notifier; all static).
 - `hw/` — `microsecond_timer_tim5` (`Platform::initMicrosecondClockTIM5`), `early_debug*`
-  (bare-metal USART2 TX for pre-scheduler prints, `Harness::debugPrint*`).
+  (bare-metal USART2 TX for pre-scheduler prints, `Platform::debugPrint*`).
 - `startup/` — vector table, linker script.
 
 Draw as a rail along the bottom/side touching every sheet, with the `PlatformResources`

@@ -71,10 +71,10 @@ const Resources& resources()
 } // namespace Platform
 
 // ============================================================================
-// Harness contract implementation
+// Init contract implementation (declared through harness/pins/platform_board.hpp)
 // ============================================================================
 
-namespace Harness {
+namespace Platform {
 
 bool initPlatformBoard(PlatformResources& out)
 {
@@ -99,4 +99,4 @@ bool initPlatformBoard(PlatformResources& out)
     return true;
 }
 
-} // namespace Harness
+} // namespace Platform

@@ -215,7 +215,7 @@ synchronously from the Comms task).
 ## 9. USART2 has two owners in sequence
 
 **Where**: `F_platform/hw/early_debug.hpp` (bare-metal USART2 TX, used by
-`Harness::debugPrint*` during init and by the hooks) and `L5_board/uart/uart_hardware.hpp`
+`Platform::debugPrint*` during init and by the hooks) and `L5_board/uart/uart_hardware.hpp`
 (ISR-driven USART2 for the host protocol, initialised in `initCommsBoard` during the Comms
 subsystem init).
 
@@ -259,11 +259,11 @@ bus to their users.
 
 **Status**: documented in the handoff; no change proposed.
 
-## 12. Four Platform files define `Harness::` functions
+## 12. Four Platform files defined `Harness::` functions (closed 2026-10-18)
 
-**Where**: `F_platform/hw/early_debug_board.{hpp,cpp}` (`Harness::initDebugOutput`,
+**Where**: `F_platform/hw/early_debug_board.{hpp,cpp}` (`Platform::initDebugOutput`,
 `debugPrint`, `debugPrintln`), `F_platform/rtos/platform_board.hpp` and `platform_init.cpp`
-(`Harness::PlatformResources`, `Harness::initPlatformBoard`).
+(`Platform::PlatformResources`, `Platform::initPlatformBoard`).
 
 **Mechanism**: the init contracts are declared in `harness/pins/` and implemented in the
 Platform directory under the `Harness` namespace. The manifest classifies by directory.
@@ -272,7 +272,8 @@ Draw with a dual label (directory PLATFORM, namespace Harness).
 **Significance**: cosmetic inconsistency; the task-sheet equivalents were renamed to
 `Scheduler::` in step 4, these were not.
 
-**Status**: open; rename to `Platform::` and update the two pins headers.
+**Status**: closed 2026-10-18; the four files declare and define `Platform::` functions, the
+two `harness/pins/` headers forward to them unchanged, and the manifest needs no dual label.
 
 ## 13. Trace is a global net only in debug builds
 

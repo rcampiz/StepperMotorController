@@ -35,7 +35,7 @@ directory, external vendor code excluded.
 | L4 | `server/layers/L4_drivers/` | `Drivers::` | 21 | `PowerSTEP01`, `LCD` (ST7789), `SPIFlash`, `Joystick`, `Encoder` (seqlock index snapshot), `InternalFlashConfigStore`, `DebugAccess`; 5 init files |
 | L5 | `server/layers/L5_board/` | `Board::` | 35 | `GPIO`, `LED`, `SPIHardware`, `SPIBitBang`, `UartHardware`, `RttChannel`, `TimerCounterTIM4`, `EncoderSampler`, `TearingSyncEXTI0`, `InternalFlashSTM32F401`, `BoardDebug`, `g_spiManager`; 6 init files; 3 ISR files |
 | TASKS | `server/foundation/F_platform/tasks/` | `Scheduler::` | 16 | 4 task bodies + 4 task-init contracts (`Scheduler::init*Task`, called by SYSTEM) + handles |
-| PLATFORM | `server/foundation/F_platform/` (minus tasks) | `Platform::` (+ `Harness::` in 4 files, see §8) | 30 | `boundary/` (IClock, IMicrosecondClock, ILock, IQueue, IScheduler, ITaskStats, ICriticalSection, ITaskNotifier), FreeRTOS impls + Null impls, `hw/` (TIM5 µs clock, early debug UART), startup, `rtos/freertos_hooks.cpp`, `rtos/platform_init.cpp` |
+| PLATFORM | `server/foundation/F_platform/` (minus tasks) | `Platform::` | 30 | `boundary/` (IClock, IMicrosecondClock, ILock, IQueue, IScheduler, ITaskStats, ICriticalSection, ITaskNotifier), FreeRTOS impls + Null impls, `hw/` (TIM5 µs clock, early debug UART), startup, `rtos/freertos_hooks.cpp`, `rtos/platform_init.cpp` |
 | HARNESS | `server/harness/` | `Harness::` | 57 | `defs/` 8 files (6 harness headers, `harness_signal.hpp`, `harness_connect.cpp`); `pins/` 41 files (36 hpp + 5 cpp: PODs, enums, init contracts, `SeqSnapshot`, `IResponseSink`); `taps/` 6; `trace/` 2 |
 | SYSTEM | `server/main.cpp`, `server/system_init.{cpp,hpp}` | `System::` | 3 | composition root: phases, Platform resources, L3 cascades, **RTOS task creation**, SPI-lock connection, RX wake registration |
 
@@ -117,13 +117,13 @@ L5 → `harness_l5_l1_bytes.hpp` for `IByteChannel` (rule 3), L2 → `harness_l1
 main()
   System::initHardware()
     Harness::initClockBoard()                      [L5 init/clock_board.cpp, via pins/clock_board.hpp]
-    Harness::initDebugOutput()                     [PLATFORM hw/early_debug_board.cpp, namespace Harness]
+    Platform::initDebugOutput()                    [PLATFORM hw/early_debug_board.cpp]
     Platform::initMicrosecondClockTIM5()           [PLATFORM hw/microsecond_timer_tim5.cpp]
     Services::TickTimer_Init(usClock)              [L3 infra/tick_timer]
     Harness::setMicrosecondClock(&usClock)         [pins/imicrosecond_clock.cpp, global accessor]
     Trace::initTraceSink()                         [L3 infra/trace -> Harness::ITrace::setSink]
   System::initPlatform()
-    Harness::initPlatformBoard(s_platform)         [PLATFORM rtos/platform_init.cpp] 6 mutexes + 2 queues + clock/scheduler/stats/critical/notifier
+    Platform::initPlatformBoard(s_platform)        [PLATFORM rtos/platform_init.cpp] 6 mutexes + 2 queues + clock/scheduler/stats/critical/notifier
     Harness::connectSPIManager(*spi1Lock, *spi2Lock)   [harness_connect.cpp: TracedLock<0/1> taps -> L5 initSPIManager -> Board::g_spiManager]
   System::initServices()
     Platform::setTaskStatsProvider(r.taskStats)
@@ -287,10 +287,9 @@ paths to `ITransport`, pins forwarders, trace as an undocumented net, `TaskHandl
    SPI1 mutex; multi-register sequences are not. `emergencyHiZ` has a residual window: a
    command dequeued just before the latch can reach the driver; `onEmergencyStop` re-asserts
    Hi-Z within one Motor-task pass (≤ 50 ms).
-4. **Four PLATFORM files define `Harness::` functions**: `F_platform/hw/early_debug_board.{hpp,cpp}`
-   (`initDebugOutput`, `debugPrint*`) and `F_platform/rtos/platform_board.hpp` +
-   `platform_init.cpp` (`initPlatformBoard`, `PlatformResources`). The manifest groups them by
-   directory (PLATFORM), not by namespace.
+4. ~~Four PLATFORM files define `Harness::` functions~~ (closed 2026-10-18): `initDebugOutput`,
+   `debugPrint*`, `initPlatformBoard` and `PlatformResources` are `Platform::` now; the
+   `harness/pins/` headers only forward to them.
 5. **Global accessors exist beside the harness structs**: `Harness::microsecondClock()`
    (`pins/imicrosecond_clock`), `Harness::getExtiCallback(line)` (`pins/exti_callbacks`),
    `Services::g_telemetryStore` (written directly by `MotorController` and read by L3

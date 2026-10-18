@@ -20,7 +20,7 @@
 #include "F_platform/boundary/icritical_section.hpp"
 #include "F_platform/boundary/itask_notifier.hpp"
 
-namespace Harness {
+namespace Platform {
 
 /**
  * @brief Platform resources — abstract interface pointers to RTOS primitives
@@ -37,7 +37,7 @@ struct PlatformResources {
     Platform::IQueue<AsyncEvent, 8>* eventQueue;
     Platform::ITaskStats* taskStats;
     Platform::IScheduler* scheduler;
-    Platform::IQueue<Scheduler::MotorCommand, MOTOR_CMD_QUEUE_DEPTH>* motorCmdQueue;
+    Platform::IQueue<Scheduler::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>* motorCmdQueue;
     Platform::IMicrosecondClock* usClock;
     Platform::ICriticalSection* critical;
     Platform::ITaskNotifier* notifier;
@@ -54,4 +54,4 @@ struct PlatformResources {
  */
 bool initPlatformBoard(PlatformResources& out);
 
-} // namespace Harness
+} // namespace Platform

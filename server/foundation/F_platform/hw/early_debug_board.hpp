@@ -1,6 +1,6 @@
 /**
  * @file early_debug_board.hpp
- * @brief Harness contract for pre-scheduler debug output
+ * @brief Init contract for pre-scheduler debug output (Platform namespace, reached via harness/pins/)
  *
  * Bare-metal UART output for debugging init failures before the
  * scheduler starts. F_platform provides the implementation.
@@ -8,7 +8,7 @@
 
 #pragma once
 
-namespace Harness {
+namespace Platform {
 
 /**
  * @brief Initialize debug UART (call before any print)
@@ -25,4 +25,4 @@ void debugPrint(const char* str);
  */
 void debugPrintln(const char* str);
 
-} // namespace Harness
+} // namespace Platform
