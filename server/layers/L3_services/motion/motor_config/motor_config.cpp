@@ -256,6 +256,7 @@ bool MotorConfigManager::loadFromFlash() {
         if (m_config.version < 4) {
             m_config.cmPredEn = m_config.cmTswPlus1 = m_config.cmTFast = 0;
             m_config.cmTonMin = m_config.cmToffMin = 0;
+            m_config.idleReleaseMs = 0;
             memset(m_config.reserved4, 0, sizeof(m_config.reserved4));
             m_config.version = 4;
         }

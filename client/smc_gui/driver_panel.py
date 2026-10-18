@@ -408,6 +408,23 @@ class DriverPanel(QWidget):
         rating_row.addWidget(self._rated_spin)
         rating_row.addStretch()
         tbtn.addLayout(rating_row)
+        idle_row = QHBoxLayout()
+        idle_lbl = QLabel("Release coils after idle:")
+        idle_lbl.setToolTip("Hi-Z after the motor has sat stopped this long (0 = hold for ever). "
+                            "The next motion command re-energises the coils by itself. Saves "
+                            "battery on a robot that waits; no holding torque while released.")
+        idle_row.addWidget(idle_lbl)
+        self._idle_spin = QDoubleSpinBox()
+        self._idle_spin.setRange(0.0, 60.0)
+        self._idle_spin.setDecimals(1)
+        self._idle_spin.setSingleStep(0.5)
+        self._idle_spin.setSuffix(" s")
+        self._idle_spin.setSpecialValueText("never")
+        self._idle_spin.setFont(QFont("Consolas", 9))
+        self._idle_spin.setToolTip(idle_lbl.toolTip())
+        idle_row.addWidget(self._idle_spin)
+        idle_row.addStretch()
+        tbtn.addLayout(idle_row)
         tnote = QLabel("TVAL regulates the coil current in 78 mA steps (0.1 \u03a9 sense);\n"
                        "firmware defaults (23HS22-2804): 0.39 A hold, 1.72 A run, 2.03 A acc / dec")
         tnote.setStyleSheet("font-size: 8px; color: #888;")
@@ -939,6 +956,7 @@ class DriverPanel(QWidget):
         self.drive_apply_requested.emit([
             C.cfg_drive_mode(self._is_current_mode()),
             C.cfg_tval(*(sl.value() for sl in self._tval_sliders)),
+            C.cfg_idle_release(int(round(self._idle_spin.value() * 1000))),
             C.cfg_apply(),
         ])
 
@@ -970,6 +988,8 @@ class DriverPanel(QWidget):
             for slider, raw in zip((self._kval_hold_slider, self._kval_run_slider,
                                     self._kval_acc_slider, self._kval_dec_slider), cfg["kval"]):
                 slider.setValue(U.kval_to_percent(raw))
+        if "idle_release_ms" in cfg:
+            self._idle_spin.setValue(cfg["idle_release_ms"] / 1000.0)
         if "cm" in cfg:
             c = cfg["cm"]
             self._pred_cb.setChecked(bool(c["pred"]))

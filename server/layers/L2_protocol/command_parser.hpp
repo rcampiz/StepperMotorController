@@ -417,6 +417,7 @@ private:
   void cmdMotorConfigTval(const ParsedCommand &cmd);
   void cmdMotorConfigPred(const ParsedCommand &cmd);
   void cmdMotorConfigDecay(const ParsedCommand &cmd);
+  void cmdMotorConfigIdle(const ParsedCommand &cmd);
   void cmdMotorConfigOcd(const ParsedCommand &cmd);
   void cmdMotorConfigStall(const ParsedCommand &cmd);
   void cmdMotorConfigFault(const ParsedCommand &cmd);

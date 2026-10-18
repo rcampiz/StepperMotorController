@@ -20,6 +20,7 @@ _DRIVE = re.compile(r"Drive:\s*(VOLTAGE|CURRENT)")
 _TVAL = re.compile(r"TVAL:\s*HOLD=([0-9A-Fa-f]+)\s+RUN=([0-9A-Fa-f]+)\s+ACC=([0-9A-Fa-f]+)\s+DEC=([0-9A-Fa-f]+)")
 _CM = re.compile(r"CM:\s*PRED=(\d)\s+TSW=(\d+)us\s+T_FAST=([0-9A-Fa-f]+)\s+TON_MIN=([0-9A-Fa-f]+)\s+TOFF_MIN=([0-9A-Fa-f]+)")
 _CFGREG = re.compile(r"CONFIG=([0-9A-Fa-f]{4})\s+T_FAST=([0-9A-Fa-f]+)")
+_IDLE = re.compile(r"IdleRelease:\s*(\d+)\s*ms")
 _KVAL = re.compile(r"KVAL:\s*HOLD=([0-9A-Fa-f]+)\s*RUN=([0-9A-Fa-f]+)\s*ACC=([0-9A-Fa-f]+)"
                    r"\s*DEC=([0-9A-Fa-f]+)")
 _MOTION = re.compile(r"\bACC=(\d+)\s+DEC=(\d+)\s+MAXSPD=(\d+)")
@@ -90,6 +91,9 @@ def motor_config(resp_or_text) -> Dict[str, Any]:
     if m:
         out["cm"] = {"pred": m.group(1) == "1", "tsw_us": int(m.group(2)), "t_fast": int(m.group(3), 16),
                      "ton_min": int(m.group(4), 16), "toff_min": int(m.group(5), 16)}
+    m = _IDLE.search(text)
+    if m:
+        out["idle_release_ms"] = int(m.group(1))
     m = _OCD.search(text)
     if m:
         out["ocd_th"] = int(m.group(1), 16)

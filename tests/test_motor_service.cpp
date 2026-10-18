@@ -51,9 +51,18 @@ Services::MotorCommand cmd(Services::MotorCmdType t, int32_t p1 = 0, int32_t p2 
     Services::MotorCommand c; c.type = t; c.param1 = p1; c.param2 = p2; return c;
 }
 
+/// A clock the tests can advance (NullClock is frozen at 0)
+struct StepClock : Platform::IClock {
+    uint32_t now = 0;
+    uint32_t getTickMs() const override { return now; }
+    uint32_t getTickMsFromISR() const override { return now; }
+    void delayMs(uint32_t ms) override { now += ms; }
+    void sleepUntilMs(uint32_t& lastWakeMs, uint32_t periodMs) override { lastWakeMs += periodMs; now = lastWakeMs; }
+};
+
 struct Rig {
     FakeDriver drv;
-    Platform::NullClock clock;
+    StepClock clock;
     Platform::NullLock lock;
     Platform::NullQueue<Services::MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH> q;
     Platform::NullQueue<AsyncEvent, 8> events;
@@ -231,6 +240,32 @@ TEST(current_mode_writes_tval_and_the_cm_vm_bit_through_the_hiz_path) {
     EXPECT_EQ(r.drv.params[Drivers::MotorReg::KVAL_RUN], cfg.getKvalRun());
     cfg.setDriveMode(origMode);
     cfg.setStepMode(origStep);
+}
+
+TEST(idle_release_lets_the_coils_go_after_the_configured_time_and_motion_reenergises) {
+    Rig r;
+    auto& cfg = Services::motion.stepper.config;
+    cfg.setIdleReleaseMs(0);
+    r.drv.hiZ = false;                                   // energised, stopped
+    r.drv.params[Drivers::MotorReg::SPEED] = 0;
+    r.clock.now = 1000;
+    for (int i = 0; i < 5; ++i) { r.clock.now += 1000; r.motorTaskPass(); }
+    EXPECT_FALSE(r.drv.hiZ);                             // 0 = hold for ever
+
+    cfg.setIdleReleaseMs(1500);
+    r.motorTaskPass();                                   // stopped-since starts here
+    r.clock.now += 1000; r.motorTaskPass();
+    EXPECT_FALSE(r.drv.hiZ);                             // 1.0 s: not yet
+    r.clock.now += 600; r.motorTaskPass();
+    EXPECT_TRUE(r.drv.hiZ);                              // 1.6 s: released
+
+    EXPECT_TRUE(r.q.send(cmd(Services::MotorCmdType::Run, 400, 1)));
+    r.motorTaskPass();
+    EXPECT_FALSE(r.drv.hiZ);                             // the chip energises on Run
+    r.drv.params[Drivers::MotorReg::SPEED] = 100;        // moving: the timer must not run
+    r.clock.now += 5000; r.motorTaskPass();
+    EXPECT_FALSE(r.drv.hiZ);
+    cfg.setIdleReleaseMs(0);
 }
 
 TEST(reinit_and_debug_info_run_on_the_motor_task) {

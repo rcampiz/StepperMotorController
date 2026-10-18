@@ -221,7 +221,7 @@ def test_boot_id_change_in_heartbeat_ack_counts_as_a_reset(rig):
 def test_multiline_and_typed_replies(rig):
     rig.open()
     cfg = rig.board.request(C.driver_config())
-    assert cfg.success and cfg.lines[-1].startswith("StepMode: 3")
+    assert cfg.success and cfg.lines[-2].startswith("StepMode: 3") and cfg.lines[-1].startswith("IdleRelease:")
     idn = rig.board.request(C.idn())
     assert idn.data["serial"] == "SIM00001"
 
@@ -314,7 +314,7 @@ def test_ascii_multiline_reply_is_collected_until_ok_n(rig):
     rig.fake.json, rig.fake.echo = False, True        # silent fall-back to ASCII
     resp = rig.board.request(C.driver_config())
     assert resp.success and resp.lines[0] == "Motor Config (defaults)"
-    assert resp.data["count"] == 10 and resp.lines[-1].startswith("StepMode:")
+    assert resp.data["count"] == 11 and resp.lines[-1].startswith("IdleRelease:")
     err = rig.board.request(C.debug_raw("PS01_DIAG"))
     assert not err.success and err.error_code == "UNKNOWN_CMD"
 

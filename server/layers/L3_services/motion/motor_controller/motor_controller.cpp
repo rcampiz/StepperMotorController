@@ -467,6 +467,21 @@ void MotorController::periodicUpdate()
     }
 
     m_prevStatusReg = status.raw;
+
+    // Idle release (config idleReleaseMs): the coils are let go after the motor has sat
+    // stopped and energised for that long. The chip re-energises on the next Run/Move/GoTo
+    // by itself, so nothing else changes; MOT:EN restarts the clock.
+    const uint16_t releaseMs = motion.stepper.config.getIdleReleaseMs();
+    const bool stoppedEnergised = !status.hiZ() && !status.busy() && rawSpeed == 0;
+    if (releaseMs == 0 || !stoppedEnergised || m_motionInhibited) {
+        m_stoppedSeen = false;
+    } else if (!m_stoppedSeen) {
+        m_stoppedSeen = true;
+        m_stoppedSinceMs = m_clock->getTickMs();
+    } else if (m_clock->getTickMs() - m_stoppedSinceMs >= releaseMs) {
+        m_driver->softHiZ();
+        m_stoppedSeen = false;
+    }
     m_prevBusy = curBusy;
 }
 

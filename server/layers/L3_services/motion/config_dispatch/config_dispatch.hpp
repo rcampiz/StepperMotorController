@@ -27,6 +27,7 @@ public:
     void configSetDriveMode(uint8_t mode) override;
     void configSetTval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec) override;
     void configSetCmRegulation(bool predEn, uint8_t tsw, uint8_t tFast, uint8_t tonMin, uint8_t toffMin) override;
+    void configSetIdleRelease(uint16_t ms) override;
     void configSetOcdThreshold(uint8_t thresh) override;
     void configSetStallThreshold(uint8_t thresh) override;
     void configSetFaultAction(uint8_t action) override;

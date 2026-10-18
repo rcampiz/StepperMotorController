@@ -38,6 +38,8 @@ public:
     /// Current-mode regulation: PRED_EN, TSW (0..31, 0xFF = chip default), T_FAST / TON_MIN /
     /// TOFF_MIN (0 = chip default); CONFIG bits go through the Hi-Z path on APPLY
     virtual void configSetCmRegulation(bool predEn, uint8_t tsw, uint8_t tFast, uint8_t tonMin, uint8_t toffMin) = 0;
+    /// Coils to Hi-Z after ms stopped (0 = never); takes effect at once, no APPLY needed
+    virtual void configSetIdleRelease(uint16_t ms) = 0;
     virtual void configSetOcdThreshold(uint8_t thresh) = 0;
     virtual void configSetStallThreshold(uint8_t thresh) = 0;
     virtual void configSetFaultAction(uint8_t action) = 0;
@@ -55,6 +57,7 @@ public:
         uint8_t driveMode;
         uint8_t tvalHold, tvalRun, tvalAcc, tvalDec;
         uint8_t cmPredEn, cmTsw, cmTFast, cmTonMin, cmToffMin;   // resolved (defaults filled in)
+        uint16_t idleReleaseMs;
         uint8_t ocdThreshold, stallThreshold;
         uint16_t acceleration, deceleration, maxSpeed, minSpeed, fsSpeed;
         bool faultOcd, faultThermalSD, faultThermalWarn, faultUvlo;

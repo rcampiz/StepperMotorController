@@ -116,9 +116,10 @@ def test_drive_mode_apply_sends_mode_tval_and_apply(gui):
     w._driver_panel._tval_spins[1].setValue(1.3)            # 1.3 A run -> 0x11 (78 mA/unit)
     assert w._driver_panel._tval_sliders[1].value() == 0x11
     assert w._driver_panel._tval_sliders[2].maximum() == 0x1A
+    w._driver_panel._idle_spin.setValue(2.5)
     w._driver_panel._on_apply_drive()
     assert pump(app, lambda: fake.drive_current and "DRV:CFG:APPLY" in fake.received)
-    assert fake.tval[1] == 0x11
+    assert fake.tval[1] == 0x11 and fake.idle_release_ms == 2500
     assert fake.received.index("DRV:CFG:DRIVE CURRENT") < fake.received.index("DRV:CFG:APPLY")
 
 

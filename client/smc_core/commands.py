@@ -623,6 +623,14 @@ def cfg_decay(t_fast: int, ton_min: int, toff_min: int) -> Request:
     return request("DRV:CFG:DECAY", "%02X" % (int(t_fast) & 0xFF), "%02X" % (int(ton_min) & 0x7F),
                    "%02X" % (int(toff_min) & 0x7F))
 
+@builds("DRV:CFG:IDLE")
+def cfg_idle_release(ms: int) -> Request:
+    """Release the coils (Hi-Z) after the motor has sat stopped for ms; 0 = hold for ever.
+    Effective at once; DRV:CFG:SAVE keeps it."""
+    if not 0 <= int(ms) <= 60000:
+        raise CommandError("idle release is 0..60000 ms")
+    return request("DRV:CFG:IDLE", int(ms))
+
 @builds("DRV:CFG:OCD")
 def cfg_ocd(threshold: int) -> Request:
     if not 0 <= int(threshold) <= 31:

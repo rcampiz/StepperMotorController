@@ -96,6 +96,10 @@ void ServiceDispatcher::configSetCmRegulation(bool predEn, uint8_t tsw, uint8_t 
     m_config->configSetCmRegulation(predEn, tsw, tFast, tonMin, toffMin);
 }
 
+void ServiceDispatcher::configSetIdleRelease(uint16_t ms) {
+    m_config->configSetIdleRelease(ms);
+}
+
 void ServiceDispatcher::configSetOcdThreshold(uint8_t thresh) {
     m_config->configSetOcdThreshold(thresh);
 }

@@ -75,6 +75,10 @@ void ConfigDispatch::configSetCmRegulation(bool predEn, uint8_t tsw, uint8_t tFa
     motion.stepper.config.setCmRegulation(predEn, tsw, tFast, tonMin, toffMin);
 }
 
+void ConfigDispatch::configSetIdleRelease(uint16_t ms) {
+    motion.stepper.config.setIdleReleaseMs(ms);
+}
+
 void ConfigDispatch::configSetOcdThreshold(uint8_t thresh) {
     motion.stepper.config.setOcdThreshold(thresh);
 }
@@ -137,6 +141,7 @@ Services::IMotorConfigDispatcher::MotorConfigSnapshot ConfigDispatch::getMotorCo
     snap.cmTFast = motion.stepper.config.getCmTFast();
     snap.cmTonMin = motion.stepper.config.getCmTonMin();
     snap.cmToffMin = motion.stepper.config.getCmToffMin();
+    snap.idleReleaseMs = motion.stepper.config.getIdleReleaseMs();
     snap.ocdThreshold = cfg.ocdThreshold;
     snap.stallThreshold = cfg.stallThreshold;
     snap.acceleration = cfg.acceleration;

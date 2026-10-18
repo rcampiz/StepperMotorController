@@ -117,7 +117,8 @@ struct MotorConfig {
     uint8_t  cmTFast;         // T_FAST: [7:4] FAST_STEP, [3:0] TOFF_FAST, (v+1) x 2 us each; 0 = default 0x19
     uint8_t  cmTonMin;        // TON_MIN (7 bits, (v+1) x 0.5 us); 0 = default 0x29 (21 us)
     uint8_t  cmToffMin;       // TOFF_MIN (7 bits, (v+1) x 0.5 us); 0 = default 0x29 (21 us)
-    uint8_t  reserved4[59];   // zero
+    uint16_t idleReleaseMs;   // V4: coils to Hi-Z after this long stopped and energised; 0 = never
+    uint8_t  reserved4[56];   // zero (the uint16 above is padded to an even offset)
 
     uint32_t crc32;         // Data integrity check
 };
@@ -271,6 +272,11 @@ public:
     uint8_t getCmTFast()   const { return m_config.cmTFast   ? m_config.cmTFast   : CM_DEFAULT_TFAST; }
     uint8_t getCmTonMin()  const { return m_config.cmTonMin  ? m_config.cmTonMin  : CM_DEFAULT_TMIN; }
     uint8_t getCmToffMin() const { return m_config.cmToffMin ? m_config.cmToffMin : CM_DEFAULT_TMIN; }
+
+    /// Idle release: 0 = hold for ever (the chip's own behaviour), else release the coils
+    /// (SoftHiZ) after this many ms stopped; the next motion command re-energises them.
+    uint16_t getIdleReleaseMs() const { return m_config.idleReleaseMs; }
+    void     setIdleReleaseMs(uint16_t ms) { m_config.idleReleaseMs = ms; }
     uint8_t getOcdThreshold() const { return m_config.ocdThreshold; }
     uint8_t getStallThreshold() const { return m_config.stallThreshold; }
     uint16_t getAcceleration() const { return m_config.acceleration; }

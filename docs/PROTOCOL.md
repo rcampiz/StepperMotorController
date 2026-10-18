@@ -358,6 +358,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `DRV:CFG:TVAL` | 4 | DRV:CFG:TVAL <hold> <run> <acc> <dec> (hex 00-7F, 78 mA per unit) | ASCII: `OK <formatted text>` | — | `cmdMotorConfigTval` (config_handlers.cpp) |
 | `DRV:CFG:PRED` | 1 | DRV:CFG:PRED <ON\|OFF> [tsw_us 4-128] | ASCII: `OK <formatted text>` | `PRED must be ON or OFF` | `cmdMotorConfigPred` (config_handlers.cpp) |
 | `DRV:CFG:DECAY` | 3 | DRV:CFG:DECAY <t_fast> <ton_min> <toff_min> (hex, 00 = chip default) | ASCII: `OK <formatted text>` | — | `cmdMotorConfigDecay` (config_handlers.cpp) |
+| `DRV:CFG:IDLE` | 1 | DRV:CFG:IDLE <ms 0-60000> (0 = hold for ever) | ASCII: `OK <formatted text>` | — | `cmdMotorConfigIdle` (config_handlers.cpp) |
 | `DRV:CFG:OCD` | 1 | DRV:CFG:OCD <threshold><br>DRV:CFG:OCD <threshold> (0-31, ~375mA/step) | ASCII: `OK <formatted text>` | `OCD threshold must be 0-31` | `cmdMotorConfigOcd` (config_handlers.cpp) |
 | `DRV:CFG:STALL` | 1 | DRV:CFG:STALL <threshold><br>DRV:CFG:STALL <threshold> (0-31, ~31.25mV/step BEMF) | ASCII: `OK <formatted text>` | `Stall threshold must be 0-31` | `cmdMotorConfigStall` (config_handlers.cpp) |
 | `DRV:CFG:FAULT` | 1 | DRV:CFG:FAULT <ocd> <th_sd> <th_w> <uvlo> <sta> <stb> <cmd>\n<br>DRV:CFG:FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd><br>DRV:CFG:FAULT ACTION <0\|1\|2> | ASCII: `OK Fault enables set (not saved)`, `OK <formatted text>` | `Action must be 0=HardStop, 1=HardHiZ, 2=SoftStop` | `cmdMotorConfigFault` (config_handlers.cpp) |

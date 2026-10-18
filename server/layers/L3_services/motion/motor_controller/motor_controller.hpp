@@ -115,6 +115,8 @@ private:
     // Speed override state
     uint32_t m_savedMaxSpeed = 0;
     bool m_speedOverrideActive = false;
+    uint32_t m_stoppedSinceMs = 0;     ///< tick when the motor was last seen stopped and energised (0: not)
+    bool     m_stoppedSeen = false;
 
     // Direction/mode tracking
     bool m_lastRunForward = true;

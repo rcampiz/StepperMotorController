@@ -38,6 +38,8 @@ public:
     uint8_t getCmTonMin() const { return m_mgr.getCmTonMin(); }
     uint8_t getCmToffMin() const { return m_mgr.getCmToffMin(); }
     void    setCmRegulation(bool p, uint8_t tsw, uint8_t tf, uint8_t ton, uint8_t toff) { m_mgr.setCmRegulation(p, tsw, tf, ton, toff); }
+    uint16_t getIdleReleaseMs() const { return m_mgr.getIdleReleaseMs(); }
+    void     setIdleReleaseMs(uint16_t ms) { m_mgr.setIdleReleaseMs(ms); }
 
     // Protection thresholds
     uint8_t getOcdThreshold() const { return m_mgr.getOcdThreshold(); }

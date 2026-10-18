@@ -2754,6 +2754,25 @@
       "persists": false
     },
     {
+      "name": "DRV:CFG:IDLE",
+      "prefix": "DRV",
+      "handler": "cmdMotorConfigIdle",
+      "file": "config_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "DRV:CFG:IDLE <ms 0-60000> (0 = hold for ever)"
+      ],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false
+    },
+    {
       "name": "DRV:CFG:OCD",
       "prefix": "DRV",
       "handler": "cmdMotorConfigOcd",

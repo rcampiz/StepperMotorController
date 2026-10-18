@@ -56,7 +56,7 @@ void CommandParser::cmdMaxSpdPhysical(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdMotorConfigShow() {
-  m_sink.begin(m_format == ResponseFormat::JSON, "MCONFIG");   // F12: 10 lines + terminator
+  m_sink.begin(m_format == ResponseFormat::JSON, "MCONFIG");   // F12: 11 lines + terminator
   auto cfg = m_dispatcher.getMotorConfig();
   char buf[512];
   snprintf(buf, sizeof(buf),
@@ -69,7 +69,8 @@ void CommandParser::cmdMotorConfigShow() {
            "ACC=%u DEC=%u MAXSPD=%u MINSPD=%u FS_SPD=%u\n"
            "Faults: OCD=%d TH_SD=%d TH_W=%d UVLO=%d STALL_A=%d STALL_B=%d CMD=%d\n"
            "Action: %s\n"
-           "StepMode: %u (1/%u)",
+           "StepMode: %u (1/%u)\n"
+           "IdleRelease: %u ms",
            cfg.valid ? "(from flash)" : "(defaults)",
            (unsigned)cfg.kvalHold, (unsigned)cfg.kvalRun,
            (unsigned)cfg.kvalAcc, (unsigned)cfg.kvalDec,
@@ -86,7 +87,8 @@ void CommandParser::cmdMotorConfigShow() {
            cfg.faultStallA, cfg.faultStallB, cfg.faultCmdErr,
            cfg.faultAction == 0 ? "HardStop" :
            cfg.faultAction == 1 ? "HardHiZ" : "SoftStop",
-           (unsigned)(cfg.stepMode & 0x07), 1U << (cfg.stepMode & 0x07));
+           (unsigned)(cfg.stepMode & 0x07), 1U << (cfg.stepMode & 0x07),
+           (unsigned)cfg.idleReleaseMs);
   m_sink.writeLine(buf);
   m_sink.end();
 }
@@ -220,6 +222,28 @@ void CommandParser::cmdMotorConfigDecay(const ParsedCommand &cmd) {
   char buf[72];
   snprintf(buf, sizeof(buf), "DECAY set: T_FAST=%02X TON_MIN=%02X TOFF_MIN=%02X (not saved)",
            tFast, tonMin, toffMin);
+  respondOk(buf);
+}
+
+// DRV:CFG:IDLE <ms> - release the coils (Hi-Z) after the motor has sat stopped for ms;
+// 0 = hold for ever. Effective at once (no APPLY); SAVE keeps it.
+void CommandParser::cmdMotorConfigIdle(const ParsedCommand &cmd) {
+  if (cmd.argCount < 1) {
+    respondErr("Usage: DRV:CFG:IDLE <ms 0-60000> (0 = hold for ever)");
+    return;
+  }
+  long ms = atol(cmd.args[0]);
+  if (ms < 0 || ms > 60000) {
+    respondErr("INVALID_PARAM", "idle release is 0..60000 ms");
+    return;
+  }
+  m_dispatcher.configSetIdleRelease(static_cast<uint16_t>(ms));
+  char buf[72];
+  if (ms == 0) {
+    snprintf(buf, sizeof(buf), "Idle release off: coils hold until MOT:DIS (not saved)");
+  } else {
+    snprintf(buf, sizeof(buf), "Idle release after %ld ms stopped (not saved)", ms);
+  }
   respondOk(buf);
 }
 

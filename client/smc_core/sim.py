@@ -52,6 +52,7 @@ class FakeBoard:
         self.tlm_ms = 0
         self.tlm_compact = False
         self.enc_rate = 1000
+        self.idle_release_ms = 0
         self._cap_frozen = False
         self.events_on = False
         self.seq = 0
@@ -382,7 +383,8 @@ class FakeBoard:
                 self.cm["pred"], self.cm["tsw_us"], self.cm["t_fast"], self.cm["ton_min"], self.cm["toff_min"]),
             "OCD_TH=08 STALL_TH=10", "ACC=500 DEC=500 MAXSPD=800 MINSPD=0 FS_SPD=1023",
             "Faults: OCD=1 TH_SD=1 TH_W=1 UVLO=1 STALL_A=0 STALL_B=0 CMD=1",
-            "Action: HardHiZ", "StepMode: %d (1/%d)" % (self.step_mode, 1 << self.step_mode)])
+            "Action: HardHiZ", "StepMode: %d (1/%d)" % (self.step_mode, 1 << self.step_mode),
+            "IdleRelease: %d ms" % self.idle_release_ms])
 
     def _c_DBG_MOTOR(self, name, args):
         self._lines("MOTOR_DEBUG", [
@@ -461,6 +463,10 @@ class FakeBoard:
     def _c_CTRL_CAP_RESUME(self, name, args):
         self._cap_frozen = False
         self._ok("CAP_RESUME", "Sampling resumed")
+
+    def _c_DRV_CFG_IDLE(self, name, args):
+        self.idle_release_ms = max(0, min(60000, int(args[0])))
+        self._ok(name, "Idle release after %d ms stopped (not saved)" % self.idle_release_ms)
 
     def _c_DRV_CFG_PRED(self, name, args):
         self.cm["pred"] = args[0].upper() in ("ON", "1")
