@@ -188,6 +188,18 @@ def test_tests_tab_graphs_a_position_capture(gui):
     assert len(items) == 1 and len(items[0].xData) == 4096
 
 
+def test_status_strip_follows_telemetry_and_the_tabs_are_regrouped(gui):
+    app, w, fake = gui
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    fake.position = 4000
+    assert pump(app, lambda: "rev" in w._status_strip._pos.value.text())
+    assert w._status_strip._state.value.text() in ("IDLE", "ESTOP", "RUNNING", "ARMED", "FAULT")
+    assert "COM" in w._status_strip._link.value.text() or w._status_strip._link.value.text() != "disconnected"
+    tabs = [w._right_tabs.tabText(i) for i in range(w._right_tabs.count())]
+    assert tabs == ["Dashboard", "Drive", "Motor", "Encoder", "Diagnostics", "Fleet"]
+    assert w.minimumWidth() >= 1100
+
+
 def test_tests_tab_runs_a_scenario(gui):
     app, w, fake = gui
     assert pump(app, lambda: w._board is not None and w._board.session_ready)

@@ -39,17 +39,24 @@ class TelemetryPanel(QWidget):
 
     def _setup_ui(self):
         """Set up the user interface."""
-        layout = QVBoxLayout(self)
+        # Two columns: the live numbers on the left, status and texts on the right, so no
+        # group is squeezed to make the whole page fit the tab height
+        layout = QHBoxLayout(self)
         layout.setSpacing(12)
-
-        layout.addWidget(self._create_motor_group())
-        layout.addWidget(self._create_encoder_group())
-        layout.addWidget(self._create_encoder_filter_group())
-        layout.addWidget(self._create_status_group())
-        layout.addWidget(self._create_link_health_group())
-        layout.addWidget(self._create_motor_config_group())
-        layout.addWidget(self._create_raw_group())
-        layout.addStretch()
+        left = QVBoxLayout()
+        left.setSpacing(12)
+        left.addWidget(self._create_motor_group())
+        left.addWidget(self._create_encoder_group())
+        left.addWidget(self._create_encoder_filter_group())
+        left.addStretch()
+        right = QVBoxLayout()
+        right.setSpacing(12)
+        right.addWidget(self._create_status_group())
+        right.addWidget(self._create_link_health_group())
+        right.addWidget(self._create_motor_config_group())
+        right.addWidget(self._create_raw_group(), 1)
+        layout.addLayout(left, 1)
+        layout.addLayout(right, 1)
 
     # ========================================================================
     # Motor / Encoder / Status / Link Health groups
@@ -438,16 +445,12 @@ class TelemetryPanel(QWidget):
         row.addWidget(self._cw_indicator)
         self._error_indicator = self._create_indicator("ERROR")
         row.addWidget(self._error_indicator)
-        row.addStretch()
-        outer.addLayout(row)
-
-        # Motion state indicator (Stopped / Accel / Const / Decel)
-        row2 = QHBoxLayout()
+        # Motion state (STOPPED / ACCEL / CONST / DECEL) on the same row as the flags
         self._motion_indicator = self._create_indicator("STOPPED")
         self._motion_indicator.setFixedWidth(80)
-        row2.addWidget(self._motion_indicator)
-        row2.addStretch()
-        outer.addLayout(row2)
+        row.addWidget(self._motion_indicator)
+        row.addStretch()
+        outer.addLayout(row)
 
         self._fault_detail_label = QLabel("")
         self._fault_detail_label.setFont(QFont("Consolas", 9, QFont.Bold))

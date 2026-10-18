@@ -7,6 +7,8 @@ turns its callbacks into Qt signals. This window builds Requests and renders rep
 """
 
 from PySide6.QtWidgets import (
+    QScrollArea,
+    QLabel,
     QMainWindow,
     QWidget,
     QVBoxLayout,
@@ -35,6 +37,7 @@ from smc_gui.display_panel import DisplayPanel
 from smc_gui.motion_panel import MotionPanel
 from smc_gui.sysid_panel import SysIdPanel
 from smc_gui.tests_panel import TestsPanel
+from smc_gui.status_strip import StatusStrip
 from smc_gui.rle_codec import encode_rle_rgb565
 from smc_gui.image_loader import LCD_WIDTH, LCD_HEIGHT
 from smc_gui.bridge import BoardBridge
@@ -107,7 +110,9 @@ class MainWindow(QMainWindow):
     def _setup_ui(self):
         """Set up the user interface."""
         self.setWindowTitle("STM32 Motor Controller")
-        self.setMinimumSize(800, 600)
+        # The panels were laid out for this size; below the minimum the faders squash
+        self.setMinimumSize(1100, 720)
+        self.resize(1440, 900)
 
         # Central widget
         central = QWidget()
@@ -118,9 +123,11 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(8, 8, 8, 8)
         main_layout.setSpacing(8)
 
-        # Connection panel at top
+        # Connection panel at top, then the one-line board status strip
         self._connection_panel = ConnectionPanel()
         main_layout.addWidget(self._connection_panel)
+        self._status_strip = StatusStrip()
+        main_layout.addWidget(self._status_strip)
 
         # Splitter for control and telemetry/graphs
         splitter = QSplitter(Qt.Horizontal)
@@ -130,40 +137,64 @@ class MainWindow(QMainWindow):
         self._motor_panel.setEnabled(False)
         splitter.addWidget(self._motor_panel)
 
-        # Tabbed right panel (Dashboard + Graphs)
+        # Tabbed right panel: Dashboard | Drive | Motor | Encoder | Diagnostics | Fleet
         self._right_tabs = QTabWidget()
+        self._right_tabs.setDocumentMode(True)
+        self._right_tabs.tabBar().setExpanding(True)        # the six tabs span the width
+        self._right_tabs.setUsesScrollButtons(False)        # never scroll off the edge
 
         self._telemetry_panel = TelemetryPanel()
         self._right_tabs.addTab(self._telemetry_panel, "Dashboard")
 
+        self._motion_panel = MotionPanel()
+        self._right_tabs.addTab(self._motion_panel, "Drive")
+
+        # Motor: the driver (current, regulation), step mode and protection on one page
         self._driver_panel = DriverPanel()
-        self._right_tabs.addTab(self._driver_panel, "Driver")
-
-        self._protection_panel = ProtectionPanel()
-        self._right_tabs.addTab(self._protection_panel, "Protection")
-
         self._stepmode_panel = StepModePanel()
-        self._right_tabs.addTab(self._stepmode_panel, "Step Mode")
+        self._protection_panel = ProtectionPanel()
+        motor_page = QWidget()
+        motor_v = QVBoxLayout(motor_page)
+        motor_v.setContentsMargins(4, 4, 4, 4)
+        motor_v.addWidget(self._driver_panel)
+        chip_row = QHBoxLayout()
+        chip_row.addWidget(self._stepmode_panel, 1)
+        chip_row.addWidget(self._protection_panel, 1)
+        motor_v.addLayout(chip_row)
+        motor_v.addStretch()
+        motor_scroll = QScrollArea()
+        motor_scroll.setWidgetResizable(True)
+        motor_scroll.setFrameShape(QScrollArea.NoFrame)
+        motor_scroll.setWidget(motor_page)
+        self._right_tabs.addTab(motor_scroll, "Motor")
 
         self._graph_panel = GraphPanel()
-        self._right_tabs.addTab(self._graph_panel, "Telemetry Graphs")
+        self._right_tabs.addTab(self._graph_panel, "Encoder")
 
-        self._motion_panel = MotionPanel()
-        self._right_tabs.addTab(self._motion_panel, "Motion")
-
-        self._sysid_panel = SysIdPanel()
-        self._right_tabs.addTab(self._sysid_panel, "System ID")
-
-        self._display_panel = DisplayPanel()
-        self._right_tabs.addTab(self._display_panel, "Display")
-
+        # Diagnostics: tests, system identification and the LCD tools as sub-tabs
         self._tests_panel = TestsPanel()
-        self._right_tabs.addTab(self._tests_panel, "Tests")
+        self._sysid_panel = SysIdPanel()
+        self._display_panel = DisplayPanel()
+        diag = QTabWidget()
+        diag.addTab(self._tests_panel, "Tests")
+        diag.addTab(self._sysid_panel, "System ID")
+        diag.addTab(self._display_panel, "Display")
+        self._right_tabs.addTab(diag, "Diagnostics")
+
+        # Fleet: four boards (FL/FR/RL/RR) and the controller; the core (smc_core.fleet,
+        # kinematics) exists, the page is the next step
+        fleet = QLabel("Fleet: four boards with roles FL / FR / RL / RR and a gamepad "
+                       "controller.\nThe core already drives a fleet (smc fleet ...); the page "
+                       "is being built.")
+        fleet.setAlignment(Qt.AlignCenter)
+        fleet.setStyleSheet("color: #888;")
+        self._right_tabs.addTab(fleet, "Fleet")
 
         splitter.addWidget(self._right_tabs)
 
-        # Set initial splitter sizes (50% control, 50% tabs)
-        splitter.setSizes([480, 400])
+        # Control pane wide enough for its fader rows and the fault message; the rest to the tabs
+        self._motor_panel.setMinimumWidth(520)
+        splitter.setSizes([560, 880])
 
         main_layout.addWidget(splitter, 1)
 
@@ -378,6 +409,8 @@ class MainWindow(QMainWindow):
         self._board = None
         self._bridge = None
         self._remote_mode_sent = False
+        self._status_strip.set_link(None)
+        self._status_strip.clear()
         self.disconnected.emit()
 
     def _call(self, req: C.Request, tag: str = "GENERIC") -> None:
@@ -394,6 +427,7 @@ class MainWindow(QMainWindow):
     def _on_connected(self):
         """First session ready: populate the panels."""
         self._status_bar.showMessage(f"Connected to {self._port_label}")
+        self._status_strip.set_link(self._port_label)
 
         # Update UI state
         self._connection_panel.set_connected(True)
@@ -830,6 +864,8 @@ class MainWindow(QMainWindow):
                 self._graph_panel.update_drv_config(response.data)
                 self._driver_panel.update_drv_config(response.data)
                 self._telemetry_panel.update_drv_config(response.data)
+                self._status_strip.set_geometry(response.data.get("full_steps_per_rev"),
+                                                response.data.get("encoder_ppr"))
 
         elif tag == "REFRESH_TRIM_CONFIG":
             if response.data:
@@ -863,6 +899,7 @@ class MainWindow(QMainWindow):
     def _on_telemetry_updated(self, data: dict):
         """Handle telemetry data pushed by the board."""
         self._last_status = data
+        self._status_strip.update_status(data)
         self._telemetry_panel.update_data(data)
         self._graph_panel.update_data(data)
         self._motion_panel.update_telemetry(data)
