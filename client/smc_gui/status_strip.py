@@ -64,7 +64,7 @@ class StatusStrip(QWidget):
         self._state = _Chip("STATE", 110)
         self._pos = _Chip("POSITION", 170)
         self._speed = _Chip("SPEED", 170)
-        self._hiz = _Chip("OUTPUT", 90)
+        self._hiz = _Chip("COILS", 110)
         self._faults = _Chip("FAULTS", 150)
         self._wd = _Chip("WATCHDOG", 110)
         self._mode = _Chip("MODE", 150)
@@ -117,7 +117,9 @@ class StatusStrip(QWidget):
             self._speed.set("%d steps/s" % int(speed))
         hiz = motor.get("hi_z")
         if hiz is not None:
-            self._hiz.set("Hi-Z" if hiz else "ENERGISED", "#888" if hiz else "#ffcc00")
+            # Hi-Z: bridges off, no current, no holding torque. ON: coils carry the hold or
+            # run current and the shaft is held.
+            self._hiz.set("OFF (Hi-Z)" if hiz else "ON (holding)", "#888" if hiz else "#ffcc00")
         flags = [name for key, name in FAULT_FLAGS if motor.get(key)]
         self._faults.set(" ".join(flags) if flags else "none", "#ff7d7d" if flags else "#7dff7d")
         hb = data.get("heartbeat", {}) if isinstance(data.get("heartbeat"), dict) else {}

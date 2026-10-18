@@ -109,8 +109,11 @@ class MotorControlPanel(QWidget):
         layout.addWidget(self._create_state_group())
         layout.addWidget(self._create_speed_group())
         layout.addWidget(self._create_motion_group())
-        layout.addWidget(self._create_config_group())
-        layout.addWidget(self._create_estop_group())
+        # Output and emergency side by side: the column must fit a 720 px window
+        bottom = QHBoxLayout()
+        bottom.addWidget(self._create_config_group(), 1)
+        bottom.addWidget(self._create_estop_group(), 1)
+        layout.addLayout(bottom)
         layout.addStretch()
 
     # =========================================================================
@@ -204,7 +207,7 @@ class MotorControlPanel(QWidget):
         self._speed_slider.setValue(500)
         self._speed_slider.setTickPosition(QSlider.TicksBothSides)
         self._speed_slider.setTickInterval(2500)
-        self._speed_slider.setMinimumHeight(120)
+        self._speed_slider.setMinimumHeight(90)
         self._speed_slider.setFixedWidth(60)
         self._speed_slider.setStyleSheet(FADER_STYLE_ORANGE)
         fader_col.addWidget(self._speed_slider, alignment=Qt.AlignHCenter)
@@ -308,7 +311,7 @@ class MotorControlPanel(QWidget):
         self._move_slider.setValue(1000)
         self._move_slider.setTickPosition(QSlider.TicksBothSides)
         self._move_slider.setTickInterval(20000)
-        self._move_slider.setMinimumHeight(120)
+        self._move_slider.setMinimumHeight(90)
         self._move_slider.setFixedWidth(60)
         self._move_slider.setStyleSheet(FADER_STYLE)
         fader_col.addWidget(self._move_slider, alignment=Qt.AlignHCenter)

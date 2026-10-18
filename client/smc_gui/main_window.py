@@ -135,7 +135,11 @@ class MainWindow(QMainWindow):
         # Motor control panel (left)
         self._motor_panel = MotorControlPanel()
         self._motor_panel.setEnabled(False)
-        splitter.addWidget(self._motor_panel)
+        control_scroll = QScrollArea()
+        control_scroll.setWidgetResizable(True)
+        control_scroll.setFrameShape(QScrollArea.NoFrame)
+        control_scroll.setWidget(self._motor_panel)
+        splitter.addWidget(control_scroll)
 
         # Tabbed right panel: Dashboard | Drive | Motor | Encoder | Diagnostics | Fleet
         self._right_tabs = QTabWidget()
@@ -193,7 +197,7 @@ class MainWindow(QMainWindow):
         splitter.addWidget(self._right_tabs)
 
         # Control pane wide enough for its fader rows and the fault message; the rest to the tabs
-        self._motor_panel.setMinimumWidth(520)
+        control_scroll.setMinimumWidth(540)
         splitter.setSizes([560, 880])
 
         main_layout.addWidget(splitter, 1)
