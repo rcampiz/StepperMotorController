@@ -384,8 +384,12 @@ TEST(estop_page_shows_the_latch_and_fills_the_clear_bar) {
     rig.start(&root);
     rig.mgr.push(&page);
     rig.frame();
-    EXPECT_TRUE(rig.panel.countColor(UI::Theme::RED, 0, 30, 240, 46) > 1000);       // the red block title
-    EXPECT_TRUE(rig.panel.countColor(UI::Theme::MAGENTA, 0, 30, 240, 46) > 100);    // its ghost
+    // the Hotline title: its extruded shadow, in whichever flash colour is up
+    auto shadows = [&](uint16_t y, uint16_t h) {
+        return rig.panel.countColor(UI::Theme::CYAN, 0, y, 240, h) + rig.panel.countColor(UI::Theme::YELLOW, 0, y, 240, h) +
+               rig.panel.countColor(UI::Theme::MAGENTA, 0, y, 240, h);
+    };
+    EXPECT_TRUE(shadows(24, 56) > 400);
     EXPECT_TRUE(rig.panel.countColor(UI::Theme::YELLOW, 0, 0, 240, 18) > 1500);     // hazard band
     const uint32_t empty = rig.panel.countColor(UI::Theme::PANEL, UI::EstopScreen::BAR_X, UI::EstopScreen::BAR_Y,
                                                 UI::EstopScreen::BAR_W, UI::EstopScreen::BAR_H);
@@ -413,13 +417,15 @@ TEST(estop_page_shows_the_latch_and_fills_the_clear_bar) {
     for (int i = 0; i < UI::EstopScreen::DARK_FRAMES + UI::EstopScreen::FADE_FRAMES; i++) rig.frame();
     EXPECT_TRUE(page.gridOnTop());
     EXPECT_TRUE(page.offsetY() >= 40);
-    EXPECT_TRUE(rig.panel.countColor(UI::Theme::MAGENTA, 0, 70, 240, 60) > 1000);   // its magenta title
+    EXPECT_TRUE(shadows(72, 56) > 400);                                              // its title, lower
     rig.dump("estop_shifted");
+    rig.frame();
+    rig.dump("estop_shifted_rock");
     // Holding CENTER mid-fade brings the page straight back
     for (int i = 0; i < UI::EstopScreen::SHOW_FRAMES + 3; i++) rig.frame();
     page.setProgress(10);
     rig.frame();
-    EXPECT_TRUE(rig.panel.countColor(UI::Theme::MAGENTA, 0, 70, 240, 60) > 1000);
+    EXPECT_TRUE(shadows(72, 56) > 400);
 }
 
 TEST(graph_screen_draws_a_trace_from_telemetry) {

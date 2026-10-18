@@ -36,12 +36,13 @@ constexpr uint16_t GRID_FLOOR_Y = 246;       // grid as a floor, under the middl
 constexpr uint16_t GRID_CEIL_Y = BAND_H + 3; // grid as a ceiling, over it
 constexpr uint8_t SEGMENTS = 20;
 
-// Colour schemes: the title and its two ghosts, labels, brackets, prompt, panel fill, grid lines
-struct Palette { uint16_t title, ghostR, ghostL, label, corners, prompt, panel, grid; };
+// Colour schemes (the title's flash starts at a different step in each): labels, brackets,
+// prompt, panel fill, grid lines
+struct Palette { uint16_t label, corners, prompt, panel, grid; };
 constexpr Palette PALETTES[3] = {
-    {Theme::RED,     Theme::CYAN,   Theme::MAGENTA, Theme::CYAN,    Theme::CYAN,    Theme::YELLOW, Theme::PANEL, Theme::RED},
-    {Theme::MAGENTA, Theme::YELLOW, Theme::CYAN,    Theme::YELLOW,  Theme::MAGENTA, Theme::CYAN,   0x2004,       Theme::MAGENTA},
-    {Theme::ORANGE,  Theme::MAGENTA, Theme::CYAN,   Theme::MAGENTA, Theme::YELLOW,  Theme::TEXT,   0x0866,       Theme::VIOLET},
+    {Theme::CYAN,    Theme::CYAN,    Theme::YELLOW, Theme::PANEL, Theme::RED},
+    {Theme::YELLOW,  Theme::MAGENTA, Theme::CYAN,   0x2004,       Theme::MAGENTA},
+    {Theme::MAGENTA, Theme::YELLOW,  Theme::TEXT,   0x0866,       Theme::VIOLET},
 };
 
 // The eight layouts: the middle's offset (the floor-grid ones fit between the band and the
@@ -52,22 +53,6 @@ constexpr Layout LAYOUTS[8] = {
     {5, -8, false, 1}, {-5, 46, true, 2}, {3, 4, false, 2}, {-3, 56, true, 1},
 };
 
-void blockText(Services::ICanvas& lcd, const char* s, int16_t dx, uint16_t y, uint16_t colour)
-{
-    const size_t n = strlen(s);
-    const auto w = static_cast<int16_t>(n * 6 * CELL - CELL);
-    auto x = static_cast<int16_t>((Theme::WIDTH - w) / 2 + dx);
-    for (size_t i = 0; i < n; i++, x = static_cast<int16_t>(x + 6 * CELL)) {
-        const uint8_t* cols = nullptr;
-        for (const Glyph& g : GLYPHS) if (g.c == s[i]) cols = g.cols;
-        if (cols == nullptr) continue;
-        for (uint8_t c = 0; c < 5; c++)
-            for (uint8_t r = 0; r < 7; r++)
-                if (cols[c] & (1u << r))
-                    lcd.fillRect(static_cast<uint16_t>(x + c * CELL), static_cast<uint16_t>(y + r * CELL), CELL, CELL, colour);
-    }
-}
-
 uint16_t mix565(uint16_t a, uint16_t b, int t256)
 {
     const int ar = (a >> 11) & 0x1F, ag = (a >> 5) & 0x3F, ab = a & 0x1F;
@@ -76,7 +61,143 @@ uint16_t mix565(uint16_t a, uint16_t b, int t256)
                                  ((ag + (bg - ag) * t256 / 256) << 5) | (ab + (bb - ab) * t256 / 256));
 }
 
+constexpr uint16_t rgb(uint8_t r, uint8_t g, uint8_t b) {
+    return static_cast<uint16_t>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+}
+
+int16_t sinApprox(int32_t a1024, int16_t amp) {             // a sine from two parabolas
+    int32_t a = a1024 & 1023;
+    const int32_t sign = (a < 512) ? 1 : -1;
+    a &= 511;
+    return static_cast<int16_t>(sign * a * (512 - a) * amp / 65536);
+}
+
+// The title, Hotline Miami style like the saver's: tall slanted block letters, a solid
+// shadow extruded down-right, a dark outline, a hot gradient on the faces, colours that
+// flash, the whole word rocking and bobbing. Laid once into a 2-bit mask (0 page, 1 outline,
+// 2 shadow, 3 face) for the word showing; each update inverse-rotates the box into it.
+constexpr int16_t T_CELL_W = 5, T_CELL_H = 5;           // 25 x 35 glyphs
+constexpr int16_t T_ADV = 6 * T_CELL_W;
+constexpr int16_t T_LINE_H = 7 * T_CELL_H;
+constexpr int16_t T_W = 6 * T_ADV - T_CELL_W;           // the longest word, E-STOP
+constexpr int16_t T_SLANT = (T_LINE_H - 1) / 4;
+constexpr int16_t T_SHADOW = 4;
+constexpr int16_t MW = T_W + T_SLANT + T_SHADOW + 2;
+constexpr int16_t MH = T_LINE_H + T_SHADOW + 2;
+constexpr int16_t MW4 = (MW + 3) / 4;
+uint8_t s_mask[MH * MW4];
+const char* s_maskWord = nullptr;
+constexpr int32_t ROCK_Q16 = 3300;                      // ~3 degrees either way
+constexpr int32_t ROCK_FRAMES = 60;
+constexpr int32_t BOB_FRAMES = 30;
+constexpr int16_t BOB = 2;
+constexpr int16_t BOX_HW = MW / 2 + 3;
+constexpr int16_t BOX_HH = 28;                          // 56 rows: from 6 above TITLE_Y to the sub-line
+constexpr uint16_t FLASH_FRAMES = 12;
+struct TitleInk { uint16_t top, bottom, shadow; };
+constexpr TitleInk T_INKS[3] = {
+    {rgb(255, 40, 60), rgb(255, 150, 0), Theme::CYAN},       // red to orange, cyan shadow
+    {rgb(255, 70, 210), rgb(255, 20, 50), Theme::YELLOW},    // pink to red, yellow shadow
+    {rgb(255, 245, 90), rgb(255, 80, 0), Theme::MAGENTA},    // yellow to orange, magenta shadow
+};
+constexpr uint16_t T_OUTLINE = rgb(0, 0, 10);
+
+inline uint8_t maskAt(int16_t x, int16_t y) {
+    if (x < 0 || y < 0 || x >= MW || y >= MH) return 0;
+    return static_cast<uint8_t>((s_mask[y * MW4 + (x >> 2)] >> ((x & 3) * 2)) & 3u);
+}
+
+inline void maskSet(int16_t x, int16_t y, uint8_t v) {
+    if (x < 0 || y < 0 || x >= MW || y >= MH) return;
+    uint8_t& b = s_mask[y * MW4 + (x >> 2)];
+    const int sh = (x & 3) * 2;
+    b = static_cast<uint8_t>((b & ~(3u << sh)) | (static_cast<unsigned>(v) << sh));
+}
+
+void buildMask(const char* word) {
+    if (s_maskWord == word) return;
+    memset(s_mask, 0, sizeof s_mask);
+    const int16_t len = static_cast<int16_t>(strlen(word));
+    const int16_t x0 = static_cast<int16_t>((T_W - (len * T_ADV - T_CELL_W)) / 2);
+    for (int16_t i = 0; i < len; i++) {
+        const uint8_t* cols = nullptr;
+        for (const Glyph& g : GLYPHS) if (g.c == word[i]) cols = g.cols;
+        if (cols == nullptr) continue;
+        for (int16_t c = 0; c < 5; c++)
+            for (int16_t r = 0; r < 7; r++) {
+                if ((cols[c] & (1u << r)) == 0) continue;
+                for (int16_t py = 0; py < T_CELL_H; py++) {
+                    const int16_t ly = static_cast<int16_t>(r * T_CELL_H + py);
+                    const int16_t lean = static_cast<int16_t>((T_LINE_H - 1 - ly) / 4);
+                    for (int16_t px = 0; px < T_CELL_W; px++)
+                        maskSet(static_cast<int16_t>(1 + x0 + i * T_ADV + c * T_CELL_W + px + lean),
+                                static_cast<int16_t>(1 + ly), 3);
+                }
+            }
+    }
+    for (int16_t y = MH - 1; y >= 0; y--)
+        for (int16_t x = MW - 1; x >= 0; x--)
+            if (maskAt(x, y) == 3)
+                for (int16_t k = 1; k <= T_SHADOW; k++)
+                    if (maskAt(static_cast<int16_t>(x + k), static_cast<int16_t>(y + k)) == 0)
+                        maskSet(static_cast<int16_t>(x + k), static_cast<int16_t>(y + k), 2);
+    for (int16_t y = 0; y < MH; y++)
+        for (int16_t x = 0; x < MW; x++) {
+            if (maskAt(x, y) != 0) continue;
+            bool near = false;
+            for (int16_t dy = -1; dy <= 1 && !near; dy++)
+                for (int16_t dx = -1; dx <= 1; dx++)
+                    if (maskAt(static_cast<int16_t>(x + dx), static_cast<int16_t>(y + dy)) >= 2) { near = true; break; }
+            if (near) maskSet(x, y, 1);
+        }
+    s_maskWord = word;
+}
+
 } // namespace
+
+void EstopScreen::drawTitle(Services::ICanvas& lcd)
+{
+    const char* word = m_fault ? "FAULT" : "E-STOP";
+    buildMask(word);
+    static uint8_t row[Theme::WIDTH * 2];
+    const int16_t w = static_cast<int16_t>(2 * BOX_HW), rows = static_cast<int16_t>(2 * BOX_HH);
+    const int16_t x0 = static_cast<int16_t>(Theme::WIDTH / 2 - BOX_HW + m_offX);
+    const int16_t y0 = static_cast<int16_t>(TITLE_Y - 6 + m_offY);
+    const int32_t sa = ROCK_Q16 * sinApprox(static_cast<int32_t>(m_tick) * 1024 / ROCK_FRAMES, 1024) / 1024;
+    const int32_t ca = 65536 - (sa * sa) / (2 * 65536);
+    const int16_t bob = sinApprox(static_cast<int32_t>(m_tick) * 1024 / BOB_FRAMES + 256, BOB);
+    const TitleInk& k = T_INKS[(m_tick / FLASH_FRAMES + m_pal) % 3];
+    uint16_t face[T_LINE_H];
+    for (int ly = 0; ly < T_LINE_H; ly++) face[ly] = ink(mix565(k.top, k.bottom, ly * 256 / (T_LINE_H - 1)));
+    const uint16_t shadow = ink(k.shadow), outline = ink(T_OUTLINE);
+    const int32_t cx = x0 + BOX_HW, cy = y0 + BOX_HH + bob;
+    lcd.streamBitmapStart(static_cast<uint16_t>(x0), static_cast<uint16_t>(y0), static_cast<uint16_t>(w),
+                          static_cast<uint16_t>(rows));
+    for (int16_t y = y0; y < y0 + rows; y++) {
+        const int32_t dy = y - cy;
+        int32_t mx = (MW / 2) * 65536 + (x0 - cx) * ca + dy * sa;
+        int32_t my = (MH / 2) * 65536 - (x0 - cx) * sa + dy * ca;
+        for (int16_t x = 0; x < w; x++, mx += ca, my -= sa) {
+            const int16_t ix = static_cast<int16_t>((mx + 32768) >> 16), iy = static_cast<int16_t>((my + 32768) >> 16);
+            const uint8_t m = m_alpha > 0 ? maskAt(ix, iy) : 0;
+            uint16_t c = Theme::BG;
+            if (m == 3) {
+                int16_t ly = static_cast<int16_t>(iy - 1);
+                if (ly < 0) ly = 0;
+                if (ly >= T_LINE_H) ly = T_LINE_H - 1;
+                c = face[ly];
+            } else if (m == 2) {
+                c = shadow;
+            } else if (m == 1) {
+                c = outline;
+            }
+            row[x * 2] = static_cast<uint8_t>(c >> 8);
+            row[x * 2 + 1] = static_cast<uint8_t>(c & 0xFF);
+        }
+        lcd.streamBitmapData(row, static_cast<size_t>(w) * 2);
+    }
+    lcd.streamBitmapEnd();
+}
 
 void EstopScreen::onActivate()
 {
@@ -197,11 +318,8 @@ void EstopScreen::drawMiddle(Services::ICanvas& lcd)
     const uint16_t panel = ink(p.panel);
     const uint16_t page = Theme::BG;
 
-    // Title: a ghost right, a ghost left, the title colour on top
-    const char* title = m_fault ? "FAULT" : "E-STOP";
-    blockText(lcd, title, static_cast<int16_t>(3 + ox), Y(TITLE_Y), ink(p.ghostR));
-    blockText(lcd, title, static_cast<int16_t>(-3 + ox), Y(TITLE_Y), ink(p.ghostL));
-    blockText(lcd, title, ox, Y(TITLE_Y), ink(p.title));
+    // Title: the Hotline Miami word (it keeps rocking between these repaints)
+    drawTitle(lcd);
     lcd.blitTextLine(X(Theme::MARGIN), Y(82), Theme::WIDTH - 2 * Theme::MARGIN - 6, 8,
                      m_fault ? "     DRIVER FAULT  //  MOTOR SAFE" : "   EMERGENCY STOP  //  MOTOR SAFE",
                      ink(Theme::DIM), page);
@@ -258,6 +376,7 @@ void EstopScreen::render(Services::ICanvas& lcd)
     }
     if (wake) m_phaseFrames = 0;
 
+    m_tick++;
     bool middle = false;           // the middle fades this frame
     if (!m_full) {
         switch (m_phase) {
@@ -305,6 +424,7 @@ void EstopScreen::render(Services::ICanvas& lcd)
         lcd.waitForVSync();
         drawBands(lcd);
         drawGrid(lcd);
+        if ((m_tick & 1) != 0 && m_alpha > 0) drawTitle(lcd);     // rocking and flashing
     }
 
     Protocol::TelemetrySnapshot t = Services::g_telemetryStore.getSnapshot();

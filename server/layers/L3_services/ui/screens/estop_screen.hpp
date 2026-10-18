@@ -11,7 +11,9 @@
  *        then fades in on the next of eight layouts. The layouts swap the grid between floor
  *        and ceiling (the middle moves ~50 px up or down with it), shift it sideways and change
  *        its colours, so no pixel holds one picture. Holding CENTER, or a new message, brings
- *        the page back at once and holds it while the bar fills.
+ *        the page back at once and holds it while the bar fills. The title is the saver's
+ *        Hotline Miami lettering (slanted, extruded shadow, flashing hot colours), rocking and
+ *        bobbing all the while it shows.
  */
 
 #ifndef ESTOP_SCREEN_HPP
@@ -70,11 +72,13 @@ private:
     int16_t m_offX = 0, m_offY = 0;
     bool m_gridTop = false;
     uint8_t m_stripePhase = 0;
+    uint16_t m_tick = 0;             ///< frames since the page came up: the title's rock and flash
     float m_gridPhase = 0.0f;
 
     void applyLayout();
     uint16_t ink(uint16_t c) const;  ///< c faded toward the page by m_alpha
     void drawStatic(Services::ICanvas& lcd);
+    void drawTitle(Services::ICanvas& lcd);
     void drawMiddle(Services::ICanvas& lcd);
     void drawFaults(Services::ICanvas& lcd, uint16_t statusReg, bool stalled);
     void drawBands(Services::ICanvas& lcd);
