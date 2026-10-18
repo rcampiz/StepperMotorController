@@ -35,6 +35,7 @@ MCONFIG = [
     "KVAL: HOLD=29 RUN=29 ACC=29 DEC=29",
     "Drive: CURRENT",
     "TVAL: HOLD=0D RUN=1A ACC=1D DEC=1D",
+    "CM: PRED=1 TSW=84us T_FAST=2A TON_MIN=29 TOFF_MIN=30",
     "OCD_TH=08 STALL_TH=0A",
     "ACC=34 DEC=34 MAXSPD=52 MINSPD=0 FS_SPD=1023",
     "Faults: OCD=1 TH_SD=1 TH_W=1 UVLO=1 STALL_A=0 STALL_B=0 CMD=1",
@@ -65,10 +66,12 @@ def test_motor_config_view_from_json_and_text():
 def test_motor_debug_view():
     dbg = V.motor_debug(_json_lines("MOTOR_DEBUG", [
         "STATUS=7E03 (HiZ Idle UVLO)", "KVAL: HOLD=10 RUN=20 ACC=30 DEC=40",
-        "ACC=34 DEC=35 MAXSPD=52 POS=-1200", "ADC_OUT=4"]))
+        "ACC=34 DEC=35 MAXSPD=52 POS=-1200", "ADC_OUT=4 CONFIG=D088 T_FAST=2A"]))
     assert dbg["status"] == 0x7E03 and dbg["kval"] == (0x10, 0x20, 0x30, 0x40)
     assert (dbg["acc_raw"], dbg["dec_raw"], dbg["maxspd_raw"], dbg["position"]) == (34, 35, 52, -1200)
-    assert dbg["adc_out"] == 4 and U.supply_volts_from_adc(4) == 20.0
+    assert dbg["adc_out"] == 4 and dbg["config_reg"] == 0xD088 and dbg["t_fast"] == 0x2A
+    assert U.t_fast_split(0x2A) == (6, 22) and U.t_fast_join(6, 22) == 0x2A
+    assert U.tmin_to_us(0x29) == 21.0 and U.tmin_from_us(21.0) == 0x29
 
 
 def test_encoder_view_both_formats():

@@ -70,6 +70,11 @@ void ConfigDispatch::configSetTval(uint8_t hold, uint8_t run, uint8_t acc, uint8
     motion.stepper.config.setTval(hold, run, acc, dec);
 }
 
+void ConfigDispatch::configSetCmRegulation(bool predEn, uint8_t tsw, uint8_t tFast,
+                                           uint8_t tonMin, uint8_t toffMin) {
+    motion.stepper.config.setCmRegulation(predEn, tsw, tFast, tonMin, toffMin);
+}
+
 void ConfigDispatch::configSetOcdThreshold(uint8_t thresh) {
     motion.stepper.config.setOcdThreshold(thresh);
 }
@@ -127,6 +132,11 @@ Services::IMotorConfigDispatcher::MotorConfigSnapshot ConfigDispatch::getMotorCo
     snap.tvalRun = motion.stepper.config.getTvalRun();
     snap.tvalAcc = motion.stepper.config.getTvalAcc();
     snap.tvalDec = motion.stepper.config.getTvalDec();
+    snap.cmPredEn = motion.stepper.config.getCmPredEn() ? 1 : 0;
+    snap.cmTsw = motion.stepper.config.getCmTsw();
+    snap.cmTFast = motion.stepper.config.getCmTFast();
+    snap.cmTonMin = motion.stepper.config.getCmTonMin();
+    snap.cmToffMin = motion.stepper.config.getCmToffMin();
     snap.ocdThreshold = cfg.ocdThreshold;
     snap.stallThreshold = cfg.stallThreshold;
     snap.acceleration = cfg.acceleration;

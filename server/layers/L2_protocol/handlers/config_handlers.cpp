@@ -56,7 +56,7 @@ void CommandParser::cmdMaxSpdPhysical(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdMotorConfigShow() {
-  m_sink.begin(m_format == ResponseFormat::JSON, "MCONFIG");   // F12: 9 lines + terminator
+  m_sink.begin(m_format == ResponseFormat::JSON, "MCONFIG");   // F12: 10 lines + terminator
   auto cfg = m_dispatcher.getMotorConfig();
   char buf[512];
   snprintf(buf, sizeof(buf),
@@ -64,6 +64,7 @@ void CommandParser::cmdMotorConfigShow() {
            "KVAL: HOLD=%02X RUN=%02X ACC=%02X DEC=%02X\n"
            "Drive: %s\n"
            "TVAL: HOLD=%02X RUN=%02X ACC=%02X DEC=%02X\n"
+           "CM: PRED=%u TSW=%uus T_FAST=%02X TON_MIN=%02X TOFF_MIN=%02X\n"
            "OCD_TH=%02X STALL_TH=%02X\n"
            "ACC=%u DEC=%u MAXSPD=%u MINSPD=%u FS_SPD=%u\n"
            "Faults: OCD=%d TH_SD=%d TH_W=%d UVLO=%d STALL_A=%d STALL_B=%d CMD=%d\n"
@@ -75,6 +76,8 @@ void CommandParser::cmdMotorConfigShow() {
            cfg.driveMode ? "CURRENT" : "VOLTAGE",
            (unsigned)cfg.tvalHold, (unsigned)cfg.tvalRun,
            (unsigned)cfg.tvalAcc, (unsigned)cfg.tvalDec,
+           (unsigned)cfg.cmPredEn, ((unsigned)cfg.cmTsw + 1U) * 4U,
+           (unsigned)cfg.cmTFast, (unsigned)cfg.cmTonMin, (unsigned)cfg.cmToffMin,
            (unsigned)cfg.ocdThreshold, (unsigned)cfg.stallThreshold,
            (unsigned)cfg.acceleration, (unsigned)cfg.deceleration,
            (unsigned)cfg.maxSpeed, (unsigned)cfg.minSpeed, (unsigned)cfg.fsSpeed,
@@ -163,6 +166,60 @@ void CommandParser::cmdMotorConfigTval(const ParsedCommand &cmd) {
   m_dispatcher.configSetTval(hold, run, acc, dec);
   char buf[64];
   snprintf(buf, sizeof(buf), "TVAL set: H=%02X R=%02X A=%02X D=%02X (not saved)", hold, run, acc, dec);
+  respondOk(buf);
+}
+
+// DRV:CFG:PRED <ON|OFF> [tsw_us] - current-mode predictive current control and the target
+// switching period (4..128 us in 4 us steps; omitted = chip default 48 us). CONFIG bits:
+// applied by DRV:CFG:APPLY through the Hi-Z path.
+void CommandParser::cmdMotorConfigPred(const ParsedCommand &cmd) {
+  if (cmd.argCount < 1) {
+    respondErr("Usage: DRV:CFG:PRED <ON|OFF> [tsw_us 4-128]");
+    return;
+  }
+  const char *a = cmd.args[0];
+  bool on;
+  if (strcmp(a, "ON") == 0 || strcmp(a, "on") == 0 || strcmp(a, "1") == 0) {
+    on = true;
+  } else if (strcmp(a, "OFF") == 0 || strcmp(a, "off") == 0 || strcmp(a, "0") == 0) {
+    on = false;
+  } else {
+    respondErr("PRED must be ON or OFF");
+    return;
+  }
+  uint8_t tsw = 0xFF;
+  if (cmd.argCount >= 2) {
+    long us = atol(cmd.args[1]);
+    if (us < 4 || us > 128) {
+      respondErr("INVALID_PARAM", "tsw_us must be 4..128 (4 us steps)");
+      return;
+    }
+    tsw = static_cast<uint8_t>(us / 4 - 1);
+  }
+  auto cur = m_dispatcher.getMotorConfig();
+  m_dispatcher.configSetCmRegulation(on, tsw, cur.cmTFast, cur.cmTonMin, cur.cmToffMin);
+  char buf[80];
+  snprintf(buf, sizeof(buf), "PRED %s TSW=%uus set (not saved; APPLY with the motor idle)",
+           on ? "ON" : "OFF", tsw == 0xFF ? 48U : (static_cast<unsigned>(tsw) + 1U) * 4U);
+  respondOk(buf);
+}
+
+// DRV:CFG:DECAY <t_fast> <ton_min> <toff_min> - current-mode decay timing registers, hex
+// (T_FAST [7:4] fast step, [3:0] fast decay, (v+1) x 2 us; TON_MIN/TOFF_MIN (v+1) x 0.5 us;
+// 00 = chip default). Written by DRV:CFG:APPLY with the motor stopped.
+void CommandParser::cmdMotorConfigDecay(const ParsedCommand &cmd) {
+  if (cmd.argCount < 3) {
+    respondErr("Usage: DRV:CFG:DECAY <t_fast> <ton_min> <toff_min> (hex, 00 = chip default)");
+    return;
+  }
+  auto tFast = static_cast<uint8_t>(strtoul(cmd.args[0], nullptr, 16) & 0xFF);
+  auto tonMin = static_cast<uint8_t>(strtoul(cmd.args[1], nullptr, 16) & 0x7F);
+  auto toffMin = static_cast<uint8_t>(strtoul(cmd.args[2], nullptr, 16) & 0x7F);
+  auto cur = m_dispatcher.getMotorConfig();
+  m_dispatcher.configSetCmRegulation(cur.cmPredEn != 0, cur.cmTsw, tFast, tonMin, toffMin);
+  char buf[72];
+  snprintf(buf, sizeof(buf), "DECAY set: T_FAST=%02X TON_MIN=%02X TOFF_MIN=%02X (not saved)",
+           tFast, tonMin, toffMin);
   respondOk(buf);
 }
 

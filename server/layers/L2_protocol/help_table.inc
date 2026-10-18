@@ -102,6 +102,8 @@
 "DRV:CFG:KVAL <hold> <run> <acc> <dec> (hex 00-FF)",
 "DRV:CFG:DRIVE <VOLTAGE|CURRENT>",
 "DRV:CFG:TVAL <hold> <run> <acc> <dec> (hex 00-7F, 78 mA per unit)",
+"DRV:CFG:PRED <ON|OFF> [tsw_us 4-128]",
+"DRV:CFG:DECAY <t_fast> <ton_min> <toff_min> (hex, 00 = chip default)",
 "DRV:CFG:OCD <threshold> (0-31, ~375mA/step)",
 "DRV:CFG:STALL <threshold> (0-31, ~31.25mV/step BEMF)",
 "DRV:CFG:FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd>",

@@ -134,7 +134,7 @@ void DebugService::cmdMotorDebug(Harness::IResponseSink& out)
              "STATUS=%04X (%s %s%s%s%s%s%s%s)\n"
              "KVAL: HOLD=%02X RUN=%02X ACC=%02X DEC=%02X\n"
              "ACC=%u DEC=%u MAXSPD=%u POS=%ld\n"
-             "ADC_OUT=%u",
+             "ADC_OUT=%u CONFIG=%04X T_FAST=%02X",
              (unsigned)info.status, hiZ, busy, cmdErr ? " CMDERR" : "",
              uvlo ? " UVLO" : "",
              thStatus >= 2 ? " TH_SD" : (thStatus >= 1 ? " TH_WARN" : ""),
@@ -142,7 +142,8 @@ void DebugService::cmdMotorDebug(Harness::IResponseSink& out)
              stepLossB ? " STALL_B" : "", (unsigned)info.kvalHold,
              (unsigned)info.kvalRun, (unsigned)info.kvalAcc,
              (unsigned)info.kvalDec, (unsigned)info.accel, (unsigned)info.decel,
-             (unsigned)info.maxSpeed, (long)info.absPos, (unsigned)info.adcOut);
+             (unsigned)info.maxSpeed, (long)info.absPos, (unsigned)info.adcOut,
+             (unsigned)info.config, (unsigned)info.tFast);
     out.writeLine(buf);
 }
 

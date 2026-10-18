@@ -7,6 +7,7 @@
  */
 
 #include "L3_services/motion/motor_config/motor_config.hpp"
+#include <stddef.h>
 #include <string.h>
 
 namespace Services {
@@ -119,6 +120,15 @@ void MotorConfigManager::setTval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t
     m_config.tvalDec = dec & 0x7F;
 }
 
+void MotorConfigManager::setCmRegulation(bool predEn, uint8_t tsw, uint8_t tFast,
+                                         uint8_t tonMin, uint8_t toffMin) {
+    m_config.cmPredEn = predEn ? 1 : 0;
+    m_config.cmTswPlus1 = (tsw == 0xFF) ? 0 : static_cast<uint8_t>((tsw & 0x1F) + 1);
+    m_config.cmTFast = tFast;
+    m_config.cmTonMin = tonMin & 0x7F;
+    m_config.cmToffMin = toffMin & 0x7F;
+}
+
 void MotorConfigManager::setOcdThreshold(uint8_t threshold) {
     m_config.ocdThreshold = threshold & 0x1F;  // 5-bit max
 }
@@ -202,7 +212,19 @@ bool MotorConfigManager::loadFromFlash() {
         return false;
     }
 
-    if (validateConfig(flashConfig)) {
+    bool found = validateConfig(flashConfig);
+    if (!found) {
+        // A 64-byte V1-V3 blob (a pre-V4 journal record or the legacy single blob): its
+        // fields are the prefix of the V4 layout, so copy them and zero the V4 tail
+        MotorConfigV3 old;
+        memcpy(&old, &flashConfig, sizeof(old));
+        if (validateLegacyV3(old)) {
+            memset(&flashConfig, 0, sizeof(flashConfig));
+            memcpy(&flashConfig, &old, offsetof(MotorConfigV3, crc32));
+            found = true;
+        }
+    }
+    if (found) {
         m_config = flashConfig;
         // Clamp stepMode to valid range (0-7)
         if (m_config.stepMode > 7) {
@@ -229,6 +251,13 @@ bool MotorConfigManager::loadFromFlash() {
             m_config.tvalRun = TVAL_DEFAULT_RUN;
             m_config.tvalAcc = m_config.tvalDec = TVAL_DEFAULT_ACC;
             m_config.version = 3;
+        }
+        // Migrate V3 -> V4: regulation at chip defaults (0), reserved tail zero
+        if (m_config.version < 4) {
+            m_config.cmPredEn = m_config.cmTswPlus1 = m_config.cmTFast = 0;
+            m_config.cmTonMin = m_config.cmToffMin = 0;
+            memset(m_config.reserved4, 0, sizeof(m_config.reserved4));
+            m_config.version = 4;
         }
         return true;
     }
@@ -298,6 +327,13 @@ bool MotorConfigManager::validateConfig(const MotorConfig& cfg) {
     );
 
     return (crc == cfg.crc32);
+}
+
+bool MotorConfigManager::validateLegacyV3(const MotorConfigV3& cfg) {
+    if (cfg.magic != MOTOR_CONFIG_MAGIC || cfg.version == 0 || cfg.version > 3) {
+        return false;
+    }
+    return calculateCRC(reinterpret_cast<const uint8_t*>(&cfg), sizeof(cfg) - sizeof(cfg.crc32)) == cfg.crc32;
 }
 
 uint32_t MotorConfigManager::calculateCRC(const uint8_t* data, size_t len) {

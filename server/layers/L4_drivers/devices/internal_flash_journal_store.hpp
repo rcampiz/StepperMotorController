@@ -29,9 +29,9 @@ class InternalFlashJournalStore : public IConfigStore {
 public:
     static constexpr uint32_t SECTOR_BASE   = 0x08060000u;
     static constexpr uint8_t  SECTOR        = 7;
-    static constexpr uint32_t SLOT          = 64;        // one MotorConfig record
+    static constexpr uint32_t SLOT          = 128;       // one MotorConfig record (V4; 64 before)
     static constexpr uint32_t LEGACY_OFFSET = 0x1F000u;  // last 4 KB: the pre-journal blob
-    static constexpr uint32_t SLOTS         = LEGACY_OFFSET / SLOT;   // 1984 saves per erase
+    static constexpr uint32_t SLOTS         = LEGACY_OFFSET / SLOT;   // 992 saves per erase
 
     /// `base` is the flash address handed to IInternalFlash::writeData; reads go through
     /// `mapped`, the same memory as seen by the CPU (on the MCU the sector is memory-mapped

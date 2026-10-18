@@ -203,14 +203,21 @@ TEST(current_mode_writes_tval_and_the_cm_vm_bit_through_the_hiz_path) {
     cfg.setStepMode(5);
     cfg.setDriveMode(1);
     cfg.setTval(0x05, 0x11, 0x12, 0x13);
+    cfg.setCmRegulation(true, 20, 0x2A, 0, 0x30);                  // PRED on, TSW 84 us
     r.drv.hiZ = true;
     r.drv.params[Drivers::MotorReg::STEP_MODE] = 0x05;
+    r.drv.params[Drivers::MotorReg::CONFIG] = 0x2C88;              // chip default: PRED off, TSW 11
     r.svc.applyConfig();
     r.motorTaskPass();
     EXPECT_TRUE(r.svc.lastJobResult(ok));
     EXPECT_TRUE(ok);
     EXPECT_EQ(r.drv.params[Drivers::MotorReg::KVAL_RUN], 0x11u);              // TVAL_RUN shares the address
     EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0x0Fu, 0x0Du);     // 1/32 + CM_VM
+    EXPECT_EQ(r.drv.params[Drivers::MotorReg::CONFIG], 0x8000u | (20u << 10) | 0x088u);   // low bits kept
+    EXPECT_EQ(r.drv.params[Drivers::MotorReg::T_FAST], 0x2Au);
+    EXPECT_EQ(r.drv.params[Drivers::MotorReg::TON_MIN], 0x29u);              // default resolved
+    EXPECT_EQ(r.drv.params[Drivers::MotorReg::TOFF_MIN], 0x30u);
+    cfg.setCmRegulation(false, 0xFF, 0, 0, 0);
 
     // Back to voltage mode with the bridges on: the Hi-Z path clears CM_VM and KVAL returns
     cfg.setDriveMode(0);

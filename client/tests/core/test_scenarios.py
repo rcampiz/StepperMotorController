@@ -32,7 +32,7 @@ def run(board, name, **params):
 def test_registry_lists_the_builtin_scenarios():
     names = [s.name for s in runner.list_scenarios()]
     assert names == ["bringup", "drive_mode_chip", "estop_latency", "heartbeat_loss", "motion_scale",
-                     "step_mode_chip", "step_mode_readback", "sysid", "telemetry_load"]
+                     "resonance_sweep", "step_mode_chip", "step_mode_readback", "sysid", "telemetry_load"]
 
 
 def test_bringup_passes_and_measures_identity(board):
@@ -79,6 +79,13 @@ def test_drive_mode_chip_toggles_current_mode_and_restores_it(board):
     r = run(board, "drive_mode_chip")
     assert r.ok, (r.summary, r.checks)
     assert board._fake.drive_current is True and r.measurements["original"] == "current"
+
+
+def test_resonance_sweep_measures_each_speed(board):
+    r = run(board, "resonance_sweep", rpm_from=60, rpm_to=70, rpm_step=10, dwell_s=0.3, settle_s=0.05)
+    assert r.ok, (r.summary, r.checks)
+    assert set(r.measurements) >= {"rpm_60", "rpm_70", "worst_rpm", "worst_std"}
+    assert r.measurements["rpm_60"]["samples"] >= 5
 
 
 def test_telemetry_load_sees_the_encoder_advance(board):

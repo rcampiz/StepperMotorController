@@ -44,6 +44,7 @@ class FakeBoard:
         self.step_mode = 3
         self.drive_current = True
         self.tval = (0x0D, 0x1A, 0x1D, 0x1D)      # firmware defaults: 23HS22-2804-ME1K
+        self.cm = {"pred": False, "tsw_us": 48, "t_fast": 0x19, "ton_min": 0x29, "toff_min": 0x29}
         self.full_steps = 200
         self.enc_ppr = 1600                   # counts/rev: one count per 1/8 microstep
         self.hb_timeout_ms = 0
@@ -375,6 +376,8 @@ class FakeBoard:
             "Motor Config (defaults)", "KVAL: HOLD=29 RUN=29 ACC=29 DEC=29",
             "Drive: %s" % ("CURRENT" if self.drive_current else "VOLTAGE"),
             "TVAL: HOLD=%02X RUN=%02X ACC=%02X DEC=%02X" % self.tval,
+            "CM: PRED=%d TSW=%dus T_FAST=%02X TON_MIN=%02X TOFF_MIN=%02X" % (
+                self.cm["pred"], self.cm["tsw_us"], self.cm["t_fast"], self.cm["ton_min"], self.cm["toff_min"]),
             "OCD_TH=08 STALL_TH=10", "ACC=500 DEC=500 MAXSPD=800 MINSPD=0 FS_SPD=1023",
             "Faults: OCD=1 TH_SD=1 TH_W=1 UVLO=1 STALL_A=0 STALL_B=0 CMD=1",
             "Action: HardHiZ", "StepMode: %d (1/%d)" % (self.step_mode, 1 << self.step_mode)])
@@ -383,7 +386,9 @@ class FakeBoard:
         self._lines("MOTOR_DEBUG", [
             "STATUS=7E03 (%s Idle)" % ("HiZ" if self.hi_z else "Active"),
             "KVAL: HOLD=29 RUN=29 ACC=29 DEC=29",
-            "ACC=500 DEC=500 MAXSPD=800 POS=%d" % self.position, "ADC_OUT=2"])
+            "ACC=500 DEC=500 MAXSPD=800 POS=%d" % self.position,
+            "ADC_OUT=2 CONFIG=%04X T_FAST=%02X" % (
+                (0x8000 if self.cm["pred"] else 0) | ((self.cm["tsw_us"] // 4 - 1) << 10) | 0x088, self.cm["t_fast"])])
 
     def _c_SYST_VER_Q(self, name, args):
         self._lines("VERSION", ["Stepper Motor Controller v%s" % self.FW, "Build: sim",
@@ -422,6 +427,18 @@ class FakeBoard:
     def _c_DRV_CFG_TVAL(self, name, args):
         self.tval = tuple(int(a, 16) & 0x7F for a in args[:4])
         self._ok(name, "TVAL set")
+
+    def _c_DRV_CFG_PRED(self, name, args):
+        self.cm["pred"] = args[0].upper() in ("ON", "1")
+        self.cm["tsw_us"] = int(args[1]) if len(args) > 1 else 48
+        self._ok(name, "PRED set")
+
+    def _c_DRV_CFG_DECAY(self, name, args):
+        tf, ton, toff = (int(a, 16) for a in args[:3])
+        self.cm["t_fast"] = tf or 0x19
+        self.cm["ton_min"] = (ton & 0x7F) or 0x29
+        self.cm["toff_min"] = (toff & 0x7F) or 0x29
+        self._ok(name, "DECAY set")
 
     def _c_DRV_CFG_STEPMODE(self, name, args):
         self.step_mode = int(args[0]) & 7

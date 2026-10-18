@@ -2644,6 +2644,46 @@
       "persists": false
     },
     {
+      "name": "DRV:CFG:PRED",
+      "prefix": "DRV",
+      "handler": "cmdMotorConfigPred",
+      "file": "config_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "DRV:CFG:PRED <ON|OFF> [tsw_us 4-128]"
+      ],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "PRED must be ON or OFF"
+      ],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false
+    },
+    {
+      "name": "DRV:CFG:DECAY",
+      "prefix": "DRV",
+      "handler": "cmdMotorConfigDecay",
+      "file": "config_handlers.cpp",
+      "min_args": 3,
+      "usage": [
+        "DRV:CFG:DECAY <t_fast> <ton_min> <toff_min> (hex, 00 = chip default)"
+      ],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false
+    },
+    {
       "name": "DRV:CFG:OCD",
       "prefix": "DRV",
       "handler": "cmdMotorConfigOcd",

@@ -92,7 +92,7 @@ def test_panels_render_core_views(gui):
     # the sim is in current mode: the TVAL faders follow DRV:CFG? and the KVAL faders are left
     # alone (the KVAL registers hold TVAL in current mode)
     assert pump(app, lambda: w._driver_panel._tval_sliders[1].value() == 0x1A)
-    assert w._driver_panel._kval_hold_slider.value() == 0 and w._driver_panel._is_current_mode()
+    assert w._driver_panel._kval_hold_slider.value() == 16 and w._driver_panel._is_current_mode()   # 0x29 from DRV:CFG?
     assert pump(app, lambda: w._stepmode_panel._mode_combo.currentIndex() == 3)
 
 
@@ -120,6 +120,21 @@ def test_drive_mode_apply_sends_mode_tval_and_apply(gui):
     assert pump(app, lambda: fake.drive_current and "DRV:CFG:APPLY" in fake.received)
     assert fake.tval[1] == 0x11
     assert fake.received.index("DRV:CFG:DRIVE CURRENT") < fake.received.index("DRV:CFG:APPLY")
+
+
+def test_current_regulation_apply_sends_pred_decay_and_apply(gui):
+    app, w, fake = gui
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    p = w._driver_panel
+    p._pred_cb.setChecked(True)
+    p._tsw_spin.setValue(84)
+    p._fast_step_spin.setValue(6)
+    p._toff_fast_spin.setValue(22)
+    p._toff_min_spin.setValue(24.5)
+    p._on_apply_cm()
+    assert pump(app, lambda: fake.cm["pred"] and "DRV:CFG:APPLY" in fake.received)
+    assert fake.cm["tsw_us"] == 84 and fake.cm["t_fast"] == 0x2A and fake.cm["toff_min"] == 0x30
+    assert fake.received.index("DRV:CFG:PRED ON 84") < fake.received.index("DRV:CFG:APPLY")
 
 
 def test_protection_apply_sends_typed_requests_in_order(gui):

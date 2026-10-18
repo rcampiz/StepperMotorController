@@ -33,7 +33,7 @@ struct Rig {
     RamSectorFlash flash;
     InternalFlashJournalStore store{flash, RamSectorFlash::BASE, 7, flash.image.data()};
     std::vector<uint8_t> record(uint8_t tag) {
-        std::vector<uint8_t> r(64, 0x00);
+        std::vector<uint8_t> r(InternalFlashJournalStore::SLOT, 0x00);
         r[0] = 0x52; r[1] = 0x54; r[2] = 0x4F; r[3] = 0x4D;   // "MOTR" magic, little-endian
         r[8] = tag;
         return r;
@@ -45,7 +45,7 @@ struct Rig {
 TEST(empty_sector_reads_the_legacy_blob_location) {
     Rig r;
     EXPECT_EQ(r.store.used(), 0u);
-    EXPECT_EQ(r.store.remaining(), InternalFlashJournalStore::SLOTS * 64u);
+    EXPECT_EQ(r.store.remaining(), InternalFlashJournalStore::SLOTS * InternalFlashJournalStore::SLOT);
     auto legacy = r.record(0x11);
     std::memcpy(r.flash.image.data() + InternalFlashJournalStore::LEGACY_OFFSET, legacy.data(), 64);
     uint8_t out[64];
@@ -56,35 +56,35 @@ TEST(empty_sector_reads_the_legacy_blob_location) {
 TEST(writes_append_and_read_returns_the_newest) {
     Rig r;
     auto a = r.record(1), b = r.record(2);
-    EXPECT_TRUE(r.store.write(a.data(), 64));
-    EXPECT_TRUE(r.store.write(b.data(), 64));
+    EXPECT_TRUE(r.store.write(a.data(), a.size()));
+    EXPECT_TRUE(r.store.write(b.data(), b.size()));
     EXPECT_EQ(r.store.used(), 2u);
     EXPECT_EQ(r.flash.erases, 0);
     uint8_t out[64];
     r.store.read(out, 64);
     EXPECT_EQ(out[8], 2);
-    EXPECT_EQ(r.flash.image[0 * 64 + 8], 1);       // the older record is still in slot 0
-    EXPECT_EQ(r.store.remaining(), (InternalFlashJournalStore::SLOTS - 2) * 64u);
+    EXPECT_EQ(r.flash.image[0 * InternalFlashJournalStore::SLOT + 8], 1);   // the older record is still in slot 0
+    EXPECT_EQ(r.store.remaining(), (InternalFlashJournalStore::SLOTS - 2) * InternalFlashJournalStore::SLOT);
 }
 
 TEST(full_journal_refuses_writes_until_erased) {
     Rig r;
     auto rec = r.record(7);
     for (uint32_t i = 0; i < InternalFlashJournalStore::SLOTS; ++i) {
-        EXPECT_TRUE(r.store.write(rec.data(), 64));
+        EXPECT_TRUE(r.store.write(rec.data(), rec.size()));
     }
     EXPECT_EQ(r.store.remaining(), 0u);
-    EXPECT_FALSE(r.store.write(rec.data(), 64));   // the manager decides when to erase
+    EXPECT_FALSE(r.store.write(rec.data(), rec.size()));   // the manager decides when to erase
     EXPECT_EQ(r.flash.erases, 0);
     EXPECT_TRUE(r.store.erase());
     EXPECT_EQ(r.store.used(), 0u);
-    EXPECT_TRUE(r.store.write(rec.data(), 64));
+    EXPECT_TRUE(r.store.write(rec.data(), rec.size()));
     EXPECT_EQ(r.store.used(), 1u);
 }
 
 TEST(a_record_longer_than_a_slot_is_rejected) {
     Rig r;
-    std::vector<uint8_t> big(65, 0x00);
+    std::vector<uint8_t> big(InternalFlashJournalStore::SLOT + 1, 0x00);
     EXPECT_FALSE(r.store.write(big.data(), big.size()));
     EXPECT_EQ(r.store.used(), 0u);
 }

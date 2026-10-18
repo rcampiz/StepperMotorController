@@ -40,6 +40,7 @@ struct FakeMotorConfigDispatcher : Services::IMotorConfigDispatcher {
     void configSetKval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec)  override { calls.push_back("configSetKval"); }
     void configSetDriveMode(uint8_t mode)  override { calls.push_back("configSetDriveMode"); }
     void configSetTval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec)  override { calls.push_back("configSetTval"); }
+    void configSetCmRegulation(bool predEn, uint8_t tsw, uint8_t tFast, uint8_t tonMin, uint8_t toffMin)  override { calls.push_back("configSetCmRegulation"); }
     void configSetOcdThreshold(uint8_t thresh)  override { calls.push_back("configSetOcdThreshold"); }
     void configSetStallThreshold(uint8_t thresh)  override { calls.push_back("configSetStallThreshold"); }
     void configSetFaultAction(uint8_t action)  override { calls.push_back("configSetFaultAction"); }

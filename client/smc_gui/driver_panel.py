@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QSlider,
     QTabWidget,
     QComboBox,
+    QCheckBox,
 )
 from PySide6.QtCore import Qt, Slot, Signal, QSettings
 
@@ -296,12 +297,12 @@ class DriverPanel(QWidget):
         self._drive_mode_combo.currentIndexChanged.connect(self._on_drive_mode_changed)
         mode_row.addWidget(self._drive_mode_combo)
         mode_row.addSpacing(24)
-        self._adc_label = QLabel("Supply sense: --")
+        self._adc_label = QLabel("ADCIN raw: --")
         self._adc_label.setFont(QFont("Consolas", 9))
         self._adc_label.setToolTip(
-            "powerSTEP01 ADC_OUT: a 5-bit reading of the ADCIN pin, which the shield ties to a "
-            "divider on the motor supply. About 5 V per count, so take it as a coarse supply "
-            "check, not a measurement. Updated by Refresh.")
+            "powerSTEP01 ADC_OUT: a 5-bit reading of the ADCIN pin. On the IHM03A1 it is not a "
+            "supply divider (2 counts at 12 V and at 24 V on the bench), so it is shown raw. "
+            "CONFIG is the chip's live register (PRED_EN is bit 15). Updated by Refresh.")
         mode_row.addWidget(self._adc_label)
         mode_row.addStretch()
         main_layout.addLayout(mode_row)
@@ -355,6 +356,71 @@ class DriverPanel(QWidget):
         tbtn.addStretch()
         tval_row.addLayout(tbtn)
         main_layout.addLayout(tval_row)
+
+        # Current-mode regulation: how the chip chops the current (PRED_EN/TSW in CONFIG,
+        # Hi-Z on Apply; T_FAST, TON_MIN, TOFF_MIN with the motor stopped). Chip defaults
+        # unless changed; the bench sweep scenario tells whether a setting helped.
+        self._cm_row = QWidget()
+        cm = QHBoxLayout(self._cm_row)
+        cm.setContentsMargins(0, 0, 0, 0)
+        cm_lbl = QLabel("Current regulation:")
+        cm_lbl.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        cm.addWidget(cm_lbl)
+        self._pred_cb = QCheckBox("Predictive control")
+        self._pred_cb.setToolTip("PRED_EN: the chip predicts the next PWM period from the last one "
+                                 "so the current follows the sine more closely at speed. Off by default.")
+        cm.addWidget(self._pred_cb)
+        cm.addWidget(QLabel("Switching:"))
+        self._tsw_spin = QSpinBox()
+        self._tsw_spin.setRange(4, 128)
+        self._tsw_spin.setSingleStep(4)
+        self._tsw_spin.setValue(48)
+        self._tsw_spin.setSuffix(" \u00b5s")
+        self._tsw_spin.setToolTip("TSW: target switching period, 4 to 128 \u00b5s in 4 \u00b5s steps "
+                                  "(48 \u00b5s = 21 kHz default). Shorter = higher chopper frequency.")
+        cm.addWidget(self._tsw_spin)
+        cm.addWidget(QLabel("Fast step:"))
+        self._fast_step_spin = QSpinBox()
+        self._fast_step_spin.setRange(2, 32)
+        self._fast_step_spin.setSingleStep(2)
+        self._fast_step_spin.setValue(4)
+        self._fast_step_spin.setSuffix(" \u00b5s")
+        self._fast_step_spin.setToolTip("T_FAST[7:4] FAST_STEP: longest fast-decay step when the "
+                                        "current must fall quickly (default 4 \u00b5s).")
+        cm.addWidget(self._fast_step_spin)
+        cm.addWidget(QLabel("Fast decay:"))
+        self._toff_fast_spin = QSpinBox()
+        self._toff_fast_spin.setRange(2, 32)
+        self._toff_fast_spin.setSingleStep(2)
+        self._toff_fast_spin.setValue(20)
+        self._toff_fast_spin.setSuffix(" \u00b5s")
+        self._toff_fast_spin.setToolTip("T_FAST[3:0] TOFF_FAST: fast-decay time at the start of each "
+                                        "off period (default 20 \u00b5s). More fast decay tracks a "
+                                        "falling sine better, at the cost of ripple.")
+        cm.addWidget(self._toff_fast_spin)
+        cm.addWidget(QLabel("Min on/off:"))
+        self._ton_min_spin = QDoubleSpinBox()
+        self._ton_min_spin.setRange(0.5, 64.0)
+        self._ton_min_spin.setSingleStep(0.5)
+        self._ton_min_spin.setDecimals(1)
+        self._ton_min_spin.setValue(21.0)
+        self._ton_min_spin.setSuffix(" \u00b5s")
+        self._ton_min_spin.setToolTip("TON_MIN: shortest on time of a PWM period (default 21 \u00b5s).")
+        cm.addWidget(self._ton_min_spin)
+        self._toff_min_spin = QDoubleSpinBox()
+        self._toff_min_spin.setRange(0.5, 64.0)
+        self._toff_min_spin.setSingleStep(0.5)
+        self._toff_min_spin.setDecimals(1)
+        self._toff_min_spin.setValue(21.0)
+        self._toff_min_spin.setSuffix(" \u00b5s")
+        self._toff_min_spin.setToolTip("TOFF_MIN: shortest off time of a PWM period (default 21 \u00b5s).")
+        cm.addWidget(self._toff_min_spin)
+        self._apply_cm_btn = QPushButton("Apply regulation")
+        self._apply_cm_btn.setToolTip("DRV:CFG:PRED, DRV:CFG:DECAY, DRV:CFG:APPLY (needs the motor idle)")
+        self._apply_cm_btn.clicked.connect(self._on_apply_cm)
+        cm.addWidget(self._apply_cm_btn)
+        cm.addStretch()
+        main_layout.addWidget(self._cm_row)
         self._on_rated_current_changed(self._rated_spin.value())
 
         # Tabbed graph area
@@ -634,7 +700,9 @@ class DriverPanel(QWidget):
         """Grey out the faders of the inactive mode and redraw the profile in its unit."""
         current = index == 1
         self._tval_row.setEnabled(current)
+        self._cm_row.setEnabled(current)
         self._kval_row.setEnabled(not current)
+        self._apply_kval_btn.setEnabled(not current)   # never send the idle faders' zeros
         self._drive_group.setTitle("Coil Drive \u2014 current mode: regulated coil current (TVAL, amps)"
                                    if current else
                                    "Coil Drive \u2014 voltage mode: duty cycle (KVAL, % of supply voltage)")
@@ -863,10 +931,34 @@ class DriverPanel(QWidget):
             C.cfg_apply(),
         ])
 
+    @Slot()
+    def _on_apply_cm(self):
+        self.drive_apply_requested.emit([
+            C.cfg_pred(self._pred_cb.isChecked(), self._tsw_spin.value()),
+            C.cfg_decay(U.t_fast_join(self._fast_step_spin.value(), self._toff_fast_spin.value()),
+                        U.tmin_from_us(self._ton_min_spin.value()),
+                        U.tmin_from_us(self._toff_min_spin.value())),
+            C.cfg_apply(),
+        ])
+
     def update_motor_config(self, cfg: dict):
-        """DRV:CFG? view: drive mode and TVAL references (the saved config, not the chip)."""
+        """DRV:CFG? view: drive mode, KVAL duties, TVAL references and the current-mode
+        regulation (the saved config, not the chip)."""
         if "drive_mode" in cfg:
             self._drive_mode_combo.setCurrentIndex(1 if cfg["drive_mode"] == "current" else 0)
+        if "kval" in cfg:
+            for slider, raw in zip((self._kval_hold_slider, self._kval_run_slider,
+                                    self._kval_acc_slider, self._kval_dec_slider), cfg["kval"]):
+                slider.setValue(U.kval_to_percent(raw))
+        if "cm" in cfg:
+            c = cfg["cm"]
+            self._pred_cb.setChecked(bool(c["pred"]))
+            self._tsw_spin.setValue(int(c["tsw_us"]))
+            fs, tf = U.t_fast_split(c["t_fast"])
+            self._fast_step_spin.setValue(fs)
+            self._toff_fast_spin.setValue(tf)
+            self._ton_min_spin.setValue(U.tmin_to_us(c["ton_min"]))
+            self._toff_min_spin.setValue(U.tmin_to_us(c["toff_min"]))
         if "tval" in cfg:
             for slider, raw in zip(self._tval_sliders, cfg["tval"]):
                 if raw > slider.maximum():                 # the board holds more than the rating
@@ -896,8 +988,11 @@ class DriverPanel(QWidget):
             self._kval_acc_slider.setValue(U.kval_to_percent(a))
             self._kval_dec_slider.setValue(U.kval_to_percent(d))
         if "adc_out" in dbg:
-            self._adc_label.setText("Supply sense: ADC_OUT %d (~%.0f V)"
-                                    % (dbg["adc_out"], U.supply_volts_from_adc(dbg["adc_out"])))
+            extra = ""
+            if "config_reg" in dbg:
+                extra = "   CONFIG %04X (PRED %s)" % (dbg["config_reg"],
+                                                      "on" if dbg["config_reg"] & 0x8000 else "off")
+            self._adc_label.setText("ADCIN raw: %d%s" % (dbg["adc_out"], extra))
         if "acc_raw" in dbg:
             self._acc_spin.setValue(U.acc_sps2_from_raw(dbg["acc_raw"]))
             self._dec_spin.setValue(U.acc_sps2_from_raw(dbg["dec_raw"]))

@@ -53,6 +53,40 @@ TEST(save_then_reload_round_trips_through_the_store) {
     EXPECT_EQ(again.getStepMode(), 3u);
 }
 
+TEST(a_pre_v4_64_byte_blob_is_migrated_with_regulation_at_chip_defaults) {
+    // Forge a V3 blob: the V4 prefix fields with a V3 header and a 60-byte CRC
+    FakeConfigStore store;
+    Services::MotorConfigManager helper;
+    Services::MotorConfigV3 old{};
+    old.magic = Services::MOTOR_CONFIG_MAGIC;
+    old.version = 3;
+    old.driveMode = 1;
+    old.tvalRun = 0x11;
+    old.maxSpeed = 87;
+    old.stepMode = 7;
+    old.crc32 = helper.blobCrc(reinterpret_cast<const uint8_t*>(&old), sizeof(old) - sizeof(old.crc32));
+    std::memcpy(store.blob.data(), &old, sizeof(old));           // 64 bytes, the rest erased
+
+    Services::MotorConfigManager cfg;
+    EXPECT_TRUE(cfg.init(store));
+    EXPECT_TRUE(cfg.isValid());
+    EXPECT_EQ(cfg.getMaxSpeed(), 87u);
+    EXPECT_EQ(cfg.getStepMode(), 7u);
+    EXPECT_EQ(cfg.getTvalRun(), 0x11u);
+    EXPECT_TRUE(cfg.isCurrentMode());
+    EXPECT_FALSE(cfg.getCmPredEn());
+    EXPECT_EQ(cfg.getCmTsw(), Services::MotorConfigManager::CM_DEFAULT_TSW);
+    EXPECT_EQ(cfg.getCmTFast(), 0x19u);
+    cfg.setCmRegulation(true, 20, 0x2A, 0, 0);
+    EXPECT_TRUE(cfg.saveToFlash());                               // written as a 128-byte V4 record
+    Services::MotorConfigManager again;
+    EXPECT_TRUE(again.init(store));
+    EXPECT_TRUE(again.getCmPredEn());
+    EXPECT_EQ(again.getCmTsw(), 20u);
+    EXPECT_EQ(again.getCmTFast(), 0x2Au);
+    EXPECT_EQ(again.getCmTonMin(), 0x29u);                        // 0 stays "chip default"
+}
+
 static bool s_gateOpen = true;
 static bool gate() { return s_gateOpen; }
 
@@ -81,12 +115,12 @@ TEST(nearly_full_store_is_compacted_at_boot_and_keeps_the_record) {
         cfg.setStepMode(6);
         EXPECT_TRUE(cfg.saveToFlash());
     }
-    store.free_bytes = 64 * 3;                   // fewer than the compaction margin left
+    store.free_bytes = sizeof(Services::MotorConfig) * 3;   // fewer than the compaction margin left
     Services::MotorConfigManager again;
     EXPECT_TRUE(again.init(store));
     EXPECT_EQ(store.erases, 1);                  // compacted while nothing moves
     EXPECT_EQ(again.getStepMode(), 6u);
-    EXPECT_EQ(store.free_bytes, 4096u - 64u);    // the record went back in as entry 0
+    EXPECT_EQ(store.free_bytes, 4096u - sizeof(Services::MotorConfig));   // the record went back in as entry 0
 }
 
 TEST(corrupted_blob_is_rejected) {

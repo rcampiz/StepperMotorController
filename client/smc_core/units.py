@@ -121,12 +121,28 @@ def maxspd_sps_from_raw(raw: int) -> int:
     return round(raw * MAXSPD_FACTOR)
 
 
-# powerSTEP01 ADC_OUT: 5-bit reading of the ADCIN pin, which the X-NUCLEO-IHM03A1 ties to a
-# divider on the motor supply. One count is coarse (about 1/32 of full scale). The scale
-# below is a single-point bench calibration (2026-10-18: ADC_OUT = 2 at 12.51 V, taken as
-# 2.5 counts for a truncating converter); treat the result as a supply-present indicator.
-ADC_OUT_VOLTS_PER_COUNT = 5.0
+# powerSTEP01 current-mode timing registers (datasheet section 9.1.x). T_FAST nibbles and
+# TON_MIN/TOFF_MIN are "(value + 1) x unit".
+def tfast_nibble_to_us(v: int) -> int:        # FAST_STEP / TOFF_FAST: 2 us per step, 2..32 us
+    return (int(v) + 1) * 2
 
 
-def supply_volts_from_adc(raw: int) -> float:
-    return round(raw * ADC_OUT_VOLTS_PER_COUNT, 1)
+def tfast_nibble_from_us(us: float) -> int:
+    return max(0, min(15, round(float(us) / 2) - 1))
+
+
+def tmin_to_us(v: int) -> float:              # TON_MIN / TOFF_MIN: 0.5 us per step, 0.5..64 us
+    return (int(v) + 1) * 0.5
+
+
+def tmin_from_us(us: float) -> int:
+    return max(0, min(0x7F, round(float(us) / 0.5) - 1))
+
+
+def t_fast_split(reg: int):
+    """T_FAST register -> (fast_step_us, toff_fast_us)."""
+    return tfast_nibble_to_us((int(reg) >> 4) & 0xF), tfast_nibble_to_us(int(reg) & 0xF)
+
+
+def t_fast_join(fast_step_us: float, toff_fast_us: float) -> int:
+    return (tfast_nibble_from_us(fast_step_us) << 4) | tfast_nibble_from_us(toff_fast_us)

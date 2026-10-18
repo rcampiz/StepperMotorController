@@ -220,6 +220,53 @@ def drive_mode_chip(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
         ctx.check("original drive mode restored", got == original, f"drive_mode={got}")
 
 
+@scenario("resonance_sweep", "RUN at each RPM from rpm_from to rpm_to (step rpm_step), dwell, and "
+                              "record the encoder velocity ripple (std and peak-to-peak, counts/s) "
+                              "per speed; reports the worst band. Compare drive settings by numbers.",
+          params={"rpm_from": 40, "rpm_to": 120, "rpm_step": 5, "dwell_s": 2.0, "settle_s": 1.0},
+          moves_motor=True)
+def resonance_sweep(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
+    import statistics
+    lo, hi, step = int(params["rpm_from"]), int(params["rpm_to"]), max(1, int(params["rpm_step"]))
+    dwell, settle = float(params["dwell_s"]), float(params["settle_s"])
+    geom = _chip_geometry(ctx)
+    full = geom["full_steps_per_rev"]
+    ctx.call(C.fault_clear())
+    ctx.require("enable", ctx.call(C.mot_enable()).success)
+    worst = (0.0, 0)
+    try:
+        for rpm in range(lo, hi + 1, step):
+            sps = int(round(rpm / 60.0 * full))
+            ctx.require(f"run {rpm} rpm", ctx.call(C.mot_run(sps, 1)).success)
+            ctx.sleep(settle)
+            vel = []
+            t_end = time.monotonic() + dwell
+            while time.monotonic() < t_end:
+                e = ctx.call(C.encoder())
+                if e.success:
+                    vel.append(int(e.data.get("velocity", 0)))
+                ctx.sleep(0.04)
+            if len(vel) < 5:
+                ctx.check(f"{rpm} rpm sampled", False, f"{len(vel)} samples")
+                continue
+            std = round(statistics.pstdev(vel), 1)
+            ctx.measure(f"rpm_{rpm}", {"samples": len(vel), "vel_mean": round(statistics.mean(vel), 1),
+                                       "vel_std": std, "p2p": max(vel) - min(vel)})
+            if std > worst[0]:
+                worst = (std, rpm)
+        ctx.call(C.mot_stop())
+        ctx.sleep(0.5)
+        ctx.measure("worst_rpm", worst[1])
+        ctx.measure("worst_std", worst[0])
+        st = _status(ctx)
+        m = st.get("motor", {})
+        ctx.check("no driver fault during the sweep",
+                  not any(m.get(k) for k in ("ocd", "uvlo", "thermal_warn", "thermal_sd")), str(m))
+    finally:
+        ctx.call(C.mot_stop())
+        ctx.call(C.mot_disable())
+
+
 @scenario("telemetry_load", "With telemetry pushed every period_ms, run a move and require the "
                             "encoder snapshot to keep advancing between samples (a starved "
                             "Encoder task freezes it). Restores the board's telemetry period.",

@@ -35,6 +35,9 @@ public:
     /// 0 = voltage mode (KVAL duty), 1 = current mode (TVAL references); applied through the Hi-Z path
     virtual void configSetDriveMode(uint8_t mode) = 0;
     virtual void configSetTval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec) = 0;
+    /// Current-mode regulation: PRED_EN, TSW (0..31, 0xFF = chip default), T_FAST / TON_MIN /
+    /// TOFF_MIN (0 = chip default); CONFIG bits go through the Hi-Z path on APPLY
+    virtual void configSetCmRegulation(bool predEn, uint8_t tsw, uint8_t tFast, uint8_t tonMin, uint8_t toffMin) = 0;
     virtual void configSetOcdThreshold(uint8_t thresh) = 0;
     virtual void configSetStallThreshold(uint8_t thresh) = 0;
     virtual void configSetFaultAction(uint8_t action) = 0;
@@ -51,6 +54,7 @@ public:
         uint8_t kvalHold, kvalRun, kvalAcc, kvalDec;
         uint8_t driveMode;
         uint8_t tvalHold, tvalRun, tvalAcc, tvalDec;
+        uint8_t cmPredEn, cmTsw, cmTFast, cmTonMin, cmToffMin;   // resolved (defaults filled in)
         uint8_t ocdThreshold, stallThreshold;
         uint16_t acceleration, deceleration, maxSpeed, minSpeed, fsSpeed;
         bool faultOcd, faultThermalSD, faultThermalWarn, faultUvlo;

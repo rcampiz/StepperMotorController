@@ -474,6 +474,13 @@ void MotorController::periodicUpdate()
 // Config application
 // ============================================================================
 
+namespace {
+/// CONFIG[15:10] in current mode: PRED_EN (bit 15) and the target switching period TSW
+uint32_t cmConfigHi(const Services::StepperConfig& c) {
+    return (c.getCmPredEn() ? 0x8000U : 0U) | (static_cast<uint32_t>(c.getCmTsw() & 0x1FU) << 10);
+}
+} // namespace
+
 bool MotorController::applyConfig()
 {
     const auto& cfg = motion.stepper.config.getConfig();
@@ -486,6 +493,10 @@ bool MotorController::applyConfig()
         m_driver->setParam(MotorReg::KVAL_RUN,  motion.stepper.config.getTvalRun());
         m_driver->setParam(MotorReg::KVAL_ACC,  motion.stepper.config.getTvalAcc());
         m_driver->setParam(MotorReg::KVAL_DEC,  motion.stepper.config.getTvalDec());
+        // Current regulation timing (writable with the motor stopped)
+        m_driver->setParam(MotorReg::T_FAST,   motion.stepper.config.getCmTFast());
+        m_driver->setParam(MotorReg::TON_MIN,  motion.stepper.config.getCmTonMin());
+        m_driver->setParam(MotorReg::TOFF_MIN, motion.stepper.config.getCmToffMin());
     } else {
         m_driver->setParam(MotorReg::KVAL_HOLD, cfg.kvalHold);
         m_driver->setParam(MotorReg::KVAL_RUN, cfg.kvalRun);
@@ -525,14 +536,27 @@ bool MotorController::applyConfig()
     const uint32_t wanted = (cfg.stepMode & 0x07U) | (currentMode ? 0x08U : 0U);
     uint32_t stepMode = m_driver->getParam(MotorReg::STEP_MODE);
     bool stepModeOk = (stepMode & 0x0FU) == wanted;
-    if (!stepModeOk && m_driver->getStatus().hiZ()) {
-        m_driver->setParam(MotorReg::STEP_MODE, (stepMode & 0xF0U) | wanted);
-        stepModeOk = (m_driver->getParam(MotorReg::STEP_MODE) & 0x0FU) == wanted;
+    // CONFIG[15:10] in current mode (PRED_EN, TSW) is Hi-Z-only as well; untouched in
+    // voltage mode where those bits set the PWM frequency
+    bool configOk = true;
+    if (currentMode) {
+        configOk = (m_driver->getParam(MotorReg::CONFIG) & 0xFC00U) == cmConfigHi(motion.stepper.config);
+    }
+    if ((!stepModeOk || !configOk) && m_driver->getStatus().hiZ()) {
+        if (!stepModeOk) {
+            m_driver->setParam(MotorReg::STEP_MODE, (stepMode & 0xF0U) | wanted);
+            stepModeOk = (m_driver->getParam(MotorReg::STEP_MODE) & 0x0FU) == wanted;
+        }
+        if (!configOk) {
+            const uint32_t hi = cmConfigHi(motion.stepper.config);
+            m_driver->setParam(MotorReg::CONFIG, (m_driver->getParam(MotorReg::CONFIG) & 0x03FFU) | hi);
+            configOk = (m_driver->getParam(MotorReg::CONFIG) & 0xFC00U) == hi;
+        }
     }
 
     // Clear any latched fault bits from the register write sequence
     m_driver->getStatus();
-    return stepModeOk;
+    return stepModeOk && configOk;
 }
 
 bool MotorController::setStepModeSafe(uint8_t mode,
@@ -554,13 +578,21 @@ bool MotorController::setStepModeSafe(uint8_t mode,
     readback = static_cast<uint8_t>(verify & 0x07);
     const bool cmOk = (verify & 0x08U) == cmBit;
 
+    // Current mode: CONFIG[15:10] (PRED_EN, TSW) rides the same Hi-Z window
+    bool cfgOk = true;
+    if (cmBit != 0) {
+        const uint32_t hi = cmConfigHi(motion.stepper.config);
+        m_driver->setParam(MotorReg::CONFIG, (m_driver->getParam(MotorReg::CONFIG) & 0x03FFU) | hi);
+        cfgOk = (m_driver->getParam(MotorReg::CONFIG) & 0xFC00U) == hi;
+    }
+
     // Clear any latched fault bits
     m_driver->getStatus();
 
     // Re-enable motor (SoftStop holds position with configured KVAL_HOLD)
     m_driver->softStop();
 
-    return (readback == mode) && cmOk;
+    return (readback == mode) && cmOk && cfgOk;
 }
 
 void MotorController::reinit()
@@ -595,6 +627,7 @@ void MotorController::getDebugInfo(MotorDebugParams& info)
     info.stepMode = static_cast<uint8_t>(stepModeReg & 0x07);
     info.driveMode = (stepModeReg & 0x08U) ? 1 : 0;   // CM_VM: 1 = current mode
     info.adcOut = static_cast<uint8_t>(m_driver->getParam(MotorReg::ADC_OUT) & 0x1FU);
+    info.tFast = static_cast<uint8_t>(m_driver->getParam(MotorReg::T_FAST));
 }
 
 void MotorController::bind(IMotorDriver& driver, Platform::IClock& clock)

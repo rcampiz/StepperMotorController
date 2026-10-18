@@ -30,7 +30,8 @@ struct MotorDebugParams {
     uint16_t fsSpd;
     uint8_t  stepMode;
     uint8_t  driveMode;   ///< STEP_MODE bit 3 (CM_VM): 0 voltage mode, 1 current mode
-    uint8_t  adcOut;      ///< ADC_OUT (5 bits): the ADCIN pin, a divider on the motor supply
+    uint8_t  adcOut;      ///< ADC_OUT (5 bits): the ADCIN pin (not a supply divider on the IHM03A1)
+    uint8_t  tFast;       ///< T_FAST register (current mode: fast decay timing)
 };
 
 } // namespace Harness

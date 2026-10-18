@@ -32,6 +32,12 @@ public:
     uint8_t getTvalAcc() const { return m_mgr.getTvalAcc(); }
     uint8_t getTvalDec() const { return m_mgr.getTvalDec(); }
     void    setTval(uint8_t h, uint8_t r, uint8_t a, uint8_t d) { m_mgr.setTval(h, r, a, d); }
+    bool    getCmPredEn() const { return m_mgr.getCmPredEn(); }
+    uint8_t getCmTsw() const { return m_mgr.getCmTsw(); }
+    uint8_t getCmTFast() const { return m_mgr.getCmTFast(); }
+    uint8_t getCmTonMin() const { return m_mgr.getCmTonMin(); }
+    uint8_t getCmToffMin() const { return m_mgr.getCmToffMin(); }
+    void    setCmRegulation(bool p, uint8_t tsw, uint8_t tf, uint8_t ton, uint8_t toff) { m_mgr.setCmRegulation(p, tsw, tf, ton, toff); }
 
     // Protection thresholds
     uint8_t getOcdThreshold() const { return m_mgr.getOcdThreshold(); }

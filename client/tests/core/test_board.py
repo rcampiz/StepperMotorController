@@ -314,7 +314,7 @@ def test_ascii_multiline_reply_is_collected_until_ok_n(rig):
     rig.fake.json, rig.fake.echo = False, True        # silent fall-back to ASCII
     resp = rig.board.request(C.driver_config())
     assert resp.success and resp.lines[0] == "Motor Config (defaults)"
-    assert resp.data["count"] == 9 and resp.lines[-1].startswith("StepMode:")
+    assert resp.data["count"] == 10 and resp.lines[-1].startswith("StepMode:")
     err = rig.board.request(C.debug_raw("PS01_DIAG"))
     assert not err.success and err.error_code == "UNKNOWN_CMD"
 

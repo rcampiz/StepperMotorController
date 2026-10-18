@@ -91,6 +91,11 @@ void ServiceDispatcher::configSetTval(uint8_t hold, uint8_t run, uint8_t acc, ui
     m_config->configSetTval(hold, run, acc, dec);
 }
 
+void ServiceDispatcher::configSetCmRegulation(bool predEn, uint8_t tsw, uint8_t tFast,
+                                              uint8_t tonMin, uint8_t toffMin) {
+    m_config->configSetCmRegulation(predEn, tsw, tFast, tonMin, toffMin);
+}
+
 void ServiceDispatcher::configSetOcdThreshold(uint8_t thresh) {
     m_config->configSetOcdThreshold(thresh);
 }

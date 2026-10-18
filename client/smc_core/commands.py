@@ -591,6 +591,21 @@ def cfg_tval(hold: int, run: int, acc: int, dec: int) -> Request:
             raise CommandError("TVAL values are 0x00..0x7F (78 mA per unit)")
     return request("DRV:CFG:TVAL", *("%02X" % int(v) for v in (hold, run, acc, dec)))
 
+@builds("DRV:CFG:PRED")
+def cfg_pred(on: bool, tsw_us: Optional[int] = None) -> Request:
+    """Current-mode predictive current control and the target switching period (4..128 us,
+    4 us steps; None = chip default 48 us). CONFIG bits: applied by DRV:CFG:APPLY in Hi-Z."""
+    if tsw_us is not None and not 4 <= int(tsw_us) <= 128:
+        raise CommandError("tsw_us is 4..128")
+    return request("DRV:CFG:PRED", "ON" if on else "OFF", None if tsw_us is None else int(tsw_us))
+
+@builds("DRV:CFG:DECAY")
+def cfg_decay(t_fast: int, ton_min: int, toff_min: int) -> Request:
+    """Current-mode decay timing: T_FAST ([7:4] fast step, [3:0] fast decay, (v+1) x 2 us),
+    TON_MIN and TOFF_MIN ((v+1) x 0.5 us). 0 = chip default."""
+    return request("DRV:CFG:DECAY", "%02X" % (int(t_fast) & 0xFF), "%02X" % (int(ton_min) & 0x7F),
+                   "%02X" % (int(toff_min) & 0x7F))
+
 @builds("DRV:CFG:OCD")
 def cfg_ocd(threshold: int) -> Request:
     if not 0 <= int(threshold) <= 31:
