@@ -16,6 +16,9 @@
 #include "L3_services/ui/screens/graph_screen.hpp"
 #include "L3_services/ui/screens/device_info_screen.hpp"
 #include "L3_services/ui/screens/arch_screen.hpp"
+#include "L3_services/ui/screens/saver_screen.hpp"
+#include "L3_services/ui/screens/recovery_screen.hpp"
+#include "L3_services/ui/screens/screen_care_screen.hpp"
 #include "L3_services/ui/screen_manager/screen_manager.hpp"
 #include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include "L3_services/ui/theme.hpp"
@@ -200,6 +203,69 @@ TEST(architecture_screen_cycles_its_views_with_right_and_leaves_with_left) {
     EXPECT_EQ(rig.mgr.depth(), 2);
     rig.key(UI::JoyDirection::LEFT);
     EXPECT_EQ(rig.mgr.depth(), 1);
+}
+
+static int s_recoveryRuns = 0;
+static void countRecovery() { s_recoveryRuns++; }
+
+TEST(screen_care_edits_settings_and_starts_recovery) {
+    Rig rig;
+    UI::MenuScreen root("Main Menu");
+    UI::ScreenCareSettings care;
+    UI::ScreenCareScreen screen(&care, &countRecovery);
+    rig.start(&root);
+    rig.mgr.push(&screen);
+    rig.frame();
+    rig.dump("screen_care");
+    rig.key(UI::JoyDirection::CENTER);                   // edit "Saver after"
+    rig.key(UI::JoyDirection::RIGHT);                    // 2 -> 5 min
+    rig.key(UI::JoyDirection::CENTER);
+    EXPECT_EQ(care.saverAfterMs, 300000u);
+    rig.frame();
+    rig.key(UI::JoyDirection::DOWN); rig.key(UI::JoyDirection::DOWN); rig.key(UI::JoyDirection::DOWN);
+    rig.key(UI::JoyDirection::CENTER);                   // Run recovery
+    EXPECT_EQ(s_recoveryRuns, 1);
+    rig.key(UI::JoyDirection::LEFT);
+    EXPECT_EQ(rig.mgr.depth(), 1);
+}
+
+TEST(saver_moves_its_mark_and_any_key_leaves_it) {
+    Rig rig;
+    UI::MenuScreen root("Main Menu");
+    UI::ScreenCareSettings care;
+    UI::SaverScreen saver(&care);
+    rig.start(&root);
+    rig.mgr.push(&saver);
+    rig.frame();
+    const uint32_t black = rig.panel.countColor(0x0000);
+    EXPECT_TRUE(black > 240u * 320u - 3000u);            // a dark panel with one small mark
+    for (int i = 0; i < 40; i++) rig.frame();
+    rig.dump("saver");
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::CYAN) > 0);
+    rig.key(UI::JoyDirection::DOWN);
+    EXPECT_EQ(rig.mgr.depth(), 1);
+    care.saverStyle = UI::SaverStyle::BLANK;
+    rig.mgr.push(&saver);
+    rig.frame();
+    const uint32_t before = rig.panel.pixelsWritten;
+    for (int i = 0; i < 80; i++) rig.frame();
+    EXPECT_EQ(rig.panel.pixelsWritten, before);          // blank: nothing is sent at all
+}
+
+TEST(recovery_cycles_full_fields_and_pops_itself_when_done) {
+    Rig rig;
+    UI::MenuScreen root("Main Menu");
+    UI::RecoveryScreen rec;
+    rec.setMinutes(1);
+    rig.start(&root);
+    rig.mgr.push(&rec);
+    rig.frame();
+    EXPECT_TRUE(rig.panel.countColor(0xFFFF) > 240u * 320u - 200u);   // first field: white
+    for (int i = 0; i < 40; i++) rig.frame();
+    EXPECT_TRUE(rig.panel.countColor(0x0000) > 240u * 320u - 200u);   // then black
+    rig.dump("recovery");
+    for (int i = 0; i < 1200; i++) rig.frame();
+    EXPECT_TRUE(rec.finished());
 }
 
 TEST(graph_screen_draws_a_trace_from_telemetry) {

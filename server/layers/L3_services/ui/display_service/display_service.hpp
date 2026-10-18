@@ -30,6 +30,10 @@
 #include "L3_services/ui/screens/task_monitor_screen.hpp"
 #include "L3_services/ui/screens/dispatcher_screen.hpp"
 #include "L3_services/ui/screens/arch_screen.hpp"
+#include "L3_services/ui/screens/saver_screen.hpp"
+#include "L3_services/ui/screens/recovery_screen.hpp"
+#include "L3_services/ui/screens/screen_care_screen.hpp"
+#include "L3_services/ui/screen_care.hpp"
 #include "F_platform/boundary/iclock.hpp"
 #include <stdint.h>
 #include <stddef.h>
@@ -77,6 +81,8 @@ private:
     static bool onImageActionSelect(uint8_t index);
     static bool onImageMenuSelect(uint8_t index);
     static bool onMainMenuSelect(uint8_t index);
+    static void onRunRecovery();
+    void careTick(uint32_t nowMs);
     static DisplayService* s_self;   ///< menu callbacks are plain function pointers
 
     volatile bool       m_enabled = true;   ///< LCD_DISABLE clears it from the Comms task
@@ -102,6 +108,11 @@ private:
     UI::TaskMonitorScreen m_taskMonitorScreen;
     UI::DispatcherScreen m_dispatcherScreen;
     UI::ArchScreen       m_archScreen;
+    UI::ScreenCareSettings m_care;
+    UI::SaverScreen      m_saverScreen;
+    UI::RecoveryScreen   m_recoveryScreen;
+    UI::ScreenCareScreen m_careScreen;
+    uint32_t m_lastInputMs = 0;      ///< for the saver's quiet time
     uint32_t m_imageSlotMap[UI::MENU_MAX_ITEMS] = {};
     uint32_t m_activeSlot = 0;
 

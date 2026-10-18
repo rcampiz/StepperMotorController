@@ -20,7 +20,9 @@ DisplayService* DisplayService::s_self = nullptr;
 
 DisplayService::DisplayService()
     : m_mainMenu("Main Menu"),
-      m_imageMenu("Flash Images")
+      m_imageMenu("Images"),
+      m_saverScreen(&m_care),
+      m_careScreen(&m_care, &DisplayService::onRunRecovery)
 {
 }
 
@@ -39,17 +41,19 @@ bool DisplayService::init(Drivers::ICanvas& lcd,
     m_indicator = &indicator;
     m_uiMode = &uiMode;
 
-    m_mainMenu.addItem("Boot Color Screen");
-    m_mainMenu.addItem("Device Info");
-    m_mainMenu.addItem("Encoder Monitor");
-    m_mainMenu.addItem("Motion Control");
-    m_mainMenu.addItem("Driver Config");
-    m_mainMenu.addItem("Telemetry Graph");
-    m_mainMenu.addItem("Flash Images");
-    m_mainMenu.addItem("Trace Monitor");
-    m_mainMenu.addItem("Task Monitor");
+    // Order: what the operator reaches for first; the diagnostics after; care last
+    m_mainMenu.addItem("Encoder");
+    m_mainMenu.addItem("Motion");
+    m_mainMenu.addItem("Driver");
+    m_mainMenu.addItem("Telemetry");
+    m_mainMenu.addItem("Images");
+    m_mainMenu.addItem("Trace");
+    m_mainMenu.addItem("Tasks");
     m_mainMenu.addItem("Dispatcher");
     m_mainMenu.addItem("Architecture");
+    m_mainMenu.addItem("Device Info");
+    m_mainMenu.addItem("Colour test");
+    m_mainMenu.addItem("Screen Care");
     m_mainMenu.setSelectionCallback(&DisplayService::onMainMenuSelect);
 
     m_screenManager.init(&m_mainMenu, m_lcd);
@@ -129,26 +133,46 @@ bool DisplayService::onImageMenuSelect(uint8_t index)
 bool DisplayService::onMainMenuSelect(uint8_t index)
 {
     DisplayService& d = *s_self;
-    UI::IScreen* screens[] = {
-        &d.m_bootScreen, &d.m_deviceInfoScreen, &d.m_encoderScreen,
-        &d.m_motionScreen, &d.m_configScreen, &d.m_graphScreen
-    };
-    if (index < 6) {
-        d.m_screenManager.push(screens[index]);
-    } else if (index == 6) {
-        d.populateImageMenu();
-        d.m_imageMenu.setSelectionCallback(&DisplayService::onImageMenuSelect);
-        d.m_screenManager.push(&d.m_imageMenu);
-    } else if (index == 7) {
-        d.m_screenManager.push(&d.m_traceScreen);
-    } else if (index == 8) {
-        d.m_screenManager.push(&d.m_taskMonitorScreen);
-    } else if (index == 9) {
-        d.m_screenManager.push(&d.m_dispatcherScreen);
-    } else if (index == 10) {
-        d.m_screenManager.push(&d.m_archScreen);
+    switch (index) {
+        case 0:  d.m_screenManager.push(&d.m_encoderScreen); break;
+        case 1:  d.m_screenManager.push(&d.m_motionScreen); break;
+        case 2:  d.m_screenManager.push(&d.m_configScreen); break;
+        case 3:  d.m_screenManager.push(&d.m_graphScreen); break;
+        case 4:
+            d.populateImageMenu();
+            d.m_imageMenu.setSelectionCallback(&DisplayService::onImageMenuSelect);
+            d.m_screenManager.push(&d.m_imageMenu);
+            break;
+        case 5:  d.m_screenManager.push(&d.m_traceScreen); break;
+        case 6:  d.m_screenManager.push(&d.m_taskMonitorScreen); break;
+        case 7:  d.m_screenManager.push(&d.m_dispatcherScreen); break;
+        case 8:  d.m_screenManager.push(&d.m_archScreen); break;
+        case 9:  d.m_screenManager.push(&d.m_deviceInfoScreen); break;
+        case 10: d.m_screenManager.push(&d.m_bootScreen); break;
+        case 11: d.m_screenManager.push(&d.m_careScreen); break;
+        default: break;
     }
     return true;   // stay in menu (it remains on the stack under the new screen)
+}
+
+void DisplayService::onRunRecovery()
+{
+    DisplayService& d = *s_self;
+    d.m_recoveryScreen.setMinutes(d.m_care.recoveryMinutes);
+    d.m_screenManager.push(&d.m_recoveryScreen);
+}
+
+void DisplayService::careTick(uint32_t nowMs)
+{
+    UI::IScreen* top = m_screenManager.current();
+    if (top == &m_recoveryScreen) {
+        if (m_recoveryScreen.finished()) m_screenManager.pop();
+        return;
+    }
+    if (top == &m_saverScreen) return;
+    if (m_care.saverAfterMs != 0 && (nowMs - m_lastInputMs) >= m_care.saverAfterMs) {
+        m_screenManager.push(&m_saverScreen);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -174,6 +198,17 @@ void DisplayService::handleJoystick()
         }
         m_centerHoldCount = 0;
         return;
+    }
+
+    // Any move is activity for the saver; the first one while it shows just wakes the panel
+    if (dir != UI::JoyDirection::NONE) {
+        m_lastInputMs = m_clock->getTickMs();
+        if (m_screenManager.current() == &m_saverScreen) {
+            if (dir != m_lastDir) m_screenManager.pop();
+            m_lastDir = dir;
+            m_centerHoldCount = 0;
+            return;
+        }
     }
 
     // LOCAL mode: long-press CENTER returns to the main menu
@@ -211,6 +246,7 @@ void DisplayService::tick()
     handleJoystick();
 
     if (m_lcd != nullptr && m_uiMode->getMode() == UI::UIMode::LOCAL) {
+        careTick(m_clock->getTickMs());
         updateStatusLine();
         ITRACE(Harness::ITrace::L4_LCD, "[UI>L4]", "lcd.render");
         m_screenManager.render();
