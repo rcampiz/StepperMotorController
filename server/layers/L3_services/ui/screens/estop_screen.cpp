@@ -1,7 +1,8 @@
 /**
  * @file estop_screen.cpp
  * @brief E-STOP / FAULT page in the panel's look: neon hazard bands, an aberrated block title,
- *        a bracketed status panel, a segmented hold-to-clear bar and a red perspective grid.
+ *        a bracketed status panel, a segmented hold-to-clear bar and a red perspective grid,
+ *        fading out and back in on another layout every cycle.
  */
 
 #include "ui/screens/estop_screen.hpp"
@@ -30,10 +31,26 @@ constexpr uint16_t CELL = 6;                 // title block size: 30 x 42 glyphs
 constexpr uint16_t BAND_H = 18;              // hazard bands top and bottom
 constexpr uint16_t TITLE_Y = 32;
 constexpr uint16_t PANEL_Y = 100, PANEL_H = 62;
-constexpr uint16_t GRID_TOP = 246, GRID_BOTTOM = 297;
+constexpr uint16_t GRID_H = 51;
+constexpr uint16_t GRID_FLOOR_Y = 246;       // grid as a floor, under the middle
+constexpr uint16_t GRID_CEIL_Y = BAND_H + 3; // grid as a ceiling, over it
 constexpr uint8_t SEGMENTS = 20;
-// The middle content's eight positions: a small orbit, never more than 5 px from home
-constexpr int8_t SHIFTS[8][2] = {{0, 0}, {4, 2}, {-3, 4}, {5, -3}, {-4, -2}, {2, 5}, {-5, 1}, {3, -4}};
+
+// Colour schemes: the title and its two ghosts, labels, brackets, prompt, panel fill, grid lines
+struct Palette { uint16_t title, ghostR, ghostL, label, corners, prompt, panel, grid; };
+constexpr Palette PALETTES[3] = {
+    {Theme::RED,     Theme::CYAN,   Theme::MAGENTA, Theme::CYAN,    Theme::CYAN,    Theme::YELLOW, Theme::PANEL, Theme::RED},
+    {Theme::MAGENTA, Theme::YELLOW, Theme::CYAN,    Theme::YELLOW,  Theme::MAGENTA, Theme::CYAN,   0x2004,       Theme::MAGENTA},
+    {Theme::ORANGE,  Theme::MAGENTA, Theme::CYAN,   Theme::MAGENTA, Theme::YELLOW,  Theme::TEXT,   0x0866,       Theme::VIOLET},
+};
+
+// The eight layouts: the middle's offset (the floor-grid ones fit between the band and the
+// grid; the ceiling-grid ones sit ~50 px lower), where the grid is, and the colours
+struct Layout { int8_t dx, dy; bool gridTop; uint8_t pal; };
+constexpr Layout LAYOUTS[8] = {
+    {0, 0, false, 0}, {5, 50, true, 1}, {-5, 8, false, 2}, {0, 62, true, 0},
+    {5, -8, false, 1}, {-5, 46, true, 2}, {3, 4, false, 2}, {-3, 56, true, 1},
+};
 
 void blockText(Services::ICanvas& lcd, const char* s, int16_t dx, uint16_t y, uint16_t colour)
 {
@@ -67,9 +84,26 @@ void EstopScreen::onActivate()
     m_full = true;
     m_progress = 0;
     m_message[0] = '\0';
-    m_frames = 0;
-    m_shift = 0;
-    m_offX = m_offY = 0;
+    m_messageNew = false;
+    m_phase = Phase::SHOW;
+    m_phaseFrames = 0;
+    m_alpha = 256;
+    m_layout = 0;
+    applyLayout();
+}
+
+void EstopScreen::applyLayout()
+{
+    const Layout& l = LAYOUTS[m_layout];
+    m_offX = l.dx;
+    m_offY = l.dy;
+    m_gridTop = l.gridTop;
+    m_pal = l.pal;
+}
+
+uint16_t EstopScreen::ink(uint16_t c) const
+{
+    return m_alpha >= 256 ? c : mix565(Theme::BG, c, m_alpha);
 }
 
 void EstopScreen::drawBands(Services::ICanvas& lcd)
@@ -94,14 +128,17 @@ void EstopScreen::drawBands(Services::ICanvas& lcd)
 
 void EstopScreen::drawGrid(Services::ICanvas& lcd)
 {
-    // A red floor like the saver's, scrolling toward the viewer
+    // A grid like the saver's floor, scrolling toward the viewer; as a ceiling it is the same
+    // grid upside down (its horizon along the bottom edge)
     static uint8_t row[Theme::WIDTH * 2];
-    const uint16_t rows = GRID_BOTTOM - GRID_TOP;
     constexpr float K = 60.0f;
-    lcd.streamBitmapStart(0, GRID_TOP, Theme::WIDTH, rows);
-    for (uint16_t r = 0; r < rows; r++) {
-        const uint16_t bg = mix565(0x3005 /* deep red-violet */, Theme::BG, r * 256 / rows);
-        const uint16_t line = mix565(bg, Theme::RED, 90 + r * 166 / rows);
+    const uint16_t lineColour = PALETTES[m_pal].grid;
+    const uint16_t y0 = m_gridTop ? GRID_CEIL_Y : GRID_FLOOR_Y;
+    lcd.streamBitmapStart(0, y0, Theme::WIDTH, GRID_H);
+    for (uint16_t i = 0; i < GRID_H; i++) {
+        const uint16_t r = m_gridTop ? static_cast<uint16_t>(GRID_H - 1 - i) : i;   // depth row
+        const uint16_t bg = mix565(0x3005 /* deep red-violet */, Theme::BG, r * 256 / GRID_H);
+        const uint16_t line = mix565(bg, lineColour, 90 + r * 166 / GRID_H);
         bool horizontal = (r == 0);
         if (r >= 5) {
             const float depth = K / static_cast<float>(r);
@@ -114,7 +151,7 @@ void EstopScreen::drawGrid(Services::ICanvas& lcd)
             row[x * 2] = static_cast<uint8_t>(c >> 8);
             row[x * 2 + 1] = static_cast<uint8_t>(c & 0xFF);
         }
-        const int span = 4 + r * 22 / rows;
+        const int span = 4 + r * 22 / GRID_H;
         if (!horizontal && span >= 9) {
             for (int j = -12; j <= 12; j++) {
                 const int x = Theme::WIDTH / 2 + j * span;
@@ -132,6 +169,7 @@ void EstopScreen::drawGrid(Services::ICanvas& lcd)
 void EstopScreen::setMessage(const char* msg)
 {
     snprintf(m_message, sizeof m_message, "%s", msg != nullptr ? msg : "");
+    m_messageNew = true;
 }
 
 void EstopScreen::drawStatic(Services::ICanvas& lcd)
@@ -141,33 +179,48 @@ void EstopScreen::drawStatic(Services::ICanvas& lcd)
     drawBands(lcd);
     lcd.fillRect(0, BAND_H, Theme::WIDTH, 2, Theme::MAGENTA);
     lcd.fillRect(0, static_cast<uint16_t>(Theme::HEIGHT - BAND_H - 2), Theme::WIDTH, 2, Theme::MAGENTA);
+    drawGrid(lcd);
+    if (m_alpha > 0) drawMiddle(lcd);
+    m_drawnProgress = 0xFF;
+    m_drawnMessage[0] = '\x01';
+    m_drawnStatus = 0xFFFF;
+}
+
+void EstopScreen::drawMiddle(Services::ICanvas& lcd)
+{
+    // Everything between the bands but the grid, at m_alpha: drawn over itself while it
+    // fades, so at alpha 0 it is gone with nothing else to clear
+    const Palette& p = PALETTES[m_pal];
     const int16_t ox = m_offX, oy = m_offY;
     auto X = [&](int v) { return static_cast<uint16_t>(v + ox); };
     auto Y = [&](int v) { return static_cast<uint16_t>(v + oy); };
+    const uint16_t panel = ink(p.panel);
+    const uint16_t page = Theme::BG;
 
-    // Title: cyan ghost right, magenta ghost left, red on top
+    // Title: a ghost right, a ghost left, the title colour on top
     const char* title = m_fault ? "FAULT" : "E-STOP";
-    blockText(lcd, title, static_cast<int16_t>(3 + ox), Y(TITLE_Y), Theme::CYAN);
-    blockText(lcd, title, static_cast<int16_t>(-3 + ox), Y(TITLE_Y), Theme::MAGENTA);
-    blockText(lcd, title, ox, Y(TITLE_Y), Theme::RED);
+    blockText(lcd, title, static_cast<int16_t>(3 + ox), Y(TITLE_Y), ink(p.ghostR));
+    blockText(lcd, title, static_cast<int16_t>(-3 + ox), Y(TITLE_Y), ink(p.ghostL));
+    blockText(lcd, title, ox, Y(TITLE_Y), ink(p.title));
     lcd.blitTextLine(X(Theme::MARGIN), Y(82), Theme::WIDTH - 2 * Theme::MARGIN - 6, 8,
                      m_fault ? "     DRIVER FAULT  //  MOTOR SAFE" : "   EMERGENCY STOP  //  MOTOR SAFE",
-                     Theme::DIM, Theme::BG);
+                     ink(Theme::DIM), page);
 
     // Status panel, bracketed like the menu pages
-    lcd.fillRect(X(Theme::MARGIN), Y(PANEL_Y), Theme::WIDTH - 2 * Theme::MARGIN, PANEL_H, Theme::PANEL);
-    Chrome::drawCorners(lcd, X(Theme::MARGIN), Y(PANEL_Y), Theme::WIDTH - 2 * Theme::MARGIN, PANEL_H, 8, Theme::CYAN);
-    lcd.blitTextLine(X(16), Y(PANEL_Y + 8), 50, 8, "MOTOR", Theme::CYAN, Theme::PANEL);
-    lcd.drawString(X(70), Y(PANEL_Y + 6), "released (Hi-Z)", Theme::TEXT, Theme::PANEL, Theme::FONT_MEDIUM);
-    lcd.blitTextLine(X(16), Y(PANEL_Y + 28), 50, 8, "DRIVER", Theme::CYAN, Theme::PANEL);
-    lcd.blitTextLine(X(16), Y(PANEL_Y + 46), 50, 8, "LATCH", Theme::CYAN, Theme::PANEL);
-    lcd.blitTextLine(X(70), Y(PANEL_Y + 46), 140, 8, m_fault ? "driver fault" : "E-STOP", Theme::MAGENTA, Theme::PANEL);
+    lcd.fillRect(X(Theme::MARGIN), Y(PANEL_Y), Theme::WIDTH - 2 * Theme::MARGIN, PANEL_H, panel);
+    Chrome::drawCorners(lcd, X(Theme::MARGIN), Y(PANEL_Y), Theme::WIDTH - 2 * Theme::MARGIN, PANEL_H, 8, ink(p.corners));
+    lcd.blitTextLine(X(16), Y(PANEL_Y + 8), 50, 8, "MOTOR", ink(p.label), panel);
+    lcd.drawString(X(70), Y(PANEL_Y + 6), "released (Hi-Z)", ink(Theme::TEXT), panel, Theme::FONT_MEDIUM);
+    lcd.blitTextLine(X(16), Y(PANEL_Y + 28), 50, 8, "DRIVER", ink(p.label), panel);
+    lcd.blitTextLine(X(16), Y(PANEL_Y + 46), 50, 8, "LATCH", ink(p.label), panel);
+    lcd.blitTextLine(X(70), Y(PANEL_Y + 46), 140, 8, m_fault ? "driver fault" : "E-STOP", ink(Theme::MAGENTA), panel);
 
     // The way out
-    lcd.drawString(X(28), Y(176), "HOLD CENTER 3s TO CLEAR", Theme::YELLOW, Theme::BG, Theme::FONT_MEDIUM);
+    lcd.drawString(X(28), Y(176), "HOLD CENTER 3s TO CLEAR", ink(p.prompt), page, Theme::FONT_MEDIUM);
     Chrome::drawCorners(lcd, X(BAR_X - 4), Y(BAR_Y - 4),
-                        static_cast<uint16_t>(BAR_W + 8), static_cast<uint16_t>(BAR_H + 8), 6, Theme::GRID_MAJ);
-    drawGrid(lcd);
+                        static_cast<uint16_t>(BAR_W + 8), static_cast<uint16_t>(BAR_H + 8), 6, ink(Theme::GRID_MAJ));
+
+    // The live parts follow in render(), at the same strength
     m_drawnProgress = 0xFF;
     m_drawnMessage[0] = '\x01';
     m_drawnStatus = 0xFFFF;
@@ -189,22 +242,61 @@ void EstopScreen::drawFaults(Services::ICanvas& lcd, uint16_t statusReg, bool st
     }
     const bool bad = statusReg != 0 && (ocd || uvlo || thsd || stalled);
     lcd.blitTextLine(static_cast<uint16_t>(70 + m_offX), static_cast<uint16_t>(PANEL_Y + 28 + m_offY), 140, 8,
-                     line, bad ? Theme::ORANGE : Theme::GREEN, Theme::PANEL);
+                     line, ink(bad ? Theme::ORANGE : Theme::GREEN), ink(PALETTES[m_pal].panel));
 }
 
 void EstopScreen::render(Services::ICanvas& lcd)
 {
-    // Every SHIFT_FRAMES the middle moves to its next position (a full repaint)
-    if (++m_frames >= SHIFT_FRAMES) {
-        m_frames = 0;
-        m_shift = static_cast<uint8_t>((m_shift + 1) % 8);
-        m_offX = SHIFTS[m_shift][0];
-        m_offY = SHIFTS[m_shift][1];
+    // Someone is acting on the page (holding CENTER, or a clear just answered): show it now
+    // and keep it while they do
+    const bool wake = m_progress > 0 || m_messageNew;
+    m_messageNew = false;
+    if (wake && m_phase != Phase::SHOW) {
+        m_phase = Phase::SHOW;
+        m_alpha = 256;
         m_full = true;
     }
+    if (wake) m_phaseFrames = 0;
+
+    bool middle = false;           // the middle fades this frame
+    if (!m_full) {
+        switch (m_phase) {
+            case Phase::SHOW:
+                if (++m_phaseFrames >= SHOW_FRAMES) { m_phase = Phase::FADE_OUT; m_phaseFrames = 0; }
+                break;
+            case Phase::FADE_OUT:
+                m_phaseFrames++;
+                m_alpha = static_cast<uint16_t>(256 - m_phaseFrames * 256 / FADE_FRAMES);
+                middle = true;
+                if (m_phaseFrames >= FADE_FRAMES) { m_alpha = 0; m_phase = Phase::DARK; m_phaseFrames = 0; }
+                break;
+            case Phase::DARK:
+                if (++m_phaseFrames >= DARK_FRAMES) {
+                    // The next layout: the grid may move, so the page is repainted (the
+                    // middle is invisible at alpha 0) and the fade in starts there
+                    m_layout = static_cast<uint8_t>((m_layout + 1) % 8);
+                    applyLayout();
+                    m_phase = Phase::FADE_IN;
+                    m_phaseFrames = 0;
+                    m_full = true;
+                }
+                break;
+            case Phase::FADE_IN:
+                m_phaseFrames++;
+                m_alpha = static_cast<uint16_t>(m_phaseFrames * 256 / FADE_FRAMES);
+                middle = true;
+                if (m_phaseFrames >= FADE_FRAMES) { m_alpha = 256; m_phase = Phase::SHOW; m_phaseFrames = 0; }
+                break;
+        }
+    }
+
     if (m_full) {
         m_full = false;
         drawStatic(lcd);
+    } else if (middle) {
+        // Fading: just the middle (the stripes and grid pause for these few frames)
+        lcd.waitForVSync();
+        drawMiddle(lcd);
     } else {
         // The stripes crawl and the grid scrolls every frame
         m_stripePhase = static_cast<uint8_t>((m_stripePhase + 1) % 24);
@@ -214,6 +306,7 @@ void EstopScreen::render(Services::ICanvas& lcd)
         drawBands(lcd);
         drawGrid(lcd);
     }
+
     Protocol::TelemetrySnapshot t = Services::g_telemetryStore.getSnapshot();
     if (t.motor.statusReg != m_drawnStatus || t.motor.stalled != m_drawnStall) {
         m_drawnStatus = t.motor.statusReg;
@@ -225,16 +318,17 @@ void EstopScreen::render(Services::ICanvas& lcd)
         const uint8_t lit = static_cast<uint8_t>(m_progress * SEGMENTS / 100);
         const uint16_t seg = BAR_W / SEGMENTS;
         for (uint8_t i = 0; i < SEGMENTS; i++) {
-            const uint16_t c = (i < lit) ? mix565(Theme::CYAN, Theme::MAGENTA, i * 256 / (SEGMENTS - 1)) : Theme::PANEL;
+            const uint16_t c = (i < lit) ? mix565(Theme::CYAN, Theme::MAGENTA, i * 256 / (SEGMENTS - 1))
+                                         : PALETTES[m_pal].panel;
             lcd.fillRect(static_cast<uint16_t>(BAR_X + i * seg + m_offX), static_cast<uint16_t>(BAR_Y + m_offY),
-                         static_cast<uint16_t>(seg - 2), BAR_H, c);
+                         static_cast<uint16_t>(seg - 2), BAR_H, ink(c));
         }
         m_drawnProgress = m_progress;
     }
     if (strcmp(m_message, m_drawnMessage) != 0) {
         snprintf(m_drawnMessage, sizeof m_drawnMessage, "%s", m_message);
         lcd.blitTextLine(static_cast<uint16_t>(20 + m_offX), static_cast<uint16_t>(224 + m_offY), 196, 8,
-                         m_message, Theme::ORANGE, Theme::BG);
+                         m_message, ink(Theme::ORANGE), Theme::BG);
     }
 }
 

@@ -379,10 +379,24 @@ TEST(estop_page_shows_the_latch_and_fills_the_clear_bar) {
     const uint32_t before = rig.panel.pixelsWritten;
     rig.frame();
     EXPECT_TRUE(rig.panel.pixelsWritten - before > 2u * 240u * 18u);
-    // ...and after SHIFT_FRAMES the middle sits somewhere else
-    for (int i = 0; i < UI::EstopScreen::SHIFT_FRAMES; i++) rig.frame();
-    EXPECT_TRUE(page.offsetX() != 0 || page.offsetY() != 0);
+    // ...the page holds still while CENTER is held; let go and the cycle runs: after
+    // SHOW_FRAMES it fades out to stripes and grid only...
+    page.setProgress(0);
+    for (int i = 0; i < UI::EstopScreen::SHOW_FRAMES + UI::EstopScreen::FADE_FRAMES + 2; i++) rig.frame();
+    rig.dump("estop_dark");
+    EXPECT_EQ(rig.panel.countColor(UI::Theme::RED, 0, 22, 240, 220), 0u);           // no title
+    EXPECT_EQ(rig.panel.countColor(UI::Theme::YELLOW, 0, 22, 240, 276), 0u);        // no prompt
+    // ...and fades back in on the next layout: the grid on top, the middle ~50 px lower
+    for (int i = 0; i < UI::EstopScreen::DARK_FRAMES + UI::EstopScreen::FADE_FRAMES; i++) rig.frame();
+    EXPECT_TRUE(page.gridOnTop());
+    EXPECT_TRUE(page.offsetY() >= 40);
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::MAGENTA, 0, 70, 240, 60) > 1000);   // its magenta title
     rig.dump("estop_shifted");
+    // Holding CENTER mid-fade brings the page straight back
+    for (int i = 0; i < UI::EstopScreen::SHOW_FRAMES + 3; i++) rig.frame();
+    page.setProgress(10);
+    rig.frame();
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::MAGENTA, 0, 70, 240, 60) > 1000);
 }
 
 TEST(graph_screen_draws_a_trace_from_telemetry) {
