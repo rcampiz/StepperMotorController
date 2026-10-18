@@ -188,6 +188,17 @@ TEST(device_info_repaints_only_the_live_cells) {
     const uint32_t cost = rig.panel.pixelsWritten - first;
     printf("  device info: first frame %u px, live update %u px\n", first, cost);
     EXPECT_TRUE(cost <= 3u * 116u * 16u);                      // three value cells at most
+    // The wheel: CENTER edits, RIGHT steps through the roles, UP leaves without saving
+    rig.key(UI::JoyDirection::CENTER);
+    rig.key(UI::JoyDirection::RIGHT);
+    rig.key(UI::JoyDirection::RIGHT);
+    rig.frame();
+    rig.dump("device_info_wheel");
+    EXPECT_EQ(rig.mgr.current(), &info);
+    rig.key(UI::JoyDirection::UP);
+    rig.frame();
+    rig.key(UI::JoyDirection::LEFT);                            // not editing: back to the menu
+    EXPECT_EQ(rig.mgr.current(), &root);
 }
 
 TEST(architecture_screen_cycles_its_views_with_right_and_leaves_with_left) {

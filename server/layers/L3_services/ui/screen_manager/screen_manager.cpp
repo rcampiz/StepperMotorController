@@ -93,12 +93,19 @@ void ScreenManager::render()
             m_lcd->fillScreen(Theme::BG);
             Chrome::drawTitleBand(*m_lcd, screen->title());
             Chrome::drawFooter(*m_lcd, m_depth > 1, screen->centerHint());
+            m_drawnHint = screen->centerHint();
             m_statusDirty = true;
         } else {
             m_lcd->fillScreen(Services::Canvas::BLACK);
         }
         m_needsClear = false;
         screen->clearRedrawFlag();
+    }
+
+    // A screen whose CENTER does something else now (e.g. EDIT, then SAVE) gets its footer back
+    if (screen->usesChrome() && screen->centerHint() != m_drawnHint) {
+        Chrome::drawFooter(*m_lcd, m_depth > 1, screen->centerHint());
+        m_drawnHint = screen->centerHint();
     }
 
     if (m_statusDirty && screen->usesChrome()) {

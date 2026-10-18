@@ -83,6 +83,7 @@ public:
 private:
     StatusLine m_status = {};
     bool m_statusDirty = true;
+    const char* m_drawnHint = nullptr;   ///< the footer's CENTER hint as last drawn
     IScreen* m_stack[SCREEN_STACK_MAX] = {};
     uint8_t m_depth = 0;
     Services::ICanvas* m_lcd = nullptr;
