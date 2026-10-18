@@ -32,6 +32,7 @@ SAMPLE_ARGS = {
     "enc_filter_legacy": ("EMA",),
     "cfg_fault_action": (1,),
     "disp_indicator": (90, 1, True),
+    "lcd_reg": (0xBB, 0x19),
 }
 
 
@@ -98,6 +99,8 @@ def test_protocol_version_is_two():
     (C.disp_indicator(370, -1, False), "UI:DISP:INDICATOR 10 -1 0 100 100"),
     (C.disp_rect(1, 2, 30, 40, 0xF800, fill=True), "UI:DISP:RECT 1 2 30 40 F800 fill"),
     (C.disp_rect(1, 2, 30, 40, 0xF800), "UI:DISP:RECT 1 2 30 40 F800"),
+    (C.lcd_vcom(0x19), "UI:LCD:REG BB 19"),
+    (C.lcd_reg(0xE0, 0xD0, 0x04), "UI:LCD:REG E0 D0 04"),
     (C.disp_indicator(45, 1, True, 73, 40), "UI:DISP:INDICATOR 45 1 1 73 40"),
     (C.flash_upload_rle(2, b"abc"), "UI:FLASH:UPLOAD:RLE 2 3 CRC"),
     (C.queue_move(100, 1), "SYNC:QUEUE MOVE 100 1"),

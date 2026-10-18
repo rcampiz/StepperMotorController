@@ -83,6 +83,14 @@ public:
     /// Block until the next display V-blank (tearing-effect edge). Default: no sync.
     virtual void waitForVSync() {}
 
+    /// True when the panel is mounted upside down (picture rotated 180 degrees): the UI
+    /// then swaps the joystick directions so they match what the viewer sees.
+    virtual bool isRotated180() const { return false; }
+
+    /// Write one of the panel's tuning registers (voltages, gamma, timing) live. Returns
+    /// false for any register outside the driver's allow-list. Default: not supported.
+    virtual bool writePanelRegister(uint8_t reg, const uint8_t* data, uint8_t len) { (void)reg; (void)data; (void)len; return false; }
+
     // --- Inline helpers (delegate to fillRect) ---
 
     void fillScreen(uint16_t color) {

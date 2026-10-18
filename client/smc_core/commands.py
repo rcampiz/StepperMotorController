@@ -507,6 +507,31 @@ def disp_rect(x: int, y: int, w: int, h: int, color: int, fill: bool = False) ->
 def disp_line(x1: int, y1: int, x2: int, y2: int, color: int) -> Request:
     return request("UI:DISP:LINE", int(x1), int(y1), int(x2), int(y2), _hex4(color))
 
+@builds("UI:LCD:REG")
+def lcd_reg(reg: int, *data: int) -> Request:
+    """Write a panel tuning register live (VCOM 0xBB, GVDD 0xC3, gamma 0xE0/0xE1 ...);
+    not kept across a reset."""
+    if not data or len(data) > 14:
+        raise CommandError("UI:LCD:REG takes 1..14 data bytes")
+    return request("UI:LCD:REG", "%02X" % (int(reg) & 0xFF), *("%02X" % (int(b) & 0xFF) for b in data))
+
+
+# ST7789 VCOMS: 0.1 V + 0.025 V per step, 0x00..0x3F; reset default 0x20 (0.9 V)
+VCOM_REG = 0xBB
+VCOM_DEFAULT = 0x20
+
+
+def vcom_volts(code: int) -> float:
+    return round(0.1 + 0.025 * (int(code) & 0x3F), 3)
+
+
+@builds("UI:LCD:REG")
+def lcd_vcom(code: int) -> Request:
+    if not 0 <= int(code) <= 0x3F:
+        raise CommandError("VCOM code is 0x00..0x3F")
+    return lcd_reg(VCOM_REG, int(code))
+
+
 @builds("UI:DISP:INDICATOR")
 def disp_indicator(angle: int, rotation_dir: int, has_translation: bool,
                    speed_pct: int = 100, rot_pct: int = 100) -> Request:

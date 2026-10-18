@@ -271,6 +271,17 @@ def test_motor_profile_applies_to_the_board_and_sets_the_rating(gui):
     assert pump(app, lambda: abs(w._driver_panel.rated_current() - 1.7) < 1e-6, timeout=5.0), w._driver_panel.rated_current()
 
 
+def test_vcom_slider_and_black_test_screen(gui):
+    app, w, fake = gui
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    w._display_panel._vcom_slider.setValue(0x19)
+    assert pump(app, lambda: "UI:LCD:REG BB 19" in fake.received, timeout=3.0), fake.received[-5:]
+    assert fake.panel_regs[0xBB] == [0x19]
+    w._on_panel_test_requested()
+    assert pump(app, lambda: any(r.startswith("UI:DISP:RECT 180 46 50 10 001F fill") for r in fake.received), timeout=5.0)
+    assert "UI:MODE REMOTE" in fake.received
+
+
 def test_tests_tab_runs_a_scenario(gui):
     app, w, fake = gui
     assert pump(app, lambda: w._board is not None and w._board.session_ready)

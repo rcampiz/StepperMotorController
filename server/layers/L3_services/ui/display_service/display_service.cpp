@@ -58,6 +58,9 @@ bool DisplayService::init(Drivers::ICanvas& lcd,
 
     m_screenManager.init(&m_mainMenu, m_lcd);
     m_screenManager.push(&m_bootScreen);   // boot into colour test; any button -> main menu
+    m_bootHandoff = true;                  // ...and after BOOT_SCREEN_MS, the saver
+    m_bootShownMs = m_clock->getTickMs();
+    m_lastInputMs = m_bootShownMs;
     return true;
 }
 
@@ -170,6 +173,18 @@ void DisplayService::careTick(uint32_t nowMs)
         return;
     }
     if (top == &m_saverScreen) return;
+    // Boot: the colour test shows for BOOT_SCREEN_MS, then the saver (waking lands in the
+    // menu); a button before then leaves the colour test as usual.
+    if (m_bootHandoff) {
+        if (top != &m_bootScreen) {
+            m_bootHandoff = false;
+        } else if ((nowMs - m_bootShownMs) >= BOOT_SCREEN_MS) {
+            m_bootHandoff = false;
+            m_screenManager.pop();
+            m_screenManager.push(&m_saverScreen);
+            return;
+        }
+    }
     if (m_care.saverAfterMs != 0 && (nowMs - m_lastInputMs) >= m_care.saverAfterMs) {
         m_screenManager.push(&m_saverScreen);
     }
@@ -185,6 +200,17 @@ void DisplayService::handleJoystick()
         return;
     }
     UI::JoyDirection dir = m_joystick->readDirection();
+    // A panel mounted upside down is viewed from the other side: the stick's directions turn
+    // with it, so LEFT stays "back" and UP stays "up" for the viewer
+    if (m_lcd != nullptr && m_lcd->isRotated180()) {
+        switch (dir) {
+            case UI::JoyDirection::UP:    dir = UI::JoyDirection::DOWN;  break;
+            case UI::JoyDirection::DOWN:  dir = UI::JoyDirection::UP;    break;
+            case UI::JoyDirection::LEFT:  dir = UI::JoyDirection::RIGHT; break;
+            case UI::JoyDirection::RIGHT: dir = UI::JoyDirection::LEFT;  break;
+            default: break;
+        }
+    }
 
     if (m_uiMode->getMode() == UI::UIMode::REMOTE) {
         // Forward joystick edges upstream
@@ -312,6 +338,11 @@ void DisplayService::line(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16
 void DisplayService::bitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint8_t* data, uint32_t len)
 {
     if (m_lcd != nullptr && data != nullptr) m_lcd->drawBitmapRaw(x, y, w, h, data, len);
+}
+
+bool DisplayService::panelRegister(uint8_t reg, const uint8_t* data, uint8_t len)
+{
+    return m_lcd != nullptr && m_lcd->writePanelRegister(reg, data, len);
 }
 
 void DisplayService::indicator(uint16_t angle, int8_t rotation, bool translation, uint8_t speedPct, uint8_t rotPct)

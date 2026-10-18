@@ -40,6 +40,21 @@ TEST(bitmap_stream_locks_the_bus_per_chunk_and_continues_with_ramwrc) {
     EXPECT_FALSE(lcd.isStreaming());
 }
 
+TEST(lcd_init_turns_the_picture_180_degrees_and_says_so) {
+    FakeSPIBus spi; FakeGPIO cs, dc, nreset, te;
+    Drivers::LCD lcd(spi, cs, dc, nreset, te);
+    lcd.init();
+    bool madctl = false;
+    for (size_t i = 0; i + 1 < spi.tx.size(); i++) {
+        if (spi.tx[i] == 0x36 && spi.tx[i + 1] == 0x88) madctl = true;
+    }
+    EXPECT_TRUE(madctl);                                  // MY + BGR
+    EXPECT_TRUE(static_cast<Drivers::ICanvas&>(lcd).isRotated180());
+    const uint8_t vcom[1] = {0x19};
+    EXPECT_TRUE(lcd.writePanelRegister(0xBB, vcom, 1));   // VCOM is tunable
+    EXPECT_FALSE(lcd.writePanelRegister(0x36, vcom, 1));  // MADCTL is not
+}
+
 TEST(lcd_without_tearing_sync_is_a_no_op) {
     FakeSPIBus spi; FakeGPIO cs, dc, nreset, te;
     Drivers::LCD lcd(spi, cs, dc, nreset, te);

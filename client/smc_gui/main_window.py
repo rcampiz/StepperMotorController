@@ -369,6 +369,8 @@ class MainWindow(QMainWindow):
         # Display panel indicator
         self._display_panel.indicator_send_requested.connect(
             self._on_indicator_send_requested)
+        self._display_panel.vcom_requested.connect(self._on_vcom_requested)
+        self._display_panel.panel_test_requested.connect(self._on_panel_test_requested)
 
         # Display panel flash operations
         self._display_panel.flash_info_requested.connect(
@@ -652,6 +654,26 @@ class MainWindow(QMainWindow):
                                       resonance_bands_rpm=list(self._controller_panel.stick.bands_rpm))
             return motors.save_profile(p)
         self._bridge.job(job, "EXPORT_PROFILE")
+
+    @Slot(int)
+    def _on_vcom_requested(self, code: int):
+        """Panel VCOM, live; coalesced so dragging the slider sends only the newest."""
+        if self._bridge is not None:
+            self._bridge.latest("lcd_vcom", C.lcd_vcom(code))
+
+    @Slot()
+    def _on_panel_test_requested(self):
+        """Remote mode, then a black field with a 20 px ruler and white/red/green/blue swatches."""
+        if self._bridge is None:
+            return
+        reqs = [C.ui_mode(remote=True), C.disp_clear(0x0000), C.disp_rect(0, 0, 240, 320, 0xFFFF)]
+        for y in range(20, 320, 20):
+            colour = 0x07FF if (y // 20) % 2 else 0xF81F
+            reqs += [C.disp_line(0, y, 239, y, colour), C.disp_text(4, y + 2, colour, 0x0000, "y=%d" % y)]
+        for i, c in enumerate((0xFFFF, 0xF800, 0x07E0, 0x001F)):
+            reqs.append(C.disp_rect(180, 4 + i * 14, 50, 10, c, fill=True))
+        self._remote_mode_sent = True
+        self._call_all(reqs, "GENERIC")
 
     @Slot(object)
     def _on_kval_apply(self, req: C.Request):

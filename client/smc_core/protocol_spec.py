@@ -111,6 +111,7 @@ COMMANDS: Dict[str, CommandSpec] = {
     'UI:DISP:BITMAP:B64': CommandSpec('UI:DISP:BITMAP:B64', 'cmdDispBitmapB64', 5, 'UI:DISP:BITMAP:B64 <x> <y> <w> <h> <base64_data>', '', False, False, False),
     'UI:DISP:BITMAP:RLE': CommandSpec('UI:DISP:BITMAP:RLE', 'cmdDispBitmapRle', 0, 'UI:DISP:BITMAP:RLE <x> <y> <w> <h> <compressed_bytes> [CRC]', '', False, True, False),
     'UI:DISP:INDICATOR': CommandSpec('UI:DISP:INDICATOR', 'cmdDispIndicator', 3, 'UI:DISP:INDICATOR <angle> <rot_dir> <has_trans> [speed_pct] [rot_pct]', '', False, False, False),
+    'UI:LCD:REG': CommandSpec('UI:LCD:REG', 'cmdLcdReg', 2, 'UI:LCD:REG <reg> <byte> [byte ...]   (hex; e.g. UI:LCD:REG BB 19 sets VCOM)', '', False, False, False),
     'UI:FLASH:UPLOAD': CommandSpec('UI:FLASH:UPLOAD', 'cmdFlashUpload', 0, 'UI:FLASH:UPLOAD <slot> [CRC]', '', False, True, False),
     'UI:FLASH:SHOW': CommandSpec('UI:FLASH:SHOW', 'cmdFlashShow', 1, 'UI:FLASH:SHOW <slot>', '', False, False, False),
     'UI:FLASH:UPLOAD:RLE': CommandSpec('UI:FLASH:UPLOAD:RLE', 'cmdFlashUploadRle', 0, 'UI:FLASH:UPLOAD:RLE <slot> <compressed_bytes> [CRC]', '', False, True, False),

@@ -426,6 +426,15 @@ class FakeBoard:
     def _c_DEV_ROLE_Q(self, name, args):
         self._ok("GET_ROLE", data={"role": self.role, "role_id": 0})
 
+    def _c_UI_LCD_REG(self, name, args):
+        reg = int(args[0], 16) if args else -1
+        if len(args) < 2 or reg not in (0xB2, 0xB7, 0xBB, 0xC0, 0xC2, 0xC3, 0xC4, 0xC6, 0xD0, 0xE0, 0xE1):
+            self._err(name, "INVALID_PARAM", "Register not tunable")
+            return
+        self.panel_regs = getattr(self, "panel_regs", {})
+        self.panel_regs[reg] = [int(a, 16) for a in args[1:]]
+        self._ok(name, "")
+
     def _c_UI_DISP_INDICATOR(self, name, args):
         if len(args) < 3:
             self._err(name, "INVALID_PARAM", "Usage: UI:DISP:INDICATOR <angle> <rot_dir> <has_trans> [speed_pct] [rot_pct]")

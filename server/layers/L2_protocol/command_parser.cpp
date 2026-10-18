@@ -451,6 +451,16 @@ void CommandParser::dispatchUI(const char *suffix, const ParsedCommand &cmd) {
     respondErr("UNKNOWN_CMD", "Unknown UI:DISP command");
     return;
   }
+  // UI:LCD:* — panel tuning registers, live (LOCAL or REMOTE mode)
+  if (strncmp(suffix, "LCD:", 4) == 0) {
+    static const CmdEntry lt[] = {
+        {"REG", &CommandParser::cmdLcdReg},
+    };
+    if (dispatch1(suffix + 4, lt, NCMD(lt), cmd))
+      return;
+    respondErr("UNKNOWN_CMD", "Unknown UI:LCD command");
+    return;
+  }
   // UI:FLASH:* — NOR flash image upload/show/erase
   if (strncmp(suffix, "FLASH:", 6) == 0) {
     static const CmdEntry ft1[] = {

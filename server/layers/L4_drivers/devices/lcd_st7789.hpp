@@ -121,6 +121,7 @@ static const uint8_t FONT_5X7[][5] = {
 class LCD : public Drivers::ICanvas {
 public:
     static constexpr uint16_t WIDTH = 240;
+    static constexpr bool ROTATE_180 = true;    ///< picture upside down relative to the silkscreen
     static constexpr uint16_t HEIGHT = 320;
 
     // Row offset: GFX01M2 is 240x320, uses full ST7789 RAM (no offset)
@@ -159,6 +160,36 @@ public:
     /// Block until the next V-blank (ICanvas override); no-op without a TE sync object
     void waitForVSync() override { if (m_teSync != nullptr) m_teSync->waitForVSync(); }
 
+    /// Panel tuning registers that may be written live (UI:LCD:REG). Voltages, gamma and
+    /// timing only: nothing that changes addressing, pixel format or sleep state.
+    bool isRotated180() const override { return ROTATE_180; }
+
+    static bool isTunableRegister(uint8_t reg) {
+        switch (reg) {
+            case 0xB2:  // PORCTRL   porch
+            case 0xB7:  // GCTRL     gate VGH / VGL
+            case 0xBB:  // VCOMS     common electrode voltage
+            case 0xC0:  // LCMCTRL
+            case 0xC2:  // VDVVRHEN
+            case 0xC3:  // VRHS      GVDD
+            case 0xC4:  // VDVS
+            case 0xC6:  // FRCTRL2   frame rate
+            case 0xD0:  // PWCTRL1   AVDD / AVCL / VDS
+            case 0xE0:  // PVGAMCTRL positive gamma
+            case 0xE1:  // NVGAMCTRL negative gamma
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    bool writePanelRegister(uint8_t reg, const uint8_t* data, uint8_t len) override {
+        if (!isTunableRegister(reg) || len == 0 || len > 14 || data == nullptr) return false;
+        writeCmd(reg);
+        for (uint8_t i = 0; i < len; i++) writeData(data[i]);
+        return true;
+    }
+
     void init() {
         // Try hardware reset first
         reset();
@@ -171,7 +202,9 @@ public:
         delayMs(120);
 
         writeCmd(0x36);  // MADCTL
-        writeData(0x48); // MX (column mirror) + BGR subpixel order
+        // MX (column mirror) + BGR for the picture as the shield is printed; MY instead of
+        // MX turns it 180 degrees, for viewing the board from the other side
+        writeData(ROTATE_180 ? 0x88 : 0x48);
 
         writeCmd(0x3A);  // Color mode
         writeData(0x55); // 16-bit RGB565

@@ -423,6 +423,10 @@ void ServiceDispatcher::displayIndicator(uint16_t angle, int8_t rotation, bool t
     m_display->displayIndicator(angle, rotation, translation, speedPct, rotPct);
 }
 
+bool ServiceDispatcher::displayPanelRegister(uint8_t reg, const uint8_t* data, uint8_t len) {
+    return m_display->displayPanelRegister(reg, data, len);
+}
+
 bool ServiceDispatcher::displayStreamStart(uint16_t x, uint16_t y,
                                             uint16_t w, uint16_t h) {
     return m_display->displayStreamStart(x, y, w, h);

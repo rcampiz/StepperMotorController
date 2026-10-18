@@ -320,6 +320,25 @@ void CommandParser::cmdDispBitmapB64(const ParsedCommand &cmd) {
   respondOk("");
 }
 
+void CommandParser::cmdLcdReg(const ParsedCommand &cmd) {
+  // Usage: UI:LCD:REG <reg> <byte> [byte ...]   (hex; e.g. UI:LCD:REG BB 19 sets VCOM)
+  if (cmd.argCount < 2) {
+    respondErr("Usage: UI:LCD:REG <reg> <byte> [byte ...]");
+    return;
+  }
+  uint8_t data[14];
+  uint8_t len = 0;
+  auto reg = static_cast<uint8_t>(strtoul(cmd.args[0], nullptr, 16));
+  for (uint32_t i = 1; i < cmd.argCount && len < sizeof(data); i++) {
+    data[len++] = static_cast<uint8_t>(strtoul(cmd.args[i], nullptr, 16));
+  }
+  if (!m_dispatcher.displayPanelRegister(reg, data, len)) {
+    respondErr("Register not tunable");
+    return;
+  }
+  respondOk("");
+}
+
 void CommandParser::cmdDispIndicator(const ParsedCommand &cmd) {
   if (!m_dispatcher.displayIsRemoteMode()) {
     respondErr("Not in REMOTE mode");

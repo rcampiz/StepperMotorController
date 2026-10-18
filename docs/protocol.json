@@ -2341,6 +2341,28 @@
       "persists": false
     },
     {
+      "name": "UI:LCD:REG",
+      "prefix": "UI",
+      "handler": "cmdLcdReg",
+      "file": "display_handlers.cpp",
+      "min_args": 2,
+      "usage": [
+        "UI:LCD:REG <reg> <byte> [byte ...]",
+        "UI:LCD:REG <reg> <byte> [byte ...]   (hex; e.g. UI:LCD:REG BB 19 sets VCOM)"
+      ],
+      "ascii_ok": [
+        ""
+      ],
+      "json": [],
+      "errors": [
+        "Register not tunable"
+      ],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false
+    },
+    {
       "name": "UI:FLASH:UPLOAD",
       "prefix": "UI",
       "handler": "cmdFlashUpload",

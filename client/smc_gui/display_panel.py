@@ -64,6 +64,8 @@ class DisplayPanel(QWidget):
 
     # Signal: request indicator draw (angle_deg, rotation_dir, has_translation)
     indicator_send_requested = Signal(int, int, bool, int, int)
+    vcom_requested = Signal(int)                 # VCOM code, live
+    panel_test_requested = Signal()              # draw the black test screen
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -285,6 +287,41 @@ class DisplayPanel(QWidget):
 
         layout.addWidget(ind_group)
 
+        # --- Panel tuning: VCOM live, against a black test screen ---
+        tune_group = QGroupBox("Panel tuning (live, not kept across a reset)")
+        tune_v = QVBoxLayout(tune_group)
+        vrow = QHBoxLayout()
+        vrow.addWidget(QLabel("VCOM:"))
+        self._vcom_slider = QSlider(Qt.Horizontal)
+        self._vcom_slider.setRange(0, 0x3F)
+        self._vcom_slider.setValue(0x20)
+        self._vcom_slider.setToolTip("ST7789 VCOMS: the common electrode voltage. Move it while looking at "
+                                     "the black test screen and stop where black is darkest and most even.")
+        vrow.addWidget(self._vcom_slider, 1)
+        self._vcom_label = QLabel()
+        self._vcom_label.setMinimumWidth(110)
+        vrow.addWidget(self._vcom_label)
+        tune_v.addLayout(vrow)
+        brow = QHBoxLayout()
+        self._vcom_live_cb = QCheckBox("Send while dragging")
+        self._vcom_live_cb.setChecked(True)
+        brow.addWidget(self._vcom_live_cb)
+        test_btn = QPushButton("Black test screen")
+        test_btn.setToolTip("Remote mode: a black field with a ruler and colour swatches")
+        test_btn.clicked.connect(self.panel_test_requested.emit)
+        brow.addWidget(test_btn)
+        send_btn = QPushButton("Send VCOM")
+        send_btn.clicked.connect(lambda: self.vcom_requested.emit(self._vcom_slider.value()))
+        brow.addWidget(send_btn)
+        reset_btn = QPushButton("Chip default (0x20)")
+        reset_btn.clicked.connect(lambda: self._vcom_slider.setValue(0x20))
+        brow.addWidget(reset_btn)
+        brow.addStretch()
+        tune_v.addLayout(brow)
+        layout.addWidget(tune_group)
+        self._vcom_slider.valueChanged.connect(self._on_vcom_changed)
+        self._on_vcom_changed(self._vcom_slider.value(), send=False)
+
         # --- Status Label ---
         self._status_label = QLabel("Ready")
         self._status_label.setStyleSheet("color: #888;")
@@ -495,6 +532,12 @@ class DisplayPanel(QWidget):
     def _on_ind_auto_maybe(self, *_args):
         if self._ind_auto_cb.isChecked():
             self._on_ind_send_clicked()
+
+    def _on_vcom_changed(self, code: int, send: bool = True):
+        from smc_core.commands import vcom_volts
+        self._vcom_label.setText("0x%02X  (%.3f V)" % (code, vcom_volts(code)))
+        if send and self._vcom_live_cb.isChecked():
+            self.vcom_requested.emit(code)
 
     @Slot()
     def _on_ind_clear_clicked(self):

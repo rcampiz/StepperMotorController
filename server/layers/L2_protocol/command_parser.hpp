@@ -373,6 +373,7 @@ private:
   void cmdDispBitmap(const ParsedCommand &cmd);
   void cmdDispBitmapB64(const ParsedCommand &cmd);
   void cmdDispIndicator(const ParsedCommand &cmd);
+  void cmdLcdReg(const ParsedCommand &cmd);
   void cmdDispBitmapRle(const ParsedCommand &cmd);
 
   // Flash image command handlers (delegate to FlashImageService)

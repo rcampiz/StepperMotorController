@@ -52,6 +52,10 @@ void DisplayDispatch::displayIndicator(uint16_t angle, int8_t rotation, bool tra
     m_remoteDisplay->indicator(angle, rotation, translation, speedPct, rotPct);
 }
 
+bool DisplayDispatch::displayPanelRegister(uint8_t reg, const uint8_t* data, uint8_t len) {
+    return m_remoteDisplay->panelRegister(reg, data, len);
+}
+
 bool DisplayDispatch::displayStreamStart(uint16_t x, uint16_t y,
                                           uint16_t w, uint16_t h) {
     return m_remoteDisplay->streamStart(x, y, w, h);

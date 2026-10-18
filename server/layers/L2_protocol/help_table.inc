@@ -87,6 +87,7 @@
 "UI:DISP:BITMAP:B64 <x> <y> <w> <h> <base64_data>",
 "UI:DISP:BITMAP:RLE <x> <y> <w> <h> <compressed_bytes> [CRC]",
 "UI:DISP:INDICATOR <angle> <rot_dir> <has_trans> [speed_pct] [rot_pct]",
+"UI:LCD:REG <reg> <byte> [byte ...]   (hex; e.g. UI:LCD:REG BB 19 sets VCOM)",
 "UI:FLASH:UPLOAD <slot> [CRC]",
 "UI:FLASH:SHOW <slot>",
 "UI:FLASH:UPLOAD:RLE <slot> <compressed_bytes> [CRC]",

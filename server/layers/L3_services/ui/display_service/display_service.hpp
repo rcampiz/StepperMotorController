@@ -65,6 +65,7 @@ public:
     void line(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color) override;
     void bitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint8_t* data, uint32_t len) override;
     void indicator(uint16_t angle, int8_t rotation, bool translation, uint8_t speedPct, uint8_t rotPct) override;
+    bool panelRegister(uint8_t reg, const uint8_t* data, uint8_t len) override;
     bool streamStart(uint16_t x, uint16_t y, uint16_t w, uint16_t h) override;
     void streamData(const uint8_t* data, uint32_t len) override;
     void streamEnd() override;
@@ -113,6 +114,9 @@ private:
     UI::RecoveryScreen   m_recoveryScreen;
     UI::ScreenCareScreen m_careScreen;
     uint32_t m_lastInputMs = 0;      ///< for the saver's quiet time
+    bool     m_bootHandoff = false;  ///< boot colour test -> saver after BOOT_SCREEN_MS
+    uint32_t m_bootShownMs = 0;
+    static constexpr uint32_t BOOT_SCREEN_MS = 5000;
     uint32_t m_imageSlotMap[UI::MENU_MAX_ITEMS] = {};
     uint32_t m_activeSlot = 0;
 
