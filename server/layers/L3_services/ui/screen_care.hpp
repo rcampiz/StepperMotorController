@@ -12,11 +12,23 @@
 
 namespace UI {
 
-enum class SaverStyle : uint8_t { DRIFT = 0, BLANK = 1 };
+/// SYNTHWAVE: striped sun, wireframe mountains, scrolling grid floor.
+/// HOTLINE: diagonal stripe band and an aberrated title card, relaid every 2 s.
+/// BLANK: a black panel, nothing sent.
+enum class SaverStyle : uint8_t { SYNTHWAVE = 0, HOTLINE = 1, BLANK = 2 };
+constexpr uint8_t SAVER_STYLE_COUNT = 3;
+
+inline const char* saverStyleName(SaverStyle s) {
+    switch (s) {
+        case SaverStyle::SYNTHWAVE: return "synthwave";
+        case SaverStyle::HOTLINE:   return "hotline";
+        default:                    return "blank";
+    }
+}
 
 struct ScreenCareSettings {
     uint32_t   saverAfterMs = 2u * 60u * 1000u;   ///< 0 = never
-    SaverStyle saverStyle = SaverStyle::DRIFT;
+    SaverStyle saverStyle = SaverStyle::SYNTHWAVE;
     uint8_t    recoveryMinutes = 5;
 };
 

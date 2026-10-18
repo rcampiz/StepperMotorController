@@ -1,10 +1,15 @@
 /**
  * @file saver_screen.hpp
- * @brief Screen saver in the Hotline Miami register: a diagonal hot-pink / cyan / violet
- *        stripe band and a blocky "SMC" title card with chromatic-aberration offsets, both
- *        relaid every two seconds somewhere else on the panel, with VHS glitch slices in
- *        between. Or a blank panel. Pushed by the DisplayService after a quiet period; the
- *        first joystick move pops it (and is swallowed).
+ * @brief Screen saver. Pushed by the DisplayService after a quiet period; the first
+ *        joystick move pops it (and is swallowed). Three styles (ScreenCareSettings):
+ *
+ *  - SYNTHWAVE: a sky from deep violet to pink haze with twinkling stars, a striped sun
+ *    whose bands slide down, cyan wireframe mountains, and a magenta perspective grid that
+ *    scrolls toward the viewer. Every 30 s the mountains reshape and the sun moves, so no
+ *    pixel holds an image. Per frame only the floor and the sun's box are repainted.
+ *  - HOTLINE: a diagonal stripe band and a blocky SMC card with chromatic aberration,
+ *    relaid every 2 s, with VHS glitch slices in between.
+ *  - BLANK: a black panel, nothing sent.
  */
 
 #ifndef SAVER_SCREEN_HPP
@@ -26,16 +31,43 @@ public:
     bool needsFullRedraw() const override { return m_needsRedraw; }
     void clearRedrawFlag() override { m_needsRedraw = false; }
 
+    // Synthwave scene geometry (public for the host tests)
+    static constexpr int16_t HORIZON_Y = 200;
+    static constexpr int16_t SUN_R = 46;
+    static constexpr uint16_t SCENE_FRAMES = 600;  ///< 30 s at 20 Hz, then a new scene
+
 private:
+    const ScreenCareSettings* m_settings;
+    bool m_needsRedraw = true;
+    uint32_t m_seed = 0x2545F491u;
+    uint32_t nextRandom();
+
+    // --- synthwave -------------------------------------------------------------------------
+    static constexpr uint8_t STAR_COUNT = 48;
+    bool m_synthReady = false;
+    uint16_t m_frame = 0;
+    float m_phase = 0.0f;                  // grid scroll, line spacings
+    uint8_t m_stripe = 0;                  // sun stripe scroll
+    int16_t m_sunX = 120;
+    uint8_t m_ridge[240] = {};             // mountain height above the horizon per column
+    uint16_t m_sky[HORIZON_Y] = {};        // sky colour per row
+    uint8_t m_starX[STAR_COUNT] = {};
+    uint8_t m_starY[STAR_COUNT] = {};
+    void synthNewScene();
+    void synthFullPaint(Services::ICanvas& lcd);
+    void synthFloor(Services::ICanvas& lcd);
+    void synthSunBox(Services::ICanvas& lcd);
+    void synthTwinkle(Services::ICanvas& lcd);
+    uint16_t synthUpper(int16_t x, int16_t y) const;   // sky, sun, mountains, horizon line
+    void renderSynthwave(Services::ICanvas& lcd);
+
+    // --- hotline ---------------------------------------------------------------------------
     static constexpr uint16_t HOLD_FRAMES = 40;     // 2 s at 20 Hz between layouts
     static constexpr uint16_t GLITCH_FRAMES = 5;    // a glitch slice every 250 ms
     static constexpr uint16_t CELL = 6;             // title glyph cell (5x7 glyphs -> 30x42)
-    static constexpr uint16_t CARD_W = 3 * 6 * CELL + 12;   // three glyphs, gaps, aberration
+    static constexpr uint16_t CARD_W = 3 * 6 * CELL + 12;
     static constexpr uint16_t CARD_H = 7 * CELL + 6;
     static constexpr uint16_t BAND_H = 56;
-
-    const ScreenCareSettings* m_settings;
-    bool m_needsRedraw = true;
     uint16_t m_frames = 0;
     uint16_t m_glitchFrames = 0;
     bool m_drawn = false;
@@ -44,14 +76,12 @@ private:
     uint8_t m_bandPhase = 0;
     uint16_t m_glitchY = 0, m_glitchX = 0, m_glitchW = 0;
     bool m_glitchDrawn = false;
-    uint32_t m_seed = 0x2545F491u;
-
-    uint32_t nextRandom();
     void drawBand(Services::ICanvas& lcd, uint16_t y, uint8_t phase, bool erase);
     void drawCard(Services::ICanvas& lcd, uint16_t x, uint16_t y, bool erase);
     void drawGlyph(Services::ICanvas& lcd, const uint8_t* glyph, uint16_t x, uint16_t y, uint16_t color);
     void layout(Services::ICanvas& lcd);
     void glitch(Services::ICanvas& lcd);
+    void renderHotline(Services::ICanvas& lcd);
 };
 
 } // namespace UI

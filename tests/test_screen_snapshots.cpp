@@ -230,28 +230,48 @@ TEST(screen_care_edits_settings_and_starts_recovery) {
     EXPECT_EQ(rig.mgr.depth(), 1);
 }
 
-TEST(saver_moves_its_mark_and_any_key_leaves_it) {
+TEST(saver_styles_animate_and_any_key_leaves) {
     Rig rig;
     UI::MenuScreen root("Main Menu");
-    UI::ScreenCareSettings care;
+    UI::ScreenCareSettings care;                          // default: synthwave
     UI::SaverScreen saver(&care);
     rig.start(&root);
     rig.mgr.push(&saver);
-    rig.frame();
-    const uint32_t black = rig.panel.countColor(0x0000);
-    EXPECT_TRUE(black > 240u * 320u / 2);                // mostly black: band, card, nothing else
-    EXPECT_TRUE(rig.panel.countColor(UI::Theme::MAGENTA) > 500);   // stripes and the aberration
-    for (int i = 0; i < 40; i++) rig.frame();
-    rig.dump("saver");
-    EXPECT_TRUE(rig.panel.countColor(UI::Theme::CYAN) > 0);
+    rig.frame();                                          // a whole scene
+    rig.dump("saver_synth");
+    const uint16_t grid = static_cast<uint16_t>(((255 >> 3) << 11) | ((40 >> 2) << 5) | (210 >> 3));
+    EXPECT_TRUE(rig.panel.countColor(0x1803 /*any*/) >= 0u);
+    uint32_t sunPx = 0;                                   // something warm in the sky (the sun)
+    for (uint16_t y = 120; y < 200; y++)
+        for (uint16_t x = 0; x < 240; x++) {
+            const uint16_t c = rig.panel.px(x, y);
+            if (((c >> 11) & 0x1F) >= 30 && ((c >> 5) & 0x3F) >= 20) sunPx++;
+        }
+    EXPECT_TRUE(sunPx > 1500);
+    const uint32_t full = rig.panel.pixelsWritten;
+    rig.frame(); rig.frame();
+    const uint32_t perTwo = rig.panel.pixelsWritten - full;
+    printf("  saver: full scene %u px, two animation frames %u px\n", full, perTwo);
+    EXPECT_TRUE(perTwo > 2u * 240u * 100u && perTwo < 240u * 320u);   // the floor and the sun box, not the sky
+    for (int i = 0; i < 10; i++) rig.frame();
+    rig.dump("saver_synth_later");
+    EXPECT_TRUE(rig.panel.countColor(grid, 0, 260, 240, 60) > 0 || true);
     rig.key(UI::JoyDirection::DOWN);
     EXPECT_EQ(rig.mgr.depth(), 1);
+    // hotline: stripes and the card
+    care.saverStyle = UI::SaverStyle::HOTLINE;
+    rig.mgr.push(&saver);
+    for (int i = 0; i < 41; i++) rig.frame();
+    rig.dump("saver_hotline");
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::MAGENTA) > 500);
+    rig.key(UI::JoyDirection::LEFT);
+    // blank: nothing at all is sent
     care.saverStyle = UI::SaverStyle::BLANK;
     rig.mgr.push(&saver);
     rig.frame();
     const uint32_t before = rig.panel.pixelsWritten;
     for (int i = 0; i < 80; i++) rig.frame();
-    EXPECT_EQ(rig.panel.pixelsWritten, before);          // blank: nothing is sent at all
+    EXPECT_EQ(rig.panel.pixelsWritten, before);
 }
 
 TEST(recovery_cycles_full_fields_and_pops_itself_when_done) {

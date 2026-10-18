@@ -52,7 +52,7 @@ void ScreenCareScreen::renderField(Services::ICanvas& lcd, uint8_t field)
             break;
         case FIELD_SAVER_STYLE:
             label = "Saver style";
-            snprintf(val, sizeof val, "%s", m_settings->saverStyle == SaverStyle::DRIFT ? "drift" : "blank");
+            snprintf(val, sizeof val, "%s", saverStyleName(m_settings->saverStyle));
             break;
         case FIELD_RECOVERY_MIN:
             label = "Recovery";
@@ -116,7 +116,8 @@ void ScreenCareScreen::adjust(int8_t delta)
             break;
         }
         case FIELD_SAVER_STYLE:
-            m_settings->saverStyle = (m_settings->saverStyle == SaverStyle::DRIFT) ? SaverStyle::BLANK : SaverStyle::DRIFT;
+            m_settings->saverStyle = static_cast<SaverStyle>(
+                (static_cast<uint8_t>(m_settings->saverStyle) + SAVER_STYLE_COUNT + (delta > 0 ? 1 : -1)) % SAVER_STYLE_COUNT);
             break;
         case FIELD_RECOVERY_MIN: {
             int8_t i = static_cast<int8_t>(indexOfMinutes(m_settings->recoveryMinutes) + delta);
