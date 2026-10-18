@@ -166,7 +166,7 @@ void EncoderScreen::render(Services::ICanvas& lcd)
         char buf[12];
         snprintf(buf, sizeof buf, "%ld.%ld", static_cast<long>(degX10 / 10), static_cast<long>(degX10 % 10));
         // Angle readout inside the dial, centred under the hub, always 5 cells wide
-        char padded[8];
+        char padded[16];
         snprintf(padded, sizeof padded, "%5s", buf);
         lcd.drawString(static_cast<uint16_t>(DIAL_CX - 20), static_cast<uint16_t>(DIAL_CY + 20), padded,
                        Theme::TEXT, Theme::BG, Theme::FONT_MEDIUM);
@@ -179,7 +179,7 @@ void EncoderScreen::render(Services::ICanvas& lcd)
     }
 
     // Cells
-    char buf[16], tmp[20];
+    char buf[24], tmp[20];
     i64toa(t.encoder.count, tmp, sizeof tmp);
     snprintf(buf, sizeof buf, "%s", tmp);
     drawCell(lcd, 0, "POS", buf, Theme::TEXT);
