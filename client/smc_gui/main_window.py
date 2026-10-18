@@ -289,6 +289,7 @@ class MainWindow(QMainWindow):
         self._driver_panel.refresh_requested.connect(self._on_refresh_params)
         self._driver_panel.kval_apply_requested.connect(self._on_kval_apply)
         self._driver_panel.drive_apply_requested.connect(self._on_param_apply)
+        self._graph_panel.capture_requested.connect(self._on_capture_requested)
         self._driver_panel.param_apply_requested.connect(self._on_param_apply)
         self._driver_panel.maxspd_changed.connect(self._motor_panel.set_max_speed)
         self._driver_panel.maxspd_changed.connect(self._telemetry_panel.set_max_speed)
@@ -564,6 +565,12 @@ class MainWindow(QMainWindow):
     def _cancel_scenario(self):
         if self._board is not None:
             self._board.cancel_job()
+
+    @Slot()
+    def _on_capture_requested(self):
+        """Encoder tab: a 2 kHz position capture through the Tests tab, which graphs it."""
+        self._right_tabs.setCurrentIndex(4)                  # Diagnostics
+        self._tests_panel.start("position_capture", {"rpm": 60, "rate_hz": 2000, "settle_s": 1.0})
 
     @Slot()
     def _on_refresh_params(self):

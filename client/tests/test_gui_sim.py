@@ -215,6 +215,18 @@ def test_drive_mode_switch_keeps_both_fader_sets_live_and_shows_the_chip(gui):
     assert p._coil_a_curve.xData is not None and len(p._coil_a_curve.xData) > 30    # 4 x 8 staircase (sim is 1/8)
 
 
+def test_encoder_tab_dial_follows_the_count_and_capture_button_runs_the_scenario(gui):
+    app, w, fake = gui
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    fake.position = 800                                       # 1/8 step sim: 800 usteps = half a rev
+    assert pump(app, lambda: w._graph_panel._dial._count != 0)
+    assert w._graph_panel._dial._cpr == fake.enc_ppr
+    w._graph_panel._capture_btn.click()
+    assert w._right_tabs.currentIndex() == 4
+    assert pump(app, lambda: w._tests_panel.results, timeout=30.0)
+    assert w._tests_panel.results[0].name == "position_capture" and w._tests_panel.results[0].ok
+
+
 def test_tests_tab_runs_a_scenario(gui):
     app, w, fake = gui
     assert pump(app, lambda: w._board is not None and w._board.session_ready)

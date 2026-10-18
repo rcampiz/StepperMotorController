@@ -20,6 +20,7 @@ import statistics
 import time
 
 from PySide6.QtWidgets import (
+    QPushButton,
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
     QSpinBox, QDoubleSpinBox, QSlider, QStackedWidget, QCheckBox,
 )
@@ -27,6 +28,8 @@ from PySide6.QtCore import Slot, Signal, Qt, QSettings
 from PySide6.QtGui import QFont
 
 import pyqtgraph as pg
+
+from smc_gui.encoder_dial import EncoderDial
 
 
 # Match the dark theme of the rest of the app
@@ -360,6 +363,7 @@ class _FilterControlRow(QWidget):
 
 
 class GraphPanel(QWidget):
+    capture_requested = Signal()
     """Panel with real-time plots for motor speed and encoder velocity."""
 
     MAX_POINTS = 600  # ~60 seconds at 0.1s polling
@@ -429,10 +433,26 @@ class GraphPanel(QWidget):
         cb_layout.addStretch()
         layout.addLayout(cb_layout)
 
-        # Combined speed / velocity plot
+        # Dial on the left, the speed / velocity plot on the right
+        body = QHBoxLayout()
+        side = QVBoxLayout()
+        self._dial = EncoderDial()
+        self._dial.setFixedSize(220, 220)
+        side.addWidget(self._dial)
+        self._capture_btn = QPushButton("Capture 2 kHz now")
+        self._capture_btn.setToolTip("Run the position_capture scenario at the current speed: encoder and "
+                                     "commanded position sampled together at 2 kHz, graphed on the "
+                                     "Diagnostics tab (Tests).")
+        self._capture_btn.clicked.connect(self.capture_requested.emit)
+        side.addWidget(self._capture_btn)
+        side.addStretch()
+        body.addLayout(side)
+
         self._plot = pg.PlotWidget()
         self._plot.setLabel("bottom", "Time", units="s")
-        self._plot.showGrid(x=True, y=True, alpha=0.3)
+        # Major and minor grid: a GridItem draws both tick levels, the finer one fainter
+        grid = pg.GridItem(pen=pg.mkPen(110, 110, 110, 140), textPen=None)
+        self._plot.addItem(grid)
 
         self._curves = {}
         for key, _label, color, dash, default_on in self.TRACE_DEFS:
@@ -442,7 +462,8 @@ class GraphPanel(QWidget):
             curve.setVisible(default_on)
             self._curves[key] = curve
 
-        layout.addWidget(self._plot)
+        body.addWidget(self._plot, 1)
+        layout.addLayout(body, 1)
 
     # =========================================================================
     # Display filter
@@ -610,12 +631,15 @@ class GraphPanel(QWidget):
 
     @Slot(dict)
     def update_drv_config(self, data: dict):
+        if "encoder_ppr" in data:
+            self._dial.set_cpr(int(data["encoder_ppr"]))
         """Update full_steps_per_rev for RPM conversion on motor speed plot."""
         if "full_steps_per_rev" in data:
             self._full_steps_per_rev = data["full_steps_per_rev"]
 
     @Slot(dict)
     def update_data(self, data: dict):
+        self._dial.update_telemetry(data)
         """Append new telemetry sample and redraw plots."""
         now = time.monotonic()
         if self._t0 is None:
