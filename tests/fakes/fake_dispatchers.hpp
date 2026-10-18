@@ -144,7 +144,7 @@ struct FakeDisplayDispatcher : Services::IDisplayDispatcher {
     void displayRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t color, bool filled)  override { calls.push_back("displayRect"); }
     void displayLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color)  override { calls.push_back("displayLine"); }
     void displayBitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint8_t* data, uint32_t len)  override { calls.push_back("displayBitmap"); }
-    void displayIndicator(uint16_t angle, int8_t rotation, bool translation)  override { calls.push_back("displayIndicator"); }
+    void displayIndicator(uint16_t angle, int8_t rotation, bool translation, uint8_t speedPct, uint8_t rotPct)  override { calls.push_back("displayIndicator"); }
     bool displayStreamStart(uint16_t x, uint16_t y, uint16_t w, uint16_t h)  override { calls.push_back("displayStreamStart"); return bool{}; }
     void displayStreamData(const uint8_t* data, uint32_t len)  override { calls.push_back("displayStreamData"); }
     void displayStreamEnd()  override { calls.push_back("displayStreamEnd"); }

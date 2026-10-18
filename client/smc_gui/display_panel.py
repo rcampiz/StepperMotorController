@@ -63,7 +63,7 @@ class DisplayPanel(QWidget):
     flash_diag_requested = Signal()
 
     # Signal: request indicator draw (angle_deg, rotation_dir, has_translation)
-    indicator_send_requested = Signal(int, int, bool)
+    indicator_send_requested = Signal(int, int, bool, int, int)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -228,6 +228,28 @@ class DisplayPanel(QWidget):
 
         ind_layout.addLayout(angle_row)
 
+        # Magnitudes: the arrow length and the lit arc of the ring, 0-100 %
+        mag_row = QHBoxLayout()
+        mag_row.addWidget(QLabel("Speed:"))
+        self._ind_speed_slider = QSlider(Qt.Horizontal)
+        self._ind_speed_slider.setRange(0, 100)
+        self._ind_speed_slider.setValue(100)
+        mag_row.addWidget(self._ind_speed_slider, 1)
+        self._ind_speed_label = QLabel("100%")
+        self._ind_speed_label.setFixedWidth(40)
+        mag_row.addWidget(self._ind_speed_label)
+        mag_row.addWidget(QLabel("Turn:"))
+        self._ind_turn_slider = QSlider(Qt.Horizontal)
+        self._ind_turn_slider.setRange(0, 100)
+        self._ind_turn_slider.setValue(100)
+        mag_row.addWidget(self._ind_turn_slider, 1)
+        self._ind_turn_label = QLabel("100%")
+        self._ind_turn_label.setFixedWidth(40)
+        mag_row.addWidget(self._ind_turn_label)
+        ind_layout.addLayout(mag_row)
+        self._ind_speed_slider.valueChanged.connect(lambda v: self._ind_speed_label.setText("%d%%" % v))
+        self._ind_turn_slider.valueChanged.connect(lambda v: self._ind_turn_label.setText("%d%%" % v))
+
         # Options row: rotation direction + has_translation + buttons
         opts_row = QHBoxLayout()
 
@@ -289,6 +311,8 @@ class DisplayPanel(QWidget):
         self._ind_rot_combo.currentIndexChanged.connect(self._on_ind_auto_maybe)
         self._ind_trans_cb.toggled.connect(self._on_ind_auto_maybe)
         self._ind_angle_slider.valueChanged.connect(self._on_ind_auto_maybe)
+        self._ind_speed_slider.valueChanged.connect(self._on_ind_auto_maybe)
+        self._ind_turn_slider.valueChanged.connect(self._on_ind_auto_maybe)
 
     # --- Image Loading ---
 
@@ -461,9 +485,11 @@ class DisplayPanel(QWidget):
         angle = self._ind_angle_spin.value()
         rot_dir = self._ind_rot_combo.currentData()
         has_trans = self._ind_trans_cb.isChecked()
+        speed = self._ind_speed_slider.value()
+        turn = self._ind_turn_slider.value()
         self._set_status(
-            f"Indicator: {angle}\u00b0 rot={rot_dir} trans={has_trans}", "blue")
-        self.indicator_send_requested.emit(angle, rot_dir, has_trans)
+            f"Indicator: {angle}\u00b0 rot={rot_dir} trans={has_trans} V={speed}% R={turn}%", "blue")
+        self.indicator_send_requested.emit(angle, rot_dir, has_trans, speed, turn)
 
     @Slot()
     def _on_ind_auto_maybe(self, *_args):
@@ -473,7 +499,7 @@ class DisplayPanel(QWidget):
     @Slot()
     def _on_ind_clear_clicked(self):
         self._set_status("Clearing indicator...", "blue")
-        self.indicator_send_requested.emit(0, 0, False)
+        self.indicator_send_requested.emit(0, 0, False, 0, 0)
 
     # --- Public slots for progress feedback ---
 

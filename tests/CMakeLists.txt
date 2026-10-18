@@ -120,6 +120,7 @@ smc_add_test(test_screen_snapshots test_screen_snapshots.cpp
     ${SERVER}/layers/L3_services/ui/screens/saver_screen.cpp
     ${SERVER}/layers/L3_services/ui/screens/recovery_screen.cpp
     ${SERVER}/layers/L3_services/ui/screens/screen_care_screen.cpp
+    ${SERVER}/layers/L3_services/infra/indicator_service/indicator_service.cpp
     ${SERVER}/layers/L3_services/config/device_config/device_config.cpp
     stubs/trace_stub.cpp
     ${SERVER}/layers/L3_services/infra/telemetry_store/telemetry_store.cpp)

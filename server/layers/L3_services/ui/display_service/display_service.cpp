@@ -314,9 +314,9 @@ void DisplayService::bitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h, cons
     if (m_lcd != nullptr && data != nullptr) m_lcd->drawBitmapRaw(x, y, w, h, data, len);
 }
 
-void DisplayService::indicator(uint16_t angle, int8_t rotation, bool translation)
+void DisplayService::indicator(uint16_t angle, int8_t rotation, bool translation, uint8_t speedPct, uint8_t rotPct)
 {
-    if (m_indicator != nullptr) m_indicator->draw({angle, rotation, translation});
+    if (m_indicator != nullptr) m_indicator->draw({angle, rotation, translation, speedPct, rotPct});
 }
 
 bool DisplayService::streamStart(uint16_t x, uint16_t y, uint16_t w, uint16_t h)

@@ -19,6 +19,7 @@
 #include "L3_services/ui/screens/saver_screen.hpp"
 #include "L3_services/ui/screens/recovery_screen.hpp"
 #include "L3_services/ui/screens/screen_care_screen.hpp"
+#include "L3_services/infra/indicator_service/indicator_service.hpp"
 #include "L3_services/ui/screen_manager/screen_manager.hpp"
 #include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include "L3_services/ui/theme.hpp"
@@ -267,6 +268,27 @@ TEST(recovery_cycles_full_fields_and_pops_itself_when_done) {
     rig.dump("recovery");
     for (int i = 0; i < 1200; i++) rig.frame();
     EXPECT_TRUE(rec.finished());
+}
+
+TEST(motion_indicator_shows_heading_speed_and_turn_magnitudes) {
+    Rig rig;
+    Services::IndicatorService ind;
+    ind.init(&rig.lcd);
+    ind.draw({45, 1, true, 73, 40});                      // heading 45 deg, CW turn, 73 % speed, 40 % turn
+    rig.dump("indicator");
+    const uint32_t arc = rig.panel.countColor(0x079F, 20, 60, 200, 200);     // cyan arc
+    const uint32_t ring = rig.panel.countColor(0x3B31, 20, 60, 200, 200);    // base ring
+    EXPECT_TRUE(arc > 0 && ring > 0);
+    EXPECT_TRUE(arc * 100 / (arc + ring) > 30 && arc * 100 / (arc + ring) < 50);   // about 40 %
+    EXPECT_TRUE(rig.panel.countColor(0xF8DB, 60, 100, 120, 120) > 400);     // magenta arrow
+    const uint32_t before = rig.panel.pixelsWritten;
+    ind.draw({45, 1, true, 73, 40});
+    EXPECT_EQ(rig.panel.pixelsWritten, before);           // unchanged: nothing sent
+    ind.draw({45, 1, true, 20, 40});                      // shorter arrow only: the arrow window
+    EXPECT_TRUE(rig.panel.pixelsWritten - before < 120u * 120u);
+    ind.draw({45, -1, true, 20, 100});                    // full CCW arc
+    EXPECT_TRUE(rig.panel.countColor(0x3B31, 20, 60, 200, 200) == 0);
+    rig.dump("indicator_ccw");
 }
 
 TEST(graph_screen_draws_a_trace_from_telemetry) {

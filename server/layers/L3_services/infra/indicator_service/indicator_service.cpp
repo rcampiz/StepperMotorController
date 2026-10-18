@@ -11,6 +11,8 @@
 #include "harness/defs/harness_l3_l4.hpp"
 #include "graphics/trig_lut/trig_lut.hpp"
 #include "graphics/primitives/primitives.hpp"
+#include <stdio.h>
+#include <string.h>
 
 // ============================================================================
 // Triangle edge-equation helpers (file-local)
@@ -52,6 +54,23 @@ inline bool testTri(const TriEdges& e, int16_t px, int16_t py) {
     return !(has_neg & has_pos);
 }
 
+// Angle of (dx, dy) from straight up, clockwise, 0-359 (screen y grows downward)
+constexpr uint8_t ATAN_64[65] = { 0, 1, 2, 3, 4, 4, 5, 6, 7, 8, 9, 10, 11, 11, 12, 13, 14, 15, 16, 17, 17, 18, 19,
+    20, 21, 21, 22, 23, 24, 24, 25, 26, 27, 27, 28, 29, 29, 30, 31, 31, 32, 33, 33, 34, 35, 35, 36, 36, 37, 37,
+    38, 39, 39, 40, 40, 41, 41, 42, 42, 43, 43, 44, 44, 45, 45 };
+
+uint16_t clockwiseDeg(int16_t dx, int16_t dy) {
+    int32_t x = dx, y = -dy;                       // y up
+    if (x == 0 && y == 0) return 0;
+    int32_t ax = x < 0 ? -x : x, ay = y < 0 ? -y : y;
+    int32_t t = (ax >= ay) ? ATAN_64[ay * 64 / ax] : 90 - ATAN_64[ax * 64 / ay];   // from +x, ccw
+    int32_t ccw;                                   // from +x axis, counter-clockwise
+    if (x >= 0 && y >= 0) ccw = t;
+    else if (x < 0 && y >= 0) ccw = 180 - t;
+    else if (x < 0) ccw = 180 + t;
+    else ccw = 360 - t;
+    return static_cast<uint16_t>((450 - ccw) % 360);   // from up, clockwise
+}
 } // anonymous namespace
 
 namespace Services {
@@ -108,7 +127,7 @@ void IndicatorService::draw(const Params& p) {
 }
 
 void IndicatorService::clear() {
-    draw({0, 0, false});
+    draw({0, 0, false, 100, 100});
 }
 
 // ============================================================================
@@ -120,14 +139,20 @@ void IndicatorService::drawComposited(const Params& p) {
     bool hasArrow = p.has_translation;
 
     // --- Check if anything actually changed ---
-    bool ringChanged = (p.rotation_dir != m_prevParams.rotation_dir);
+    bool ringChanged = (p.rotation_dir != m_prevParams.rotation_dir) ||
+                       (p.rot_pct != m_prevParams.rot_pct);
     bool arrowChanged = (p.angle_deg != m_prevParams.angle_deg) ||
-                        (p.has_translation != m_prevParams.has_translation);
+                        (p.has_translation != m_prevParams.has_translation) ||
+                        (p.speed_pct != m_prevParams.speed_pct);
     bool needFullRedraw = ringChanged || !m_compositedValid;
 
     if (!needFullRedraw && !arrowChanged) {
         return;  // Nothing changed — skip render entirely
     }
+    // Arrow length by the translation magnitude: 30 % of full at 0, full at 100
+    auto halfLen = static_cast<int16_t>(ARROW_HALF_LEN * (30 + 70 * (p.speed_pct > 100 ? 100 : p.speed_pct) / 100) / 100);
+    // The rotation arc: this many degrees of the ring from the top, in the turn direction
+    auto arcDeg = static_cast<uint16_t>(360 * (p.rot_pct > 100 ? 100 : p.rot_pct) / 100);
 
     // --- Precompute arrow triangle edge equations ---
     int numArrow = 0;
@@ -138,14 +163,14 @@ void IndicatorService::drawComposited(const Params& p) {
     if (hasArrow) {
         uint16_t angle = Graphics::deg_to_angle1024(p.angle_deg);
 
-        int16_t tipX = 0, tipY = -ARROW_HALF_LEN;
-        auto headBaseY = static_cast<int16_t>(-ARROW_HALF_LEN + ARROW_HEAD_LEN);
+        int16_t tipX = 0, tipY = static_cast<int16_t>(-halfLen);
+        auto headBaseY = static_cast<int16_t>(-halfLen + ARROW_HEAD_LEN);
         int16_t headRX = ARROW_HEAD_HALF_W, headRY = headBaseY;
         auto headLX = static_cast<int16_t>(-ARROW_HEAD_HALF_W), headLY = headBaseY;
         int16_t sTRX = ARROW_SHAFT_HALF_W, sTRY = headBaseY;
         auto sTLX = static_cast<int16_t>(-ARROW_SHAFT_HALF_W), sTLY = headBaseY;
-        int16_t sBRX = ARROW_SHAFT_HALF_W, sBRY = ARROW_HALF_LEN;
-        auto sBLX = static_cast<int16_t>(-ARROW_SHAFT_HALF_W), sBLY = ARROW_HALF_LEN;
+        int16_t sBRX = ARROW_SHAFT_HALF_W, sBRY = halfLen;
+        auto sBLX = static_cast<int16_t>(-ARROW_SHAFT_HALF_W), sBLY = halfLen;
 
         int16_t rt[2], rhr[2], rhl[2], rstr[2], rstl[2], rsbr[2], rsbl[2];
         Graphics::rotate_point(tipX, tipY, angle, rt[0], rt[1]);
@@ -292,8 +317,10 @@ void IndicatorService::drawComposited(const Params& p) {
             uint16_t color = BG_COLOR;
 
             if (hasRing && dist2 <= outerR2 && dist2 >= innerR2) {
-                // Ring band
-                color = CIRCLE_COLOR;
+                // Ring band: the base ring, with the arc lit for the rotation magnitude
+                uint16_t a = clockwiseDeg(dx, dy);
+                if (p.rotation_dir < 0) a = static_cast<uint16_t>((360 - a) % 360);
+                color = (a < arcDeg) ? ARC_COLOR : CIRCLE_COLOR;
             } else {
                 bool isInterior = (!hasRing || dist2 < innerR2);
 
@@ -329,6 +356,19 @@ void IndicatorService::drawComposited(const Params& p) {
     }
 
     m_lcd->streamBitmapEnd();
+    drawReadout(p);
+}
+
+void IndicatorService::drawReadout(const Params& p) {
+    // Magnitudes under the ring, repainted only when the text changes
+    char buf[24];
+    const char* turn = p.rotation_dir > 0 ? "CW" : (p.rotation_dir < 0 ? "CCW" : "--");
+    snprintf(buf, sizeof buf, "V %3u%%   R %3u%% %s", static_cast<unsigned>(p.has_translation ? p.speed_pct : 0),
+             static_cast<unsigned>(p.rotation_dir != 0 ? p.rot_pct : 0), turn);
+    if (strcmp(buf, m_readout) == 0) return;
+    snprintf(m_readout, sizeof m_readout, "%s", buf);
+    auto y = static_cast<uint16_t>(SCREEN_CY + RING_OUTER_R + 10);
+    m_lcd->blitTextLine(static_cast<uint16_t>(SCREEN_CX - 66), y, 132, 8, buf, ARC_COLOR, BG_COLOR);
 }
 
 // ============================================================================

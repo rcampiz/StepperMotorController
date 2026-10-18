@@ -120,7 +120,7 @@ public:
     void rect(uint16_t, uint16_t, uint16_t, uint16_t, uint16_t, bool) override { ++draws; }
     void line(int16_t, int16_t, int16_t, int16_t, uint16_t) override { ++draws; }
     void bitmap(uint16_t, uint16_t, uint16_t, uint16_t, const uint8_t*, uint32_t) override { ++draws; }
-    void indicator(uint16_t, int8_t, bool) override { ++draws; }
+    void indicator(uint16_t angle, int8_t rotation, bool translation, uint8_t speedPct, uint8_t rotPct) override { ++draws; }
     bool streamStart(uint16_t, uint16_t, uint16_t, uint16_t) override { ++draws; return true; }
     void streamData(const uint8_t*, uint32_t len) override { streamed += len; }
     void streamEnd() override {}

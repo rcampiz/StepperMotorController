@@ -508,10 +508,17 @@ def disp_line(x1: int, y1: int, x2: int, y2: int, color: int) -> Request:
     return request("UI:DISP:LINE", int(x1), int(y1), int(x2), int(y2), _hex4(color))
 
 @builds("UI:DISP:INDICATOR")
-def disp_indicator(angle: int, rotation_dir: int, has_translation: bool) -> Request:
+def disp_indicator(angle: int, rotation_dir: int, has_translation: bool,
+                   speed_pct: int = 100, rot_pct: int = 100) -> Request:
+    """Motion indicator on the LCD: heading arrow and turn ring, with the magnitudes
+    (0-100 %) as the arrow length and the lit arc of the ring."""
     if int(rotation_dir) not in (-1, 0, 1):
         raise CommandError("rotation_dir must be -1, 0 or 1")
-    return request("UI:DISP:INDICATOR", int(angle) % 360, int(rotation_dir), bool(has_translation))
+    for v in (speed_pct, rot_pct):
+        if not 0 <= int(v) <= 100:
+            raise CommandError("percent must be 0..100")
+    return request("UI:DISP:INDICATOR", int(angle) % 360, int(rotation_dir), bool(has_translation),
+                   int(speed_pct), int(rot_pct))
 
 @builds("UI:DISP:BITMAP:B64")
 def disp_bitmap_b64(x: int, y: int, w: int, h: int, b64: str) -> Request:

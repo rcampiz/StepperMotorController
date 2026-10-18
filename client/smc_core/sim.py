@@ -419,6 +419,17 @@ class FakeBoard:
     def _c_DEV_ROLE_Q(self, name, args):
         self._ok("GET_ROLE", data={"role": self.role, "role_id": 0})
 
+    def _c_UI_DISP_INDICATOR(self, name, args):
+        if len(args) < 3:
+            self._err(name, "INVALID_PARAM", "Usage: UI:DISP:INDICATOR <angle> <rot_dir> <has_trans> [speed_pct] [rot_pct]")
+            return
+        pct = [int(a) for a in args[3:5]] + [100, 100]
+        if not (0 <= pct[0] <= 100 and 0 <= pct[1] <= 100):
+            self._err(name, "INVALID_PARAM", "Invalid percent")
+            return
+        self.indicator = (int(args[0]), int(args[1]), args[2] not in ("0", "false"), pct[0], pct[1])
+        self._ok(name, "")
+
     def _c_UI_DISP_BITMAP_RLE(self, name, args):
         self._start_binary(name, int(args[4]), "CRC" in args[5:])
 

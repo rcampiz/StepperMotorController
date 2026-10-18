@@ -16,6 +16,8 @@ struct IndicatorParams {
     uint16_t angle_deg;      // 0-359 (0 = up/north, clockwise)
     int8_t   rotation_dir;   // -1 (CCW), 0 (none), 1 (CW)
     bool     has_translation;
+    uint8_t  speed_pct;      // 0-100: translation magnitude (arrow length)
+    uint8_t  rot_pct;        // 0-100: rotation magnitude (arc around the ring)
 };
 
 class IIndicatorRenderer {

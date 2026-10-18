@@ -58,7 +58,9 @@ private:
     bool     m_screenCleared = false;  // First-draw full screen clear
 
     // Previous draw params for incremental redraw optimization
-    Params   m_prevParams = {0, 0, false};
+    Params   m_prevParams = {0, 0, false, 100, 100};
+    char     m_readout[24] = {};
+    void drawReadout(const Params& p);
     bool     m_prevHadRing = false;
 
     // Dirty rectangle support: previous arrow screen-space vertices
@@ -95,10 +97,11 @@ private:
     static constexpr int16_t ARROW_COMPOSITED_HALF_W =
         ARROW_HALF_LEN + 2;                      // 57 (arrow only, no ring)
 
-    static constexpr uint16_t ARROW_COLOR   = 0xFFFF;  // White
-    static constexpr uint16_t CIRCLE_COLOR  = 0x07E0;  // Green
-    static constexpr uint16_t CHEVRON_COLOR = 0x07E0;  // Green
-    static constexpr uint16_t BG_COLOR      = 0x0000;  // Black
+    static constexpr uint16_t ARROW_COLOR   = 0xF8DB;  // Theme::MAGENTA
+    static constexpr uint16_t CIRCLE_COLOR  = 0x3B31;  // Theme::GRID_MAJ, the ring's base
+    static constexpr uint16_t ARC_COLOR     = 0x079F;  // Theme::CYAN, the rotation magnitude
+    static constexpr uint16_t CHEVRON_COLOR = 0xF8DB;  // Theme::MAGENTA
+    static constexpr uint16_t BG_COLOR      = 0x0842;  // Theme::BG
 
     void clearPreviousBbox();
     void resetBbox();

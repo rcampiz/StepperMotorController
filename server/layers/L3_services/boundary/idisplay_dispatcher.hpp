@@ -30,7 +30,7 @@ public:
                               uint16_t color) = 0;
     virtual void displayBitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                                 const uint8_t* data, uint32_t len) = 0;
-    virtual void displayIndicator(uint16_t angle, int8_t rotation, bool translation) = 0;
+    virtual void displayIndicator(uint16_t angle, int8_t rotation, bool translation, uint8_t speedPct, uint8_t rotPct) = 0;
 
     // Bitmap streaming
     virtual bool displayStreamStart(uint16_t x, uint16_t y,

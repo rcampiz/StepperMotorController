@@ -327,7 +327,7 @@ void CommandParser::cmdDispIndicator(const ParsedCommand &cmd) {
   }
 
   if (cmd.argCount < 3) {
-    respondErr("Usage: UI:DISP:INDICATOR <angle> <rot_dir> <has_trans>");
+    respondErr("Usage: UI:DISP:INDICATOR <angle> <rot_dir> <has_trans> [speed_pct] [rot_pct]");
     return;
   }
 
@@ -348,8 +348,17 @@ void CommandParser::cmdDispIndicator(const ParsedCommand &cmd) {
     return;
   }
 
+  // Magnitudes 0-100 (optional, default full): arrow length and the arc around the ring
+  int32_t speedPct = cmd.argCount > 3 ? strtol(cmd.args[3], nullptr, 10) : 100;
+  int32_t rotPct = cmd.argCount > 4 ? strtol(cmd.args[4], nullptr, 10) : 100;
+  if (speedPct < 0 || speedPct > 100 || rotPct < 0 || rotPct > 100) {
+    respondErr("Invalid percent");
+    return;
+  }
+
   m_dispatcher.displayIndicator(
-      static_cast<uint16_t>(angle), static_cast<int8_t>(rotDir), hasTrans != 0);
+      static_cast<uint16_t>(angle), static_cast<int8_t>(rotDir), hasTrans != 0,
+      static_cast<uint8_t>(speedPct), static_cast<uint8_t>(rotPct));
   respondOk("");
 }
 

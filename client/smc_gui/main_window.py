@@ -687,9 +687,9 @@ class MainWindow(QMainWindow):
 
     # --- Indicator handler ---
 
-    @Slot(int, int, bool)
+    @Slot(int, int, bool, int, int)
     def _on_indicator_send_requested(self, angle: int, rotation_dir: int,
-                                     has_translation: bool):
+                                     has_translation: bool, speed_pct: int = 100, rot_pct: int = 100):
         """Indicator: coalesced (latest-wins), REMOTE mode sent once per session."""
         if self._bridge is None:
             self._display_panel.transfer_complete(False, "Not connected")
@@ -697,7 +697,7 @@ class MainWindow(QMainWindow):
         if not self._remote_mode_sent:
             self._call(C.ui_mode(remote=True))
             self._remote_mode_sent = True
-        self._bridge.latest("indicator", C.disp_indicator(angle, rotation_dir, has_translation))
+        self._bridge.latest("indicator", C.disp_indicator(angle, rotation_dir, has_translation, speed_pct, rot_pct))
         self._display_panel.transfer_complete(True, "Indicator sent")
 
     # --- Flash operation handlers ---

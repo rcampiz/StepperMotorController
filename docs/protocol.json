@@ -2322,7 +2322,7 @@
       "file": "display_handlers.cpp",
       "min_args": 3,
       "usage": [
-        "UI:DISP:INDICATOR <angle> <rot_dir> <has_trans>"
+        "UI:DISP:INDICATOR <angle> <rot_dir> <has_trans> [speed_pct] [rot_pct]"
       ],
       "ascii_ok": [
         ""
@@ -2331,6 +2331,7 @@
       "errors": [
         "Invalid angle",
         "Invalid has_translation",
+        "Invalid percent",
         "Invalid rotation_dir",
         "Not in REMOTE mode"
       ],

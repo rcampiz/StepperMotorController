@@ -48,8 +48,8 @@ void DisplayDispatch::displayBitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t
     m_remoteDisplay->bitmap(x, y, w, h, data, len);
 }
 
-void DisplayDispatch::displayIndicator(uint16_t angle, int8_t rotation, bool translation) {
-    m_remoteDisplay->indicator(angle, rotation, translation);
+void DisplayDispatch::displayIndicator(uint16_t angle, int8_t rotation, bool translation, uint8_t speedPct, uint8_t rotPct) {
+    m_remoteDisplay->indicator(angle, rotation, translation, speedPct, rotPct);
 }
 
 bool DisplayDispatch::displayStreamStart(uint16_t x, uint16_t y,
