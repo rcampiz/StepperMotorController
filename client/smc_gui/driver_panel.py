@@ -900,7 +900,7 @@ class DriverPanel(QWidget):
                                    **{'font-size': '8pt', 'color': '#888'})
         for i, (la, lb) in enumerate(zip(self._coil_phase_labels_a, self._coil_phase_labels_b)):
             la.setText("%d\u00b0" % (90 * i)); lb.setText("%d\u00b0" % (90 * i))
-            la.setPos(i + 0.5, y_lim * 0.95); lb.setPos(i + 0.5, y_lim * 0.95)
+            la.setPos(i + 0.5, y_lim * 0.78); lb.setPos(i + 0.5, y_lim * 0.78)
         for i, (sa, sb) in enumerate(zip(self._coil_separators_a, self._coil_separators_b)):
             sa.setValue(i + 1); sb.setValue(i + 1)
 
