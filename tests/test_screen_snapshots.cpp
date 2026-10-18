@@ -240,15 +240,10 @@ TEST(saver_styles_animate_and_any_key_leaves) {
     rig.mgr.push(&saver);
     rig.frame();                                          // a whole scene
     rig.dump("saver_synth");
-    const uint16_t grid = static_cast<uint16_t>(((255 >> 3) << 11) | ((40 >> 2) << 5) | (210 >> 3));
-    EXPECT_TRUE(rig.panel.countColor(0x1803 /*any*/) >= 0u);
-    uint32_t sunPx = 0;                                   // something warm in the sky (the sun)
-    for (uint16_t y = 120; y < 200; y++)
-        for (uint16_t x = 0; x < 240; x++) {
-            const uint16_t c = rig.panel.px(x, y);
-            if (((c >> 11) & 0x1F) >= 30 && ((c >> 5) & 0x3F) >= 20) sunPx++;
-        }
-    EXPECT_TRUE(sunPx >= 0u);                             // palettes vary: checked by eye in the PNGs
+    // Palettes vary from scene to scene: the look is checked by eye in the PNGs; here, that a
+    // whole scene went out and that it is not a blank panel
+    EXPECT_TRUE(rig.panel.pixelsWritten >= 240u * 320u);
+    EXPECT_TRUE(rig.panel.countColor(0x0000) < 240u * 320u / 2);
     const uint32_t full = rig.panel.pixelsWritten;
     rig.frame(); rig.frame();
     const uint32_t perTwo = rig.panel.pixelsWritten - full;
@@ -265,7 +260,6 @@ TEST(saver_styles_animate_and_any_key_leaves) {
     for (int i = 0; i < 480; i++) rig.frame();
     rig.dump("saver_synth_next");
     EXPECT_TRUE(saver.palette() != pal0);
-    EXPECT_TRUE(rig.panel.countColor(grid, 0, 260, 240, 60) > 0 || true);
     rig.key(UI::JoyDirection::DOWN);
     EXPECT_EQ(rig.mgr.depth(), 1);
     // hotline: stripes and the card
@@ -370,6 +364,14 @@ TEST(estop_page_shows_the_latch_and_fills_the_clear_bar) {
     rig.frame();
     rig.dump("estop");
     EXPECT_TRUE(rig.panel.countColor(UI::Theme::ORANGE, 0, 222, 240, 12) > 20);
+    // Nothing stands still: every frame repaints the stripes and the grid...
+    const uint32_t before = rig.panel.pixelsWritten;
+    rig.frame();
+    EXPECT_TRUE(rig.panel.pixelsWritten - before > 2u * 240u * 18u);
+    // ...and after SHIFT_FRAMES the middle sits somewhere else
+    for (int i = 0; i < UI::EstopScreen::SHIFT_FRAMES; i++) rig.frame();
+    EXPECT_TRUE(page.offsetX() != 0 || page.offsetY() != 0);
+    rig.dump("estop_shifted");
 }
 
 TEST(graph_screen_draws_a_trace_from_telemetry) {
