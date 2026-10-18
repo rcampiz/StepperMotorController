@@ -288,7 +288,7 @@ ASCII when the board resets).
 | success | `OK <message>` (message may be empty) | `{{"status":"ok","command":"<name>","data":{{...}}}}`; `data` is `{{"message":"..."}}` when the handler only has text |
 | error | `ERROR <CODE> <message>` (split on the first two spaces) | `{{"status":"error","command":"<name>","code":"<CODE>","message":"<message>"}}` |
 | multi-line data (`DBG:*` debug output incl. `DBG:MOTOR` and `CTRL:ENC:DBG?`, `DRV:CFG?`, `CTRL:SYSID:DATA?`, `DBG:TRACE:DUMP`, `SYST:VER?`, `UI:FLASH:DUMP`) | the lines, then `OK <n>` with n = number of lines sent (read until a line matching `^OK \\d+$`; an `ERROR` line can replace the whole reply) | one line `{{"status":"ok","command":"<name>","data":{{...,"lines":["..."],"count":<n>}}}}`; `CTRL:SYSID:DATA?` adds `offset`, `samples`, `total` (ASCII keeps its `SYSID_DATA <offset> <samples> <total>` header line), `DBG:TRACE:DUMP` adds `entries`, `UI:FLASH:DUMP` adds `slot`, `offset`, `len`. `CTRL:ENC?` was already a single-line reply. |
-| binary READY (bitmap/flash upload) | `OK READY <bytes>` then the host sends exactly `<bytes>` raw bytes [+ CRC32 LE] then one final OK/ERROR | same |
+| binary READY (bitmap/flash upload) | `OK READY <bytes>` then the host sends the **base64 text** of exactly `<bytes>` bytes [+ CRC32 LE, encoded together with them], line breaks allowed, then one final OK/ERROR | same |
 
 `command` in JSON is the handler's canonical name (e.g. `GET_STATUS`, `HEARTBEAT`), not
 necessarily the SCPI text typed; the catalogue below lists it.
@@ -329,7 +329,7 @@ missed a fault compares `last_seq` with the last `seq` it received and watches
 |---|---|
 | Heartbeat watchdog | `SYST:HB:TIMEOUT <ms>` arms it ({hb_min}..{hb_max} ms, 0 = off); the host must send `SYST:HB <seq>` more often than that. On timeout the firmware performs an emergency stop (latched: motion refused until `SYST:FAULT:CLEAR`). The ack carries `remaining_ms`. |
 | Baud switch | after `SYST:BAUD <rate>` the firmware switches at once and **reverts to 115200 if no valid command arrives within {baud_revert} ms** at the new rate. |
-| Binary transfers | after `OK READY`, each byte must arrive within {byte_timeout} ms or the transfer aborts with `ERROR Timeout at byte i/n`; data is consumed in {chunk}-byte chunks. The Comms task is inside the handler for the whole transfer: no other command (including `SYST:ESTOP`) is parsed until it ends. |
+| Binary transfers | after `OK READY` the payload is base64 text (RFC 4648 alphabet, `=` padding; CR, LF, space and tab between characters are skipped). Each character must arrive within {byte_timeout} ms or the transfer aborts with `ERROR Timeout at byte i/n`; a character outside the alphabet aborts with `ERROR Bad base64 at byte i/n` (i counts decoded bytes). Decoded data is consumed in {chunk}-byte chunks. The Comms task is inside the handler for the whole transfer: no other command line is parsed until it ends, but the 0x18 out-of-band stop (section 5) stays armed because base64 text cannot contain it. |
 | Motor command queue | motion commands are queued to the Motor task with a {send_timeout} ms bound; `ERROR Queue full` if it does not fit. |
 | Step-mode change | `DRV:STEP_MODE <m>` is executed by the Motor task; the reply waits up to {step_wait} ms for the readback. |
 | ESTOP latch | `SYST:ESTOP` (and the watchdog) latch: Move/GoTo/Run/Home/Mark are refused (`ERROR Fault`) until `SYST:FAULT:CLEAR`. |
@@ -345,10 +345,10 @@ Motor task releases it, waits 2 ms and re-initialises the driver with the saved 
 byte is never echoed or queued and produces no reply by itself; a `SYST:ESTOP` line sent
 after it (the client's fast path) answers with `oob_pin_us` (0x18 arrival to pin low) and
 `oob_hiz_us` (arrival to the SPI HardHiZ) beside `latency_us`, and the host confirms with
-`DIAG:STAT?` (`state` = `ESTOP`, `motor.hi_z` = true). **Raw binary payloads** (`UI:DISP:BITMAP`,
-`:RLE`, `UI:FLASH:UPLOAD`, `:RLE`) may contain 0x18, so the byte is ignored for the duration
-of those receive loops; the base64 variants keep it active, which is why protocol 2 prefers
-them.
+`DIAG:STAT?` (`state` = `ESTOP`, `motor.hi_z` = true). Upload payloads (`UI:DISP:BITMAP`,
+`:RLE`, `UI:FLASH:UPLOAD`, `:RLE`) are base64 text (section 2), so 0x18 can never be data
+and the byte stays armed during uploads as well (since 2026-10-18; the raw receive loops
+used to pause it).
 
 ## 6. Per-line checksum (proposal, protocol 2)
 
@@ -378,11 +378,16 @@ verify state instead).
 10. Usage strings (and `SYST:HELP?`) spell the SCPI command names.
 11. `DIAG:STAT?.system` carries `rx_overflows` / `rx_overflow_lines`; a line that spanned an
     RX overflow is refused with `ERROR RX_OVERFLOW`.
+12. (2026-10-18) The payload after `OK READY` is base64 text instead of raw bytes for
+    `UI:DISP:BITMAP`, `UI:DISP:BITMAP:RLE`, `UI:FLASH:UPLOAD` and `UI:FLASH:UPLOAD:RLE`.
+    The command lines, the `READY` byte count (decoded bytes) and the final reply are
+    unchanged; the optional CRC32 LE is encoded together with the data; the firmware no
+    longer drains CR/LF before the payload (the reader skips whitespace anywhere). Sizes on
+    the wire grow by 4/3; the out-of-band stop needs no pause. `UI:DISP:BITMAP:B64` (inline,
+    up to 512 bytes) is unchanged.
 
-Reserved for a later version (they land with Phase 4, fast ESTOP):
+Reserved for a later version:
 
-- Base64 flash upload (`UI:FLASH:UPLOAD:B64 <slot> <offset> <len> <b64>`) and
-  `UI:DISP:BITMAP:RLE:B64`; the raw binary variants are removed (0x18 out-of-band ESTOP rule).
 - `SYST:HB:TIMEOUT 0` refused unless the motor is in Hi-Z (`ERROR INVALID_STATE`).
 - Per-line checksum (`CHECKSUM` error code).
 

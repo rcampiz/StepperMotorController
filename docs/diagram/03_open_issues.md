@@ -35,7 +35,7 @@ it matters, the proposed fix (also drawable), and status. Items are ordered by r
 | Usage strings | **done**: all `Usage:` texts and `SYST:HELP?` spell SCPI names | P9 |
 | Server review F14 | **done**: adapter limitation documented in PROTOCOL.md; GUI offers 115200 and above only | P10 |
 | Protocol version | **2** in `harness/pins/protocol_version.hpp`; the generator reads it; `docs/PROTOCOL.md` section 7 lists the changes and what Phase 4 still reserves | P11 |
-| Server review F2, F16, item 10/11 of PROTOCOL.md §7 | open (Phase 4: `SYST:HB:TIMEOUT 0` only in Hi-Z, debugPrint guard, base64 uploads with the 0x18 rule) | — |
+| Server review F2, F16, item 10/11 of PROTOCOL.md §7 | F16 **done** 2026-10-18 (`Platform::retireDebugOutput()` before the scheduler starts); base64 upload payloads **done** 2026-10-18 (PROTOCOL.md §7 item 12: the 0x18 stop is never paused, `OobEstopPause` and `setOobEstopEnabled` removed); F2 (`SYST:HB:TIMEOUT 0` only in Hi-Z) still open | — |
 | NEW: `DEV:ID` / `DEV:ROLE` crash (null lock) | **done**: `g_deviceConfig.init()` had not been called since `f874dd5`, so the setters dereferenced a null `m_lock`. `initDisplaySubsystem` now initialises it on the NOR flash it probes (reserved sectors 0x000000-0x001FFF, below the image slots) with a new platform mutex `deviceConfigLock`; the boot log prints `Device identity... OK` / `DEFAULTS`; the setters refuse (`Flash write failed`) instead of crashing when no flash was found. Per-corner identity (docs/review/LINK_BUDGET.md, finding 1) is unblocked | F-dev |
 | NEW: config apply stalls the MCU ~1-2 s | **done**: every `DRV:CFG:APPLY` and `*:SAVE` erased the 128 KB internal sector 7 from flash-resident code, freezing the whole MCU (ESTOP included) for 1-2 s. The config store is now an append-only journal in that sector (`InternalFlashJournalStore`: 1984 64-byte slots, the pre-journal blob at the sector's last 4 KB is the first-boot fallback): a save is a few word programs with no erase. The erase happens only when the journal is full: at boot when fewer than 16 saves are left (nothing moves yet), or at run time only if the motor is stopped; otherwise the command answers `STORE_FULL` ("Config store full: stop the motor and save again"). `configSaveToFlash()` returns a `ServiceStatus`; host tests `test_config_journal`, `test_motor_config`. The client's 5 s watchdog widening around persisting commands stays, since it still covers the rare run-time erase | F-journal |
 | NEW: upload CR/LF drain can eat a payload byte | **open**, latent (LINK_BUDGET.md, finding 3) | — |
@@ -228,7 +228,10 @@ two drivers and a hand-over point in the init ladder.
 **Significance**: a benign shared resource during init; a possible source of garbled output
 if `debugPrint` is used after phase 4.
 
-**Status**: documented; no change proposed.
+**Status**: guarded 2026-10-18 (review F16): `System::start()` prints one last line and calls
+`Platform::retireDebugOutput()` before the scheduler starts; every later `debugPrint*` is
+dropped and counted (`Platform::debugPrintsDropped()`). The fault hooks bypass the guard on
+purpose. Draw the hand-over point as the retirement call.
 
 ## 10. Heap use in the SPI manager (closed by F11, kept for history)
 

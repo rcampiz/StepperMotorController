@@ -92,9 +92,6 @@ public:
 
   /// Microsecond tick at which the newest byte arrived (0 if the link cannot tell).
   virtual uint32_t lastRxTickUs() const { return 0; }
-
-  /// Pause/resume the out-of-band ESTOP byte (0x18) during raw binary payloads.
-  virtual void setOobEstopEnabled(bool enabled) { (void)enabled; }
 };
 
 } // namespace Transport

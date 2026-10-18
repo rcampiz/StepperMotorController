@@ -26,6 +26,8 @@
 
 namespace Protocol {
 
+class Base64Reader;   // L2_protocol/base64_reader.hpp: upload payload decoder
+
 struct StatusJsonView;   // status_json.hpp
 
 // Import types moved to Harness:: that are used throughout CommandParser
@@ -385,11 +387,12 @@ private:
   bool hasCrcFlag(const ParsedCommand &cmd) const;
 
   /**
-   * @brief Receive 4-byte CRC and verify against computed value
+   * @brief Receive the 4-byte CRC (base64, after the data) and verify against computed value
    * @param computedCrc Running CRC state (pre-finalized, i.e. before XOR)
+   * @param payload The upload's base64 reader (the CRC is encoded together with the data)
    * @return true if CRC matches
    */
-  bool verifyCrc(uint32_t computedCrc);
+  bool verifyCrc(uint32_t computedCrc, Base64Reader &payload);
 
   // Trace command handlers
   void cmdTraceDump();

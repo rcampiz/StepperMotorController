@@ -70,10 +70,6 @@ public:
 
     /// Microsecond tick at which the newest byte arrived (0 if the channel cannot tell).
     virtual uint32_t lastRxTickUs() const { return 0; }
-
-    /// Out-of-band ESTOP byte (0x18) recognition in the receive interrupt. Off while a raw
-    /// binary payload is being received, where 0x18 is data (docs/PROTOCOL.md section 5).
-    virtual void setOobEstopEnabled(bool enabled) { (void)enabled; }
 };
 
 } // namespace Transport

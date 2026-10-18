@@ -10,6 +10,8 @@ the ESTOP latch, and injectable faults (reset, silence, lost events, delays).
 Attach it to a MemoryTransport:  t = MemoryTransport(); fake = FakeBoard(t)
 """
 
+import base64
+import binascii
 import json
 import struct
 import threading
@@ -57,7 +59,6 @@ class FakeBoard:
         self._binary_left = 0
         self._binary_name = ""
         self._binary_crc = False
-        self._skip_crlf = False
         self._binary_data = bytearray()
         self._lock = threading.RLock()
         self._stop = threading.Event()
@@ -132,9 +133,8 @@ class FakeBoard:
         with self._lock:
             for b in data:
                 if self._binary_left > 0:
-                    if self._skip_crlf and b in (0x0D, 0x0A):
-                        continue                  # the firmware drains the command's CR/LF
-                    self._skip_crlf = False
+                    if b in (0x0D, 0x0A, 0x20, 0x09):
+                        continue                  # the firmware's base64 reader skips whitespace
                     self._binary_data.append(b)
                     self._binary_left -= 1
                     if self._binary_left == 0:
@@ -202,7 +202,11 @@ class FakeBoard:
             self._err(name, "UNKNOWN_CMD", "Unknown command")
 
     def _finish_binary(self) -> None:
-        data = bytes(self._binary_data)
+        try:
+            data = base64.b64decode(bytes(self._binary_data), validate=True)
+        except (binascii.Error, ValueError):
+            self._err(self._binary_name, "USAGE", "Bad base64 at byte 0/0")
+            return
         if self._binary_crc:
             body, crc = data[:-4], struct.unpack("<I", data[-4:])[0]
             if zlib.crc32(body) & 0xFFFFFFFF != crc:
@@ -213,9 +217,9 @@ class FakeBoard:
         self._ok(self._binary_name, "Image received")
 
     def _start_binary(self, name: str, n: int, crc: bool) -> None:
+        """The board expects n decoded bytes (+ CRC32) as base64 text: 4 chars per 3 bytes."""
         self._binary_name, self._binary_crc = name, crc
-        self._skip_crlf = True
-        self._binary_left = n + (4 if crc else 0)
+        self._binary_left = 4 * ((n + (4 if crc else 0) + 2) // 3)
         self._binary_data = bytearray()
         self._reply("OK READY %d" % n)
 

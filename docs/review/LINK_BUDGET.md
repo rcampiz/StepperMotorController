@@ -74,7 +74,6 @@ New default: **500 ms** (was `max(2000, 6 x period)` = 2000 ms), with heartbeats
    erase runs at boot when fewer than 16 saves remain, or at run time only with the motor
    stopped (`STORE_FULL` otherwise). The client's watchdog widening stays as a belt for
    that rare run-time erase.
-3. **Upload handlers can drop the first payload byte.** The CR/LF drain loop after
-   `OK READY` (`display_handlers.cpp`) reads and discards the first byte that is not CR/LF
-   if it has already arrived. Harmless today because clients wait for `OK READY` before
-   sending; it becomes reachable with faster links or pipelining.
+3. ~~**Upload handlers can drop the first payload byte.**~~ Closed 2026-10-18: payloads are
+   base64 text and the reader skips CR/LF anywhere, so the drain loop after `OK READY` is
+   gone and no payload byte can be mistaken for the command line's terminator.

@@ -6,6 +6,11 @@
 #include "L2_protocol/command_parser_internal.hpp"
 #include "harness/pins/crc32.hpp"
 
+namespace {
+/// Upload payloads: each base64 character must arrive within this many ms (PROTOCOL.md 4)
+constexpr uint32_t BYTE_TIMEOUT_MS = 100;
+}
+
 namespace Protocol {
 
 void CommandParser::cmdUIMode(const ParsedCommand &cmd) {
@@ -168,20 +173,10 @@ void CommandParser::cmdDispBitmap(const ParsedCommand &cmd) {
            static_cast<unsigned long>(expectedBytes));
   m_transport.println(buf);
   m_transport.flush();
-  OobEstopPause oobPause(m_transport);   // raw payload bytes may be 0x18
-
-  // Drain trailing \r/\n from command line before binary read
-  {
-    uint8_t drain;
-    while (m_transport.available() && m_transport.readByte(drain, 1)) {
-      if (drain != '\r' && drain != '\n')
-        break;
-    }
-  }
+  Base64Reader rd(m_transport, BYTE_TIMEOUT_MS);   // base64 text follows; it skips the line's CR/LF
 
   // Receive binary data with timeout
   constexpr uint32_t CHUNK_SIZE = 64;
-  constexpr uint32_t BYTE_TIMEOUT_MS = 100;
   uint8_t chunk[CHUNK_SIZE];
   uint32_t bytesReceived = 0;
   uint32_t crcState = 0xFFFFFFFF;
@@ -193,12 +188,12 @@ void CommandParser::cmdDispBitmap(const ParsedCommand &cmd) {
     uint32_t chunkReceived = 0;
     while (chunkReceived < toRead) {
       uint8_t byte;
-      if (m_transport.readByte(byte, BYTE_TIMEOUT_MS)) {
+      if (rd.next(byte)) {
         chunk[chunkReceived++] = byte;
       } else {
         m_dispatcher.displayStreamEnd();
-        char errBuf[48];
-        snprintf(errBuf, sizeof(errBuf), "Timeout at byte %lu/%lu",
+        char errBuf[64];
+        snprintf(errBuf, sizeof(errBuf), "%s at byte %lu/%lu", rd.errorText(),
                  static_cast<unsigned long>(bytesReceived + chunkReceived),
                  static_cast<unsigned long>(expectedBytes));
         respondErr(errBuf);
@@ -217,7 +212,7 @@ void CommandParser::cmdDispBitmap(const ParsedCommand &cmd) {
   m_dispatcher.displayStreamEnd();
 
   if (useCrc) {
-    if (!verifyCrc(crcState)) {
+    if (!verifyCrc(crcState, rd)) {
       return;
     }
   }
@@ -408,16 +403,7 @@ void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
            static_cast<unsigned long>(compressedBytes));
   m_transport.println(buf);
   m_transport.flush();
-  OobEstopPause oobPause(m_transport);   // raw payload bytes may be 0x18
-
-  // Drain trailing \r/\n from command line before binary read
-  {
-    uint8_t drain;
-    while (m_transport.available() && m_transport.readByte(drain, 1)) {
-      if (drain != '\r' && drain != '\n')
-        break;
-    }
-  }
+  Base64Reader rd(m_transport, BYTE_TIMEOUT_MS);   // base64 text follows; it skips the line's CR/LF
 
   // RLE streaming decoder state machine
   enum RleState { HEADER, LITERAL, REPEAT };
@@ -428,16 +414,15 @@ void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
   auto totalPixels = static_cast<uint32_t>(w) * h;
   uint32_t decodedPixels = 0;
 
-  constexpr uint32_t BYTE_TIMEOUT_MS = 100;
   uint32_t bytesReceived = 0;
   uint32_t crcState = 0xFFFFFFFF;
 
   while (bytesReceived < compressedBytes) {
     uint8_t byte;
-    if (!m_transport.readByte(byte, BYTE_TIMEOUT_MS)) {
+    if (!rd.next(byte)) {
       m_dispatcher.displayStreamEnd();
-      char errBuf[48];
-      snprintf(errBuf, sizeof(errBuf), "Timeout at byte %lu/%lu",
+      char errBuf[64];
+      snprintf(errBuf, sizeof(errBuf), "%s at byte %lu/%lu", rd.errorText(),
                static_cast<unsigned long>(bytesReceived),
                static_cast<unsigned long>(compressedBytes));
       respondErr(errBuf);
@@ -491,7 +476,7 @@ void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
 
   // Verify CRC if requested
   if (useCrc) {
-    if (!verifyCrc(crcState)) {
+    if (!verifyCrc(crcState, rd)) {
       return;
     }
   }
@@ -515,16 +500,17 @@ bool CommandParser::hasCrcFlag(const ParsedCommand &cmd) const {
   return (strcmp(cmd.args[cmd.argCount - 1], "CRC") == 0);
 }
 
-bool CommandParser::verifyCrc(uint32_t computedCrc) {
+bool CommandParser::verifyCrc(uint32_t computedCrc, Base64Reader &payload) {
   // Finalize CRC
   uint32_t expected = computedCrc ^ 0xFFFFFFFF;
 
-  // Read 4 CRC bytes (little-endian)
-  constexpr uint32_t CRC_TIMEOUT_MS = 200;
+  // The 4 CRC bytes (little-endian) are encoded together with the data
   uint8_t crcBytes[4];
   for (int i = 0; i < 4; i++) {
-    if (!m_transport.readByte(crcBytes[i], CRC_TIMEOUT_MS)) {
-      respondErr("CRC bytes timeout");
+    if (!payload.next(crcBytes[i])) {
+      char buf[48];
+      snprintf(buf, sizeof(buf), "CRC bytes: %s", payload.errorText());
+      respondErr(buf);
       return false;
     }
   }
@@ -609,20 +595,10 @@ void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
            static_cast<unsigned long>(expectedBytes));
   m_transport.println(buf);
   m_transport.flush();
-  OobEstopPause oobPause(m_transport);   // raw payload bytes may be 0x18
-
-  // Drain trailing \r/\n from command line before binary read
-  {
-    uint8_t drain;
-    while (m_transport.available() && m_transport.readByte(drain, 1)) {
-      if (drain != '\r' && drain != '\n')
-        break;
-    }
-  }
+  Base64Reader rd(m_transport, BYTE_TIMEOUT_MS);   // base64 text follows; it skips the line's CR/LF
 
   // Receive binary data and program page-by-page
   constexpr uint32_t PAGE_SIZE = Protocol::ICommandDispatcher::FLASH_PAGE_SIZE;
-  constexpr uint32_t BYTE_TIMEOUT_MS = 100;
   uint8_t page[PAGE_SIZE];
   uint32_t bytesReceived = 0;
   uint32_t crcState = 0xFFFFFFFF;
@@ -635,11 +611,11 @@ void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
     uint32_t pageReceived = 0;
     while (pageReceived < toRead) {
       uint8_t byte;
-      if (m_transport.readByte(byte, BYTE_TIMEOUT_MS)) {
+      if (rd.next(byte)) {
         page[pageReceived++] = byte;
       } else {
-        char errBuf[48];
-        snprintf(errBuf, sizeof(errBuf), "Timeout at byte %lu/%lu",
+        char errBuf[64];
+        snprintf(errBuf, sizeof(errBuf), "%s at byte %lu/%lu", rd.errorText(),
                  static_cast<unsigned long>(bytesReceived + pageReceived),
                  static_cast<unsigned long>(expectedBytes));
         respondErr(errBuf);
@@ -662,7 +638,7 @@ void CommandParser::cmdFlashUpload(const ParsedCommand &cmd) {
 
   // Verify CRC if requested
   if (useCrc) {
-    if (!verifyCrc(crcState)) {
+    if (!verifyCrc(crcState, rd)) {
       return;
     }
   }
@@ -723,16 +699,7 @@ void CommandParser::cmdFlashUploadRle(const ParsedCommand &cmd) {
            static_cast<unsigned long>(compressedBytes));
   m_transport.println(buf);
   m_transport.flush();
-  OobEstopPause oobPause(m_transport);   // raw payload bytes may be 0x18
-
-  // Drain trailing \r/\n from command line before binary read
-  {
-    uint8_t drain;
-    while (m_transport.available() && m_transport.readByte(drain, 1)) {
-      if (drain != '\r' && drain != '\n')
-        break;
-    }
-  }
+  Base64Reader rd(m_transport, BYTE_TIMEOUT_MS);   // base64 text follows; it skips the line's CR/LF
 
   // RLE streaming decoder → page buffer → flash
   enum RleState { HEADER, LITERAL, REPEAT };
@@ -744,7 +711,6 @@ void CommandParser::cmdFlashUploadRle(const ParsedCommand &cmd) {
   uint32_t decodedPixels = 0;
 
   constexpr uint32_t PAGE_SIZE = Protocol::ICommandDispatcher::FLASH_PAGE_SIZE;
-  constexpr uint32_t BYTE_TIMEOUT_MS = 100;
   uint8_t page[PAGE_SIZE];
   uint32_t pageOffset = 0;  // Bytes in current page buffer
   uint32_t flashOffset = 0; // Byte offset into the flash slot
@@ -782,9 +748,9 @@ void CommandParser::cmdFlashUploadRle(const ParsedCommand &cmd) {
 
   while (bytesReceived < compressedBytes) {
     uint8_t byte;
-    if (!m_transport.readByte(byte, BYTE_TIMEOUT_MS)) {
-      char errBuf[48];
-      snprintf(errBuf, sizeof(errBuf), "Timeout at byte %lu/%lu",
+    if (!rd.next(byte)) {
+      char errBuf[64];
+      snprintf(errBuf, sizeof(errBuf), "%s at byte %lu/%lu", rd.errorText(),
                static_cast<unsigned long>(bytesReceived),
                static_cast<unsigned long>(compressedBytes));
       respondErr(errBuf);
@@ -846,7 +812,7 @@ void CommandParser::cmdFlashUploadRle(const ParsedCommand &cmd) {
 
   // Verify CRC if requested
   if (useCrc) {
-    if (!verifyCrc(crcState)) {
+    if (!verifyCrc(crcState, rd)) {
       return; // verifyCrc already sent error response
     }
   }

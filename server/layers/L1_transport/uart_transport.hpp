@@ -40,7 +40,6 @@ public:
     uint32_t baudRate() const override { return m_channel.baudRate(); }
     uint32_t rxOverflowCount() const override { return m_channel.rxOverflowCount(); }
     uint32_t lastRxTickUs() const override { return m_channel.lastRxTickUs(); }
-    void setOobEstopEnabled(bool enabled) override { m_channel.setOobEstopEnabled(enabled); }
 
 private:
     Transport::IByteChannel& m_channel;

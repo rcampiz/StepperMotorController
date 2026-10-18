@@ -178,10 +178,11 @@ public:
         // Check for receive data ready
         if ((m_usart->SR & USART_SR_RXNE) != 0) {
             auto byte = static_cast<uint8_t>(m_usart->DR);
-            if (byte == OOB_ESTOP_BYTE && m_oobEnabled) {
+            if (byte == OOB_ESTOP_BYTE) {
                 // Out-of-band ESTOP (Phase 4 step 1): acted on here, before the ring, even
                 // when the ring is full or the Comms task is deep inside a handler. Never
-                // queued, never echoed, no reply (docs/PROTOCOL.md section 5).
+                // queued, never echoed, no reply (docs/PROTOCOL.md section 5). Upload
+                // payloads are base64 text, so the byte is never data: no pause needed.
                 Harness::invokeOobEstop();
                 return;
             }
@@ -225,7 +226,6 @@ public:
     bool hasOverflowed() const { return m_rxBuffer.hasOverflowed(); }
     uint32_t rxOverflowCount() const override { return m_rxBuffer.getOverflowCount(); }
     uint32_t lastRxTickUs() const override { return m_lastRxUs; }
-    void setOobEstopEnabled(bool enabled) override { m_oobEnabled = enabled; }
     static constexpr uint8_t OOB_ESTOP_BYTE = 0x18;
     uint32_t getOverflowCount() const { return m_rxBuffer.getOverflowCount(); }
     void clearOverflow() { m_rxBuffer.clearOverflow(); }
@@ -239,7 +239,6 @@ private:
     uint32_t       m_apbClockHz;
     uint32_t       m_baudRate;
     volatile uint32_t m_lastRxUs = 0;
-    volatile bool  m_oobEnabled = true;
     uint8_t        m_irqPriority;
     RingBuffer<1024> m_rxBuffer;   // F1.2: 89 ms of host traffic at 115200 baud (was 256 B = 22 ms)
     RingBuffer<4096> m_txBuffer;   // Phase 4 step 2: holds a whole SYST:HELP? (~3.2 KB) or three status pushes

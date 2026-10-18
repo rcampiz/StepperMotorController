@@ -198,6 +198,8 @@ def test_multiline_and_typed_replies(rig):
 
 
 def test_binary_upload_with_crc(rig):
+    """The payload (which contains 0x18) goes out as base64 text: the fake board decodes it
+    strictly, so raw bytes would be refused."""
     rig.open()
     payload = bytes(range(256)) * 3
     resp = rig.board.request(C.disp_bitmap_rle(0, 0, 240, 20, payload))

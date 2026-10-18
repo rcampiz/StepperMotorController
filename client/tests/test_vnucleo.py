@@ -76,6 +76,18 @@ def test_motion_moves_the_fake_motor_and_the_encoder_follows(board):
     assert board.last_status["encoder"]["count"] != 0
 
 
+def test_bitmap_upload_is_base64_text_through_the_real_handler(board):
+    """UI:DISP:BITMAP on the real L2 code: the payload (with 0x18 and CR/LF bytes in it) goes
+    out as base64 with the CRC encoded in it and the board stays in session (no stop)."""
+    assert board.request(C.ui_mode(True)).success
+    pix = bytes([0x18, 0x0A, 0xFF, 0x00, 0x12, 0x34, 0x18, 0x0D] * 8)       # 8x4 px
+    r = board.request(C.disp_bitmap(0, 0, 8, 4, pix, crc=True))
+    assert r.success, (r.error_code, r.error_message)
+    st = board.request(C.status())
+    assert st.success and st.data["state"] != "ESTOP"
+    board.request(C.ui_mode(False))
+
+
 def test_telemetry_push_and_event_seq(board):
     seqs = []
     board.subscribe("event", lambda ev: seqs.append(ev.seq))

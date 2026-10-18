@@ -24,6 +24,7 @@ Safety rules implemented here (CLIENT_REVIEW changes B):
 - Telemetry is pushed by the firmware (SYST:TLM:RATE), not polled.
 """
 
+import base64
 import itertools
 import logging
 import queue
@@ -848,7 +849,9 @@ class Board:
                 return self._timed_out(req)
 
     def _stream(self, req: C.Request, first, timeout: float) -> Response:
-        """OK READY <n>, then the payload in drained chunks, then the final reply."""
+        """OK READY <n>, then the payload (+ CRC32 LE) as base64 text in drained chunks, then
+        the final reply. Base64 cannot contain 0x18, so the board's out-of-band stop stays
+        armed for the whole upload (PROTOCOL.md section 5)."""
         ready = parse_response(first.text, req.name, first.obj)
         if not ready.success:
             return ready
@@ -859,19 +862,21 @@ class Board:
         if len(payload) < n:
             return Response(False, req.name, {}, "PROTOCOL",
                             f"payload {len(payload)} bytes, board expects {n}")
+        body = payload[:n]
+        if req.crc:
+            body += struct.pack("<I", zlib.crc32(payload[:n]) & 0xFFFFFFFF)
+        text = base64.b64encode(body)
         sent = 0
         chunk = max(1, self.config.stream_chunk)
-        while sent < n:
+        while sent < len(text):
             self._check_cancel()
-            part = payload[sent:sent + min(chunk, n - sent)]
+            part = text[sent:sent + min(chunk, len(text) - sent)]
             self.transport.send(part)
             self.transport.drain_output(timeout_ms=500)
             sent += len(part)
             self._count("tx", "binary", len(part))
-        if req.crc:
-            self.transport.send(struct.pack("<I", zlib.crc32(payload[:n]) & 0xFFFFFFFF))
-            self._count("tx", "binary", 4)
-        self._record("tx", "binary", f"<{n} bytes{' + CRC32' if req.crc else ''}>")
+        self._record("tx", "binary",
+                     f"<{n} bytes{' + CRC32' if req.crc else ''} as {len(text)} base64 chars>")
         final = self._wait_reply(req, timeout)
         if final is None:
             return self._timed_out(req)

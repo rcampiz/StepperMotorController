@@ -9,8 +9,11 @@
 #include "L2_protocol/command_parser_internal.hpp"
 #include "L2_protocol/service_dispatcher.hpp"
 #include "L2_protocol/status_json.hpp"
+#include "L2_protocol/base64_reader.hpp"
 #include "harness/pins/async_event.hpp"
+#include "harness/pins/crc32.hpp"
 #include <string>
+#include <vector>
 
 namespace {
 struct FakeTransport : Transport::ITransport {
@@ -465,4 +468,112 @@ TEST(help_lists_every_command_and_is_terminated) {
     std::string js = r.run("SYST:HELP?");
     EXPECT_EQ(lineCount(js), 1u);
     EXPECT_TRUE(js.find("{\"status\":\"ok\",\"command\":\"HELP\",\"data\":{\"lines\":[\"") == 0);
+}
+
+// --- Upload payloads are base64 text (2026-10-18): the 0x18 stop never has to be paused ---
+namespace {
+std::string b64(const std::vector<uint8_t>& in) {
+    static const char* A = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    std::string out;
+    size_t i = 0;
+    for (; i + 2 < in.size(); i += 3) {
+        uint32_t v = (uint32_t(in[i]) << 16) | (uint32_t(in[i + 1]) << 8) | in[i + 2];
+        out += A[(v >> 18) & 63]; out += A[(v >> 12) & 63]; out += A[(v >> 6) & 63]; out += A[v & 63];
+    }
+    if (i + 1 == in.size()) {
+        uint32_t v = uint32_t(in[i]) << 16;
+        out += A[(v >> 18) & 63]; out += A[(v >> 12) & 63]; out += "==";
+    } else if (i + 2 == in.size()) {
+        uint32_t v = (uint32_t(in[i]) << 16) | (uint32_t(in[i + 1]) << 8);
+        out += A[(v >> 18) & 63]; out += A[(v >> 12) & 63]; out += A[(v >> 6) & 63]; out += '=';
+    }
+    return out;
+}
+
+struct StreamingDisplay : FakeL3::FakeDisplayDispatcher {
+    std::vector<uint8_t> bytes;
+    int starts = 0, ends = 0;
+    bool displayIsRemoteMode() override { return true; }
+    bool displayStreamStart(uint16_t, uint16_t, uint16_t, uint16_t) override { ++starts; return true; }
+    void displayStreamData(const uint8_t* d, uint32_t n) override { bytes.insert(bytes.end(), d, d + n); }
+    void displayStreamEnd() override { ++ends; }
+};
+
+struct UploadRig {
+    FakeTransport transport;
+    Protocol::ServiceDispatcher dispatcher;
+    FakeL3::Bundle l3;
+    StreamingDisplay display;
+    Harness::L3Dispatchers dispatchers{l3.motion, l3.config, l3.safety, l3.queue, l3.controlMode,
+                                       l3.supervisorTrim, l3.encoder, l3.motorDriver, display,
+                                       l3.flash, l3.system, l3.trace, l3.debug};
+    Protocol::CommandParser parser{transport, dispatcher};
+    Protocol::ICommandProcessor& proc = parser;
+    UploadRig() { dispatcher.bind(dispatchers); }
+    std::string run(const std::string& line, const std::string& payload) {
+        transport.out.clear();
+        transport.in = line + "\n" + payload;
+        proc.process();
+        return transport.out;
+    }
+};
+}
+
+TEST(base64_reader_decodes_across_line_breaks_and_reports_the_end) {
+    FakeTransport t;
+    t.in = "AAEC\r\nAw==\n";
+    Protocol::Base64Reader rd(t, 10);
+    uint8_t b = 0xFF;
+    for (uint8_t want = 0; want < 4; ++want) {
+        EXPECT_TRUE(rd.next(b));
+        EXPECT_EQ(b, want);
+    }
+    EXPECT_FALSE(rd.next(b));                                  // padding ended the stream
+    EXPECT_TRUE(rd.error() == Protocol::Base64Reader::Error::Ended);
+    EXPECT_EQ(rd.charsRead(), 8u);
+}
+
+TEST(base64_reader_times_out_and_refuses_characters_outside_the_alphabet) {
+    FakeTransport t;
+    t.in = "AA";
+    Protocol::Base64Reader rd(t, 10);
+    uint8_t b;
+    EXPECT_FALSE(rd.next(b));
+    EXPECT_STREQ(rd.errorText(), "Timeout");
+    FakeTransport t2;
+    t2.in = "AB*D";
+    Protocol::Base64Reader rd2(t2, 10);
+    EXPECT_FALSE(rd2.next(b));
+    EXPECT_STREQ(rd2.errorText(), "Bad base64");
+}
+
+TEST(bitmap_upload_takes_base64_text_with_the_crc_encoded_in_it) {
+    UploadRig r;
+    // 2x2 RGB565: 8 bytes that include 0x18 (the out-of-band stop) and CR/LF
+    std::vector<uint8_t> pix = {0x18, 0x0A, 0xFF, 0x00, 0x12, 0x34, 0x18, 0x0D};
+    uint32_t crc = Util::crc32_update(0xFFFFFFFFu, pix.data(), pix.size()) ^ 0xFFFFFFFFu;
+    std::vector<uint8_t> body = pix;
+    for (int i = 0; i < 4; ++i) body.push_back(static_cast<uint8_t>(crc >> (8 * i)));
+    std::string text = b64(body);
+    text.insert(4, "\r\n");                                    // the host may break lines
+    std::string out = r.run("UI:DISP:BITMAP 0 0 2 2 CRC", text);
+    EXPECT_TRUE(out.find("OK READY 8\r\n") != std::string::npos);   // after the ASCII echo
+    EXPECT_TRUE(out.find("ERROR") == std::string::npos);
+    EXPECT_TRUE(r.display.bytes == pix);
+    EXPECT_EQ(r.display.starts, 1);
+    EXPECT_EQ(r.display.ends, 1);
+}
+
+TEST(bitmap_upload_rejects_bad_base64_and_a_wrong_crc) {
+    UploadRig r;
+    std::string out = r.run("UI:DISP:BITMAP 0 0 2 2", "AB*D");
+    EXPECT_TRUE(out.find("ERROR") != std::string::npos);
+    EXPECT_TRUE(out.find("Bad base64 at byte") != std::string::npos);
+    EXPECT_EQ(r.display.ends, 1);                              // the stream is closed on every exit
+
+    UploadRig r2;
+    std::vector<uint8_t> body(8, 0x55);
+    for (int i = 0; i < 4; ++i) body.push_back(0);             // CRC32 of 8 x 0x55 is not zero
+    out = r2.run("UI:DISP:BITMAP 0 0 2 2 CRC", b64(body));
+    EXPECT_TRUE(out.find("CRC mismatch") != std::string::npos);
 }

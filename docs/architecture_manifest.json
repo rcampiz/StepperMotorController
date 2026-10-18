@@ -26,6 +26,7 @@
       "name": "Protocol",
       "responsibility": "SCPI parsing, validation, aliases, all host-facing formatting (responses, events, telemetry, joystick, banner); routes to the 13 L3 dispatchers.",
       "files": [
+        "server/layers/L2_protocol/base64_reader.hpp",
         "server/layers/L2_protocol/command_parser.cpp",
         "server/layers/L2_protocol/command_parser.hpp",
         "server/layers/L2_protocol/command_parser_internal.hpp",

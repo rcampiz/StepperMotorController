@@ -84,7 +84,7 @@ void TcpTransport::acceptLoop() {
             if (n <= 0) break;
             std::lock_guard<std::mutex> lk(rxMutex_);
             for (int i = 0; i < n; ++i) {
-                if (buf[i] == 0x18 && oobEnabled_) {
+                if (buf[i] == 0x18) {
                     Harness::invokeOobEstop();           // as the USART2 ISR does on the board
                     continue;
                 }
