@@ -20,6 +20,7 @@
 #include "L3_services/ui/screens/recovery_screen.hpp"
 #include "L3_services/ui/screens/screen_care_screen.hpp"
 #include "L3_services/ui/screens/estop_screen.hpp"
+#include "L3_services/ui/screens/motion_screen.hpp"
 #include "L3_services/infra/indicator_service/indicator_service.hpp"
 #include "L3_services/ui/screen_manager/screen_manager.hpp"
 #include "L3_services/infra/telemetry_store/telemetry_store.hpp"
@@ -315,6 +316,20 @@ TEST(recovery_cycles_full_fields_and_pops_itself_when_done) {
 
 static void settle(Services::IndicatorService& ind, int ticks = 25) {
     for (int i = 0; i < ticks; i++) ind.tick();
+}
+
+TEST(motion_jog_is_sized_in_revolutions_at_the_microstep_setting) {
+    // 200 full steps a turn: 1/128 -> 25600 microsteps a turn, 1/16 -> 3200
+    EXPECT_EQ(UI::MotionScreen::milliRevToMicrosteps(1000, 25600), 25600);
+    EXPECT_EQ(UI::MotionScreen::milliRevToMicrosteps(125, 25600), 3200);
+    EXPECT_EQ(UI::MotionScreen::milliRevToMicrosteps(250, 3200), 800);
+    EXPECT_EQ(UI::MotionScreen::milliRevToMicrosteps(10000, 51200), 512000);
+    EXPECT_EQ(UI::MotionScreen::milliRevToMicrosteps(-500, 3200), -1600);
+    char buf[20];
+    UI::MotionScreen::formatRev(buf, sizeof buf, 125, '+');  EXPECT_TRUE(strcmp(buf, "+0.125 rev") == 0);
+    UI::MotionScreen::formatRev(buf, sizeof buf, 250, 0);    EXPECT_TRUE(strcmp(buf, "0.25 rev") == 0);
+    UI::MotionScreen::formatRev(buf, sizeof buf, 1000, '-'); EXPECT_TRUE(strcmp(buf, "-1 rev") == 0);
+    UI::MotionScreen::formatRev(buf, sizeof buf, 10000, 0);  EXPECT_TRUE(strcmp(buf, "10 rev") == 0);
 }
 
 TEST(motion_indicator_shows_heading_speed_and_turn_magnitudes) {

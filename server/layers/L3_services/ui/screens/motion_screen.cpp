@@ -15,7 +15,7 @@
 
 namespace UI {
 
-constexpr int32_t MotionScreen::JOG_SIZES[];
+constexpr int32_t MotionScreen::JOG_MILLIREV[];
 
 // Layout: status block (two rows) then the fields, a hint line, the deck
 static constexpr uint16_t STATUS_Y  = Theme::CONTENT_Y + 2;
@@ -86,7 +86,7 @@ void MotionScreen::renderStatus(Services::ICanvas& lcd, bool force)
 
 void MotionScreen::renderField(Services::ICanvas& lcd, uint8_t field, bool faulted, bool hiZ)
 {
-    char val[14];
+    char val[20];
     const char* label = "";
     uint16_t color = 0;
     val[0] = '\0';
@@ -94,9 +94,9 @@ void MotionScreen::renderField(Services::ICanvas& lcd, uint8_t field, bool fault
         case FIELD_SPEED:    label = "Speed";    snprintf(val, sizeof val, "%u RPM", static_cast<unsigned>(m_rpm)); break;
         case FIELD_RUN_CW:   label = "Run CW";   break;
         case FIELD_RUN_CCW:  label = "Run CCW";  break;
-        case FIELD_JOG_SIZE: label = "Jog size"; snprintf(val, sizeof val, "%ld", static_cast<long>(JOG_SIZES[m_jogSizeIdx])); break;
-        case FIELD_JOG_CW:   label = "Jog CW";   snprintf(val, sizeof val, "+%ld", static_cast<long>(JOG_SIZES[m_jogSizeIdx])); break;
-        case FIELD_JOG_CCW:  label = "Jog CCW";  snprintf(val, sizeof val, "-%ld", static_cast<long>(JOG_SIZES[m_jogSizeIdx])); break;
+        case FIELD_JOG_SIZE: label = "Jog size"; formatRev(val, sizeof val, JOG_MILLIREV[m_jogSizeIdx], 0);   break;
+        case FIELD_JOG_CW:   label = "Jog CW";   formatRev(val, sizeof val, JOG_MILLIREV[m_jogSizeIdx], '+'); break;
+        case FIELD_JOG_CCW:  label = "Jog CCW";  formatRev(val, sizeof val, JOG_MILLIREV[m_jogSizeIdx], '-'); break;
         case FIELD_STOP:     label = "STOP";     color = Theme::YELLOW; break;
         case FIELD_ENABLE:   label = hiZ ? "Enable" : "Release (Hi-Z)"; snprintf(val, sizeof val, "%s", hiZ ? "coils off" : "coils on");
                              color = hiZ ? Theme::DIM : Theme::GREEN; break;
@@ -155,8 +155,14 @@ void MotionScreen::activate(bool hiZ)
     switch (m_selectedField) {
         case FIELD_RUN_CW:  Services::Motion::run(rpmToFullStepsPerSec(m_rpm), true);  break;
         case FIELD_RUN_CCW: Services::Motion::run(rpmToFullStepsPerSec(m_rpm), false); break;
-        case FIELD_JOG_CW:  Services::Motion::move(JOG_SIZES[m_jogSizeIdx]);  break;
-        case FIELD_JOG_CCW: Services::Motion::move(-JOG_SIZES[m_jogSizeIdx]); break;
+        case FIELD_JOG_CW:
+        case FIELD_JOG_CCW: {
+            // Revolutions to microsteps at the microstep setting in force now
+            const int32_t steps = milliRevToMicrosteps(JOG_MILLIREV[m_jogSizeIdx],
+                                                       Services::motion.stepper.config.getMicrostepsPerRev());
+            Services::Motion::move(m_selectedField == FIELD_JOG_CW ? steps : -steps);
+            break;
+        }
         case FIELD_STOP:    Services::Motion::stop(false); break;
         case FIELD_ENABLE:  if (hiZ) Services::Motion::enable(); else Services::Motion::disable(); break;
         default: break;

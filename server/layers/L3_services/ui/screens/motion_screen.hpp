@@ -11,6 +11,8 @@
 
 #include "ui/screen.hpp"
 #include <stdint.h>
+#include <stddef.h>
+#include <stdio.h>
 
 namespace UI {
 
@@ -51,15 +53,42 @@ private:
     bool m_prevHiZ = true;
     bool m_prevFaulted = false;
 
-    static constexpr int32_t JOG_SIZES[] = {100, 200, 500, 1000, 5000, 10000};
-    static constexpr uint8_t NUM_JOG_SIZES = 6;
-    uint8_t m_jogSizeIdx = 3;        // 1000
+    // Jog sizes in revolutions (thousandths, so 1/8 turn is exact): what a person means by
+    // "how far", and independent of the microstep setting; converted to microsteps with the
+    // configured microsteps per revolution when the jog is sent (as MOT:MOVE <rev> REV does)
+    static constexpr int32_t JOG_MILLIREV[] = {125, 250, 500, 1000, 2000, 5000, 10000};
+    static constexpr uint8_t NUM_JOG_SIZES = 7;
+    uint8_t m_jogSizeIdx = 3;        // 1 rev
     // Speed in RPM: what a person means by "how fast", and independent of the microstep
     // setting; converted to full steps/s with the configured steps per revolution on use
     uint16_t m_rpm = 90;             // clear of the 55-66 and 105-122 RPM resonance bands
     static constexpr uint16_t RPM_MIN = 5;
     static constexpr uint16_t RPM_MAX = 600;
     uint32_t rpmToFullStepsPerSec(uint16_t rpm) const;
+
+public:
+    /// Microsteps for `millirev` thousandths of a revolution at `ustepsPerRev`, rounded
+    static int32_t milliRevToMicrosteps(int32_t millirev, uint32_t ustepsPerRev)
+    {
+        const int64_t num = static_cast<int64_t>(millirev) * static_cast<int64_t>(ustepsPerRev);
+        return static_cast<int32_t>(num >= 0 ? (num + 500) / 1000 : (num - 500) / 1000);
+    }
+    /// "0.125 rev", "1 rev", with a sign prefix if given ('+', '-', or 0 for none)
+    static void formatRev(char* out, size_t size, int32_t millirev, char sign)
+    {
+        const long whole = static_cast<long>(millirev / 1000);
+        int frac = static_cast<int>(millirev % 1000);
+        char fracText[6] = "";
+        if (frac != 0) {
+            int digits = 3;
+            while (frac % 10 == 0) { frac /= 10; digits--; }
+            snprintf(fracText, sizeof fracText, ".%0*d", digits, frac);
+        }
+        if (sign != 0) snprintf(out, size, "%c%ld%s rev", sign, whole, fracText);
+        else snprintf(out, size, "%ld%s rev", whole, fracText);
+    }
+
+private:
 
     static bool isEditable(uint8_t field) { return field == FIELD_SPEED || field == FIELD_JOG_SIZE; }
     bool isFieldEnabled(uint8_t field, bool faulted) const;
