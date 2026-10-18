@@ -35,8 +35,9 @@ namespace SPI1_Bus {
 
 // ============================================================================
 // SPI2 - GFX01M2 NOR Flash (hardware SPI on APB1, 42 MHz)
-// SPIB routed via board rework: PB13 (SCK), PB14 (MISO), PC3 (MOSI).
-// PB15 unavailable for MOSI; PC3 is the SPI2_MOSI alternate (AF5).
+// SPIB routed via board rework: PB13 (SCK), PC2 (MISO), PC3 (MOSI).
+// PB15 unavailable for MOSI, and PB5 (the GFX01M2 SPIB_MOSI) is cut to carry BUSY/SYNC;
+// PC2/PC3 are the SPI2 MISO/MOSI alternates (AF5).
 // ============================================================================
 namespace SPI2_Bus {
     static GPIO_TypeDef* const SCK_PORT  = GPIOB;

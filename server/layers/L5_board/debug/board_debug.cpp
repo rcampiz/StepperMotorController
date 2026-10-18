@@ -243,9 +243,9 @@ void BoardDebug::cmdGpioState(Harness::IResponseSink& t) {
              (unsigned)(pa_idr & 0xFFFF), (int)((pa_idr >> 6) & 1),
              (int)((pa_idr >> 9) & 1), (int)((pa_idr >> 10) & 1));
     t.writeLine(buf);
-    snprintf(buf, sizeof(buf), "PB: IDR=%04X (BUSY/PB4=%d, CS/PB6=%d)",
-             (unsigned)(pb_idr & 0xFFFF), (int)((pb_idr >> 4) & 1),
-             (int)((pb_idr >> 6) & 1));
+    snprintf(buf, sizeof(buf), "PB: IDR=%04X (BUSY/PB5=%d, ENC_A/PB6=%d, ENC_B/PB7=%d)",
+             (unsigned)(pb_idr & 0xFFFF), (int)((pb_idr >> 5) & 1),
+             (int)((pb_idr >> 6) & 1), (int)((pb_idr >> 7) & 1));
     t.writeLine(buf);
 }
 
