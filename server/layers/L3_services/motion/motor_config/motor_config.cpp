@@ -66,8 +66,8 @@ void MotorConfigManager::applyDefaults() {
     m_config.driveMode = 1;    // current mode (TVAL): bench 2026-10-17, smoother than KVAL to 400 steps/s
     m_config.tvalHold = TVAL_DEFAULT_HOLD;
     m_config.tvalRun = TVAL_DEFAULT_RUN;
-    m_config.tvalAcc = TVAL_DEFAULT_RUN;
-    m_config.tvalDec = TVAL_DEFAULT_RUN;
+    m_config.tvalAcc = TVAL_DEFAULT_ACC;
+    m_config.tvalDec = TVAL_DEFAULT_ACC;
 
     // Protection thresholds - high values = less sensitive
     m_config.ocdThreshold = 0x1F;   // Max (~10A), adjust down for protection
@@ -226,7 +226,8 @@ bool MotorConfigManager::loadFromFlash() {
         if (m_config.version < 3) {
             m_config.driveMode = 1;
             m_config.tvalHold = TVAL_DEFAULT_HOLD;
-            m_config.tvalRun = m_config.tvalAcc = m_config.tvalDec = TVAL_DEFAULT_RUN;
+            m_config.tvalRun = TVAL_DEFAULT_RUN;
+            m_config.tvalAcc = m_config.tvalDec = TVAL_DEFAULT_ACC;
             m_config.version = 3;
         }
         return true;

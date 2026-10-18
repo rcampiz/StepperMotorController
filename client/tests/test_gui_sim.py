@@ -91,7 +91,7 @@ def test_panels_render_core_views(gui):
     assert pump(app, lambda: w._telemetry_panel._encoder_count_label.text() == "1,234")
     # the sim is in current mode: the TVAL faders follow DRV:CFG? and the KVAL faders are left
     # alone (the KVAL registers hold TVAL in current mode)
-    assert pump(app, lambda: w._driver_panel._tval_sliders[1].value() == 0x0A)
+    assert pump(app, lambda: w._driver_panel._tval_sliders[1].value() == 0x1A)
     assert w._driver_panel._kval_hold_slider.value() == 0 and w._driver_panel._is_current_mode()
     assert pump(app, lambda: w._stepmode_panel._mode_combo.currentIndex() == 3)
 

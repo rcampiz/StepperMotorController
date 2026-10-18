@@ -57,7 +57,7 @@ FADER_STYLE_GREEN = FADER_STYLE.replace('#4a9eff', '#00cc66')
 
 # Fader limits for current mode: the chip's TVAL goes to 0x7F (9.9 A) but the motor's
 # nameplate current is the real ceiling, so the faders stop at a user-set rating.
-MOTOR_RATED_A_DEFAULT = 2.0
+MOTOR_RATED_A_DEFAULT = 2.8          # 23HS22-2804-ME1K, the project's motor
 MOTOR_RATED_A_MAX = round(U.tval_to_amps(0x7F), 2)
 
 KVAL_TIPS = {
@@ -341,7 +341,7 @@ class DriverPanel(QWidget):
         rating_row.addStretch()
         tbtn.addLayout(rating_row)
         tnote = QLabel("TVAL regulates the coil current in 78 mA steps (0.1 \u03a9 sense);\n"
-                       "firmware defaults 0.39 A hold, 0.78 A run / acc / dec")
+                       "firmware defaults (23HS22-2804): 1.0 A hold, 2.0 A run, 2.3 A acc / dec")
         tnote.setStyleSheet("font-size: 8px; color: #888;")
         tbtn.addWidget(tnote)
         tbtn.addStretch()

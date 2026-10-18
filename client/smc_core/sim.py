@@ -43,7 +43,7 @@ class FakeBoard:
         self.dev_id = 0
         self.step_mode = 3
         self.drive_current = True
-        self.tval = (0x05, 0x0A, 0x0A, 0x0A)
+        self.tval = (0x0D, 0x1A, 0x1D, 0x1D)      # firmware defaults: 23HS22-2804-ME1K
         self.full_steps = 200
         self.enc_ppr = 1600                   # counts/rev: one count per 1/8 microstep
         self.hb_timeout_ms = 0
