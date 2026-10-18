@@ -46,6 +46,7 @@ class FakeBoard:
         self.tval = (0x05, 0x16, 0x1A, 0x1A)      # firmware defaults: 23HS22-2804-ME1K
         self.cm = {"pred": True, "tsw_us": 48, "t_fast": 0x19, "ton_min": 0x29, "toff_min": 0x29}
         self.full_steps = 200
+        self.direction = 1
         self.enc_ppr = 1600                   # counts/rev: one count per 1/8 microstep
         self.hb_timeout_ms = 0
         self.last_hb = time.monotonic()
@@ -122,7 +123,7 @@ class FakeBoard:
             "state": self.state, "tick": int(time.monotonic() * 1e6) & 0xFFFFFFFF,
             "queue_depth": 0,
             "motor": {"position": self.position, "speed": self.speed,
-                      "busy": self.speed != 0 or self.target is not None, "hi_z": self.hi_z, "direction": 1,
+                      "busy": self.speed != 0 or self.target is not None, "hi_z": self.hi_z, "direction": self.direction,
                       "mot_status": 0, "status_reg": "7E03", "cmd_err": False, "ocd": False,
                       "thermal_sd": False, "thermal_warn": False, "uvlo": False,
                       "stall_a": False, "stall_b": False},
@@ -355,7 +356,13 @@ class FakeBoard:
 
     def _c_MOT_RUN(self, name, args):
         if self._motion_allowed(name):
-            self.speed = int(float(args[0]))
+            if len(args) > 1 and args[1].upper() == "RPM":
+                # MOT:RUN <rpm> RPM <dir>: full steps per second from the revolutions
+                self.speed = int(round(float(args[0]) * self.full_steps / 60.0))
+                self.direction = int(args[2]) if len(args) > 2 else 1
+            else:
+                self.speed = int(float(args[0]))
+                self.direction = int(args[1]) if len(args) > 1 else 1
             self.hi_z = False
             self._ok(name)
 

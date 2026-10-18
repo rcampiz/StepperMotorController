@@ -240,6 +240,24 @@ def test_light_mode_toggle_switches_the_palette_and_is_remembered(gui):
     assert theme.saved_mode() == "dark"
 
 
+def test_controller_drives_the_motor_from_the_drive_tab(gui):
+    app, w, fake = gui
+    from smc_core.gamepad import SoftwareGamepad
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    pad = SoftwareGamepad()
+    w._controller_panel.use_gamepad(pad)
+    w._controller_panel.stick.slew_rpm_per_s = 100000
+    w._controller_panel.set_driving(True)
+    pad.set(ly=1.0)
+    assert pump(app, lambda: any(r.startswith("MOT:RUN 250.0 RPM 1") for r in fake.received), timeout=3.0), fake.received[-5:]
+    assert pump(app, lambda: fake.speed > 0)
+    pad.set(ly=0.0)
+    assert pump(app, lambda: fake.speed == 0, timeout=3.0)
+    pad.set(buttons={"START"})
+    assert pump(app, lambda: fake.state == "ESTOP", timeout=5.0)
+    w._controller_panel.set_driving(False)
+
+
 def test_tests_tab_runs_a_scenario(gui):
     app, w, fake = gui
     assert pump(app, lambda: w._board is not None and w._board.session_ready)

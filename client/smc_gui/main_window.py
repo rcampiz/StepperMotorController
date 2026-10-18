@@ -33,7 +33,9 @@ from smc_gui.telemetry_panel import TelemetryPanel
 from smc_gui.driver_panel import DriverPanel
 from smc_gui.protection_panel import ProtectionPanel
 from smc_gui.stepmode_panel import StepModePanel
+from smc_gui.controller_panel import ControllerPanel
 from smc_gui.fleet_panel import FleetPanel
+from smc_core.drive_map import SingleMotorDriver
 from smc_gui.graph_panel import GraphPanel
 from smc_gui.display_panel import DisplayPanel
 from smc_gui.motion_panel import MotionPanel
@@ -154,7 +156,15 @@ class MainWindow(QMainWindow):
         self._right_tabs.addTab(self._telemetry_panel, "Dashboard")
 
         self._motion_panel = MotionPanel()
-        self._right_tabs.addTab(self._motion_panel, "Drive")
+        self._controller_panel = ControllerPanel("motor")
+        self._controller_panel.state_changed.connect(self._on_controller_state)
+        drive_page = QWidget()
+        drive_v = QVBoxLayout(drive_page)
+        drive_v.setContentsMargins(0, 0, 0, 0)
+        drive_v.addWidget(self._motion_panel, 1)
+        drive_v.addWidget(self._controller_panel)
+        self._right_tabs.addTab(drive_page, "Drive")
+        self._stick_driver = None
 
         # Motor: the driver (current, regulation), step mode and protection on one page
         self._driver_panel = DriverPanel()
@@ -392,6 +402,7 @@ class MainWindow(QMainWindow):
         )
         self._liveness.max_age_s = max(0.2, 4 * period_ms / 1000.0)
         board = Board(transport, config, liveness=self._liveness, name=label)
+        self._stick_driver = SingleMotorDriver(board, self._controller_panel.stick)
         bridge = BoardBridge(board, self)
         bridge.connected.connect(lambda identity: self.connected.emit())
         bridge.session.connect(self._on_session)
@@ -583,6 +594,15 @@ class MainWindow(QMainWindow):
     def _cancel_scenario(self):
         if self._board is not None:
             self._board.cancel_job()
+
+    @Slot(object)
+    def _on_controller_state(self, state):
+        """Every controller poll: the driver turns it into MOT:RUN / MOT:STOP (coalesced)."""
+        if self._stick_driver is None or self._board is None or not self._board.session_ready:
+            return
+        if state is None and not self._controller_panel.driving and self._stick_driver.last is None:
+            return
+        self._stick_driver.tick(state)
 
     @Slot()
     def _on_capture_requested(self):

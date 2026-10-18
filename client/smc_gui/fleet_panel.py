@@ -30,7 +30,9 @@ from smc_core.board import BoardConfig
 from smc_core.fleet import Fleet, FleetConfig, FleetError, ROLES
 from smc_core.transport import open_transport
 from smc_core.transport.tee import TeeTransport
+from smc_core.drive_map import BaseDriver
 from smc_gui import theme
+from smc_gui.controller_panel import ControllerPanel
 
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 VNUCLEO_EXE = os.path.join(ROOT, "build-vnucleo", "vnucleo.exe" if os.name == "nt" else "vnucleo")
@@ -248,6 +250,12 @@ class FleetPanel(QWidget):
         bottom.addWidget(log, 1)
         root.addLayout(bottom, 1)
 
+        # The pad drives the base: left stick vx/vy, right stick turn
+        self.controller = ControllerPanel("base")
+        self.controller.state_changed.connect(self._on_controller_state)
+        root.addWidget(self.controller)
+        self._base_driver: Optional[BaseDriver] = None
+
         self.refresh_ports()
         self._set_open_state(False)
 
@@ -396,8 +404,17 @@ class FleetPanel(QWidget):
     def close_fleet(self):
         self._on_close_clicked()
 
+    def _on_controller_state(self, state):
+        if self._base_driver is None:
+            return
+        self._base_driver.tick(state)
+        if state is not None and self._base_driver.last is not None:
+            self.set_twist(self._base_driver.last)
+
     @Slot(dict)
     def _on_opened(self, serials: dict):
+        self._base_driver = BaseDriver(self._bridge.fleet)
+        self._base_driver.on_action = self._bridge.action
         for role, serial in serials.items():
             self._serial[role].setText(serial)
         self._status.setText("open: four boards")
@@ -410,6 +427,7 @@ class FleetPanel(QWidget):
 
     @Slot()
     def _on_closed(self):
+        self._base_driver = None
         self._status.setText("closed")
         for role in ROLES:
             for store in (self._serial, self._state, self._speed, self._age):
