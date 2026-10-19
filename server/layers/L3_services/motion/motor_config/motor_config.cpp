@@ -117,7 +117,10 @@ void MotorConfigManager::applyDefaults() {
     d.accelFsps2 = 2008.2f;                     // the ramps and ceiling the firmware always booted with
     d.decelFsps2 = 2008.2f;
     d.maxSpeedFsps = 992.0f;
-    d.overcurrentA = 1.0e6f;                    // as high as the driver goes: adjust down for protection
+    // Short-circuit guard, not a current limit (the current reference limits the motor). Bench
+    // 2026-10-19, IHM03A1: powerSTEP01 OCD_TH 0..1 trip on switching transients while running,
+    // 2 and up stay clear; 100 A lands on OCD_TH 3 (125 mV, ~104 A), clean through a soak
+    d.overcurrentA = 100.0f;
     d.stallThreshold01 = 0.0f;
     // Fault alarms: overcurrent, thermal shutdown, undervoltage; stall needs tuning first
     d.faultAlarms = Harness::DriverFault::OVERCURRENT | Harness::DriverFault::THERMAL_SHUTDOWN

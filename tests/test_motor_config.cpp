@@ -69,6 +69,14 @@ TEST(empty_store_yields_defaults_and_invalid) {
     EXPECT_FALSE(cfg.isValid());
 }
 
+TEST(the_default_overcurrent_guard_is_the_bench_proven_ocd_th_3) {
+    // Bench 2026-10-19: OCD_TH 0..1 trip on switching transients while running, 3 is clean
+    FakeConfigStore store;
+    Services::MotorConfigManager cfg;
+    (void)cfg.init(store);
+    EXPECT_EQ(Drivers::PowerStepSettings::ampsToOcd(cfg.getDriverSettings().overcurrentA), 3u);
+}
+
 TEST(save_then_reload_round_trips_through_the_store) {
     FakeConfigStore store;
     PowerStepModel drv;
