@@ -1,13 +1,13 @@
 /**
  * @file fake_peripherals.hpp
- * @brief The rest of the virtual board's hardware: quadrature encoder (fed by the fake
- *        motor), remote LCD (counts what it is asked to draw), motor-config store and
+ * @brief The rest of the virtual board's hardware: quadrature encoder (on the shaft the
+ *        fake driver chip turns), remote LCD (counts what it is asked to draw), motor-config store and
  *        NOR flash in RAM (optionally persisted to a file per instance).
  */
 #pragma once
 
-#include "fake_powerstep.hpp"
 #include "host_platform.hpp"
+#include "shaft.hpp"
 
 #include "L3_services/boundary/iremote_display.hpp"
 #include "L4_drivers/boundary/iconfig_store.hpp"
@@ -24,13 +24,14 @@
 
 namespace Sim {
 
-/// TIM-counter encoder on the motor shaft: counts = microsteps x (4 x PPR) / microsteps-per-rev.
-/// The DMA sample ring is filled lazily at the sample rate when the service looks at it.
+/// TIM-counter encoder on the motor shaft: counts = full steps x (4 x PPR) / full-steps-per-rev.
+/// The DMA sample ring is filled lazily at the sample rate when the service looks at it; the
+/// SYNC ring (TIM3 counting the chip's step-sync output) only when the chip has that output.
 class FakeEncoderHw : public Drivers::IEncoderHardware {
 public:
     static constexpr uint32_t RING = 4096;
-    FakeEncoderHw(FakePowerStep& motor, uint32_t ppr = 1000, uint32_t fullStepsPerRev = 200)
-        : motor_(motor), ppr_(ppr), fspr_(fullStepsPerRev) {}
+    FakeEncoderHw(IShaft& shaft, uint32_t ppr = 1000, uint32_t fullStepsPerRev = 200)
+        : motor_(shaft), ppr_(ppr), fspr_(fullStepsPerRev) {}
 
     bool isReady() const override { return true; }
     int32_t getCount() const override { return count(); }
@@ -49,7 +50,7 @@ public:
     }
     void indexISR(uint32_t, uint32_t) override {}
     const uint16_t* sampleBuffer() const override { return ring_; }
-    const uint16_t* syncBuffer() const override { return sync_; }
+    const uint16_t* syncBuffer() const override { return motor_.hasSyncOutput() ? sync_ : nullptr; }
     uint32_t sampleBufferSize() const override { return RING; }
     void pauseSampling() override { std::lock_guard<std::mutex> lk(m_); paused_ = true; }
     uint32_t sampleWriteIndex() const override {
@@ -88,16 +89,15 @@ public:
 
 private:
     int32_t rawCount() const {
-        const double usPerRev = static_cast<double>(fspr_) * motor_.microstepsPerFullStep();
-        return static_cast<int32_t>(std::lround(motor_.positionMicrosteps() * 4.0 * ppr_ / usPerRev));
+        return static_cast<int32_t>(std::lround(motor_.shaftFullSteps() * 4.0 * ppr_ / fspr_));
     }
     int32_t count() const { return rawCount() - offset_; }
-    /// The chip's SYNC pulses: 8 per full step of commanded position (what TIM3 counts)
+    /// The chip's SYNC pulses (what TIM3 counts; 0 without the output)
     int32_t syncCount() const {
-        return static_cast<int32_t>(std::lround(motor_.positionMicrosteps() * 8.0 / motor_.microstepsPerFullStep()));
+        return static_cast<int32_t>(std::lround(motor_.syncPulses()));
     }
 
-    FakePowerStep& motor_;
+    IShaft& motor_;
     uint32_t ppr_, fspr_;
     mutable std::mutex m_;
     mutable uint16_t ring_[RING] = {};

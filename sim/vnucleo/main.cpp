@@ -7,14 +7,17 @@
  * server/system_init.cpp phase by phase; only the hardware differs:
  *   L1/L5 USART2 + RX ring   -> Sim::TcpTransport (same 1024-byte ring, overflow counted)
  *   L4 powerSTEP01 over SPI  -> Sim::FakePowerStep (datasheet register model, motion physics)
- *   L4 TIM encoder + DMA     -> Sim::FakeEncoderHw (driven by the fake motor's position)
+ *     or, with --driver stepdir, the firmware's real L4 Drivers::StepDirDriver on a fake
+ *     STEP/DIR board (Sim::StepDirBoard: pins, step pulse timer, DRV8825-class chip):
+ *     driver boundary step 5, the same L2/L3 on a second, unrelated chip
+ *   L4 TIM encoder + DMA     -> Sim::FakeEncoderHw (on the shaft the fake chip turns)
  *   L4 internal-flash config -> Sim::FakeConfigStore (RAM, or a file with --state)
  *   L4 SPI NOR flash         -> Sim::FakeNorFlash (images in RAM; device identity persisted)
  *   L3 remote LCD            -> Sim::FakeRemoteDisplay
  *   FreeRTOS tasks           -> std::thread running vMotorTask / vCommsTask / vEncoderTask
  *
  *   vnucleo [--port 5761] [--bind 127.0.0.1] [--serial VN000001] [--state DIR]
- *           [--motion-log FILE]
+ *           [--motion-log FILE] [--driver powerstep|stepdir]
  *
  * Differences from the board (none touch the protocol):
  *   - g_deviceConfig is initialised here with its own fake flash (the firmware does it in
@@ -26,6 +29,7 @@
 
 #include "fake_peripherals.hpp"
 #include "fake_powerstep.hpp"
+#include "fake_stepdir.hpp"
 #include "host_platform.hpp"
 #include "tcp_transport.hpp"
 
@@ -72,7 +76,9 @@ void usage() {
                 "  --port    TCP port to listen on (default 5761)\n"
                 "  --bind    address (default 127.0.0.1; 0.0.0.0 to accept other hosts)\n"
                 "  --serial  device serial reported by *IDN? (default VN000001)\n"
-                "  --state   directory for the persistent config and identity (default: RAM)\n");
+                "  --state   directory for the persistent config and identity (default: RAM)\n"
+                "  --driver  motor driver board: powerstep (X-NUCLEO-IHM03A1, default) or\n"
+                "            stepdir (a generic STEP/DIR chip, DRV8825-class)\n");
 }
 
 [[noreturn]] void fail(const char* what) {
@@ -86,6 +92,7 @@ int main(int argc, char** argv) {
     uint16_t port = 5761;
     std::string bind = "127.0.0.1";
     std::string state;
+    std::string driverName = "powerstep";
     for (int i = 1; i < argc; ++i) {
         const std::string a = argv[i];
         auto next = [&]() -> std::string {
@@ -97,8 +104,10 @@ int main(int argc, char** argv) {
         else if (a == "--serial") Sim::g_serial = next().substr(0, 8);
         else if (a == "--state") state = next();
         else if (a == "--motion-log") Sim::FakePowerStep::openMotionLog(next().c_str());
+        else if (a == "--driver") driverName = next();
         else { usage(); return a == "--help" || a == "-h" ? 0 : 2; }
     }
+    if (driverName != "powerstep" && driverName != "stepdir") { usage(); return 2; }
     std::random_device rd;
     Sim::g_bootId = (static_cast<uint32_t>(rd()) << 1) ^ static_cast<uint32_t>(rd());
     (void)Sim::epoch();
@@ -113,8 +122,21 @@ int main(int argc, char** argv) {
     if (!transport.listen()) fail("cannot listen (port in use?)");
 
     const std::string prefix = state.empty() ? std::string() : state + "/" + Sim::g_serial;
-    static Sim::FakePowerStep motor;
-    static Sim::FakeEncoderHw encoderHw(motor);
+    // The motor driver board: the only line that differs between the two drivers. L2/L3
+    // see an IMotorDriver either way (the motion log is the fake powerSTEP01's).
+    Drivers::IMotorDriver* driver = nullptr;
+    Sim::IShaft* shaft = nullptr;
+    if (driverName == "stepdir") {
+        static Sim::StepDirBoard stepDir;
+        driver = &stepDir.driver;
+        shaft = &stepDir.chip;
+    } else {
+        static Sim::FakePowerStep powerStep;
+        driver = &powerStep;
+        shaft = &powerStep;
+    }
+    Drivers::IMotorDriver& motor = *driver;
+    static Sim::FakeEncoderHw encoderHw(*shaft);
     static Sim::FakeRemoteDisplay lcd;
     static Sim::FakeConfigStore configStore(prefix.empty() ? "" : prefix + "_motorcfg.bin");
     static Sim::FakeNorFlash identityFlash(64 * 1024, prefix.empty() ? "" : prefix + "_identity.bin");
@@ -187,8 +209,9 @@ int main(int argc, char** argv) {
         std::thread(Scheduler::vEncoderTask, nullptr).detach();
     }
 
-    std::printf("vnucleo %s listening on %s:%u (boot %08X)\n", Sim::g_serial.c_str(),
-                bind.c_str(), static_cast<unsigned>(port), static_cast<unsigned>(Sim::g_bootId));
+    std::printf("vnucleo %s listening on %s:%u (boot %08X, driver %s)\n", Sim::g_serial.c_str(),
+                bind.c_str(), static_cast<unsigned>(port), static_cast<unsigned>(Sim::g_bootId),
+                driverName.c_str());
     std::fflush(stdout);
     motorTask.join();          // the task loops never return; Ctrl-C / kill ends the board
     commsTask.join();

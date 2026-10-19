@@ -8,7 +8,8 @@ port. One process is one board. No hardware, no FreeRTOS.
 |---|---|
 | USART2 + 1 KB RX ring | TCP server, same 1 KB ring, overflow counted (F1) |
 | powerSTEP01 over SPI | `FakePowerStep`: datasheet registers, trapezoidal RUN/MOVE/GOTO, MAX_SPEED clamp, Hi-Z |
-| Quadrature encoder + DMA ring | `FakeEncoderHw`: follows the fake motor (1000 PPR, x4) |
+| or, `--driver stepdir`, a STEP/DIR chip | `StepDirBoard`: the firmware's real L4 `StepDirDriver` on fake pins, a fake step pulse timer and a DRV8825-class chip (driver boundary step 5) |
+| Quadrature encoder + DMA ring | `FakeEncoderHw`: on the shaft the fake chip turns (1000 PPR, x4); SYNC ring only with the powerSTEP01 |
 | Internal-flash config, NOR flash | RAM; config and identity persisted with `--state DIR` |
 | Remote LCD | accepts and counts draw commands |
 | FreeRTOS tasks | `std::thread` running `vMotorTask`, `vCommsTask`, `vEncoderTask` |
@@ -31,6 +32,8 @@ cmake --build --preset vnucleo          # -> build-vnucleo/vnucleo(.exe)
 build-vnucleo/vnucleo --port 5761                      # one board
 python sim/vnucleo_fleet.py --count 4                  # four boards, ports 5761..5764
 python sim/vnucleo_fleet.py --count 4 --state sim_state   # keep config/identity between runs
+build-vnucleo/vnucleo --driver stepdir                 # a generic STEP/DIR driver instead
+python sim/vnucleo_fleet.py --count 4 --driver stepdir
 ```
 
 Then point any client at `tcp://127.0.0.1:5761`:
@@ -46,4 +49,5 @@ Kill one board's process to rehearse "one wheel lost"; with the watchdog armed, 
 whose host disappears stops its motor exactly as the real one does.
 
 The client tests (`client/tests/test_vnucleo.py`, and the identical-output test) use the
-virtual Nucleo automatically when `build-vnucleo/` exists, and skip it otherwise.
+virtual Nucleo automatically when `build-vnucleo/` exists, and skip it otherwise;
+`test_vnucleo.py` runs its scenarios on both drivers.

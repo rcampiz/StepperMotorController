@@ -351,4 +351,10 @@ int FakePowerStep::microstepsPerFullStep() {
     return usPerFs();
 }
 
+double FakePowerStep::shaftFullSteps() {
+    std::lock_guard<std::recursive_mutex> lk(m_);
+    update();
+    return pos_ / usPerFs();
+}
+
 } // namespace Sim

@@ -89,6 +89,7 @@ add_executable(vnucleo
     vnucleo/main.cpp
     vnucleo/tcp_transport.cpp
     vnucleo/fake_powerstep.cpp
+    vnucleo/fake_stepdir.cpp
     vnucleo/sim_stubs.cpp
     ${FIRMWARE_SOURCES}
 )

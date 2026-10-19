@@ -15,6 +15,7 @@
 
 #include "L4_drivers/boundary/imotor_driver.hpp"
 #include "L4_drivers/devices/powerstep01_settings.hpp"
+#include "shaft.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -23,7 +24,7 @@
 
 namespace Sim {
 
-class FakePowerStep : public Drivers::IMotorDriver {
+class FakePowerStep : public Drivers::IMotorDriver, public IShaft {
 public:
     static constexpr double SPEED_LSB = 67.108864;      // SPEED reg units per full step/s
     static constexpr double ACC_LSB = 14.5519;          // steps/s^2 per ACC/DEC unit
@@ -75,9 +76,15 @@ public:
     /// (steady_clock ns), so start skew between board processes can be measured.
     static void openMotionLog(const char* path);
 
-    /// Microstep position (for the fake encoder) and microsteps per full step.
+    /// Microstep position and microsteps per full step.
     double positionMicrosteps();
     int microstepsPerFullStep();
+
+    // The shaft (for the fake encoder) and the SYNC output: 8 pulses per full step (STEP_MODE
+    // SYNC_SEL, counted by TIM3)
+    double shaftFullSteps() override;
+    bool hasSyncOutput() const override { return true; }
+    double syncPulses() override { return shaftFullSteps() * 8.0; }
 
 private:
     enum class Mode { Idle, Run, Position, Stopping };
