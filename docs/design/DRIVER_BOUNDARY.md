@@ -1,6 +1,12 @@
 # Design: a swappable motor driver (H_L3_L4 in physical units)
 
-Status: **proposal, awaiting go-ahead** (2026-10-19). No code changes yet.
+Status: **approved 2026-10-19, in progress** (step 1 first).
+
+Decisions (owner, 2026-10-19): the next chip is unknown, so nothing may assume one: the
+boundary is capability-driven (`DriverCaps`), and every chip-specific fact lives in its L4
+driver. Voltage mode stays, as a capability. Units: full steps/s and full steps/s^2 for
+speed and acceleration, microsteps for position. Old chip-unit commands stay one release,
+routed through the driver, then go.
 
 ## Goal
 
@@ -91,10 +97,3 @@ Raw register access stays only on the bring-up path (`IDebugAccess`, `DBG:*`), n
   ISR-safe and as fast as today (microseconds); covered by the existing estop scenarios.
 - Rounding: physical round-trips must not drift saved values (store physical, convert once).
 - Protocol users (GUI, Pi): keep aliases for a release; bump protocol to 3.
-
-## Questions for the owner
-
-1. Which chips matter next (TMC5160 SPI, TMC2209 UART, STEP/DIR)? It decides the caps set.
-2. Keep voltage mode (KVAL) at all, or current mode only?
-3. Units: full steps for speed/accel and microsteps for position (proposed), or revolutions?
-4. Protocol: keep the old chip-unit commands for one release (proposed) or break now?
