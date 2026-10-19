@@ -70,7 +70,7 @@ void selectRow(Services::ICanvas& lcd, uint16_t x, uint16_t y, uint16_t w, uint1
                const char* label, const char* value, bool editing = false);
 void unselectRowAt(uint16_t y);
 void clearSelection();
-void animateSelection(Services::ICanvas& lcd);
+void animateSelection(Services::ICanvas& lcd, uint32_t nowMs);   ///< paced by nowMs, <= 10 repaints/s
 
 /// One small-font hint line across the content width (blank text clears it)
 void hintLine(Services::ICanvas& lcd, uint16_t y, const char* text, uint16_t color);

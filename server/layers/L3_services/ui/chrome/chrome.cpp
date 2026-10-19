@@ -34,9 +34,13 @@ int16_t sinApprox(int32_t a1024, int16_t amp) {             // a sine from two p
 }
 
 // The selection's animation (frames at 20 Hz; the bar repaints every other frame)
-constexpr uint16_t SWAY_FRAMES = 32;          // 1.6 s side to side
+// The selection's animation runs on the clock, so its pace never depends on how often the
+// Display task happens to render (it ran fast enough to make someone dizzy, 2026-10-19)
+constexpr uint32_t SWAY_MS = 1600;            // side to side and back
 constexpr int16_t  SWAY_PX = 3;
-constexpr uint16_t FLASH_FRAMES = 12;         // a new colour every 0.6 s
+constexpr uint32_t FLASH_MS = 600;            // a new colour this often
+constexpr uint32_t STRIPE_STEP_MS = 120;      // the stripes crawl one pixel this often
+constexpr uint32_t REPAINT_MS = 100;          // at most 10 repaints a second
 constexpr uint16_t STRIPE_W = 7;              // the bar's diagonal stripes
 struct Ink { uint16_t top, bottom; };
 /// A bar's look: stripes, the label's hard shadow, the value's ink, the label's flash colours
@@ -60,7 +64,8 @@ struct Selection {
     char value[20] = {};
 };
 Selection s_sel;
-uint16_t s_tick = 0;
+uint32_t s_nowMs = 0;          ///< the animation's clock (ScreenManager passes it in)
+uint32_t s_lastPaintMs = 0;
 
 bool glyphInk(Services::ICanvas& lcd, const char* text, int16_t len, int16_t gx, int16_t gy) {
     if (gy < 0 || gy >= MED_H || gx < 0 || gx >= len * MED_W) return false;
@@ -73,11 +78,12 @@ void composeSelection(Services::ICanvas& lcd)
     const Selection& sel = s_sel;
     const auto labelLen = static_cast<int16_t>(strlen(sel.label));
     const auto valueLen = static_cast<int16_t>(strlen(sel.value));
-    const int16_t lx0 = static_cast<int16_t>(4 + SWAY_PX + sinApprox(static_cast<int32_t>(s_tick) * 1024 / SWAY_FRAMES, SWAY_PX));
+    const int16_t lx0 = static_cast<int16_t>(4 + SWAY_PX +
+                                             sinApprox(static_cast<int32_t>((s_nowMs % SWAY_MS) * 1024u / SWAY_MS), SWAY_PX));
     const int16_t vx0 = static_cast<int16_t>(sel.w - 6 - valueLen * MED_W);
     const BarStyle& style = sel.editing ? EDIT_STYLE : SELECT_STYLE;
-    const Ink& ink = style.faces[(s_tick / FLASH_FRAMES) % 3];
-    const uint16_t phase = static_cast<uint16_t>(s_tick / 2);
+    const Ink& ink = style.faces[(s_nowMs / FLASH_MS) % 3];
+    const auto phase = static_cast<uint16_t>((s_nowMs / STRIPE_STEP_MS) % (2u * STRIPE_W));
     constexpr int16_t PAD_Y = 2;
 
     // The label leans right at the top (up to 2 px): slanted letters
@@ -136,10 +142,12 @@ void clearSelection()
     s_sel.active = false;
 }
 
-void animateSelection(Services::ICanvas& lcd)
+void animateSelection(Services::ICanvas& lcd, uint32_t nowMs)
 {
-    s_tick++;
-    if (s_sel.active && (s_tick & 1) == 0) composeSelection(lcd);
+    s_nowMs = nowMs;
+    if (!s_sel.active || (nowMs - s_lastPaintMs) < REPAINT_MS) return;
+    s_lastPaintMs = nowMs;
+    composeSelection(lcd);
 }
 
 void drawTitleBand(Services::ICanvas& lcd, const char* title)

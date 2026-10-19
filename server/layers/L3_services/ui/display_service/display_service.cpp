@@ -59,6 +59,7 @@ bool DisplayService::init(Drivers::ICanvas& lcd,
     m_mainMenu.setSelectionCallback(&DisplayService::onMainMenuSelect);
 
     m_screenManager.init(&m_mainMenu, m_lcd);
+    m_screenManager.setClock(m_clock);      // animations run on time, not on frames
     m_screenManager.push(&m_bootScreen);   // boot into colour test; any button -> main menu
     m_bootHandoff = true;                  // ...and after BOOT_SCREEN_MS, the saver
     m_bootShownMs = m_clock->getTickMs();

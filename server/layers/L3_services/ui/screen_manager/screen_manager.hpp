@@ -14,6 +14,7 @@
 
 #include "ui/screen.hpp"
 #include "ui/chrome/chrome.hpp"
+#include "F_platform/boundary/iclock.hpp"
 #include <stdint.h>
 
 namespace UI {
@@ -67,6 +68,10 @@ public:
      */
     void render();
 
+    /// The clock that paces animations (the selected row). Without one, each render
+    /// counts as 50 ms (one 20 Hz frame).
+    void setClock(Platform::IClock* clock) { m_clock = clock; }
+
     /**
      * @brief Route input to the current screen
      *
@@ -88,6 +93,8 @@ private:
     uint8_t m_depth = 0;
     Services::ICanvas* m_lcd = nullptr;
     bool m_needsClear = false;  ///< Next render should clear screen first
+    Platform::IClock* m_clock = nullptr;
+    uint32_t m_frameMs = 0;     ///< the stand-in clock when there is none
 };
 
 } // namespace UI

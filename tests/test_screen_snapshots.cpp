@@ -332,6 +332,27 @@ static void settle(Services::IndicatorService& ind, int ticks = 25) {
     for (int i = 0; i < ticks; i++) ind.tick();
 }
 
+TEST(the_selection_animates_on_time_not_on_frames) {
+    // 2026-10-19: the bar swayed fast enough to make someone dizzy when the Display task
+    // rendered more often than 20 Hz. Its pace now follows the clock: many renders within a
+    // few ms repaint it at most once, and with time moving it repaints every 100 ms.
+    Rig rig;
+    TickClock clock;
+    UI::MenuScreen menu("Main Menu");
+    menu.addItem("Encoder"); menu.addItem("Motion");
+    rig.mgr.setClock(&clock);
+    rig.start(&menu);
+    rig.frame();
+    clock.now += 200; rig.frame();                    // settle: one repaint now due
+    const uint32_t before = rig.panel.pixelsWritten;
+    for (int i = 0; i < 20; i++) { clock.now += 2; rig.frame(); }      // 20 renders in 40 ms
+    EXPECT_TRUE(rig.panel.pixelsWritten - before <= 228u * 16u);
+    const uint32_t mid = rig.panel.pixelsWritten;
+    for (int i = 0; i < 10; i++) { clock.now += 50; rig.frame(); }     // 500 ms at 20 Hz
+    const uint32_t bars = (rig.panel.pixelsWritten - mid) / (228u * 16u);
+    EXPECT_TRUE(bars >= 4u && bars <= 6u);                              // ~every 100 ms
+}
+
 TEST(panel_sleeps_after_the_saver_has_run_and_wakes_every_time) {
     using A = UI::PanelSleep::Action;
     UI::PanelSleep ps;

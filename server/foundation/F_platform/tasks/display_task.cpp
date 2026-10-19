@@ -36,6 +36,14 @@ void vDisplayTask(void* pvParameters)
 
         s_service->tick();
 
+        // A long tick (a flash save, a full repaint, a bounded wait on the Motor task) must
+        // not be followed by the missed periods fired back to back: vTaskDelayUntil catches
+        // up, so every frame-counted animation ran several times too fast (2026-10-19, the
+        // selection bar rocking fast enough to make someone dizzy). Late: start from now.
+        const uint32_t nowMs = s_clock->getTickMs();
+        if (nowMs - lastWakeMs >= DISPLAY_REFRESH_PERIOD_MS) {
+            lastWakeMs = nowMs;
+        }
         s_clock->sleepUntilMs(lastWakeMs, DISPLAY_REFRESH_PERIOD_MS);
     }
 }
