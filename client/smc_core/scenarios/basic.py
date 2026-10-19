@@ -86,7 +86,8 @@ def heartbeat_loss(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
 
 @scenario("step_mode_readback", "Set each step mode (log2 of the microsteps) through DRV:CFG:USTEP "
                                 "(protocol 2: DRV:CFG:STEPMODE) + APPLY, read back the resolution in "
-                                "force (DRV:USTEP?) and the one asked for, restore the original.",
+                                "force (DRV:USTEP?) and the one asked for, restore the original. A mode "
+                                "finer than the driver's finest (DRV:CAPS?) must be refused.",
           params={"modes": [0, 3, 7]})
 def step_mode_readback(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     drv = D.DriverAccess.for_ctx(ctx)
@@ -97,9 +98,16 @@ def step_mode_readback(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     asked = drv.configured_microsteps()
     original = int(asked if asked is not None else before["microsteps"])
     ctx.measure("original", original)
+    finest = D.finest_microsteps(caps)
     try:
         for mode in params["modes"]:
             n = 1 << int(mode)
+            if n > finest:
+                # beyond what the driver can run in any mode: refused, never capped silently
+                r = drv.set_microsteps(n)
+                ctx.check(f"mode {mode} refused (the driver's finest is 1/{finest})", not r.success,
+                          r.error_code or "accepted!")
+                continue
             drv.set_microsteps(n)
             ctx.call(C.cfg_apply())
             got = drv.resolution().get("microsteps", -1)
@@ -110,7 +118,7 @@ def step_mode_readback(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
             ctx.check(f"mode {mode}", got == want and cfg == n,
                       f"in force {got} (expected {want}), asked {cfg} (expected {n})")
     finally:
-        drv.set_microsteps(original)
+        drv.set_microsteps(D.requestable_microsteps(caps, original))
         ctx.call(C.cfg_apply())
 
 

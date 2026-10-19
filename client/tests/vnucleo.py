@@ -1,4 +1,7 @@
-"""Test helper: start virtual Nucleo boards (sim/vnucleo) on free ports; skip if not built."""
+"""Test helper: start virtual Nucleo boards (sim/vnucleo) on free ports; skip if not built.
+
+`driver` picks the motor driver board behind the firmware's L2/L3: "powerstep" (the
+X-NUCLEO-IHM03A1, the default) or "stepdir" (a generic STEP/DIR chip, driver boundary step 5)."""
 
 import os
 import socket
@@ -39,16 +42,16 @@ def _wait_listening(port: int, timeout: float = 5.0) -> None:
 
 
 @contextmanager
-def boards(count: int = 1, serial_base: int = 1, log_dir: str = None):
+def boards(count: int = 1, serial_base: int = 1, log_dir: str = None, driver: str = "powerstep"):
     """Yield a list of (url, Popen) for `count` fresh boards; stops them afterwards.
-    With log_dir, board n writes its motion log to log_dir/VN00000n.log."""
+    With log_dir, board n writes its motion log to log_dir/VN00000n.log (powerstep only)."""
     require()
     procs = []
     try:
         for i in range(count):
             port = free_port()
             serial = "VN%06d" % (serial_base + i)
-            args = [EXE, "--port", str(port), "--serial", serial]
+            args = [EXE, "--port", str(port), "--serial", serial, "--driver", driver]
             if log_dir:
                 args += ["--motion-log", os.path.join(log_dir, serial + ".log")]
             p = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

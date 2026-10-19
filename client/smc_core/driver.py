@@ -108,6 +108,26 @@ def microsteps_in_force(caps: Dict[str, Any], asked: int, drive_mode: str) -> in
     return 1 << (n.bit_length() - 1)
 
 
+def finest_microsteps(caps: Dict[str, Any]) -> int:
+    """The finest resolution a request may ask for: the driver's finest in any drive mode
+    (DRV:CFG:USTEP refuses more; 128 on a powerSTEP01, 32 on a DRV8825-class STEP/DIR chip)."""
+    return max(int(caps.get("max_microsteps_voltage") or 1), int(caps.get("max_microsteps_current") or 1))
+
+
+def requestable_microsteps(caps: Dict[str, Any], asked: int) -> int:
+    """`asked` capped to what the driver takes as a request. A stored request beyond it (the
+    firmware's default asks 1/128, "the finest, capped by the driver") restores as the
+    driver's finest: the same resolution in force."""
+    return max(1, min(int(asked), finest_microsteps(caps)))
+
+
+def switchable_drive_modes(caps: Dict[str, Any]) -> bool:
+    """Both drive modes exist (the powerSTEP01's voltage and current modes). A driver with one,
+    or whose current reference is set in hardware (a STEP/DIR chip's VREF), refuses
+    DRV:CFG:DRIVE to the other."""
+    return bool(caps.get("voltage_mode")) and bool(caps.get("current_mode"))
+
+
 # ---------------------------------------------------------------------------
 # Protocol 2 translation (powerSTEP01 codes <-> physical)
 # ---------------------------------------------------------------------------

@@ -62,8 +62,11 @@ def _configured_mode(ctx: ScenarioContext) -> Optional[int]:
 
 
 def _set_mode(ctx: ScenarioContext, mode: int) -> None:
-    """Store the resolution (DRV:CFG:USTEP, or DRV:CFG:STEPMODE on a protocol 2 board)."""
-    _drv(ctx).set_microsteps(1 << int(mode))
+    """Store the resolution (DRV:CFG:USTEP, or DRV:CFG:STEPMODE on a protocol 2 board), capped
+    to the finest the driver takes as a request (a stored 1/128 restores as 1/32 on a 1/32
+    driver: the same resolution in force)."""
+    drv = _drv(ctx)
+    drv.set_microsteps(D.requestable_microsteps(drv.caps(), 1 << int(mode)))
 
 
 def _chip_mode(ctx: ScenarioContext) -> int:
@@ -181,8 +184,10 @@ def step_mode_chip(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
         original = _chip_geometry(ctx)["step_mode"]
     ctx.measure("original", original)
     eff = lambda m: _effective_mode(ctx, m, drive)                  # noqa: E731
-    # a mode the chip will really run differently from the original
-    other = next((m for m in (mode, 3, 2, 1) if eff(m) != eff(original)), (mode + 1) % 8)
+    # a mode the chip will really run differently from the original, one the driver takes
+    finest = D.finest_microsteps(_drv(ctx).caps())
+    other = next((m for m in (mode, 3, 2, 1) if (1 << m) <= finest and eff(m) != eff(original)),
+                 (mode + 1) % 8)
     ctx.measure("mode", other)
 
     def apply(m: int) -> int:
@@ -214,10 +219,11 @@ def step_mode_chip(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
         ctx.check("original restored", got == eff(original), f"readback={got}")
 
 
-@scenario("drive_mode_chip", "Switch the powerSTEP01 between voltage mode (KVAL) and current "
-                            "mode (TVAL) through DRV:CFG:DRIVE + APPLY and require the chip's "
-                            "drive mode readback (DRV:USTEP? drive_mode) to follow, in Hi-Z and with "
-                            "the output enabled. Restores the original mode.",
+@scenario("drive_mode_chip", "Switch the driver between voltage mode and current mode through "
+                            "DRV:CFG:DRIVE + APPLY and require the chip's drive mode readback "
+                            "(DRV:USTEP? drive_mode) to follow, in Hi-Z and with the output enabled. "
+                            "Restores the original mode. A driver without both modes (DRV:CAPS?) "
+                            "must refuse the switch instead.",
           params={}, moves_motor=True)
 def drive_mode_chip(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     def chip() -> str:
@@ -234,6 +240,14 @@ def drive_mode_chip(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     ctx.require("chip reports its drive mode", original in ("voltage", "current"), original)
     ctx.measure("original", original)
     other = "current" if original == "voltage" else "voltage"
+    if not D.switchable_drive_modes(_drv(ctx).caps()):
+        # one drive mode (or a current reference set in hardware): the switch is refused
+        ctx.measure("switchable", False)
+        r = ctx.call(C.cfg_drive_mode(other == "current"))
+        ctx.check(f"DRV:CFG:DRIVE {other.upper()} refused (the driver has no {other} mode)",
+                  not r.success, r.error_code or "accepted!")
+        ctx.check(f"chip still in {original} mode", chip() == original, f"drive_mode={chip()}")
+        return
     configured = _configured_mode(ctx)
     if configured is None:
         configured = _chip_geometry(ctx)["step_mode"]
@@ -450,7 +464,8 @@ def _dft_peak_hz(signal: List[float], rate_hz: float, f_lo: float = 5.0, f_hi: f
                                "the same instants; reports the position error (counts) over time, "
                                "its ripple and the strongest oscillation frequency. Restores the "
                                "sample rate. Open loop only (the velocity estimate pauses while "
-                               "frozen).",
+                               "frozen). A driver without a step-sync output (DRV:CAPS? "
+                               "sync_pulses_per_full_step 0) is compared with the RUN speed instead.",
           params={"rpm": 60, "rate_hz": 2000, "settle_s": 1.0, "restore_rate_hz": 1000},
           moves_motor=True)
 def position_capture(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
@@ -492,10 +507,20 @@ def position_capture(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     ctx.require("samples read", len(rows) >= 64, f"{len(rows)} rows")
     enc = V2.unwrap16([r[0] for r in rows])
     syn = V2.unwrap16([r[1] for r in rows])
-    ppfs = int(info.get("pulses_per_full_step", 8)) or 8
-    counts_per_pulse = cpr / float(full * ppfs)
+    # pulses_per_full_step is a driver capability (absent: a protocol 2 powerSTEP01, 8); 0 or
+    # sync false: the driver has no step-sync output (a STEP/DIR chip), so the commanded
+    # travel is the RUN speed's, sample by sample
+    ppfs = int(info.get("pulses_per_full_step", 8))
+    has_sync = bool(info.get("sync", True)) and ppfs > 0
+    sample_hz = float(info.get("rate_hz", rate))
     enc_rel = [e - enc[0] for e in enc]
-    cmd_rel = [(s_ - syn[0]) * counts_per_pulse for s_ in syn]
+    if has_sync:
+        counts_per_pulse = cpr / float(full * ppfs)
+        cmd_rel = [(s_ - syn[0]) * counts_per_pulse for s_ in syn]
+    else:
+        counts_per_pulse = 0.0
+        per_sample = sps / float(full) * cpr / sample_hz
+        cmd_rel = [i * per_sample for i in range(len(enc_rel))]
     # the SYNC count is unsigned: orient it with the direction the encoder moved
     if enc_rel[-1] < 0:
         cmd_rel = [-c for c in cmd_rel]
@@ -503,10 +528,10 @@ def position_capture(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     mean = sum(err) / len(err)
     err0 = [round(e - mean, 2) for e in err]
     std = (sum(e * e for e in err0) / len(err0)) ** 0.5
-    peak_hz, peak_amp = _dft_peak_hz(err0, float(info.get("rate_hz", rate)))
-    t_ms = [round(1000.0 * i / float(info.get("rate_hz", rate)), 3) for i in range(len(err0))]
-    ctx.measure("capture", {"rate_hz": int(info.get("rate_hz", rate)), "n": len(err0), "rpm": rpm,
-                            "counts_per_pulse": round(counts_per_pulse, 4), "sync": bool(info.get("sync")),
+    peak_hz, peak_amp = _dft_peak_hz(err0, sample_hz)
+    t_ms = [round(1000.0 * i / sample_hz, 3) for i in range(len(err0))]
+    ctx.measure("capture", {"rate_hz": int(sample_hz), "n": len(err0), "rpm": rpm,
+                            "counts_per_pulse": round(counts_per_pulse, 4), "sync": has_sync,
                             "err_std": round(std, 2), "err_p2p": round(max(err0) - min(err0), 1),
                             "peak_hz": round(peak_hz, 1), "peak_amp": round(peak_amp, 2),
                             "enc_travel": enc_rel[-1], "cmd_travel": round(cmd_rel[-1], 1),
