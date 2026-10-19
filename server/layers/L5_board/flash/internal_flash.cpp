@@ -115,6 +115,9 @@ public:
     bool writeData(uint32_t addr, const uint8_t* data, size_t len) override {
         return Board::internalFlashWriteData(addr, data, len);
     }
+    /// STM32F401RE sector 7 (0x08060000..0x0807FFFF, 128 KB): the journal fills the first
+    /// 124 KB; the last 4 KB held the pre-journal blob (InternalFlashConfigStore, before 94e7495)
+    ConfigRegion configRegion() const override { return {0x08060000u, 7, 0x1F000u, 0x1F000u}; }
 };
 InternalFlashSTM32F401 s_internalFlash;
 } // namespace

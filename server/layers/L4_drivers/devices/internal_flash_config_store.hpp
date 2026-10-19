@@ -13,15 +13,10 @@ namespace Drivers {
 
 class InternalFlashConfigStore : public IConfigStore {
 public:
-    /// STM32F401RE: sector 7 is 0x08060000..0x0807FFFF; the config blob uses its last 4 KB.
-    static constexpr uint32_t DEFAULT_ADDR     = 0x0807F000u;
-    static constexpr uint8_t  DEFAULT_SECTOR   = 7;
-    static constexpr size_t   DEFAULT_CAPACITY = 0x1000;
-
-    InternalFlashConfigStore(Board::IInternalFlash& flash,
-                             uint32_t addr = DEFAULT_ADDR,
-                             uint8_t sector = DEFAULT_SECTOR,
-                             size_t capacity = DEFAULT_CAPACITY)
+    /// The single blob at `addr` in erase unit `sector` (the board's flash map: the caller
+    /// passes them; superseded on the board by InternalFlashJournalStore)
+    InternalFlashConfigStore(Board::IInternalFlash& flash, uint32_t addr, uint8_t sector,
+                             size_t capacity)
         : m_flash(flash), m_addr(addr), m_sector(sector), m_capacity(capacity) {}
 
     size_t capacity() const override { return m_capacity; }

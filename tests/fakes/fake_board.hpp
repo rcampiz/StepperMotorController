@@ -113,6 +113,7 @@ struct FakeInternalFlash : Board::IInternalFlash {
     bool writeData(uint32_t addr, const uint8_t* d, size_t n) override {
         writtenAddr = addr; written.assign(d, d + n); return true;
     }
+    ConfigRegion configRegion() const override { return {0x0807F000u, 7, 0x1000u, 0u}; }
 };
 
 } // namespace fakes
