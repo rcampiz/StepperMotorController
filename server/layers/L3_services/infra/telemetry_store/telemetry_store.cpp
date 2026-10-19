@@ -4,8 +4,6 @@
  */
 
 #include "L3_services/infra/telemetry_store/telemetry_store.hpp"
-#include "harness/pins/motor_conversions.hpp"
-#include "harness/defs/harness_l3_l4.hpp"      // Drivers::MotorStatus / MotorReg (single L4 definitions)
 #include <string.h>
 
 namespace Services {
@@ -17,8 +15,6 @@ bool TelemetryStore::init(Platform::ILock& lock, Platform::IClock& clock)
     m_lock = &lock;
     m_clock = &clock;
     m_motorStatus = Harness::MotorState::standby();
-    m_motorRawAbsPos = 0;
-    m_motorRawSpeed = 0;
     memset(&m_encoder, 0, sizeof(m_encoder));
     memset(&m_control, 0, sizeof(m_control));
     memset(&m_system, 0, sizeof(m_system));
@@ -32,15 +28,16 @@ Protocol::TelemetrySnapshot TelemetryStore::getSnapshot()
 
     m_lock->acquire();
 
-    // Motor: the driver's decoded state; position/speed from their registers
+    // Motor: the driver's state, physical (microsteps, full steps/s); no register decoding here
     const Harness::MotorState& mst = m_motorStatus;
     snap.motor.statusReg = mst.raw;
     snap.motor.faults = mst.faults;
     snap.motor.phase = static_cast<uint8_t>(mst.phase);
     snap.motor.forward = mst.forward;
     snap.motor.statusReadable = mst.readable;
-    snap.motor.position = Harness::signExtendAbsPos(m_motorRawAbsPos);
-    snap.motor.speed = Harness::rawSpeedToStepsPerSec(m_motorRawSpeed);
+    snap.motor.position = mst.positionUsteps;
+    // Whole steps/s, truncated (the driver keeps the integer part exact)
+    snap.motor.speed = (mst.speedFsps > 0.0f) ? static_cast<uint32_t>(mst.speedFsps) : 0u;
     snap.motor.busy = mst.busy();
     snap.motor.hiZ = mst.hiZ();
     snap.motor.stalled = mst.stalled();
@@ -60,18 +57,6 @@ void TelemetryStore::writeMotorStatus(const Harness::MotorState& status)
 {
     m_lock->acquire();
     m_motorStatus = status;
-    m_timestamp = m_clock->getTickMs();
-    m_lock->release();
-}
-
-void TelemetryStore::writeMotorParam(uint8_t reg, uint32_t value)
-{
-    m_lock->acquire();
-    if (reg == Drivers::MotorReg::ABS_POS) {
-        m_motorRawAbsPos = value;
-    } else if (reg == Drivers::MotorReg::SPEED) {
-        m_motorRawSpeed = value;
-    }
     m_timestamp = m_clock->getTickMs();
     m_lock->release();
 }

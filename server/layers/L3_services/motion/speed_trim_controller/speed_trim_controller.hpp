@@ -7,6 +7,7 @@
  *   - Trim output clamped to percentage of base command
  *   - Integrator gating on bad measurement quality or near-zero command
  *   - No RTOS, no heap, no driver access (pure logic)
+ *   - Speeds in full steps/s (physical; the driver converts to its chip's units)
  */
 
 #pragma once
@@ -42,7 +43,7 @@ struct SpeedTrimInput {
     bool     forward;           // Motor direction
     uint16_t fullStepsPerRev;   // Mechanical full steps/rev (typically 200)
     uint16_t encoderPPR;        // Encoder pulses/rev (e.g., 4000)
-    uint32_t maxSpeedRaw;       // MAX_SPEED register value (10-bit raw)
+    float    maxSpeedFsps;      // the driver's speed ceiling (getMaxSpeed), full steps/s
     float    dtSec;             // Time step (typically 0.050)
 };
 
@@ -52,9 +53,9 @@ struct SpeedTrimInput {
  * Contains the final speed to issue and telemetry data.
  */
 struct SpeedTrimResult {
-    uint32_t finalSpeedRaw;     // base + trim, for s_motor->run()
+    float    baseSpeedFsps;     // the commanded speed (from beginTrim), full steps/s
+    float    finalSpeedFsps;    // base + trim, clamped to [0, maxSpeedFsps]: for driver run()
     int32_t  trimTps;           // Trim in encoder tps (for telemetry)
-    int32_t  trimRaw;           // Trim in raw register units (signed)
     float    pTerm;             // Proportional component
     float    iTerm;             // Integral component (after anti-windup)
     bool     active;            // true if trim is running
@@ -79,9 +80,9 @@ public:
      * @brief Begin trim operation for a new RUN command
      * @param setpointTps  Target velocity in encoder ticks/sec
      * @param forward      Motor direction
-     * @param baseSpeedRaw Original commanded speed (raw register)
+     * @param baseSpeedFsps Original commanded speed, full steps/s
      */
-    void beginTrim(int32_t setpointTps, bool forward, uint32_t baseSpeedRaw);
+    void beginTrim(int32_t setpointTps, bool forward, float baseSpeedFsps);
 
     /**
      * @brief Reset controller state (integral, active flag)
@@ -119,7 +120,7 @@ private:
     bool     m_frozen       = false;
     int32_t  m_setpointTps  = 0;
     bool     m_forward      = true;
-    uint32_t m_baseSpeedRaw = 0;
+    float    m_baseSpeedFsps = 0.0f;
 
     // Check if integrator should be frozen this cycle
     bool shouldFreeze(const SpeedTrimInput& input) const;

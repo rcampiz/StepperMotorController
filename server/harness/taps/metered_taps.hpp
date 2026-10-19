@@ -163,9 +163,9 @@ public:
     explicit MeteredMotorDriver(Drivers::IMotorDriver& real) : m_real(real) {}
 
     void init() override { Meter::Scope m(N); m_real.init(); }
-    void run(bool forward, uint32_t speed) override { Meter::Scope m(N); m_real.run(forward, speed); }
-    void move(bool forward, uint32_t steps) override { Meter::Scope m(N); m_real.move(forward, steps); }
-    void goTo(int32_t position) override { Meter::Scope m(N); m_real.goTo(position); }
+    void run(bool forward, float fullStepsPerSec) override { Meter::Scope m(N); m_real.run(forward, fullStepsPerSec); }
+    void move(bool forward, uint32_t microsteps) override { Meter::Scope m(N); m_real.move(forward, microsteps); }
+    void goTo(int32_t positionMicrosteps) override { Meter::Scope m(N); m_real.goTo(positionMicrosteps); }
     void softStop() override { Meter::Scope m(N); m_real.softStop(); }
     void hardStop() override { Meter::Scope m(N); m_real.hardStop(); }
     void softHiZ() override { Meter::Scope m(N); m_real.softHiZ(); }
@@ -173,9 +173,12 @@ public:
     void goHome() override { Meter::Scope m(N); m_real.goHome(); }
     void goMark() override { Meter::Scope m(N); m_real.goMark(); }
     void resetPos() override { Meter::Scope m(N); m_real.resetPos(); }
+    void setMaxSpeed(float fullStepsPerSec) override { Meter::Scope m(N); m_real.setMaxSpeed(fullStepsPerSec); }
+    float getMaxSpeed() override { Meter::Scope m(N); return m_real.getMaxSpeed(); }
     uint32_t getParam(uint8_t reg) override { Meter::Scope m(N); return m_real.getParam(reg); }
     void setParam(uint8_t reg, uint32_t value) override { Meter::Scope m(N); m_real.setParam(reg, value); }
     Drivers::MotorStatus getStatus() override { Meter::Scope m(N); return m_real.getStatus(); }
+    Drivers::MotorStatus readState() override { Meter::Scope m(N); return m_real.readState(); }
     bool isBusy() override { return m_real.isBusy(); }              // a pin read, not a crossing worth counting
     bool flagActive() override { return m_real.flagActive(); }
     void setStandby(bool standby) override { m_real.setStandby(standby); }   // ISR-safe GPIO write: untouched

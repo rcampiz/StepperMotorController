@@ -4,6 +4,7 @@
  *
  * Pure-logic class: no RTOS, no heap, no driver access.
  * Motor_task feeds sensor data every 50ms and applies the returned Action.
+ * Speeds are physical (full steps/s); the driver converts to its chip's units.
  *
  * Control modes:
  *   OPEN_LOOP:            Telemetry only, no correction or fault
@@ -58,7 +59,7 @@ struct SupervisorConfig {
     // Recovery
     uint8_t  maxRetries;      // N_RETRY: max Tier 2 attempts before Tier 3
     // PID rate limiter
-    uint32_t maxDeltaVRaw;    // Max speed change per 50ms cycle (raw units)
+    float    maxDeltaVFsps;   // Max speed change per 50ms cycle, full steps/s (0 = no limit)
     // Recovery timeout
     uint32_t recoveryTimeMs;  // Max time in RECOVERY before fault (ms)
 };
@@ -68,10 +69,10 @@ struct SupervisorInput {
     int32_t  cmdPosTicks;     // Motor ABS_POS converted to encoder ticks
     int32_t  encPosTicks;     // Encoder count
     int32_t  encVelTps;       // Encoder velocity (ticks/sec)
-    uint32_t baseSpeedRaw;    // Original commanded raw speed
-    bool     motorBusy;       // powerSTEP01 BUSY status
+    float    baseSpeedFsps;   // Original commanded speed, full steps/s
+    bool     motorBusy;       // the driver's "moving" flag
     bool     forward;         // Commanded direction
-    uint32_t maxSpeedRaw;     // MAX_SPEED register value (clamping)
+    float    maxSpeedFsps;    // the driver's speed ceiling (getMaxSpeed), full steps/s
     uint16_t fullStepsPerRev; // Motor config
     uint16_t encoderPPR;      // Encoder config
     float    dtSec;           // Time step (nominally 0.050)
@@ -89,7 +90,7 @@ struct SupervisorAction {
 
     Type     type           = Type::NONE;
     bool     direction      = true;
-    uint32_t rawSpeed       = 0;       // Only valid for SET_SPEED
+    float    speedFsps      = 0.0f;    // Only valid for SET_SPEED: full steps/s for driver run()
     Tier     tier           = Tier::OBSERVE;
     bool     faultEvent     = false;   // Transition INTO FAULT
     bool     recoveryEvent  = false;   // Transition INTO RECOVERY
@@ -121,7 +122,7 @@ public:
     void resetPID();
 
     // Motion lifecycle (called by motor_task on command dispatch)
-    void beginMove(int32_t setpointVelTps, bool forward, uint32_t baseSpeedRaw);
+    void beginMove(int32_t setpointVelTps, bool forward, float baseSpeedFsps);
     void beginHold(int32_t holdPosTicks);
     void goIdle();
 
@@ -145,7 +146,7 @@ private:
     // Motion context
     int32_t  m_setpointTps   = 0;
     bool     m_forward       = true;
-    uint32_t m_baseSpeedRaw  = 0;
+    float    m_baseSpeedFsps = 0.0f;
     int32_t  m_holdTargetTicks = 0;
 
     // Error tracking
@@ -170,7 +171,7 @@ private:
     SupervisorState m_preRecoveryState = SupervisorState::MOVING;
 
     // Rate limiter
-    uint32_t m_lastRawSpeed  = 0;
+    float    m_lastSpeedFsps = 0.0f;
 
     // Telemetry cache
     SupervisorTelemetry m_telem{};
@@ -187,8 +188,8 @@ private:
     SupervisorAction makeFaultAction();
     SupervisorAction makeRecoveryAction();
 
-    uint32_t applyPIDCorrection(const SupervisorInput& input, float pidOutput);
-    uint32_t rateLimitSpeed(uint32_t desired, uint32_t current) const;
+    float applyPIDCorrection(const SupervisorInput& input, float pidOutput);
+    float rateLimitSpeed(float desired, float current) const;
 
     static int32_t absVal(int32_t v) { return v < 0 ? -v : v; }
     static float clampF(float v, float lo, float hi) {

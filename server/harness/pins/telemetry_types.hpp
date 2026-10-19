@@ -58,9 +58,9 @@ struct ControlTelemetry {
     uint8_t  currentTier;
     int32_t  velError;
     uint8_t  retryCount;
-    int32_t  baseSpeedRaw;
-    int32_t  trimSpeedRaw;
-    int32_t  finalSpeedRaw;
+    float    baseSpeedFsps;      ///< speed trim: commanded speed, full steps/s
+    float    trimSpeedFsps;      ///< speed trim: final - base, full steps/s
+    float    finalSpeedFsps;     ///< speed trim: speed sent to the driver, full steps/s
     uint8_t  trimFrozen;
     uint8_t  velQuality;
 };

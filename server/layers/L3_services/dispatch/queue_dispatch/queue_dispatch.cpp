@@ -43,10 +43,10 @@ Harness::ServiceStatus QueueDispatch::queueGoTo(int32_t position) {
     return mapQueueResult(g_commandQueue.queueCommand(cmd));
 }
 
-Harness::ServiceStatus QueueDispatch::queueRun(uint32_t speedRaw, int32_t direction) {
+Harness::ServiceStatus QueueDispatch::queueRun(uint32_t stepsPerSec, int32_t direction) {
     MotorCommand cmd = {};
     cmd.type = MotorCmdType::Run;
-    cmd.param1 = static_cast<int32_t>(speedRaw);
+    cmd.param1 = static_cast<int32_t>(stepsPerSec);     // full steps/s
     cmd.param2 = direction;
     return mapQueueResult(g_commandQueue.queueCommand(cmd));
 }

@@ -11,7 +11,6 @@
 #include "L3_services/infra/trace/trace.hpp"
 #include "harness/pins/async_event.hpp"
 #include "L3_services/infra/telemetry_store/telemetry_store.hpp"
-#include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include <limits.h>
 
 namespace Services {
@@ -19,22 +18,8 @@ namespace Services {
 MotorController g_motorController;
 
 // ============================================================================
-// Unit conversions (static, pure math)
+// Unit conversions (static, pure math; physical units, the driver owns the chip's)
 // ============================================================================
-
-uint32_t MotorController::rawSpeedToStepsPerSec(uint32_t rawSpeed)
-{
-    return static_cast<uint32_t>(
-        (static_cast<uint64_t>(rawSpeed) * 15625ULL) / 1048576ULL);
-}
-
-int32_t MotorController::signExtendAbsPos(uint32_t rawPos)
-{
-    if ((rawPos & 0x200000) != 0) {
-        return static_cast<int32_t>(rawPos | 0xFFC00000U);
-    }
-    return static_cast<int32_t>(rawPos);
-}
 
 int32_t MotorController::motorPosToEncoderTicks(int32_t position, uint16_t encPPR,
                                                  uint32_t ustepsPerRev)
@@ -43,12 +28,12 @@ int32_t MotorController::motorPosToEncoderTicks(int32_t position, uint16_t encPP
         (static_cast<int64_t>(position) * encPPR) / ustepsPerRev);
 }
 
-int32_t MotorController::rawSpeedToSetpointTps(uint32_t rawSpeed, bool forward,
-                                                uint16_t encPPR, uint16_t fpr)
+int32_t MotorController::speedToSetpointTps(uint32_t stepsPerSec, bool forward,
+                                             uint16_t encPPR, uint16_t fpr)
 {
+    if (fpr == 0) return 0;
     auto tps = static_cast<int32_t>(
-        (static_cast<uint64_t>(rawSpeed) * 15625ULL * encPPR)
-        / (1048576ULL * fpr));
+        (static_cast<uint64_t>(stepsPerSec) * encPPR) / fpr);
     return forward ? tps : -tps;
 }
 
@@ -56,21 +41,22 @@ int32_t MotorController::rawSpeedToSetpointTps(uint32_t rawSpeed, bool forward,
 // Speed override
 // ============================================================================
 
-void MotorController::applySpeedOverride(uint32_t rawMaxSpeed)
+void MotorController::applySpeedOverride(float maxFullStepsPerSec)
 {
-    // A per-move speed: MAX_SPEED is lowered for this move only. Save the configured value
-    // once; a second override while one is active must not save the overridden value.
+    // A per-move speed: the driver's speed ceiling is lowered for this move only. Save the
+    // configured value once; a second override while one is active must not save the
+    // overridden value. getMaxSpeed() -> setMaxSpeed() round-trips exactly (driver contract).
     if (!m_speedOverrideActive) {
-        m_savedMaxSpeed = m_driver->getParam(MotorReg::MAX_SPEED);
+        m_savedMaxSpeedFsps = m_driver->getMaxSpeed();
         m_speedOverrideActive = true;
     }
-    m_driver->setParam(MotorReg::MAX_SPEED, rawMaxSpeed);
+    m_driver->setMaxSpeed(maxFullStepsPerSec);
 }
 
 void MotorController::restoreSpeedIfOverridden()
 {
     if (m_speedOverrideActive) {
-        m_driver->setParam(MotorReg::MAX_SPEED, m_savedMaxSpeed);
+        m_driver->setMaxSpeed(m_savedMaxSpeedFsps);
         m_speedOverrideActive = false;
     }
 }
@@ -82,17 +68,18 @@ void MotorController::restoreSpeedIfOverridden()
 void MotorController::handleRunCommand(const MotorCommand& cmd)
 {
     auto mode = motion.control.mode.getMode();
-    auto rawSpeed = static_cast<uint32_t>(cmd.param1);
+    auto stepsPerSec = static_cast<uint32_t>(cmd.param1);   // whole full steps/s
+    const auto speedFsps = static_cast<float>(stepsPerSec);
     bool fwd = (cmd.param2 != 0);
     m_lastRunForward = fwd;
     m_continuousRunActive = true;
-    restoreSpeedIfOverridden();          // a run is limited by the configured MAX_SPEED, never by a move's
-    m_driver->run(fwd, rawSpeed);
+    restoreSpeedIfOverridden();          // a run is limited by the configured ceiling, never by a move's
+    m_driver->run(fwd, speedFsps);
 
     if (mode != ControlMode::OPEN_LOOP) {
         uint16_t encPPR = motion.encoder.config.getEncoderPPR();
         uint16_t fpr = motion.stepper.config.getFullStepsPerRev();
-        int32_t setpointTps = rawSpeedToSetpointTps(rawSpeed, fwd, encPPR, fpr);
+        int32_t setpointTps = speedToSetpointTps(stepsPerSec, fwd, encPPR, fpr);
 
         // Configure supervisor for fault detection
         SupervisorConfig scfg{};
@@ -102,10 +89,10 @@ void MotorController::handleRunCommand(const MotorCommand& cmd)
         scfg.holdTimeMs     = motion.control.config.getFollowHoldTimeMs();
         scfg.hardLimit      = motion.control.config.getFollowHardLimit();
         scfg.maxRetries     = motion.control.config.getFollowMaxRetries();
-        scfg.maxDeltaVRaw   = 0;
+        scfg.maxDeltaVFsps  = 0.0f;
         scfg.recoveryTimeMs = 2000;
         motion.control.supervisor.configure(scfg);
-        motion.control.supervisor.beginMove(setpointTps, fwd, rawSpeed);
+        motion.control.supervisor.beginMove(setpointTps, fwd, speedFsps);
 
         if (mode == ControlMode::SPEED_TRIM) {
             SpeedTrimConfig tcfg{};
@@ -120,7 +107,7 @@ void MotorController::handleRunCommand(const MotorCommand& cmd)
             tcfg.integralLimit = static_cast<float>(
                 motion.control.config.getPidIntegralLimit());
             motion.control.trim.configure(tcfg);
-            motion.control.trim.beginTrim(setpointTps, fwd, rawSpeed);
+            motion.control.trim.beginTrim(setpointTps, fwd, speedFsps);
         } else {
             motion.control.trim.reset();
             motion.control.supervisor.configurePID(
@@ -161,8 +148,8 @@ void MotorController::processCommand(const MotorCommand& cmd)
             } else {
                 steps = static_cast<uint32_t>(-cmd.param1);
             }
-            if (cmd.param2 != 0) {
-                applySpeedOverride(static_cast<uint32_t>(cmd.param2));
+            if (cmd.param2 != 0) {                 // per-move speed, full steps/s
+                applySpeedOverride(static_cast<float>(cmd.param2));
             }
             m_continuousRunActive = false;
             m_driver->move(forward, steps);
@@ -170,8 +157,8 @@ void MotorController::processCommand(const MotorCommand& cmd)
         }
 
         case MotorCmdType::GoTo:
-            if (cmd.param2 != 0) {
-                applySpeedOverride(static_cast<uint32_t>(cmd.param2));
+            if (cmd.param2 != 0) {                 // per-move speed, full steps/s
+                applySpeedOverride(static_cast<float>(cmd.param2));
             }
             m_continuousRunActive = false;
             m_driver->goTo(cmd.param1);
@@ -214,8 +201,8 @@ void MotorController::processCommand(const MotorCommand& cmd)
             break;
 
         case MotorCmdType::GoHome:
-            if (cmd.param2 != 0) {
-                applySpeedOverride(static_cast<uint32_t>(cmd.param2));
+            if (cmd.param2 != 0) {                 // per-move speed, full steps/s
+                applySpeedOverride(static_cast<float>(cmd.param2));
             }
             m_continuousRunActive = false;
             m_driver->goHome();
@@ -239,6 +226,7 @@ void MotorController::processCommand(const MotorCommand& cmd)
             break;
 
         case MotorCmdType::SetMaxSpeed:
+            // Config path, register value (config service): driver boundary step 3
             m_driver->setParam(MotorReg::MAX_SPEED, static_cast<uint32_t>(cmd.param1));
             m_speedOverrideActive = false;   // the new configured value is the one to keep
             break;
@@ -293,19 +281,13 @@ void MotorController::periodicUpdate()
         }
     }
 
-    // Read motor status and position/speed, and publish them. The service owns
-    // the telemetry write; the harness tap (if any) is a pure observer.
-    MotorStatus status = m_driver->getStatus();
-    uint32_t rawPos = m_driver->getParam(MotorReg::ABS_POS);
-    uint32_t rawSpeed = m_driver->getParam(MotorReg::SPEED);
-    {
-        auto& writer = Services::g_telemetryStore;
-        writer.writeMotorStatus(status);
-        writer.writeMotorParam(MotorReg::ABS_POS, rawPos);
-        writer.writeMotorParam(MotorReg::SPEED, rawSpeed);
-    }
+    // Read the driver's state (flags, position in microsteps, speed in full steps/s) and
+    // publish it. The service owns the telemetry write; the harness tap (if any) is a pure observer.
+    const MotorStatus status = m_driver->readState();
+    Services::g_telemetryStore.writeMotorStatus(status);
 
-    int32_t position = signExtendAbsPos(rawPos);
+    const int32_t position = status.positionUsteps;
+    m_lastPositionUsteps = position;
 
     // Shared sensor data for control loop
     Protocol::TelemetrySnapshot snap = Services::g_telemetryStore.getSnapshot();
@@ -327,8 +309,8 @@ void MotorController::periodicUpdate()
 
         if (sysResult.active) {
             sysidActive = true;
-            if (sysResult.rawSpeed > 0) {
-                m_driver->run(sysResult.forward, sysResult.rawSpeed);
+            if (sysResult.speedFsps > 0.0f) {
+                m_driver->run(sysResult.forward, sysResult.speedFsps);
             } else {
                 m_driver->softStop();
             }
@@ -341,6 +323,12 @@ void MotorController::periodicUpdate()
         }
     }
 
+    // The driver's speed ceiling, read once for the trim clamp and the supervisor
+    float maxSpeedFsps = 0.0f;
+    if (!m_motionInhibited && !sysidActive) {
+        maxSpeedFsps = m_driver->getMaxSpeed();
+    }
+
     // ── Speed-trim controller (skipped during sysid) ──
     Trace::setCurrentServiceId(Trace::SVC_MOTION);
     if (!m_motionInhibited && !sysidActive && motion.control.trim.isActive()) {
@@ -351,13 +339,13 @@ void MotorController::periodicUpdate()
         ti.forward         = m_lastRunForward;
         ti.fullStepsPerRev = fpr;
         ti.encoderPPR      = encPPR;
-        ti.maxSpeedRaw     = m_driver->getParam(MotorReg::MAX_SPEED);
+        ti.maxSpeedFsps    = maxSpeedFsps;
         ti.dtSec           = 0.050f;
 
         SpeedTrimResult trimResult = motion.control.trim.update(ti);
         m_lastTrimResult = trimResult;
         if (trimResult.active) {
-            m_driver->run(m_lastRunForward, trimResult.finalSpeedRaw);
+            m_driver->run(m_lastRunForward, trimResult.finalSpeedFsps);
         }
     }
 
@@ -379,10 +367,10 @@ void MotorController::periodicUpdate()
         si.cmdPosTicks     = cmdTicks;
         si.encPosTicks     = measTicks;
         si.encVelTps       = snap.encoder.velocity;
-        si.baseSpeedRaw    = 0;
+        si.baseSpeedFsps   = 0.0f;
         si.motorBusy       = status.busy();
         si.forward         = m_lastRunForward;
-        si.maxSpeedRaw     = m_driver->getParam(MotorReg::MAX_SPEED);
+        si.maxSpeedFsps    = maxSpeedFsps;
         si.fullStepsPerRev = fpr;
         si.encoderPPR      = encPPR;
         si.dtSec           = 0.050f;
@@ -393,7 +381,7 @@ void MotorController::periodicUpdate()
         // Apply action to driver
         switch (act.type) {
             case SupervisorAction::Type::SET_SPEED:
-                m_driver->run(act.direction, act.rawSpeed);
+                m_driver->run(act.direction, act.speedFsps);
                 break;
             case SupervisorAction::Type::SOFT_STOP:
                 motion.control.trim.reset();
@@ -433,10 +421,9 @@ void MotorController::periodicUpdate()
         ctrl.currentTier     = static_cast<uint8_t>(st.tier);
         ctrl.velError        = st.velError;
         ctrl.retryCount      = st.retryCount;
-        ctrl.baseSpeedRaw    = static_cast<int32_t>(m_lastTrimResult.finalSpeedRaw)
-                               - m_lastTrimResult.trimRaw;
-        ctrl.trimSpeedRaw    = m_lastTrimResult.trimRaw;
-        ctrl.finalSpeedRaw   = static_cast<int32_t>(m_lastTrimResult.finalSpeedRaw);
+        ctrl.baseSpeedFsps   = m_lastTrimResult.baseSpeedFsps;
+        ctrl.finalSpeedFsps  = m_lastTrimResult.finalSpeedFsps;
+        ctrl.trimSpeedFsps   = m_lastTrimResult.finalSpeedFsps - m_lastTrimResult.baseSpeedFsps;
         ctrl.trimFrozen      = m_lastTrimResult.frozen ? 1 : 0;
         ctrl.velQuality      = snap.encoder.velocityQuality;
 
@@ -495,7 +482,7 @@ void MotorController::periodicUpdate()
     // stopped and energised for that long. The chip re-energises on the next Run/Move/GoTo
     // by itself, so nothing else changes; MOT:EN restarts the clock.
     const uint16_t releaseMs = motion.stepper.config.getIdleReleaseMs();
-    const bool stoppedEnergised = !status.hiZ() && !status.busy() && rawSpeed == 0;
+    const bool stoppedEnergised = !status.hiZ() && !status.busy() && !(status.speedFsps > 0.0f);
     if (releaseMs == 0 || !stoppedEnergised || m_motionInhibited) {
         m_stoppedSeen = false;
     } else if (!m_stoppedSeen) {
@@ -553,7 +540,7 @@ bool MotorController::applyConfig()
     // Motion parameters
     m_driver->setParam(MotorReg::ACC, cfg.acceleration);
     m_driver->setParam(MotorReg::DEC, cfg.deceleration);
-    m_driver->setParam(MotorReg::MAX_SPEED, cfg.maxSpeed);
+    m_driver->setParam(MotorReg::MAX_SPEED, cfg.maxSpeed);   // config register value: driver boundary step 3
     m_speedOverrideActive = false;       // the saved config is the value to keep from here on
     m_driver->setParam(MotorReg::MIN_SPEED, cfg.minSpeed);
     m_driver->setParam(MotorReg::FS_SPD, cfg.fsSpeed);
@@ -656,7 +643,7 @@ void MotorController::reinit()
 
 void MotorController::getDebugInfo(MotorDebugParams& info)
 {
-    const MotorStatus st = m_driver->getStatus();
+    const MotorStatus st = m_driver->readState();          // status + position
     info.status = static_cast<uint16_t>(st.raw & 0xFFFFu);
     info.faults = st.faults;
     info.outputsOff = st.outputsOff;
@@ -669,7 +656,7 @@ void MotorController::getDebugInfo(MotorDebugParams& info)
     info.decel = static_cast<uint16_t>(m_driver->getParam(MotorReg::DEC));
     info.maxSpeed = static_cast<uint16_t>(m_driver->getParam(MotorReg::MAX_SPEED));
 
-    info.absPos = signExtendAbsPos(m_driver->getParam(MotorReg::ABS_POS));
+    info.absPos = st.positionUsteps;
 
     info.ocdTh = static_cast<uint8_t>(m_driver->getParam(MotorReg::OCD_TH));
     info.stallTh = static_cast<uint8_t>(m_driver->getParam(MotorReg::STALL_TH));
@@ -728,9 +715,9 @@ void MotorController::publishStandbySnapshot()
     // SPI is off while STBY/RESET is low, so the status poll stops; the host must still see
     // the truth: outputs in Hi-Z, not busy, speed 0 (the idle Hi-Z STATUS word of the chip),
     // position as last read.
-    auto& writer = Services::g_telemetryStore;
-    writer.writeMotorStatus(Harness::MotorState::standby());   // outputs off, not readable
-    writer.writeMotorParam(MotorReg::SPEED, 0);
+    Harness::MotorState st = Harness::MotorState::standby();   // outputs off, not readable, speed 0
+    st.positionUsteps = m_lastPositionUsteps;
+    Services::g_telemetryStore.writeMotorStatus(st);
 }
 
 void MotorController::wakeFromStandby()

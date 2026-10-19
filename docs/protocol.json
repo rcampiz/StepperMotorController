@@ -386,16 +386,16 @@
         "name": "retryCount"
       },
       {
-        "type": "int32_t",
-        "name": "baseSpeedRaw"
+        "type": "float",
+        "name": "baseSpeedFsps"
       },
       {
-        "type": "int32_t",
-        "name": "trimSpeedRaw"
+        "type": "float",
+        "name": "trimSpeedFsps"
       },
       {
-        "type": "int32_t",
-        "name": "finalSpeedRaw"
+        "type": "float",
+        "name": "finalSpeedFsps"
       },
       {
         "type": "uint8_t",

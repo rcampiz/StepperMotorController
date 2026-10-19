@@ -32,6 +32,33 @@ constexpr uint32_t telemetryPeriodFloorMs(uint32_t baud, size_t lineBytes = STAT
          : (static_cast<uint32_t>(lineBytes) * 10U * 1000U * 5U + baud * 4U - 1U) / (baud * 4U);
 }
 
+/// Protocol 2 wire unit of the speed-trim fields base_spd / trim_spd / final_spd. They were
+/// the powerSTEP01 SPEED register values when the firmware worked in chip units: 2^-28 step
+/// per 250 ns tick, i.e. floor(fsps x 2^20 / 15625) (67.108864 per full step/s). L3 now
+/// works in full steps/s; this is the one place that converts back, for wire compatibility
+/// only (driver boundary step 4 sends steps/s and removes it). Exact for whole steps/s
+/// (fsps x 2^20 is exact in float); truncates toward zero; saturates to the int32 range.
+inline int32_t protocol2SpeedUnits(float fsps) {
+    if (fsps < 0.0f) {
+        const int32_t m = protocol2SpeedUnits(-fsps);
+        return (m == INT32_MAX) ? INT32_MIN : -m;
+    }
+    if (!(fsps > 0.0f)) return 0;                       // 0 or NaN
+    if (fsps >= 32000000.0f) return INT32_MAX;          // 2^31 x 15625 / 2^20
+    return static_cast<int32_t>(static_cast<uint64_t>(fsps * 1048576.0f) / 15625u);
+}
+
+/// base_spd, trim_spd, final_spd in protocol 2 units; trim is final - base, so they add up
+struct Protocol2TrimSpeeds { long base, trim, final_; };
+inline Protocol2TrimSpeeds protocol2TrimSpeeds(const ControlTelemetry& c) {
+    const int64_t base = protocol2SpeedUnits(c.baseSpeedFsps);
+    const int64_t fin = protocol2SpeedUnits(c.finalSpeedFsps);
+    int64_t trim = fin - base;
+    if (trim > INT32_MAX) trim = INT32_MAX;
+    if (trim < INT32_MIN) trim = INT32_MIN;
+    return { static_cast<long>(base), static_cast<long>(trim), static_cast<long>(fin) };
+}
+
 struct StatusJsonView {
     const char* stateStr = "";
     uint32_t    tick = 0;

@@ -17,7 +17,8 @@ public:
     virtual Harness::ServiceStatus queueCommand(uint8_t cmdType, int32_t p1, int32_t p2) = 0;
     virtual Harness::ServiceStatus queueMove(int32_t signedSteps) = 0;
     virtual Harness::ServiceStatus queueGoTo(int32_t position) = 0;
-    virtual Harness::ServiceStatus queueRun(uint32_t speedRaw, int32_t direction) = 0;
+    /// Queued RUN: speed in full steps/s, direction 0 = reverse, 1 = forward
+    virtual Harness::ServiceStatus queueRun(uint32_t stepsPerSec, int32_t direction) = 0;
     virtual Harness::ServiceStatus queueStop(bool hard) = 0;
     virtual Harness::ServiceStatus queueHome() = 0;
     virtual Harness::ServiceStatus queueZero() = 0;

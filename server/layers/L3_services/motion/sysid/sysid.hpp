@@ -57,6 +57,10 @@ struct SysIdConfig {
 
 constexpr uint16_t SYSID_MAX_SAMPLES = 400;  // 400 × 8 = 3200 bytes
 
+/// Top of the test speed range, full steps/s (the protocol's speed range; the driver clamps
+/// to what its chip can do)
+constexpr uint16_t SYSID_MAX_SPEED_SPS = 15625;
+
 class SysIdRunner {
 public:
     /**
@@ -74,7 +78,7 @@ public:
      * @brief Result from each 50ms tick.
      */
     struct TickResult {
-        uint32_t rawSpeed;      // Raw speed register value to command
+        float    speedFsps;     // Speed to command, full steps/s (0 = stop)
         bool     forward;       // Direction
         bool     active;        // true = sysid is controlling motor
         bool     justFinished;  // true on the tick that test completes
@@ -105,10 +109,6 @@ private:
     uint16_t     m_sampleCount = 0;
 
     SysIdSample  m_samples[SYSID_MAX_SAMPLES];
-
-    // Convert motor steps/sec to raw SPEED register value
-    // raw = sps * 1048576 / 15625
-    static uint32_t speedSpsToRaw(uint16_t sps);
 
     // Convert motor steps/sec to encoder ticks/sec
     // tps = sps * encoderPPR / fullStepsPerRev

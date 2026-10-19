@@ -14,17 +14,20 @@
 
 namespace {
 struct FakeMotor : Drivers::IMotorDriver {
-    int runs = 0; uint32_t lastSpeed = 0;
+    int runs = 0; float lastSpeed = 0.0f;
     void init() override {}
-    void run(bool, uint32_t speed) override { ++runs; lastSpeed = speed; }
+    void run(bool, float fullStepsPerSec) override { ++runs; lastSpeed = fullStepsPerSec; }
     void move(bool, uint32_t) override {}
     void goTo(int32_t) override {}
     void softStop() override {} void hardStop() override {}
     void softHiZ() override {}  void hardHiZ() override {}
     void goHome() override {}   void goMark() override {} void resetPos() override {}
+    void setMaxSpeed(float) override {}
+    float getMaxSpeed() override { return 0.0f; }
     uint32_t getParam(uint8_t) override { return 0; }
     void setParam(uint8_t, uint32_t) override {}
     Drivers::MotorStatus getStatus() override { return Drivers::MotorStatus{}; }
+    Drivers::MotorStatus readState() override { return Drivers::MotorStatus{}; }
     bool isBusy() override { return false; }
     bool flagActive() override { return false; }
 };
@@ -38,9 +41,9 @@ TEST(runner_counts_assertions) {
 TEST(fake_driver_implements_l4_boundary) {
     FakeMotor m;
     Drivers::IMotorDriver& d = m;
-    d.run(true, 1200);
+    d.run(true, 1200.0f);                      // full steps/s
     EXPECT_EQ(m.runs, 1);
-    EXPECT_EQ(m.lastSpeed, 1200u);
+    EXPECT_TRUE(m.lastSpeed == 1200.0f);
 }
 
 TEST(null_platform_primitives_are_usable_on_host) {

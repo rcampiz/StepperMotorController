@@ -2,7 +2,7 @@
  * @file speed_trim_controller.cpp
  * @brief Speed-trim PI controller implementation
  *
- * PI on velocity error (encoder tps), output converted to raw speed adjustment.
+ * PI on velocity error (encoder tps), output converted to a speed adjustment in full steps/s.
  * Pure logic — no RTOS, no hardware, no heap.
  */
 
@@ -29,10 +29,10 @@ void SpeedTrimController::configure(const SpeedTrimConfig& cfg) {
 // ── Lifecycle ──
 
 void SpeedTrimController::beginTrim(int32_t setpointTps, bool forward,
-                                     uint32_t baseSpeedRaw) {
+                                     float baseSpeedFsps) {
     m_setpointTps  = setpointTps;
     m_forward      = forward;
-    m_baseSpeedRaw = baseSpeedRaw;
+    m_baseSpeedFsps = baseSpeedFsps;
     m_integral     = 0.0f;
     m_frozen       = false;
     m_active       = true;
@@ -43,7 +43,7 @@ void SpeedTrimController::reset() {
     m_frozen       = false;
     m_active       = false;
     m_setpointTps  = 0;
-    m_baseSpeedRaw = 0;
+    m_baseSpeedFsps = 0.0f;
 }
 
 // ── Integrator freeze logic ──
@@ -68,7 +68,8 @@ bool SpeedTrimController::shouldFreeze(const SpeedTrimInput& input) const {
 SpeedTrimResult SpeedTrimController::update(const SpeedTrimInput& input) {
     SpeedTrimResult result = {};
     result.active = m_active;
-    result.finalSpeedRaw = m_baseSpeedRaw;  // Default: no trim (use stored base)
+    result.baseSpeedFsps = m_baseSpeedFsps;
+    result.finalSpeedFsps = m_baseSpeedFsps;  // Default: no trim (use stored base)
 
     if (!m_active || input.dtSec <= 0.0f) {
         return result;
@@ -122,7 +123,7 @@ SpeedTrimResult SpeedTrimController::update(const SpeedTrimInput& input) {
 
     // 6. Apply percentage cap relative to base command speed (stored from beginTrim)
     //    Use float to avoid integer truncation that loses ~1 step/s per cycle
-    float baseSpsF = static_cast<float>(m_baseSpeedRaw) * 15625.0f / 1048576.0f;
+    float baseSpsF = m_baseSpeedFsps;
 
     float maxTrimSps = baseSpsF
                      * static_cast<float>(m_cfg.trimMaxPercent) / 100.0f;
@@ -137,21 +138,13 @@ SpeedTrimResult SpeedTrimController::update(const SpeedTrimInput& input) {
     float finalSpsF = baseSpsF + trimSps;
     if (finalSpsF < 0.0f) finalSpsF = 0.0f;
 
-    // MAX_SPEED register uses different conversion: sps = raw * 15625 / 1024
-    float maxSpsF = static_cast<float>(input.maxSpeedRaw) * 15625.0f / 1024.0f;
-    if (finalSpsF > maxSpsF) {
-        finalSpsF = maxSpsF;
+    // The driver's speed ceiling (MAX_SPEED on the powerSTEP01)
+    if (finalSpsF > input.maxSpeedFsps) {
+        finalSpsF = input.maxSpeedFsps;
     }
 
-    // 8. Convert back to raw SPEED register with rounding (not truncation)
-    auto finalRaw = static_cast<uint32_t>(
-        (finalSpsF * 1048576.0f / 15625.0f) + 0.5f);
-
-    // Compute trim in raw units for telemetry (use stored base, not input)
-    auto trimRaw = static_cast<int32_t>(finalRaw) - static_cast<int32_t>(m_baseSpeedRaw);
-
-    result.finalSpeedRaw = finalRaw;
-    result.trimRaw = trimRaw;
+    // 8. The driver quantises to its chip's resolution (powerSTEP01: 0.0149 full steps/s)
+    result.finalSpeedFsps = finalSpsF;
 
     return result;
 }

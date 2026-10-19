@@ -33,11 +33,11 @@ void FollowingSupervisor::resetPID() {
 // ── Motion lifecycle ──
 
 void FollowingSupervisor::beginMove(int32_t setpointVelTps, bool forward,
-                                     uint32_t baseSpeedRaw) {
+                                     float baseSpeedFsps) {
     m_setpointTps  = setpointVelTps;
     m_forward      = forward;
-    m_baseSpeedRaw = baseSpeedRaw;
-    m_lastRawSpeed = baseSpeedRaw;
+    m_baseSpeedFsps = baseSpeedFsps;
+    m_lastSpeedFsps = baseSpeedFsps;
     m_state        = SupervisorState::MOVING;
 
     // Reset error tracking
@@ -68,7 +68,7 @@ void FollowingSupervisor::beginHold(int32_t holdPosTicks) {
 void FollowingSupervisor::goIdle() {
     m_state         = SupervisorState::IDLE;
     m_setpointTps   = 0;
-    m_baseSpeedRaw  = 0;
+    m_baseSpeedFsps = 0.0f;
     m_errorAccumSec = 0.0f;
     m_overThreshold = false;
     m_retryCount    = 0;
@@ -343,9 +343,9 @@ SupervisorAction FollowingSupervisor::makeRecoveryAction() {
     return act;
 }
 
-// ── PID correction → raw speed ──
+// ── PID correction → speed (full steps/s) ──
 
-uint32_t FollowingSupervisor::applyPIDCorrection(
+float FollowingSupervisor::applyPIDCorrection(
         const SupervisorInput& input, float pidOutput) {
     // PID output is in encoder ticks/sec.
     // Convert to motor steps/sec adjustment:
@@ -354,44 +354,35 @@ uint32_t FollowingSupervisor::applyPIDCorrection(
         * static_cast<float>(input.fullStepsPerRev)
         / static_cast<float>(input.encoderPPR);
 
-    // Base speed in steps/sec
-    auto baseSps = static_cast<uint32_t>(
-        (static_cast<uint64_t>(m_baseSpeedRaw) * 15625ULL) / 1048576ULL);
+    // Base speed in whole steps/sec
+    auto baseSps = static_cast<uint32_t>(m_baseSpeedFsps);
 
     // Compute new speed (signed to allow reduction below base)
     auto newSps = static_cast<int32_t>(baseSps)
                    + static_cast<int32_t>(adjustSps);
 
-    // Clamp: no reversal, no exceeding MAX_SPEED
+    // Clamp: no reversal, no exceeding the driver's speed ceiling
     if (newSps < 0) { newSps = 0; }
-    auto maxSps = static_cast<uint32_t>(
-        (static_cast<uint64_t>(input.maxSpeedRaw) * 15625ULL) / 1024ULL);
+    auto maxSps = static_cast<uint32_t>(input.maxSpeedFsps);
     if (static_cast<uint32_t>(newSps) > maxSps) {
         newSps = static_cast<int32_t>(maxSps);
     }
 
-    // Convert back to raw speed register value
-    auto newRaw = static_cast<uint32_t>(
-        (static_cast<uint64_t>(newSps) * 1048576ULL) / 15625ULL);
-
-    return newRaw;
+    return static_cast<float>(newSps);   // the driver converts to its chip's units
 }
 
-uint32_t FollowingSupervisor::rateLimitSpeed(uint32_t desired,
-                                              uint32_t current) const {
-    if (m_cfg.maxDeltaVRaw == 0) {
+float FollowingSupervisor::rateLimitSpeed(float desired, float current) const {
+    if (m_cfg.maxDeltaVFsps <= 0.0f) {
         return desired;  // No rate limiting
     }
 
     if (desired > current) {
-        uint32_t delta = desired - current;
-        if (delta > m_cfg.maxDeltaVRaw) {
-            return current + m_cfg.maxDeltaVRaw;
+        if (desired - current > m_cfg.maxDeltaVFsps) {
+            return current + m_cfg.maxDeltaVFsps;
         }
     } else {
-        uint32_t delta = current - desired;
-        if (delta > m_cfg.maxDeltaVRaw) {
-            return current - m_cfg.maxDeltaVRaw;
+        if (current - desired > m_cfg.maxDeltaVFsps) {
+            return current - m_cfg.maxDeltaVFsps;
         }
     }
     return desired;

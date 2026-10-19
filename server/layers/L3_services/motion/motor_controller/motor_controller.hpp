@@ -26,21 +26,15 @@ using Harness::MotorDebugParams;
 
 class MotorController : public Services::IMotorControlService {
 public:
-    // ── Static unit conversions (pure math) ──
-
-    /** @brief Raw SPEED register (20-bit) → steps/s */
-    static uint32_t rawSpeedToStepsPerSec(uint32_t rawSpeed);
-
-    /** @brief ABS_POS (22-bit unsigned) → signed 32-bit */
-    static int32_t signExtendAbsPos(uint32_t rawPos);
+    // ── Static unit conversions (pure math, physical units only) ──
 
     /** @brief Motor position (microsteps) → encoder ticks */
     static int32_t motorPosToEncoderTicks(int32_t position, uint16_t encPPR,
                                            uint32_t ustepsPerRev);
 
-    /** @brief Raw speed → encoder ticks/sec setpoint (signed) */
-    static int32_t rawSpeedToSetpointTps(uint32_t rawSpeed, bool forward,
-                                          uint16_t encPPR, uint16_t fpr);
+    /** @brief Commanded speed (whole full steps/s) → encoder ticks/sec setpoint (signed) */
+    static int32_t speedToSetpointTps(uint32_t stepsPerSec, bool forward,
+                                       uint16_t encPPR, uint16_t fpr);
 
     // ── Command processing ──
 
@@ -114,9 +108,10 @@ public:
     void getDebugInfo(MotorDebugParams& info) override;
 
 private:
-    // Speed override state
-    uint32_t m_savedMaxSpeed = 0;
+    // Speed override state: the driver's speed ceiling in force before the override
+    float m_savedMaxSpeedFsps = 0.0f;
     bool m_speedOverrideActive = false;
+    int32_t m_lastPositionUsteps = 0;  ///< last position read (published while the chip is in standby)
     uint32_t m_stoppedSinceMs = 0;     ///< tick when the motor was last seen stopped and energised (0: not)
     bool     m_stoppedSeen = false;
 
@@ -144,7 +139,7 @@ private:
     bool m_motionInhibited = false;        ///< between onEmergencyStop() and clearEmergencyStop() (Motor task only)
 
     // Internal helpers
-    void applySpeedOverride(uint32_t rawMaxSpeed);
+    void applySpeedOverride(float maxFullStepsPerSec);
     void restoreSpeedIfOverridden();
     void handleRunCommand(const MotorCommand& cmd);
 };

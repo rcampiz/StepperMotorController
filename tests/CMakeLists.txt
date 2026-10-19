@@ -198,3 +198,9 @@ smc_add_test(test_screen_archmeter test_screen_archmeter.cpp
     ${SERVER}/layers/L3_services/ui/chrome/chrome.cpp
     stubs/trace_stub.cpp)
 target_include_directories(test_screen_archmeter PRIVATE ${SERVER}/layers/L3_services)
+
+# --- Driver boundary step 2: speed trim and sysid in full steps/s command the same chip speeds
+#     as the raw-register versions they replaced (reference maths in the test).
+smc_add_test(test_speed_controllers test_speed_controllers.cpp
+    ${SERVER}/layers/L3_services/motion/speed_trim_controller/speed_trim_controller.cpp
+    ${SERVER}/layers/L3_services/motion/sysid/sysid.cpp)

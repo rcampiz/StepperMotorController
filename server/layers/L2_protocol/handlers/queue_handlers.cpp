@@ -59,10 +59,7 @@ void CommandParser::cmdQueue(const ParsedCommand &cmd) {
       respondErr("speed out of range (0-15625 steps/s)");
       return;
     }
-    // Convert steps/s to raw register value for powerSTEP01
-    auto speedRaw = static_cast<uint32_t>(
-        (static_cast<uint64_t>(speed) * 1048576ULL) / 15625ULL);
-    r = m_dispatcher.queueRun(speedRaw, dir);
+    r = m_dispatcher.queueRun(static_cast<uint32_t>(speed), dir);   // full steps/s
   } else if (strcmp(subCmd, "STOP") == 0 || strcmp(subCmd, "stop") == 0) {
     bool hard = (cmd.argCount > 1 && strcmp(cmd.args[1], "hard") == 0);
     r = m_dispatcher.queueStop(hard);

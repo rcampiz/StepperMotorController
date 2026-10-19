@@ -69,7 +69,7 @@ public:
     Harness::ServiceStatus queueCommand(uint8_t cmdType, int32_t p1, int32_t p2) override;
     Harness::ServiceStatus queueMove(int32_t signedSteps) override;
     Harness::ServiceStatus queueGoTo(int32_t position) override;
-    Harness::ServiceStatus queueRun(uint32_t speedRaw, int32_t direction) override;
+    Harness::ServiceStatus queueRun(uint32_t stepsPerSec, int32_t direction) override;
     Harness::ServiceStatus queueStop(bool hard) override;
     Harness::ServiceStatus queueHome() override;
     Harness::ServiceStatus queueZero() override;

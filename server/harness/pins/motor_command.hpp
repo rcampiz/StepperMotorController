@@ -13,19 +13,19 @@
 namespace Services {
 
 enum class MotorCmdType : uint8_t {
-    Move,           // Relative move: param1 = steps (signed)
-    GoTo,           // Absolute move: param1 = position
-    Run,            // Continuous: param1 = speed, param2 = direction (0=rev, 1=fwd)
+    Move,           // Relative move: param1 = microsteps (signed), param2 = speed override (full steps/s, 0 = none)
+    GoTo,           // Absolute move: param1 = position (microsteps), param2 = speed override (full steps/s, 0 = none)
+    Run,            // Continuous: param1 = speed (full steps/s), param2 = direction (0=rev, 1=fwd)
     SoftStop,       // Decelerate to stop
     HardStop,       // Immediate stop
     SoftHiZ,        // Decelerate then Hi-Z
     HardHiZ,        // Immediate Hi-Z
-    GoHome,         // Return to home position
+    GoHome,         // Return to home position: param2 = speed override (full steps/s, 0 = none)
     GoMark,         // Go to mark position
     ResetPos,       // Set current position as zero
     SetAccel,       // param1 = acceleration value
     SetDecel,       // param1 = deceleration value
-    SetMaxSpeed,    // param1 = max speed value
+    SetMaxSpeed,    // param1 = MAX_SPEED config register value (driver boundary step 3: physical)
     SetMark,        // param1 = mark position
     GetStatus,      // Trigger status read and telemetry update
     SetStepMode,    // param1 = STEP_MODE (0..7); handled by MotorService on the Motor task, readback published

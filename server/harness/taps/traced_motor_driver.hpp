@@ -27,27 +27,44 @@ public:
         m_real.init();
     }
 
-    void run(bool forward, uint32_t speed) override {
+    void run(bool forward, float fullStepsPerSec) override {
         char detail[24];
-        snprintf(detail, sizeof(detail), "%lu,%s",
-                 (unsigned long)speed, forward ? "fwd" : "rev");
+        snprintf(detail, sizeof(detail), "%s,%s", fsps(fullStepsPerSec).s, forward ? "fwd" : "rev");
         Harness::ITrace::log(Harness::ITrace::L3_L4_MOTOR, "[L3>L4]", "run", detail);
-        m_real.run(forward, speed);
+        m_real.run(forward, fullStepsPerSec);
     }
 
-    void move(bool forward, uint32_t steps) override {
+    void move(bool forward, uint32_t microsteps) override {
         char detail[24];
         snprintf(detail, sizeof(detail), "%lu,%s",
-                 (unsigned long)steps, forward ? "fwd" : "rev");
+                 (unsigned long)microsteps, forward ? "fwd" : "rev");
         Harness::ITrace::log(Harness::ITrace::L3_L4_MOTOR, "[L3>L4]", "move", detail);
-        m_real.move(forward, steps);
+        m_real.move(forward, microsteps);
     }
 
-    void goTo(int32_t position) override {
+    void goTo(int32_t positionMicrosteps) override {
         char detail[16];
-        snprintf(detail, sizeof(detail), "%ld", (long)position);
+        snprintf(detail, sizeof(detail), "%ld", (long)positionMicrosteps);
         Harness::ITrace::log(Harness::ITrace::L3_L4_MOTOR, "[L3>L4]", "goTo", detail);
-        m_real.goTo(position);
+        m_real.goTo(positionMicrosteps);
+    }
+
+    void setMaxSpeed(float fullStepsPerSec) override {
+        Harness::ITrace::log(Harness::ITrace::L3_L4_MOTOR, "[L3>L4]", "setMaxSpeed", fsps(fullStepsPerSec).s);
+        m_real.setMaxSpeed(fullStepsPerSec);
+    }
+
+    float getMaxSpeed() override {
+        const float v = m_real.getMaxSpeed();
+        Harness::ITrace::log(Harness::ITrace::L3_L4_MOTOR, "[L3<L4]", "getMaxSpeed", fsps(v).s);
+        return v;
+    }
+
+    Drivers::MotorStatus readState() override {
+        Drivers::MotorStatus st = m_real.readState();
+        Harness::ITrace::logResult(Harness::ITrace::L3_L4_MOTOR, "[L3<L4]", "readState",
+                          static_cast<uint32_t>(st.raw));
+        return st;
     }
 
     void softStop() override {
@@ -116,6 +133,15 @@ public:
 
 private:
     Drivers::IMotorDriver& m_real;
+
+    /// "123.45" full steps/s without printf float support (newlib-nano)
+    struct Text { char s[16]; };
+    static Text fsps(float v) {
+        Text t;
+        const unsigned long centi = (v > 0.0f) ? static_cast<unsigned long>(v * 100.0f + 0.5f) : 0UL;
+        snprintf(t.s, sizeof(t.s), "%lu.%02lu", centi / 100UL, centi % 100UL);
+        return t;
+    }
 };
 
 } // namespace Harness

@@ -185,8 +185,8 @@ Harness::ServiceStatus ServiceDispatcher::queueGoTo(int32_t position) {
     return m_queue->queueGoTo(position);
 }
 
-Harness::ServiceStatus ServiceDispatcher::queueRun(uint32_t speedRaw, int32_t direction) {
-    return m_queue->queueRun(speedRaw, direction);
+Harness::ServiceStatus ServiceDispatcher::queueRun(uint32_t stepsPerSec, int32_t direction) {
+    return m_queue->queueRun(stepsPerSec, direction);
 }
 
 Harness::ServiceStatus ServiceDispatcher::queueStop(bool hard) {

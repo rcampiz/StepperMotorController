@@ -10,6 +10,7 @@
 #define POWERSTEP01_HPP
 
 #include "L4_drivers/devices/powerstep01_status.hpp"
+#include "L4_drivers/devices/powerstep01_units.hpp"
 #include "harness/defs/harness_l4_l5.hpp"
 #include "L4_drivers/boundary/imotor_driver.hpp"
 
@@ -188,7 +189,28 @@ public:
         m_spi.unlock();
     }
 
-    void run(bool forward, uint32_t speed) override {
+    /// The poll: STATUS, ABS_POS, SPEED (three exchanges, as the motor loop always read them)
+    Drivers::MotorStatus readState() override {
+        Drivers::MotorStatus s = getStatus();
+        s.positionUsteps = PowerStepUnits::absPosToUsteps(getParam(Reg::ABS_POS));
+        s.speedFsps = PowerStepUnits::speedRegToFsps(getParam(Reg::SPEED));
+        return s;
+    }
+
+    void run(bool forward, float fullStepsPerSec) override {
+        runRaw(forward, PowerStepUnits::fspsToSpeedReg(fullStepsPerSec));
+    }
+
+    void setMaxSpeed(float fullStepsPerSec) override {
+        setParam(Reg::MAX_SPEED, PowerStepUnits::fspsToMaxSpeedReg(fullStepsPerSec));
+    }
+
+    float getMaxSpeed() override {
+        return PowerStepUnits::maxSpeedRegToFsps(getParam(Reg::MAX_SPEED));
+    }
+
+    /// RUN with the SPEED register value itself (20-bit, steps/tick x 2^28)
+    void runRaw(bool forward, uint32_t speed) {
         m_spi.lock();
         m_spi.setMode(Board::SPIMode::Mode3);
         m_spi.setPrescaler(Board::SPIPrescaler::Div32);
@@ -200,7 +222,7 @@ public:
         m_spi.unlock();
     }
 
-    void move(bool forward, uint32_t steps) override {
+    void move(bool forward, uint32_t steps) override {   // microsteps, 22-bit
         m_spi.lock();
         m_spi.setMode(Board::SPIMode::Mode3);
         m_spi.setPrescaler(Board::SPIPrescaler::Div32);

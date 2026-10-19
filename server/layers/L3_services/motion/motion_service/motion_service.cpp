@@ -4,7 +4,6 @@
  */
 
 #include "L3_services/motion/motion_service/motion_service.hpp"
-#include "L3_services/config/config_service/config_service.hpp"
 #include "L3_services/motion/motor_service/motor_service.hpp"
 #include "L3_services/infra/trace/trace.hpp"
 
@@ -36,22 +35,18 @@ static Result sendCmd(MotorCmdType type, int32_t p1 = 0, int32_t p2 = 0) {
     return g_motorCommandSink->sendCommand(cmd) ? Result::OK : Result::QUEUE_FULL;
 }
 
-// Convert steps/s to raw MAX_SPEED register value (10-bit, 0 = no override)
-static int32_t speedOverrideRaw(uint32_t stepsPerSec) {
-    if (stepsPerSec == 0) return 0;
-    uint16_t raw = Config::maxSpeedPhysicalToRaw(stepsPerSec);
-    if (raw < 1) raw = 1;
-    if (raw > 1023) raw = 1023;
-    return static_cast<int32_t>(raw);
+// Speeds travel as full steps/s: RUN in param1, a per-move override in param2 (0 = none); the
+// Motor task hands them to the driver (run / setMaxSpeed), which converts and clamps.
+static int32_t stepsPerSecParam(uint32_t stepsPerSec) {
+    return (stepsPerSec > static_cast<uint32_t>(INT32_MAX)) ? INT32_MAX
+                                                            : static_cast<int32_t>(stepsPerSec);
 }
 
 Result run(uint32_t stepsPerSec, bool forward) {
     Trace::ServiceScope svc(Trace::SVC_MOTION);
     TRACE_ENTRY("MOT:RUN", stepsPerSec);
-    auto speedRaw = static_cast<uint32_t>(
-        (static_cast<uint64_t>(stepsPerSec) * 1048576ULL) / 15625ULL);
     Result r = sendCmd(MotorCmdType::Run,
-                       static_cast<int32_t>(speedRaw),
+                       stepsPerSecParam(stepsPerSec),      // full steps/s
                        forward ? 1 : 0);
     TRACE_EXIT("MOT:RUN", static_cast<uint32_t>(r));
     return r;
@@ -61,7 +56,7 @@ Result move(int32_t steps, uint32_t maxSpeedStepsPerSec) {
     Trace::ServiceScope svc(Trace::SVC_MOTION);
     TRACE_ENTRY("MOT:MOVE", static_cast<uint32_t>(steps));
     Result r = sendCmd(MotorCmdType::Move, steps,
-                       speedOverrideRaw(maxSpeedStepsPerSec));
+                       stepsPerSecParam(maxSpeedStepsPerSec));
     TRACE_EXIT("MOT:MOVE", static_cast<uint32_t>(r));
     return r;
 }
@@ -70,7 +65,7 @@ Result goTo(int32_t position, uint32_t maxSpeedStepsPerSec) {
     Trace::ServiceScope svc(Trace::SVC_MOTION);
     TRACE_ENTRY("MOT:GOTO", static_cast<uint32_t>(position));
     Result r = sendCmd(MotorCmdType::GoTo, position,
-                       speedOverrideRaw(maxSpeedStepsPerSec));
+                       stepsPerSecParam(maxSpeedStepsPerSec));
     TRACE_EXIT("MOT:GOTO", static_cast<uint32_t>(r));
     return r;
 }
@@ -107,7 +102,7 @@ Result home(uint32_t maxSpeedStepsPerSec) {
     Trace::ServiceScope svc(Trace::SVC_MOTION);
     TRACE_ENTRY("MOT:HOME");
     Result r = sendCmd(MotorCmdType::GoHome, 0,
-                       speedOverrideRaw(maxSpeedStepsPerSec));
+                       stepsPerSecParam(maxSpeedStepsPerSec));
     TRACE_EXIT("MOT:HOME", static_cast<uint32_t>(r));
     return r;
 }

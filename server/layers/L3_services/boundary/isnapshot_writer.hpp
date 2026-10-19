@@ -16,11 +16,9 @@ class ISnapshotWriter {
 public:
     virtual ~ISnapshotWriter() = default;
 
-    /** @brief Write raw motor STATUS register (from TracedMotorDriver::getStatus) */
-    virtual void writeMotorStatus(const Harness::MotorState& status) = 0;   ///< decoded by the driver
-
-    /** @brief Write raw motor register value (from TracedMotorDriver::getParam) */
-    virtual void writeMotorParam(uint8_t reg, uint32_t value) = 0;
+    /** @brief Write the driver's state (from MotorController::periodicUpdate): decoded flags,
+     *         position in microsteps, speed in full steps/s; physical, no chip registers */
+    virtual void writeMotorStatus(const Harness::MotorState& status) = 0;
 
     /** @brief Write encoder telemetry (from encoder_task) */
     virtual void writeEncoder(const Services::EncoderTelemetryData& data) = 0;

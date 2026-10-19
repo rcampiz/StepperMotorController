@@ -53,8 +53,11 @@ namespace MotorReg {
 /**
  * @brief Abstract motor driver interface
  *
- * Provides motion commands, register access, and status queries.
- * Hot path: getStatus() + getParam() called every 50ms in motor loop.
+ * Motion speaks physical units (docs/design/DRIVER_BOUNDARY.md, step 2): speeds in full
+ * steps/s (float: Cortex-M4F, task context only, never from an ISR), positions and
+ * distances in microsteps at the resolution in force. Each driver converts to its chip's
+ * own units and limits (powerSTEP01: L4_drivers/devices/powerstep01_units.hpp).
+ * Hot path: readState() every 50 ms in the motor loop.
  * Virtual dispatch ~5ns vs ~50us SPI transaction = negligible overhead.
  */
 class IMotorDriver {
@@ -64,10 +67,14 @@ public:
     /** @brief Initialize/reinitialize the driver hardware */
     virtual void init() = 0;
 
-    // --- Motion commands ---
-    virtual void run(bool forward, uint32_t speed) = 0;
-    virtual void move(bool forward, uint32_t steps) = 0;
-    virtual void goTo(int32_t position) = 0;
+    // --- Motion commands (physical units) ---
+    /// Run at a constant speed, full steps/s (>= 0). The driver clamps to its chip's range
+    /// and resolution (powerSTEP01: truncated to 0.0149 full steps/s, at most 15624.98).
+    virtual void run(bool forward, float fullStepsPerSec) = 0;
+    /// Relative move, microsteps
+    virtual void move(bool forward, uint32_t microsteps) = 0;
+    /// Absolute move, microsteps
+    virtual void goTo(int32_t positionMicrosteps) = 0;
     virtual void softStop() = 0;
     virtual void hardStop() = 0;
     virtual void softHiZ() = 0;
@@ -76,12 +83,22 @@ public:
     virtual void goMark() = 0;
     virtual void resetPos() = 0;
 
-    // --- Register access ---
+    /// Speed ceiling of the motion profiles (MOVE/GOTO/HOME, and RUN), full steps/s. A
+    /// positive value never rounds to 0 (the chip's smallest step instead); 0 sets 0.
+    /// getMaxSpeed() reads back the value in force, so setMaxSpeed(getMaxSpeed()) restores it
+    /// exactly (the per-move override relies on that).
+    virtual void setMaxSpeed(float fullStepsPerSec) = 0;
+    virtual float getMaxSpeed() = 0;
+
+    // --- Register access (config and bring-up only; driver boundary step 3 removes it from L3) ---
     virtual uint32_t getParam(uint8_t reg) = 0;
     virtual void setParam(uint8_t reg, uint32_t value) = 0;
 
     // --- Status ---
+    /// The decoded status only (positionUsteps/speedFsps left 0): fault clears, Hi-Z checks
     virtual MotorStatus getStatus() = 0;
+    /// The poll: decoded status + position (microsteps, sign-extended) + speed (full steps/s)
+    virtual MotorStatus readState() = 0;
     virtual bool isBusy() = 0;
     virtual bool flagActive() = 0;
 

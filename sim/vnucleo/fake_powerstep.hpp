@@ -32,7 +32,7 @@ public:
 
     void init() override;
     void setStandby(bool standby) override;
-    void run(bool forward, uint32_t speed) override;
+    void run(bool forward, float fullStepsPerSec) override;   // converted like the chip: SPEED register
     void move(bool forward, uint32_t steps) override;
     void goTo(int32_t position) override;
     void softStop() override;
@@ -42,9 +42,12 @@ public:
     void goHome() override;
     void goMark() override;
     void resetPos() override;
+    void setMaxSpeed(float fullStepsPerSec) override;
+    float getMaxSpeed() override;
     uint32_t getParam(uint8_t reg) override;
     void setParam(uint8_t reg, uint32_t value) override;
     Drivers::MotorStatus getStatus() override;
+    Drivers::MotorStatus readState() override;
     bool isBusy() override;
     bool flagActive() override { return false; }
 
@@ -61,6 +64,7 @@ private:
     void resetRegisters();
     void update();                       // integrate to now (call with m_ held)
     static void logMotion(const char* what, long long value);
+    void runRaw(bool forward, uint32_t speed);   // RUN with a SPEED register value
     double vmax() const { return regs_[Drivers::MotorReg::MAX_SPEED] * MAXSPD_LSB; }
     double acc() const { return std::max(1.0, regs_[Drivers::MotorReg::ACC] * ACC_LSB); }
     double dec() const { return std::max(1.0, regs_[Drivers::MotorReg::DEC] * ACC_LSB); }

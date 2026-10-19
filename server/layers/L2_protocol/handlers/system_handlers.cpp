@@ -80,6 +80,7 @@ int renderStatusJson(char* buf, size_t bufSize,
   // newlib-nano: no %lld — pre-format int64_t as string
   char encCountStr[24];
   i64toa(snap.encoder.count, encCountStr, sizeof(encCountStr));
+  const Protocol2TrimSpeeds spd = protocol2TrimSpeeds(snap.control);   // protocol 2 wire unit
   return snprintf(
       buf, bufSize,
         "%s"
@@ -128,9 +129,7 @@ int renderStatusJson(char* buf, size_t bufSize,
         static_cast<unsigned>(snap.control.currentTier),
         static_cast<long>(snap.control.velError),
         static_cast<unsigned>(snap.control.retryCount),
-        static_cast<long>(snap.control.baseSpeedRaw),
-        static_cast<long>(snap.control.trimSpeedRaw),
-        static_cast<long>(snap.control.finalSpeedRaw),
+        spd.base, spd.trim, spd.final_,
         static_cast<unsigned>(snap.control.trimFrozen),
         static_cast<unsigned>(snap.control.velQuality),
         v.hbEnabled ? "true" : "false", static_cast<unsigned long>(v.hbTimeoutMs),

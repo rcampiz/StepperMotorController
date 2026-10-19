@@ -16,12 +16,6 @@ SysIdRunner g_sysId;
 
 // ── Conversion helpers ──
 
-uint32_t SysIdRunner::speedSpsToRaw(uint16_t sps) {
-    // raw = sps * 1048576 / 15625
-    return static_cast<uint32_t>(
-        (static_cast<uint64_t>(sps) * 1048576ULL) / 15625ULL);
-}
-
 int16_t SysIdRunner::speedSpsToTps(uint16_t sps, uint16_t fpr, uint16_t ppr) {
     // tps = sps * encoderPPR / fullStepsPerRev
     if (fpr == 0) fpr = 200;
@@ -51,7 +45,7 @@ uint16_t SysIdRunner::interpolateRampSpeed() const {
                     / static_cast<int32_t>(duration);
 
     if (speed < 0) speed = 0;
-    if (speed > 15625) speed = 15625;  // Max steps/s
+    if (speed > SYSID_MAX_SPEED_SPS) speed = SYSID_MAX_SPEED_SPS;
     return static_cast<uint16_t>(speed);
 }
 
@@ -66,7 +60,7 @@ uint16_t SysIdRunner::generateSineSpeed() const {
     float val = baseline + amplitude * sinf(2.0f * 3.14159265f * freqHz * timeS);
 
     if (val < 0.0f) val = 0.0f;
-    if (val > 15625.0f) val = 15625.0f;
+    if (val > static_cast<float>(SYSID_MAX_SPEED_SPS)) val = static_cast<float>(SYSID_MAX_SPEED_SPS);
     return static_cast<uint16_t>(val);
 }
 
@@ -154,7 +148,7 @@ SysIdRunner::TickResult SysIdRunner::tick(
         uint16_t fullStepsPerRev, uint16_t encoderPPR) {
 
     TickResult result{};
-    result.rawSpeed = 0;
+    result.speedFsps = 0.0f;
     result.forward = m_cfg.forward;
     result.active = false;
     result.justFinished = false;
@@ -167,7 +161,7 @@ SysIdRunner::TickResult SysIdRunner::tick(
 
         case SysIdPhase::PRE_SETTLE:
             result.active = true;
-            result.rawSpeed = 0;  // Motor stopped during settle
+            result.speedFsps = 0.0f;  // Motor stopped during settle
 
             // Record baseline samples (setpoint = 0)
             recordSample(m_totalElapsed_ms, 0, encVelTps, posError);
@@ -206,7 +200,7 @@ SysIdRunner::TickResult SysIdRunner::tick(
                     break;
             }
 
-            result.rawSpeed = speedSpsToRaw(currentSpeed_sps);
+            result.speedFsps = static_cast<float>(currentSpeed_sps);   // whole steps/s
             result.forward = m_cfg.forward;
 
             // Compute setpoint in encoder ticks/sec for logging
@@ -233,7 +227,7 @@ SysIdRunner::TickResult SysIdRunner::tick(
 
         case SysIdPhase::POST_SETTLE:
             result.active = true;
-            result.rawSpeed = 0;  // Motor stopping
+            result.speedFsps = 0.0f;  // Motor stopping
 
             // Record deceleration samples (setpoint = 0)
             recordSample(m_totalElapsed_ms, 0, encVelTps, posError);

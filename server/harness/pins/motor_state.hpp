@@ -6,6 +6,7 @@
  * L4 the state is these flags and a fault mask, so a different driver chip changes nothing
  * in L3, L2 or the client (docs/design/DRIVER_BOUNDARY.md, step 1). `raw` is the chip's own
  * status word, opaque: logs and diagnostics only, never decoded outside the driver.
+ * Position and speed are physical (step 2): microsteps and full steps/s.
  */
 #pragma once
 
@@ -36,6 +37,9 @@ struct MotorState {
     bool moving = false;                ///< a motion command is executing
     bool forward = true;
     bool readable = true;               ///< false: the chip could not be read (held in standby)
+    /// Filled by IMotorDriver::readState() (the poll); getStatus() leaves them 0
+    int32_t positionUsteps = 0;         ///< position, microsteps at the resolution in force
+    float speedFsps = 0.0f;             ///< speed magnitude, full steps/s (direction: forward)
 
     bool hiZ() const { return outputsOff; }
     bool busy() const { return moving; }

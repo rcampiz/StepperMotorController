@@ -124,8 +124,8 @@ TEST(status_json_worst_case_fits_the_buffer_with_margin) {
     snap.control.iTerm = INT16_MIN; snap.control.dTerm = INT16_MIN;
     snap.control.supervisorState = 255; snap.control.currentTier = 255;
     snap.control.velError = INT32_MIN; snap.control.retryCount = 255;
-    snap.control.baseSpeedRaw = INT32_MIN; snap.control.trimSpeedRaw = INT32_MIN;
-    snap.control.finalSpeedRaw = INT32_MIN; snap.control.trimFrozen = 255;
+    snap.control.baseSpeedFsps = 1e12f; snap.control.trimSpeedFsps = -1e12f;   // wire: INT32_MAX, INT32_MIN
+    snap.control.finalSpeedFsps = -1e12f; snap.control.trimFrozen = 255;   // wire: INT32_MIN
     snap.control.velQuality = 255;
 
     Protocol::StatusJsonView v;
@@ -151,6 +151,25 @@ TEST(status_json_worst_case_fits_the_buffer_with_margin) {
     EXPECT_EQ(depth, 0);
     EXPECT_TRUE(js.find("\"position\":-2147483648") != std::string::npos);
     EXPECT_TRUE(js.find("\"count\":-9223372036854775808") != std::string::npos);
+}
+
+TEST(trim_speeds_keep_their_protocol_2_wire_unit) {
+    // L3 reports full steps/s; the wire keeps the old SPEED-register unit (x 2^20 / 15625)
+    Protocol::ControlTelemetry c{};
+    c.baseSpeedFsps = 1000.0f;                 // RUN 1000: 1000 x 2^20 / 15625 = 67108.864
+    c.finalSpeedFsps = 1012.5f;                // 67947.724
+    c.trimSpeedFsps = 12.5f;
+    const Protocol::Protocol2TrimSpeeds s = Protocol::protocol2TrimSpeeds(c);
+    EXPECT_EQ(s.base, 67108L);                 // exactly what MOT:RUN 1000 put in the register
+    EXPECT_EQ(s.final_, 67947L);
+    EXPECT_EQ(s.trim, 839L);                   // final - base: the three still add up
+    for (uint32_t sps = 0; sps <= 15625; ++sps) {   // whole steps/s: identical to the old integer path
+        EXPECT_EQ(Protocol::protocol2SpeedUnits(static_cast<float>(sps)),
+                  static_cast<int32_t>((static_cast<uint64_t>(sps) * 1048576ULL) / 15625ULL));
+    }
+    EXPECT_EQ(Protocol::protocol2SpeedUnits(0.0f), 0);
+    EXPECT_EQ(Protocol::protocol2SpeedUnits(1e12f), INT32_MAX);
+    EXPECT_EQ(Protocol::protocol2SpeedUnits(-1e12f), INT32_MIN);
 }
 
 TEST(status_json_reports_truncation_instead_of_sending_garbage) {

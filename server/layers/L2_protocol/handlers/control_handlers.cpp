@@ -4,6 +4,7 @@
  */
 
 #include "L2_protocol/command_parser_internal.hpp"
+#include "L2_protocol/status_json.hpp"
 
 namespace Protocol {
 
@@ -175,6 +176,7 @@ void CommandParser::cmdTrimQuery() {
   m_dispatcher.getTelemetry(snap);
   bool active = snap.control.tracking;
   bool frozen = snap.control.trimFrozen != 0;
+  const Protocol2TrimSpeeds spd = protocol2TrimSpeeds(snap.control);   // protocol 2 wire unit
 
   if (m_format == ResponseFormat::JSON) {
     char json[256];
@@ -189,9 +191,7 @@ void CommandParser::cmdTrimQuery() {
              (unsigned)tc.outputLimit, (unsigned)tc.integralLimit,
              (unsigned)maxPct, active ? "true" : "false",
              frozen ? "true" : "false",
-             static_cast<long>(snap.control.baseSpeedRaw),
-             static_cast<long>(snap.control.trimSpeedRaw),
-             static_cast<long>(snap.control.finalSpeedRaw),
+             spd.base, spd.trim, spd.final_,
              static_cast<unsigned>(snap.control.velQuality));
     respondJsonOk("CTRL:TRIM?", json);
   } else {

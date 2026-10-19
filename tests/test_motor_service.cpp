@@ -7,6 +7,7 @@
  */
 #include <string.h>
 #include "L4_drivers/devices/powerstep01_status.hpp"
+#include "L4_drivers/devices/powerstep01_units.hpp"
 #include "minitest.hpp"
 #include "L3_services/motion/motor_service/motor_service.hpp"
 #include "L3_services/motion/motion.hpp"
@@ -25,10 +26,14 @@ struct FakeDriver : Drivers::IMotorDriver {
     bool running = false;
     bool standby = false; int inits = 0;
     int hardHiZCalls = 0, runCalls = 0, setParams = 0;
-    uint32_t params[32] = {};
+    float lastRunFsps = -1.0f; bool lastRunForward = true;
+    uint32_t params[32] = {};                 // powerSTEP01 registers, converted like the real driver
     void init() override { hiZ = true; running = false; standby = false; ++inits; }
     void setStandby(bool s) override { standby = s; if (s) { hiZ = true; running = false; } }
-    void run(bool, uint32_t) override { running = true; hiZ = false; ++runCalls; }
+    void run(bool fwd, float fsps) override {
+        running = true; hiZ = false; ++runCalls; lastRunFsps = fsps; lastRunForward = fwd;
+        params[Drivers::MotorReg::SPEED] = Drivers::PowerStepUnits::fspsToSpeedReg(fsps);
+    }
     void move(bool, uint32_t) override { running = true; hiZ = false; ++runCalls; }
     void goTo(int32_t) override { running = true; hiZ = false; ++runCalls; }
     void softStop() override { running = false; }
@@ -38,11 +43,23 @@ struct FakeDriver : Drivers::IMotorDriver {
     void goHome() override { running = true; hiZ = false; ++runCalls; }
     void goMark() override { running = true; hiZ = false; ++runCalls; }
     void resetPos() override {}
+    void setMaxSpeed(float fsps) override {
+        ++setParams; params[Drivers::MotorReg::MAX_SPEED] = Drivers::PowerStepUnits::fspsToMaxSpeedReg(fsps);
+    }
+    float getMaxSpeed() override {
+        return Drivers::PowerStepUnits::maxSpeedRegToFsps(params[Drivers::MotorReg::MAX_SPEED]);
+    }
     uint32_t getParam(uint8_t reg) override { return (reg < 32) ? params[reg] : 0; }
     void setParam(uint8_t reg, uint32_t v) override { ++setParams; if (reg < 32) params[reg] = v; }
     Drivers::MotorStatus getStatus() override {
         Drivers::MotorStatus s;                            // no faults, not moving
         s.outputsOff = hiZ;
+        return s;
+    }
+    Drivers::MotorStatus readState() override {
+        Drivers::MotorStatus s = getStatus();
+        s.positionUsteps = Drivers::PowerStepUnits::absPosToUsteps(params[Drivers::MotorReg::ABS_POS]);
+        s.speedFsps = Drivers::PowerStepUnits::speedRegToFsps(params[Drivers::MotorReg::SPEED]);
         return s;
     }
     bool isBusy() override { return false; }
@@ -404,24 +421,53 @@ TEST(a_move_speed_override_is_restored_on_soft_stop_run_and_nested_moves) {
     r.svc.onCommand(cmd(Services::MotorCmdType::SetMaxSpeed, 68));
     EXPECT_EQ(maxSpeed, 68u);
 
-    // move at a lower speed, interrupted by STOP (soft): the configured value comes back
-    r.svc.onCommand(cmd(Services::MotorCmdType::Move, 6400, 7));
+    // move at a lower speed (full steps/s; the driver converts: 107 -> MAX_SPEED 7),
+    // interrupted by STOP (soft): the configured value comes back
+    r.svc.onCommand(cmd(Services::MotorCmdType::Move, 6400, 107));
     EXPECT_EQ(maxSpeed, 7u);
     r.svc.onCommand(cmd(Services::MotorCmdType::SoftStop));
     EXPECT_EQ(maxSpeed, 68u);
 
     // a run while a move's override is active runs at the configured maximum
-    r.svc.onCommand(cmd(Services::MotorCmdType::Move, 6400, 7));
+    r.svc.onCommand(cmd(Services::MotorCmdType::Move, 6400, 107));
     r.svc.onCommand(cmd(Services::MotorCmdType::Run, 100, 1));
     EXPECT_EQ(maxSpeed, 68u);
     r.svc.onCommand(cmd(Services::MotorCmdType::SoftStop));
 
     // two overrides in a row keep the original, not the first override
-    r.svc.onCommand(cmd(Services::MotorCmdType::Move, 6400, 7));
-    r.svc.onCommand(cmd(Services::MotorCmdType::Move, 6400, 9));
+    r.svc.onCommand(cmd(Services::MotorCmdType::Move, 6400, 107));
+    r.svc.onCommand(cmd(Services::MotorCmdType::Move, 6400, 138));   // 138 steps/s -> 9
     EXPECT_EQ(maxSpeed, 9u);
     r.svc.onCommand(cmd(Services::MotorCmdType::HardStop));
     EXPECT_EQ(maxSpeed, 68u);
+}
+
+TEST(run_reaches_the_driver_in_full_steps_per_second_and_telemetry_reads_back_physical_units) {
+    // Driver boundary step 2: RUN carries steps/s to the driver, which converts; the
+    // powerSTEP01 register is what L3 used to compute itself (1000 x 2^20 / 15625 = 67108)
+    Rig r;
+    r.svc.onCommand(cmd(Services::MotorCmdType::Run, 1000, 0));
+    EXPECT_TRUE(r.drv.lastRunFsps == 1000.0f);
+    EXPECT_FALSE(r.drv.lastRunForward);
+    EXPECT_EQ(r.drv.params[Drivers::MotorReg::SPEED], 67108u);
+
+    r.drv.params[Drivers::MotorReg::ABS_POS] = 0x3FFF00u;          // -256 microsteps
+    r.motorTaskPass();
+    Protocol::TelemetrySnapshot t = Services::g_telemetryStore.getSnapshot();
+    EXPECT_EQ(t.motor.position, -256);
+    EXPECT_EQ(t.motor.speed, 999u);                                  // as the raw path reported it
+
+    // Standby (out-of-band stop): speed 0, position as last read
+    r.svc.oobEstopFromIsr();
+    r.motorTaskPass();
+    t = Services::g_telemetryStore.getSnapshot();
+    EXPECT_EQ(t.motor.speed, 0u);
+    EXPECT_EQ(t.motor.position, -256);
+    EXPECT_FALSE(t.motor.statusReadable);
+    r.svc.clearImmediateStop();
+    r.motorTaskPass();
+    r.drv.params[Drivers::MotorReg::ABS_POS] = 0;
+    r.drv.params[Drivers::MotorReg::SPEED] = 0;
 }
 
 TEST(debug_pause_stops_all_driver_traffic_until_resumed) {

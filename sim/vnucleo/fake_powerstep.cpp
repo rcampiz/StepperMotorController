@@ -3,6 +3,7 @@
  * @brief Fake powerSTEP01 physics (see fake_powerstep.hpp).
  */
 #include "L4_drivers/devices/powerstep01_status.hpp"
+#include "L4_drivers/devices/powerstep01_units.hpp"
 #include "fake_powerstep.hpp"
 #include "host_platform.hpp"
 
@@ -133,7 +134,28 @@ void FakePowerStep::setStandby(bool standby) {
     }
 }
 
-void FakePowerStep::run(bool forward, uint32_t speed) {
+void FakePowerStep::run(bool forward, float fullStepsPerSec) {
+    // The real driver's conversion, so the fake runs at what the chip would (its resolution)
+    runRaw(forward, Drivers::PowerStepUnits::fspsToSpeedReg(fullStepsPerSec));
+}
+
+void FakePowerStep::setMaxSpeed(float fullStepsPerSec) {
+    setParam(Drivers::MotorReg::MAX_SPEED, Drivers::PowerStepUnits::fspsToMaxSpeedReg(fullStepsPerSec));
+}
+
+float FakePowerStep::getMaxSpeed() {
+    return Drivers::PowerStepUnits::maxSpeedRegToFsps(getParam(Drivers::MotorReg::MAX_SPEED));
+}
+
+Drivers::MotorStatus FakePowerStep::readState() {
+    std::lock_guard<std::recursive_mutex> lk(m_);
+    Drivers::MotorStatus s = getStatus();
+    s.positionUsteps = Drivers::PowerStepUnits::absPosToUsteps(getParam(ABS_POS));
+    s.speedFsps = Drivers::PowerStepUnits::speedRegToFsps(getParam(SPEED));
+    return s;
+}
+
+void FakePowerStep::runRaw(bool forward, uint32_t speed) {
     std::lock_guard<std::recursive_mutex> lk(m_);
     logMotion("run", forward ? static_cast<long long>(speed) : -static_cast<long long>(speed));
     update();
