@@ -201,6 +201,7 @@
         "server/layers/L3_services/ui/chrome/chrome.hpp",
         "server/layers/L3_services/ui/display_service/display_service.cpp",
         "server/layers/L3_services/ui/display_service/display_service.hpp",
+        "server/layers/L3_services/ui/display_service/panel_sleep.hpp",
         "server/layers/L3_services/ui/menu_screen/menu_screen.cpp",
         "server/layers/L3_services/ui/menu_screen/menu_screen.hpp",
         "server/layers/L3_services/ui/screens/arch_screen.cpp",

@@ -17,7 +17,7 @@ Enforced by `scripts/arch/check_includes.py --strict` and `scripts/arch/check_ha
 
 - **L1 Transport** â€” Byte-stream ingress/egress to the host (VCP UART / RTT); owns ITransport and the IByteChannel contract that L5 implements. (7 files)
 - **L2 Protocol** â€” SCPI parsing, validation, aliases, all host-facing formatting (responses, events, telemetry, joystick, banner); routes to the 13 L3 dispatchers. (21 files)
-- **L3 Services** â€” All business logic and safety, host-testable, no RTOS loops: Motor/Comms/Encoder/Display/Debug services, controllers, dispatchers, telemetry store, UI, trace. (185 files)
+- **L3 Services** â€” All business logic and safety, host-testable, no RTOS loops: Motor/Comms/Encoder/Display/Debug services, controllers, dispatchers, telemetry store, UI, trace. (186 files)
 - **L4 Drivers** â€” Device drivers over Board pin bundles: powerSTEP01, ST7789, NOR flash, joystick, quadrature encoder (+ index ISR), config store, debug access. (24 files)
 - **L5 Board** â€” Register/peripheral access: clocks, GPIO, SPI1/SPI2, USART2 + RTT byte channels, TIM4, TIM3+DMA sampler, EXTI, TE sync, internal flash, bring-up commands. (35 files)
 - **TASKS Task sheet (Scheduler::)** â€” Four RTOS task loops that only wait, then call one L3 entry point; owns priorities, periods, stack sizes, task handles and the task-init contracts the composition root calls. (16 files)
