@@ -12,6 +12,15 @@ Cutting a release: move the Unreleased notes under a new heading, bump `VERSION`
 
 ## [Unreleased]
 
+### Changed
+- Driver boundary step 3: the motor driver's settings are physical (amps, duty, full steps/s^2,
+  full steps/s, microsteps) and the driver advertises its capabilities; every powerSTEP01
+  register, unit and quirk (Hi-Z-only writes, the current-mode 1/16 cap, the chip-reset watch)
+  lives in the L4 driver. Config blob V5; V1-V4 blobs migrate at boot to the same currents,
+  ramps and step mode. Protocol 2 commands unchanged (the chip-unit ones are aliases the
+  driver translates). The LCD Driver page shows physical values; OCD reads as the VDS
+  threshold with its estimated current. The chip-reset watch now runs from boot.
+
 ## [0.5.0] - 2026-10-19
 
 ### Added

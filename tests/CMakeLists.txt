@@ -204,3 +204,27 @@ target_include_directories(test_screen_archmeter PRIVATE ${SERVER}/layers/L3_ser
 smc_add_test(test_speed_controllers test_speed_controllers.cpp
     ${SERVER}/layers/L3_services/motion/speed_trim_controller/speed_trim_controller.cpp
     ${SERVER}/layers/L3_services/motion/sysid/sysid.cpp)
+
+# --- Driver boundary step 3: the LCD Driver Config screen in physical units over the real config
+#     manager (the bench board's V4 blob, migrated by the powerSTEP01 translation), into the panel sim.
+smc_add_test(test_screen_config test_screen_config.cpp
+    ${SERVER}/layers/L3_services/ui/screens/config_screen.cpp
+    ${SERVER}/layers/L3_services/ui/screen_manager/screen_manager.cpp
+    ${SERVER}/layers/L3_services/ui/chrome/chrome.cpp
+    ${SERVER}/layers/L3_services/infra/tick_timer/tick_timer.cpp
+    ${SERVER}/harness/pins/imicrosecond_clock.cpp
+    ${SERVER}/layers/L3_services/motion/motor_service/motor_service.cpp
+    ${SERVER}/layers/L3_services/motion/motor_controller/motor_controller.cpp
+    ${SERVER}/layers/L3_services/motion/motion.cpp
+    ${SERVER}/layers/L3_services/motion/control_mode/control_mode.cpp
+    ${SERVER}/layers/L3_services/motion/following_supervisor/following_supervisor.cpp
+    ${SERVER}/layers/L3_services/motion/speed_trim_controller/speed_trim_controller.cpp
+    ${SERVER}/layers/L3_services/motion/sysid/sysid.cpp
+    ${SERVER}/layers/L3_services/motion/pid_controller/pid_controller.cpp
+    ${SERVER}/layers/L3_services/motion/motor_config/motor_config.cpp
+    ${SERVER}/layers/L3_services/motion/motor_event_service/motor_event_service.cpp
+    ${SERVER}/layers/L3_services/motion/encoder_processor/encoder_processor.cpp
+    ${SERVER}/layers/L3_services/infra/telemetry_store/telemetry_store.cpp
+    ${SERVER}/harness/pins/async_event.cpp
+    stubs/trace_stub.cpp)
+target_include_directories(test_screen_config PRIVATE ${SERVER}/layers/L3_services)

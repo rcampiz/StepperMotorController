@@ -447,8 +447,11 @@ layers through their harnesses; layers are never processes. Consequences:
 
 L3 should be chip-agnostic: physical units (steps/s, steps/s^2, amps, microsteps) and a
 generic fault/state across H_L3_L4; register maps, unit conversions and STATUS decoding
-belong in the L4 driver. Today L3/L2 still know the powerSTEP01 (MotorReg addresses,
-STATUS bits, chip speed units): debt to retire, do not add to it.
+belong in the L4 driver, which advertises what it can do (`DriverCaps`) and takes its
+settings in physical units (`DriverSettings`, `IMotorDriver::apply`). Since driver boundary
+step 3 (docs/design/DRIVER_BOUNDARY.md) no register or chip unit is left above L4; the
+protocol 2 chip-unit commands are aliases the driver translates (`LegacyDriverUnits`), kept
+one release. Do not add chip knowledge above L4.
 
 ## Summary
 

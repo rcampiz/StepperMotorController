@@ -1,6 +1,7 @@
 # Design: a swappable motor driver (H_L3_L4 in physical units)
 
-Status: **approved 2026-10-19, in progress** (step 1 first).
+Status: **approved 2026-10-19, in progress**: steps 1-3 done (state, motion units, settings);
+blob V5 landed with step 3 (see "Step 3 as built"); the physical commands and `DRV:CAPS?` are step 4.
 
 Decisions (owner, 2026-10-19): the next chip is unknown, so nothing may assume one: the
 boundary is capability-driven (`DriverCaps`), and every chip-specific fact lives in its L4
@@ -97,3 +98,35 @@ Raw register access stays only on the bring-up path (`IDebugAccess`, `DBG:*`), n
   ISR-safe and as fast as today (microseconds); covered by the existing estop scenarios.
 - Rounding: physical round-trips must not drift saved values (store physical, convert once).
 - Protocol users (GUI, Pi): keep aliases for a release; bump protocol to 3.
+
+## Step 3 as built (2026-10-19)
+
+- **Types** (`server/harness/pins/driver_settings.hpp`, shared by L2/L3/L4): `DriverCaps`
+  (drive modes and their finest resolution, stall detect, standby pin, hardware positioning,
+  sync pulses per full step, reportable/alarmable faults, current/duty/overcurrent/stall
+  ranges and steps, speed and speed-ceiling limits, acceleration range, position range),
+  `DriverSettings` (microsteps asked for, drive mode, fault alarms as `DriverFault` bits,
+  currents in amps and duties 0..1 kept side by side so switching mode restores the other,
+  accel/decel in full steps/s^2, speed ceiling in full steps/s, overcurrent threshold in
+  amps, stall threshold 0..1, and an opaque 12-byte `DriverTuning` block the driver owns),
+  `ApplyResult`, `effectiveMicrosteps()`. `DriverSettings` is persisted as-is.
+- **Overcurrent:** the powerSTEP01 senses OCD as a MOSFET drain-source *voltage*
+  ((OCD_TH+1) x 31.25 mV). The setting is an estimated current = volts / RDS(on), with the
+  IHM03A1's STL220N6F7 taken as 1.2 mOhm (an estimate, a constant in the L4 driver);
+  `DriverCaps::overcurrentOhms` says so, and the LCD shows both ("0.69V ~573A").
+- **Driver API** (`IMotorDriver`): `caps()`, `quantize()` (pure), `apply()` (writes everything
+  the chip takes now; the Hi-Z-only STEP_MODE/CONFIG bits only when the outputs are already off,
+  else `NEEDS_OUTPUTS_OFF`), `readSettings()`, `checkReset()` (the GATECFG1 watch, now in L4 and
+  armed from boot), `diagnostics(view)` (the register dump as opaque text), `setAcceleration`,
+  `setDeceleration`, `setMark`; `getParam`/`setParam` and `MotorReg` are gone from the boundary.
+  L3 releases the outputs (HardHiZ, apply, SoftStop) when the driver asks for it.
+- **powerSTEP01 engine:** `L4_drivers/devices/powerstep01_settings.hpp` (register image,
+  conversions, apply, read-back, reset watch, diagnostics, protocol 2 units), templated over a
+  register port so the driver, the virtual Nucleo's fake chip and the host fakes share it.
+- **Protocol 2 aliases:** `LegacyDriverUnits` (L4 boundary) carries the old chip codes;
+  `toLegacyUnits`/`fromLegacyUnits` translate. `DRV:CFG:KVAL/TVAL/OCD/STALL/MOTION/PRED/DECAY/FAULT`
+  and `DRV:CFG?` read the physical settings as codes, edit, and write them back through the driver.
+- **Persistence:** blob V5 (128 bytes, same journal) holds `DriverSettings` at offset 8 plus the
+  non-driver fields. V1-V4 blobs are migrated at load via `fromLegacyUnits` (not rewritten until
+  the next save, so a rollback still finds its V4 record); a driver without those units keeps
+  its defaults and the non-driver fields.
