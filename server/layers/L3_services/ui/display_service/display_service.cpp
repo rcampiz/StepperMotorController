@@ -206,7 +206,7 @@ void DisplayService::attemptClear()
     } else {
         m_estopScreen.setMessage("not latched");
     }
-    m_clearHold = 0;
+    m_clearing = false;
     m_estopScreen.setProgress(0);
 }
 
@@ -223,7 +223,7 @@ void DisplayService::estopTick(UI::UIMode mode)
         if (top != &m_estopScreen) {
             if (top == &m_saverScreen || top == &m_recoveryScreen) m_screenManager.pop();
             m_estopScreen.setFault(st == Services::ControllerState::FAULT);
-            m_clearHold = 0;
+            m_clearing = false;
             m_clearArmed = false;
             m_screenManager.push(&m_estopScreen);
         }
@@ -306,12 +306,8 @@ void DisplayService::handleJoystick()
         }
         // The way out from the board itself: hold CENTER 2 s, the same gesture as "home"
         // in local mode. The host's next drawing command finds the board in LOCAL mode.
-        if (dir == UI::JoyDirection::CENTER) {
-            if (++m_centerHoldCount == LONG_PRESS_POLLS) {
-                m_uiMode->setMode(UI::UIMode::LOCAL);
-            }
-        } else {
-            m_centerHoldCount = 0;
+        if (centerLongPress(dir == UI::JoyDirection::CENTER, m_clock->getTickMs())) {
+            m_uiMode->setMode(UI::UIMode::LOCAL);
         }
         return;
     }
@@ -324,17 +320,20 @@ void DisplayService::handleJoystick()
         m_swallowCenter = false;
         if (dir != UI::JoyDirection::CENTER) m_clearArmed = true;
         if (dir == UI::JoyDirection::CENTER && m_clearArmed) {
-            if (m_clearHold < CLEAR_POLLS) {
-                m_clearHold++;
-                m_estopScreen.setProgress(static_cast<uint8_t>(m_clearHold * 100u / CLEAR_POLLS));
-                if (m_clearHold == CLEAR_POLLS) attemptClear();
+            const uint32_t now = m_clock->getTickMs();
+            if (!m_clearing) {
+                m_clearing = true;
+                m_clearStartMs = now;
             }
-        } else if (m_clearHold != 0) {
-            m_clearHold = 0;
+            const uint32_t held = now - m_clearStartMs;
+            m_estopScreen.setProgress(static_cast<uint8_t>(held >= CLEAR_MS ? 100u : held * 100u / CLEAR_MS));
+            if (held >= CLEAR_MS) attemptClear();      // resets the hold: still held, it starts over
+        } else if (m_clearing) {
+            m_clearing = false;
             m_estopScreen.setProgress(0);
         }
         m_lastDir = dir;
-        m_centerHoldCount = 0;
+        (void)centerLongPress(false, 0);
         m_lastInputMs = m_clock->getTickMs();
         return;
     }
@@ -351,21 +350,16 @@ void DisplayService::handleJoystick()
         if (m_screenManager.current() == &m_saverScreen) {
             if (dir != m_lastDir) m_screenManager.pop();
             m_lastDir = dir;
-            m_centerHoldCount = 0;
+            (void)centerLongPress(false, 0);
             return;
         }
     }
 
     // LOCAL mode: long-press CENTER returns to the main menu
-    if (dir == UI::JoyDirection::CENTER) {
-        m_centerHoldCount++;
-        if (m_centerHoldCount == LONG_PRESS_POLLS) {
-            m_screenManager.popToRoot();
-            m_lastDir = dir;
-            return;   // skip normal edge handling this cycle
-        }
-    } else {
-        m_centerHoldCount = 0;
+    if (centerLongPress(dir == UI::JoyDirection::CENTER, m_clock->getTickMs())) {
+        m_screenManager.popToRoot();
+        m_lastDir = dir;
+        return;   // skip normal edge handling this cycle
     }
 
     if (dir != m_lastDir) {
@@ -384,14 +378,34 @@ void DisplayService::handleJoystick()
             m_screenManager.handleInput(dir, true);
         }
         m_lastDir = dir;
-        m_holdCount = 0;
+        m_holdStartMs = m_clock->getTickMs();
+        m_lastRepeatMs = m_holdStartMs;
     } else if (dir == UI::JoyDirection::UP || dir == UI::JoyDirection::DOWN) {
-        // Auto-repeat for held UP/DOWN only (LEFT/RIGHT switch modes)
-        m_holdCount++;
-        if (m_holdCount >= HOLD_DELAY_POLLS && (m_holdCount % HOLD_REPEAT_POLLS) == 0) {
+        // Auto-repeat for held UP/DOWN only (LEFT/RIGHT switch modes), on the clock
+        const uint32_t now = m_clock->getTickMs();
+        if ((now - m_holdStartMs) >= HOLD_DELAY_MS && (now - m_lastRepeatMs) >= HOLD_REPEAT_MS) {
+            m_lastRepeatMs = now;
             m_screenManager.handleInput(dir, true);
         }
     }
+}
+
+bool DisplayService::centerLongPress(bool centerDown, uint32_t nowMs)
+{
+    if (!centerDown) {
+        m_centerHeld = false;
+        m_longPressFired = false;
+        return false;
+    }
+    if (!m_centerHeld) {
+        m_centerHeld = true;
+        m_centerDownMs = nowMs;
+    }
+    if (!m_longPressFired && (nowMs - m_centerDownMs) >= LONG_PRESS_MS) {
+        m_longPressFired = true;
+        return true;
+    }
+    return false;
 }
 
 void DisplayService::tick()

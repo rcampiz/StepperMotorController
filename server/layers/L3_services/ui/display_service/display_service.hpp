@@ -74,9 +74,11 @@ public:
     void streamEnd() override;
 
     /// Joystick navigation constants (polls at 20 Hz)
-    static constexpr uint8_t LONG_PRESS_POLLS  = 40;   ///< 2000 ms CENTER -> main menu
-    static constexpr uint8_t HOLD_DELAY_POLLS  = 8;    ///< 400 ms before auto-repeat
-    static constexpr uint8_t HOLD_REPEAT_POLLS = 2;    ///< 100 ms between repeats
+    // Holds are timed on the clock, not counted in ticks: a tick that runs long (a busy page
+    // such as the E-STOP's) stretched a 3 s hold to 6 s (bench 2026-10-19)
+    static constexpr uint32_t LONG_PRESS_MS  = 2000;   ///< hold CENTER -> main menu / leave REMOTE
+    static constexpr uint32_t HOLD_DELAY_MS  = 400;    ///< UP/DOWN held: first repeat after
+    static constexpr uint32_t HOLD_REPEAT_MS = 100;    ///< then one every
 
 private:
     void handleJoystick();
@@ -121,12 +123,13 @@ private:
     UI::ScreenCareScreen m_careScreen;
     UI::EstopScreen      m_estopScreen;
     // E-STOP from the joystick: two CENTER presses within DOUBLE_TAP_MS; clearing it: hold
-    // CENTER for CLEAR_POLLS on the E-STOP page
+    // CENTER for CLEAR_MS on the E-STOP page
     static constexpr uint32_t DOUBLE_TAP_MS = 400;
-    static constexpr uint16_t CLEAR_POLLS = 60;      ///< 3 s at 20 Hz
+    static constexpr uint32_t CLEAR_MS = 3000;       ///< hold CENTER this long to clear
     UI::JoyDirection m_prevRaw = UI::JoyDirection::NONE;
     uint32_t m_lastTapMs = 0;
-    uint16_t m_clearHold = 0;
+    bool     m_clearing = false;     ///< CENTER held (armed) on the E-STOP page
+    uint32_t m_clearStartMs = 0;
     bool m_clearArmed = false;       ///< CENTER released once since the page came up
     // A CENTER press waits DOUBLE_TAP_MS before it reaches the screen: if a second press
     // comes, it was an E-STOP and neither press selects anything
@@ -145,8 +148,13 @@ private:
     uint32_t m_activeSlot = 0;
 
     UI::JoyDirection m_lastDir = UI::JoyDirection::NONE;
-    uint8_t m_centerHoldCount = 0;
-    uint8_t m_holdCount = 0;
+    bool     m_centerHeld = false;   ///< CENTER down (for the long press)
+    bool     m_longPressFired = false;
+    uint32_t m_centerDownMs = 0;
+    uint32_t m_holdStartMs = 0;      ///< UP/DOWN held since (auto-repeat)
+    uint32_t m_lastRepeatMs = 0;
+    /// CENTER long press: true once, when CENTER has been held LONG_PRESS_MS
+    bool centerLongPress(bool centerDown, uint32_t nowMs);
 };
 
 extern DisplayService g_displayService;
