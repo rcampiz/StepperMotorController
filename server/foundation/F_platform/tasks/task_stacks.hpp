@@ -24,7 +24,9 @@
  *                                                snprintf). Not shrunk: 1280 would leave
  *                                                1.3x / 1.1x on that path.
  *  Encoder   256   ~100 words                   (unchanged)
- *  Display   640   ~299 words                   (unchanged)
+ *  Display  1024   ~502 words (2026-10-19)      (not reviewed): leaving REMOTE (UI:MODE
+ *                                                LOCAL after UI:FLASH:SHOW) repaints the
+ *                                                main menu whole. Was 640 (1.27x).
  *
  * Previous sizes, to revert: Motor 1024, Comms 2048, Encoder 256, Display 640.
  */
@@ -38,7 +40,7 @@ namespace Scheduler {
 constexpr uint32_t MOTOR_TASK_STACK_SIZE   = 512;
 constexpr uint32_t COMMS_TASK_STACK_SIZE   = 2048;
 constexpr uint32_t ENCODER_TASK_STACK_SIZE = 256;
-constexpr uint32_t DISPLAY_TASK_STACK_SIZE = 640;
+constexpr uint32_t DISPLAY_TASK_STACK_SIZE = 1024;
 
 /// What the four tasks take from the Platform's stack pool
 constexpr uint32_t TASK_STACKS_TOTAL_WORDS =

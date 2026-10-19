@@ -118,7 +118,7 @@ Two header sets are wired like power rails: any sheet may include them directly,
 | Motor | 4 | 512 | event | 50 | queue receive (50 ms timeout) -> IMotorService::onCommand; every 50 ms -> IMotorService::periodicUpdate |
 | Comms | 3 | 2048 | event | 10 | ITaskNotifier wait (USART2 RX wake) with 10 ms fallback -> ICommsService::tick |
 | Encoder | 2 | 256 | periodic | 10 | sleepUntil 10 ms -> IEncoderService::sample (task not created without encoder hardware) |
-| Display | 1 | 640 | periodic | 50 | sleepUntil 50 ms -> IDisplayService::tick |
+| Display | 1 | 1024 | periodic | 50 | sleepUntil 50 ms -> IDisplayService::tick |
 
 ## Diagram
 

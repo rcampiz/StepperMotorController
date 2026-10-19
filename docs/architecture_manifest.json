@@ -531,7 +531,7 @@
       {
         "name": "Display",
         "priority": 1,
-        "stack": 640,
+        "stack": 1024,
         "trigger": "periodic",
         "period_ms": 50,
         "layer_affinity": [
