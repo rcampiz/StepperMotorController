@@ -13,6 +13,12 @@
  *   A lease taken while another is held (a nested use, which would corrupt the outer row) is
  *   counted in ScratchRow::collisions(); the host tests check it stays 0.
  *
+ * - SharedTitleMask: the 2-bit title masks of the synthwave saver and of the E-STOP page.
+ *   Only one of those pages shows at a time; each claims the buffer before it reads or builds
+ *   its mask, and claim() says whether the buffer still holds that owner's mask (when it
+ *   does not, the owner rebuilds it: the saver's "built" flag and the E-STOP page's word
+ *   cache both start over).
+ *
  * The canvas below (L4 LCD driver) copies a row before streamBitmapData returns, so a row
  * buffer is free again as soon as the call returns. The L4/L5 buffers (LCD invert buffers,
  * the SPI DMA fill buffer) are not here: the Comms task reaches them too.
@@ -54,6 +60,35 @@ private:
     static uint32_t& collisionCount() {
         static uint32_t s_collisions;
         return s_collisions;
+    }
+};
+
+class SharedTitleMask {
+public:
+    /// Sized for the larger user, the saver's title (MH * MW4 = 5875 B in saver_screen.cpp);
+    /// each user static_asserts that its mask fits
+    static constexpr size_t BYTES = 5876;
+
+    enum class Owner : uint8_t { NONE = 0, SAVER_TITLE, ESTOP_TITLE };
+
+    /// Take the buffer for `who`. True when it still holds who's mask (nobody else claimed
+    /// it since who last did); false when who must rebuild its mask before reading it.
+    static bool claim(Owner who) {
+        Owner& o = owner();
+        const bool kept = (o == who);
+        o = who;
+        return kept;
+    }
+
+    static uint8_t* data() {
+        static uint8_t s_mask[BYTES];
+        return s_mask;
+    }
+
+private:
+    static Owner& owner() {
+        static Owner s_owner = Owner::NONE;
+        return s_owner;
     }
 };
 

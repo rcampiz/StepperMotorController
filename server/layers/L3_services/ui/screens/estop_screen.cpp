@@ -87,8 +87,11 @@ constexpr int16_t T_SHADOW = 4;
 constexpr int16_t MW = T_W + T_SLANT + T_SHADOW + 2;
 constexpr int16_t MH = T_LINE_H + T_SHADOW + 2;
 constexpr int16_t MW4 = (MW + 3) / 4;
-uint8_t s_mask[MH * MW4];
-const char* s_maskWord = nullptr;
+// The mask lives in the buffer the saver's title shares (only one of the two pages shows)
+constexpr size_t MASK_BYTES = static_cast<size_t>(MH) * MW4;
+static_assert(MASK_BYTES <= SharedTitleMask::BYTES, "the E-STOP title mask fits the shared buffer");
+inline uint8_t* maskBuf() { return SharedTitleMask::data(); }
+const char* s_maskWord = nullptr;                      // the word laid in it while this page owns it
 constexpr int32_t ROCK_Q16 = 3300;                      // ~3 degrees either way
 constexpr int32_t ROCK_FRAMES = 60;
 constexpr int32_t BOB_FRAMES = 30;
@@ -106,19 +109,20 @@ constexpr uint16_t T_OUTLINE = rgb(0, 0, 10);
 
 inline uint8_t maskAt(int16_t x, int16_t y) {
     if (x < 0 || y < 0 || x >= MW || y >= MH) return 0;
-    return static_cast<uint8_t>((s_mask[y * MW4 + (x >> 2)] >> ((x & 3) * 2)) & 3u);
+    return static_cast<uint8_t>((maskBuf()[y * MW4 + (x >> 2)] >> ((x & 3) * 2)) & 3u);
 }
 
 inline void maskSet(int16_t x, int16_t y, uint8_t v) {
     if (x < 0 || y < 0 || x >= MW || y >= MH) return;
-    uint8_t& b = s_mask[y * MW4 + (x >> 2)];
+    uint8_t& b = maskBuf()[y * MW4 + (x >> 2)];
     const int sh = (x & 3) * 2;
     b = static_cast<uint8_t>((b & ~(3u << sh)) | (static_cast<unsigned>(v) << sh));
 }
 
 void buildMask(const char* word) {
+    if (!SharedTitleMask::claim(SharedTitleMask::Owner::ESTOP_TITLE)) s_maskWord = nullptr;   // the saver had it
     if (s_maskWord == word) return;
-    memset(s_mask, 0, sizeof s_mask);
+    memset(maskBuf(), 0, MASK_BYTES);
     const int16_t len = static_cast<int16_t>(strlen(word));
     const int16_t x0 = static_cast<int16_t>((T_W - (len * T_ADV - T_CELL_W)) / 2);
     for (int16_t i = 0; i < len; i++) {

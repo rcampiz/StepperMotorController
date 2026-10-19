@@ -282,8 +282,11 @@ static_assert(VER_GAP >= SHADOW + 3, "the version's outline must not touch CONTR
 constexpr int16_t MW = TITLE_W + SLANT + SHADOW + 2;
 constexpr int16_t MH = VER_TOP + VER_H + VER_SHADOW + 2;
 constexpr int16_t MW4 = (MW + 3) / 4;                   // bytes a mask row
-uint8_t s_mask[MH * MW4];
-bool s_maskBuilt = false;
+// The mask lives in the buffer the E-STOP page's title shares (only one of the two pages shows)
+constexpr size_t MASK_BYTES = static_cast<size_t>(MH) * MW4;
+static_assert(MASK_BYTES <= SharedTitleMask::BYTES, "the saver title mask fits the shared buffer");
+inline uint8_t* maskBuf() { return SharedTitleMask::data(); }
+bool s_maskBuilt = false;                               // laid while this page owns the buffer
 // Rocking: up to ROCK_Q16 radians (~4 degrees) either way, over ROCK_FRAMES; a bob of BOB px
 constexpr int32_t ROCK_Q16 = 4600;
 constexpr int32_t ROCK_FRAMES = 80;
@@ -320,12 +323,12 @@ const uint8_t* glyphFor(char c) {
 
 inline uint8_t maskAt(int16_t x, int16_t y) {
     if (x < 0 || y < 0 || x >= MW || y >= MH) return 0;
-    return static_cast<uint8_t>((s_mask[y * MW4 + (x >> 2)] >> ((x & 3) * 2)) & 3u);
+    return static_cast<uint8_t>((maskBuf()[y * MW4 + (x >> 2)] >> ((x & 3) * 2)) & 3u);
 }
 
 inline void maskSet(int16_t x, int16_t y, uint8_t v) {
     if (x < 0 || y < 0 || x >= MW || y >= MH) return;
-    uint8_t& b = s_mask[y * MW4 + (x >> 2)];
+    uint8_t& b = maskBuf()[y * MW4 + (x >> 2)];
     const int sh = (x & 3) * 2;
     b = static_cast<uint8_t>((b & ~(3u << sh)) | (static_cast<unsigned>(v) << sh));
 }
@@ -404,8 +407,9 @@ void buildVersionLine() {
 /// Lay the letters into the mask once: faces (slanted), then the shadow behind them, then
 /// a one-pixel dark outline round both
 void buildTitleMask() {
+    if (!SharedTitleMask::claim(SharedTitleMask::Owner::SAVER_TITLE)) s_maskBuilt = false;   // the E-STOP page had it
     if (s_maskBuilt) return;
-    memset(s_mask, 0, sizeof s_mask);
+    memset(maskBuf(), 0, MASK_BYTES);
     for (int16_t line = 0; line < 3; line++) {
         const char* text = TITLE_LINES[line];
         const int16_t len = static_cast<int16_t>(strlen(text));

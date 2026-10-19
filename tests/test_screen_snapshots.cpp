@@ -30,6 +30,7 @@
 #include "F_platform/boundary/iclock.hpp"
 #include "F_platform/boundary/ilock.hpp"
 #include <sys/stat.h>
+#include <vector>
 #ifdef _WIN32
 #include <direct.h>
 #define MKDIR(p) _mkdir(p)
@@ -84,6 +85,18 @@ struct Rig {
 
 NullLock g_lock; TickClock g_clock;
 bool initStore() { static bool done = Services::g_telemetryStore.init(g_lock, g_clock); return done; }
+
+/// The whole panel, for comparing two frames
+std::vector<uint16_t> grab(const PanelSim& panel) {
+    std::vector<uint16_t> out;
+    out.reserve(240u * 320u);
+    for (uint16_t y = 0; y < 320; y++)
+        for (uint16_t x = 0; x < 240; x++) out.push_back(panel.px(x, y));
+    return out;
+}
+// First frames of the title pages, from their own tests (each the first to use the shared
+// title-mask buffer in its turn), for the shared-buffer test further down
+std::vector<uint16_t> g_saverTitleRef, g_estopRef;
 
 void setEncoder(int64_t count, int32_t velocity) {
     Services::EncoderTelemetryData d;
@@ -281,6 +294,7 @@ TEST(saver_styles_animate_and_any_key_leaves) {
     // the title fades in 5 s in and rocks; a new scene at 30 s has another palette and horizon
     for (int i = 0; i < 128; i++) rig.frame();
     rig.dump("saver_synth_title");
+    g_saverTitleRef = grab(rig.panel);                    // frame 141
     // the letters' hard shadows, in whichever of the three flash colours is up
     auto c565 = [](int r, int g, int b) { return static_cast<uint16_t>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3)); };
     auto shadows = [&]() {
@@ -478,6 +492,7 @@ TEST(estop_page_shows_the_latch_and_fills_the_clear_bar) {
     rig.start(&root);
     rig.mgr.push(&page);
     rig.frame();
+    g_estopRef = grab(rig.panel);
     // the Hotline title: its extruded shadow, in whichever flash colour is up
     auto shadows = [&](uint16_t y, uint16_t h) {
         return rig.panel.countColor(UI::Theme::CYAN, 0, y, 240, h) + rig.panel.countColor(UI::Theme::YELLOW, 0, y, 240, h) +
@@ -520,6 +535,39 @@ TEST(estop_page_shows_the_latch_and_fills_the_clear_bar) {
     page.setProgress(10);
     rig.frame();
     EXPECT_TRUE(shadows(72, 56) > 400);
+}
+
+// The saver's and the E-STOP page's title masks share one buffer (UI::SharedTitleMask): each
+// page must rebuild its mask after the other one had it. A page shown again after the other
+// paints exactly what it painted the first time (the references, taken by the tests above).
+TEST(the_saver_and_estop_titles_take_turns_in_one_buffer) {
+    EXPECT_TRUE(initStore());
+    EXPECT_EQ(g_saverTitleRef.size(), 240u * 320u);
+    EXPECT_EQ(g_estopRef.size(), 240u * 320u);
+    auto saverFrame = []() {
+        Rig rig;
+        UI::MenuScreen root("Main Menu");
+        UI::ScreenCareSettings care;                      // synthwave
+        UI::SaverScreen saver(&care);
+        rig.start(&root);
+        rig.mgr.push(&saver);
+        for (int i = 0; i < 141; i++) rig.frame();        // the title is up (saver_synth_title)
+        return grab(rig.panel);
+    };
+    auto estopFrame = []() {
+        Rig rig;
+        UI::MenuScreen root("Main Menu");
+        UI::EstopScreen page;
+        rig.start(&root);
+        rig.mgr.push(&page);
+        rig.frame();
+        return grab(rig.panel);
+    };
+    // The E-STOP test above left its mask in the buffer: the saver takes it, then the page
+    // takes it back with the same word cached
+    EXPECT_TRUE(saverFrame() == g_saverTitleRef);
+    EXPECT_TRUE(estopFrame() == g_estopRef);
+    EXPECT_TRUE(saverFrame() == g_saverTitleRef);
 }
 
 TEST(graph_screen_draws_a_trace_from_telemetry) {
