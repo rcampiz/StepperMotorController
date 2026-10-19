@@ -29,7 +29,7 @@ Enforced by `scripts/arch/check_includes.py --strict` and `scripts/arch/check_ha
 
 Two header sets are wired like power rails: any sheet may include them directly, no harness row describes them.
 
-- **PLATFORM Platform power net** (`server/foundation/F_platform/boundary`) â€” rule 4: RTOS-neutral primitives (clock, us clock, locks, queues, scheduler, task stats, critical section, notifier) usable by any sheet without a harness. Direct includers: HARNESS 9, L2 3, L3 15, L4 1, L5 1, PLATFORM 6, TASKS 12.
+- **PLATFORM Platform power net** (`server/foundation/F_platform/boundary`) â€” rule 4: RTOS-neutral primitives (clock, us clock, locks, queues, scheduler, task stats, critical section, notifier) usable by any sheet without a harness. Direct includers: HARNESS 9, L2 3, L3 16, L4 1, L5 1, PLATFORM 6, TASKS 12.
 - **TRACE Interface trace net** (`server/harness/trace`) â€” second global net: ITRACE()/ITrace::log and the trace sink may be included by any sheet; compiled to no-ops unless ENABLE_INTERFACE_TRACE (firmware-debug); sink = L3 trace ring via Trace::initTraceSink. Direct includers: HARNESS 6, L2 2, L3 7.
 
 ## Harnesses
