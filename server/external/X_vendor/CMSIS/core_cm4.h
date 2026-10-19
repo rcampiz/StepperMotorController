@@ -1,3 +1,10 @@
+/*
+ * Reduced subset of Arm CMSIS 5 core_cm4.h (Cortex-M4 core peripheral access).
+ * Copyright (c) 2009-2020 Arm Limited. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ * Licensed under the Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0).
+ * Modified: hand-reduced to the definitions this firmware uses.
+ */
 #ifndef __CORE_CM4_H_GENERIC
 #define __CORE_CM4_H_GENERIC
 

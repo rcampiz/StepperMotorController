@@ -273,7 +273,9 @@ python scripts\arch\gen_architecture.py --check  # CI: fail if stale
 
 ## License
 
-This project is provided as-is for educational and development purposes.
+MIT License (see `LICENSE`): anyone, person or company, may use, modify, distribute and sell
+it, in open or closed products, provided the copyright notice is kept. It comes without
+warranty. Third-party components keep their own licences, listed in `THIRD_PARTY_NOTICES.md`.
 
 ## References
 

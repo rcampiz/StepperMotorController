@@ -1,3 +1,10 @@
+/*
+ * Reduced subset of STMicroelectronics STM32CubeF4 stm32f401xe.h (device header).
+ * Copyright (c) 2017 STMicroelectronics. All rights reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ * Licensed under the Apache License, Version 2.0 (http://www.apache.org/licenses/LICENSE-2.0).
+ * Modified: hand-reduced to the registers and bits this firmware uses.
+ */
 #ifndef STM32F401xE_H
 #define STM32F401xE_H
 
