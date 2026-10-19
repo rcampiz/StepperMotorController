@@ -20,6 +20,7 @@
 #include "L3_services/ui/screens/recovery_screen.hpp"
 #include "L3_services/ui/screens/screen_care_screen.hpp"
 #include "L3_services/ui/screens/estop_screen.hpp"
+#include "L3_services/ui/display_service/panel_sleep.hpp"
 #include "L3_services/ui/screens/motion_screen.hpp"
 #include "L3_services/infra/indicator_service/indicator_service.hpp"
 #include "L3_services/ui/screen_manager/screen_manager.hpp"
@@ -236,6 +237,14 @@ TEST(screen_care_edits_settings_and_starts_recovery) {
     rig.key(UI::JoyDirection::CENTER);
     EXPECT_EQ(care.saverAfterMs, 300000u);
     rig.frame();
+    rig.key(UI::JoyDirection::DOWN);                     // "Sleep after": 15 min -> 30 min
+    EXPECT_EQ(care.sleepAfterMs, 900000u);
+    rig.key(UI::JoyDirection::CENTER);
+    rig.key(UI::JoyDirection::RIGHT);
+    rig.key(UI::JoyDirection::CENTER);
+    EXPECT_EQ(care.sleepAfterMs, 1800000u);
+    rig.frame();
+    rig.dump("screen_care_sleep");
     rig.key(UI::JoyDirection::DOWN); rig.key(UI::JoyDirection::DOWN); rig.key(UI::JoyDirection::DOWN);
     rig.key(UI::JoyDirection::CENTER);                   // Run recovery
     EXPECT_EQ(s_recoveryRuns, 1);
@@ -316,6 +325,48 @@ TEST(recovery_cycles_full_fields_and_pops_itself_when_done) {
 
 static void settle(Services::IndicatorService& ind, int ticks = 25) {
     for (int i = 0; i < ticks; i++) ind.tick();
+}
+
+TEST(panel_sleeps_after_the_saver_has_run_and_wakes_every_time) {
+    using A = UI::PanelSleep::Action;
+    UI::PanelSleep ps;
+    const uint32_t AFTER = 15u * 60u * 1000u;
+    uint32_t t = 1000;
+    EXPECT_TRUE(ps.tick(false, t, AFTER) == A::NONE);              // menu up: nothing
+    EXPECT_TRUE(ps.tick(true, t, AFTER) == A::NONE);               // saver starts
+    EXPECT_TRUE(ps.tick(true, t + AFTER - 1, AFTER) == A::NONE);
+    EXPECT_TRUE(ps.tick(true, t + AFTER, AFTER) == A::SLEEP);      // 15 min of saver
+    EXPECT_TRUE(ps.asleep());
+    EXPECT_TRUE(ps.tick(true, t + AFTER + 60000, AFTER) == A::NONE);  // stays asleep
+    // a joystick move pops the saver: wake
+    t = t + AFTER + 120000;
+    EXPECT_TRUE(ps.tick(false, t, AFTER) == A::WAKE);
+    EXPECT_FALSE(ps.asleep());
+    // and it sleeps again after another full saver run, and wakes again (the host this time)
+    EXPECT_TRUE(ps.tick(true, t + 100, AFTER) == A::NONE);
+    EXPECT_TRUE(ps.tick(true, t + 100 + AFTER, AFTER) == A::SLEEP);
+    EXPECT_TRUE(ps.tick(false, t + 100 + AFTER + 1000, AFTER) == A::WAKE);
+    // a wake right after sleeping waits for the controller's 120 ms
+    EXPECT_TRUE(ps.tick(true, 0, 1000) == A::NONE);
+    EXPECT_TRUE(ps.tick(true, 1000, 1000) == A::SLEEP);
+    EXPECT_TRUE(ps.tick(false, 1050, 1000) == A::NONE);
+    EXPECT_TRUE(ps.asleep());
+    EXPECT_TRUE(ps.tick(false, 1000 + UI::PanelSleep::MIN_SLEEP_MS, 1000) == A::WAKE);
+    // 0 = never
+    UI::PanelSleep never;
+    EXPECT_TRUE(never.tick(true, 0, 0) == A::NONE);
+    EXPECT_TRUE(never.tick(true, 100000000u, 0) == A::NONE);
+}
+
+TEST(lcd_panel_sleep_turns_the_display_off_and_back_on) {
+    Rig rig;
+    rig.lcd.setPanelSleep(true);
+    EXPECT_TRUE(rig.panel.asleep && !rig.panel.displayOn);
+    rig.lcd.setPanelSleep(false);
+    EXPECT_TRUE(!rig.panel.asleep && rig.panel.displayOn);
+    rig.lcd.setPanelSleep(true);                                    // and again: not one-shot
+    rig.lcd.setPanelSleep(false);
+    EXPECT_TRUE(!rig.panel.asleep && rig.panel.displayOn);
 }
 
 TEST(motion_jog_is_sized_in_revolutions_at_the_microstep_setting) {

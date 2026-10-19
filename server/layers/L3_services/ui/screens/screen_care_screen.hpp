@@ -29,11 +29,12 @@ public:
     const char* centerHint() const override { return "EDIT/RUN"; }
 
 private:
-    static constexpr uint8_t NUM_FIELDS = 4;
+    static constexpr uint8_t NUM_FIELDS = 5;
     static constexpr uint8_t FIELD_SAVER_AFTER = 0;
-    static constexpr uint8_t FIELD_SAVER_STYLE = 1;
-    static constexpr uint8_t FIELD_RECOVERY_MIN = 2;
-    static constexpr uint8_t FIELD_RUN = 3;
+    static constexpr uint8_t FIELD_SLEEP_AFTER = 1;
+    static constexpr uint8_t FIELD_SAVER_STYLE = 2;
+    static constexpr uint8_t FIELD_RECOVERY_MIN = 3;
+    static constexpr uint8_t FIELD_RUN = 4;
 
     ScreenCareSettings* m_settings;
     RunRecovery m_run;

@@ -28,6 +28,8 @@ struct PanelSim : Board::ISPIBus {
     uint32_t pixelsWritten = 0;    ///< every pixel the driver sent, for cost accounting
     uint32_t windows = 0;          ///< RAMWR count: one per drawing call that opens a window
     uint32_t cmds = 0;
+    bool asleep = false;        ///< SLPIN .. SLPOUT
+    bool displayOn = true;      ///< DISPON / DISPOFF
 
     void lock() override {}
     void unlock() override {}
@@ -83,6 +85,10 @@ private:
 
     void command(uint8_t b) {
         m_cmd = b; m_nargs = 0; cmds++;
+        if (b == 0x10) asleep = true;                                              // SLPIN
+        if (b == 0x11) asleep = false;                                             // SLPOUT
+        if (b == 0x28) displayOn = false;                                          // DISPOFF
+        if (b == 0x29) displayOn = true;                                           // DISPON
         if (b == 0x2C) { m_cx = m_x0; m_cy = m_y0; m_hiByte = true; windows++; }   // RAMWR
         if (b == 0x3C) { m_hiByte = true; }                                        // RAMWRC
     }

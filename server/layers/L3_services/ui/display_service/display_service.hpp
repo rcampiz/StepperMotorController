@@ -35,6 +35,7 @@
 #include "L3_services/ui/screens/screen_care_screen.hpp"
 #include "L3_services/ui/screens/estop_screen.hpp"
 #include "L3_services/ui/screen_care.hpp"
+#include "L3_services/ui/display_service/panel_sleep.hpp"
 #include "F_platform/boundary/iclock.hpp"
 #include <stdint.h>
 #include <stddef.h>
@@ -112,6 +113,7 @@ private:
     UI::DispatcherScreen m_dispatcherScreen;
     UI::ArchScreen       m_archScreen;
     UI::ScreenCareSettings m_care;
+    UI::PanelSleep       m_panelSleep;   ///< the saver's last stage: panel black and asleep
     UI::SaverScreen      m_saverScreen;
     UI::RecoveryScreen   m_recoveryScreen;
     UI::ScreenCareScreen m_careScreen;

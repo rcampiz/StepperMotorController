@@ -183,6 +183,18 @@ public:
         }
     }
 
+    void setPanelSleep(bool sleep) override {
+        if (sleep) {
+            writeCmd(0x28);      // DISPOFF: the glass goes black
+            writeCmd(0x10);      // SLPIN: oscillator and drivers off
+            delayMs(5);          // datasheet: 5 ms before the next command
+        } else {
+            writeCmd(0x11);      // SLPOUT
+            delayMs(120);        // datasheet: 120 ms before DISPON
+            writeCmd(0x29);      // DISPON
+        }
+    }
+
     bool writePanelRegister(uint8_t reg, const uint8_t* data, uint8_t len) override {
         if (!isTunableRegister(reg) || len == 0 || len > 14 || data == nullptr) return false;
         writeCmd(reg);

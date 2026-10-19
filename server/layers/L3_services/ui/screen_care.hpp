@@ -30,11 +30,14 @@ struct ScreenCareSettings {
     uint32_t   saverAfterMs = 2u * 60u * 1000u;   ///< 0 = never
     SaverStyle saverStyle = SaverStyle::SYNTHWAVE;
     uint8_t    recoveryMinutes = 5;
+    uint32_t   sleepAfterMs = 15u * 60u * 1000u;  ///< the saver runs this long, then the panel sleeps; 0 = never
 };
 
 /// Choices the care screen steps through
 constexpr uint32_t SAVER_AFTER_CHOICES_MS[] = { 0, 60000u, 120000u, 300000u, 600000u };
 constexpr uint8_t  SAVER_AFTER_CHOICE_COUNT = 5;
+constexpr uint32_t SLEEP_AFTER_CHOICES_MS[] = { 0, 300000u, 900000u, 1800000u, 3600000u };
+constexpr uint8_t  SLEEP_AFTER_CHOICE_COUNT = 5;
 constexpr uint8_t  RECOVERY_MINUTE_CHOICES[] = { 1, 2, 5, 10, 20 };
 constexpr uint8_t  RECOVERY_MINUTE_CHOICE_COUNT = 5;
 

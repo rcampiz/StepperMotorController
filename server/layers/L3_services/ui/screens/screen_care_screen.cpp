@@ -12,7 +12,7 @@
 namespace UI {
 
 static constexpr uint16_t FIELDS_Y = Theme::CONTENT_Y + 4;
-static constexpr uint16_t HINT_Y   = FIELDS_Y + 4 * Chrome::ROW_H + 4;
+static constexpr uint16_t HINT_Y   = FIELDS_Y + 5 * Chrome::ROW_H + 4;
 static constexpr uint16_t TEXT_Y   = HINT_Y + 16;
 
 static uint16_t fieldY(uint8_t i) { return static_cast<uint16_t>(FIELDS_Y + i * Chrome::ROW_H); }
@@ -29,6 +29,12 @@ void ScreenCareScreen::onActivate()
 static uint8_t indexOfAfter(uint32_t ms)
 {
     for (uint8_t i = 0; i < SAVER_AFTER_CHOICE_COUNT; i++) if (SAVER_AFTER_CHOICES_MS[i] == ms) return i;
+    return 2;
+}
+
+static uint8_t indexOfSleep(uint32_t ms)
+{
+    for (uint8_t i = 0; i < SLEEP_AFTER_CHOICE_COUNT; i++) if (SLEEP_AFTER_CHOICES_MS[i] == ms) return i;
     return 2;
 }
 
@@ -49,6 +55,11 @@ void ScreenCareScreen::renderField(Services::ICanvas& lcd, uint8_t field)
             label = "Saver after";
             if (m_settings->saverAfterMs == 0) snprintf(val, sizeof val, "never");
             else snprintf(val, sizeof val, "%lu min", static_cast<unsigned long>(m_settings->saverAfterMs / 60000u));
+            break;
+        case FIELD_SLEEP_AFTER:
+            label = "Sleep after";
+            if (m_settings->sleepAfterMs == 0) snprintf(val, sizeof val, "never");
+            else snprintf(val, sizeof val, "%lu min", static_cast<unsigned long>(m_settings->sleepAfterMs / 60000u));
             break;
         case FIELD_SAVER_STYLE:
             label = "Saver style";
@@ -78,14 +89,14 @@ void ScreenCareScreen::render(Services::ICanvas& lcd)
         static const char* const LINES[] = {
             "IPS panel: a still image left for",
             "hours leaves a ghost of itself.",
-            "",
-            "The saver keeps nothing still after",
-            "the quiet time; any move wakes it.",
+            "Saver: nothing still after the quiet",
+            "time. Sleep: once the saver has run",
+            "that long, the panel goes black and",
+            "sleeps. Any move wakes it.",
             "",
             "Recovery drives every pixel through",
             "full-scale colours for the time set,",
-            "then comes back here. Run it when a",
-            "ghost stays on a blank page.",
+            "then comes back here.",
         };
         for (uint8_t i = 0; i < 10; i++) {
             lcd.blitTextLine(Theme::MARGIN, static_cast<uint16_t>(TEXT_Y + i * 11),
@@ -113,6 +124,13 @@ void ScreenCareScreen::adjust(int8_t delta)
             if (i < 0) i = 0;
             if (i >= SAVER_AFTER_CHOICE_COUNT) i = SAVER_AFTER_CHOICE_COUNT - 1;
             m_settings->saverAfterMs = SAVER_AFTER_CHOICES_MS[i];
+            break;
+        }
+        case FIELD_SLEEP_AFTER: {
+            int8_t i = static_cast<int8_t>(indexOfSleep(m_settings->sleepAfterMs) + delta);
+            if (i < 0) i = 0;
+            if (i >= SLEEP_AFTER_CHOICE_COUNT) i = SLEEP_AFTER_CHOICE_COUNT - 1;
+            m_settings->sleepAfterMs = SLEEP_AFTER_CHOICES_MS[i];
             break;
         }
         case FIELD_SAVER_STYLE:
