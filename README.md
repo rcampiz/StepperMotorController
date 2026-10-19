@@ -190,6 +190,14 @@ cmake --build --preset firmware-debug --target flash        # OpenOCD + ST-LINK
 `firmware-release` is the -O2 preset without interface tracing.
 `scripts\build\build_direct.bat` and `scripts\build\build.ps1` are thin wrappers over the same presets.
 
+### Versions
+
+`VERSION` holds the release (SemVer); the firmware reports it in `*IDN?`, `!RESET fw=`,
+`SYST:VER?` and on the LCD saver, and the client package carries the same number. Every build
+also stamps a build id (`git describe --tags --always`, `+dirty` for uncommitted firmware
+sources), shown as `!RESET build=`. The protocol has its own number. Release notes and how to
+cut a release: [CHANGELOG.md](CHANGELOG.md).
+
 ### Host unit tests
 
 The L3 services, L2 parser and L4 register logic compile natively (no RTOS, no HAL):

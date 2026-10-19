@@ -27,8 +27,10 @@ CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
 *.cmake
-# the firmware presets need the toolchain file; a fresh clone must build
+# the firmware presets need the toolchain file and the version modules; a fresh clone must build
 !cmake/arm-none-eabi.cmake
+!cmake/smc_version.cmake
+!cmake/smc_build_id.cmake
 !CMakeLists.txt
 
 # VSCode

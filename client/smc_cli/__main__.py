@@ -36,6 +36,7 @@ from smc_core import commands as C  # noqa: E402
 from smc_core import runner  # noqa: E402
 from smc_core.board import Board, BoardConfig, Liveness  # noqa: E402
 from smc_core.codec import parse_idn  # noqa: E402
+from smc_core.version import __version__, release_mismatch  # noqa: E402
 
 
 def _out(obj: Any) -> None:
@@ -148,7 +149,8 @@ def cmd_info(args) -> int:
         ident = parse_idn(_wait(board, board.submit(C.idn())))
         ver = _wait(board, board.submit(C.version()))
         st = _wait(board, board.submit(C.status()))
-        _out({"identity": ident.__dict__, "version": ver.lines, "status": st.data})
+        _out({"identity": ident.__dict__, "version": ver.lines, "status": st.data,
+              "client": __version__, "release_mismatch": release_mismatch(ident.fw)})
         return 0
     finally:
         board.close()
@@ -323,6 +325,7 @@ def cmd_fleet_drive(args) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(prog="smc", description=__doc__.split("\n\n")[0])
+    ap.add_argument("--version", action="version", version=f"smc {__version__}")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     def board_args(p):

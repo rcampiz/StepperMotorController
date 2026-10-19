@@ -16,6 +16,7 @@ set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(Threads REQUIRED)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/smc_version.cmake)   # SMC_VERSION, smc_add_build_id
 
 set(SERVER ${CMAKE_CURRENT_SOURCE_DIR}/../server)
 set(L2 ${SERVER}/layers/L2_protocol)
@@ -98,7 +99,8 @@ target_include_directories(vnucleo PRIVATE
     ${SERVER}/foundation
 )
 # SMC_HOST_TEST: host builds never trace (the same switch the host tests use).
-target_compile_definitions(vnucleo PRIVATE SMC_HOST_TEST=1 GIT_HASH="vnucleo")
+target_compile_definitions(vnucleo PRIVATE SMC_HOST_TEST=1 SMC_FW_VERSION="${SMC_VERSION}")
+smc_add_build_id(vnucleo server sim cmake VERSION)
 target_compile_options(vnucleo PRIVATE -Wall -Wextra -O1 -g)
 target_link_libraries(vnucleo PRIVATE Threads::Threads)
 if(WIN32)

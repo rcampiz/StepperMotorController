@@ -11,7 +11,7 @@ Public surface (kept to plain data so a Rust core can implement the same interfa
   codec      Response, Event, ResetInfo, Identity, HeartbeatAck, parse_*()
 """
 
-__version__ = "0.2.0"
+from .version import __version__, release_mismatch
 
 from .framing import Frame, FrameKind, classify
 from .codec import (Event, HeartbeatAck, Identity, ProtocolError, ResetInfo, Response,
@@ -19,7 +19,7 @@ from .codec import (Event, HeartbeatAck, Identity, ProtocolError, ResetInfo, Res
                     parse_response, parse_telemetry)
 
 __all__ = [
-    "__version__", "Frame", "FrameKind", "classify",
+    "__version__", "release_mismatch", "Frame", "FrameKind", "classify",
     "Event", "HeartbeatAck", "Identity", "ProtocolError", "ResetInfo", "Response",
     "parse_event", "parse_heartbeat_ack", "parse_idn", "parse_reset",
     "parse_response", "parse_telemetry",

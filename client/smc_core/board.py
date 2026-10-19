@@ -43,6 +43,7 @@ from .codec import (Event, Identity, ProtocolError, ResetInfo, Response, parse_e
 from .framing import FrameKind, classify
 from .protocol_spec import COMMANDS, LIMITS, OOB_ESTOP_BYTE, PROTOCOL_VERSION
 from .transport.base import ITransport, TransportError
+from .version import release_mismatch
 
 log = logging.getLogger("smc_core.board")
 
@@ -690,6 +691,10 @@ class Board:
         if self.identity is not None and self.identity.proto != PROTOCOL_VERSION:
             self._emit("error", f"board speaks protocol {self.identity.proto}, "
                                 f"this client protocol {PROTOCOL_VERSION}")
+        if self.identity is not None:
+            mismatch = release_mismatch(self.identity.fw)
+            if mismatch:
+                log.warning("%s: %s", self.name, mismatch)
         if self.config.clear_fault_on_connect:
             self._execute(C.fault_clear(), "setup")
         if self.config.events:

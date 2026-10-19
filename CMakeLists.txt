@@ -84,28 +84,12 @@ include_directories(
     ${EXT}/X_middlewares/SEGGER/SystemView
 )
 
-# Short git hash for the !RESET line and *IDN? (F17); "nogit" outside a checkout. Captured at
-# configure time, so CMake is told to re-run configure whenever HEAD or the index change
-# (every commit / checkout) and only build_id.cpp sees the value: a commit recompiles one file.
-execute_process(COMMAND git rev-parse --short=12 HEAD
-                WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-                OUTPUT_VARIABLE SMC_GIT_HASH OUTPUT_STRIP_TRAILING_WHITESPACE
-                ERROR_QUIET RESULT_VARIABLE _git_rc)
-if(NOT _git_rc EQUAL 0 OR SMC_GIT_HASH STREQUAL "")
-    set(SMC_GIT_HASH "nogit")
-else()
-    execute_process(COMMAND git diff --quiet HEAD -- server cmake CMakeLists.txt
-                    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR} RESULT_VARIABLE _git_dirty ERROR_QUIET)
-    if(NOT _git_dirty EQUAL 0)
-        set(SMC_GIT_HASH "${SMC_GIT_HASH}+dirty")
-    endif()
-    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
-                 ${CMAKE_SOURCE_DIR}/.git/HEAD ${CMAKE_SOURCE_DIR}/.git/index)
-endif()
-set_source_files_properties(${CMAKE_SOURCE_DIR}/server/harness/pins/build_id.cpp
-                            PROPERTIES COMPILE_DEFINITIONS "GIT_HASH=\"${SMC_GIT_HASH}\"")
+# Release version from VERSION (Harness::FW_VERSION) and the build id, regenerated on every
+# build (Harness::buildId(), the !RESET build= field and SYST:VER?): cmake/smc_version.cmake
+include(cmake/smc_version.cmake)
 
 add_compile_definitions(
+    SMC_FW_VERSION="${SMC_VERSION}"
     STM32F401xE
     __FPU_PRESENT=1
     __FPU_USED=1
@@ -154,6 +138,8 @@ add_executable(${PROJECT_NAME}.elf
     ${ASM_SOURCES}
 )
 target_link_libraries(${PROJECT_NAME}.elf c m nosys)
+# "+dirty" when what the image is built from has uncommitted changes
+smc_add_build_id(${PROJECT_NAME}.elf server cmake CMakeLists.txt CMakePresets.json VERSION)
 
 # Match build_direct.bat output names/locations
 set_target_properties(${PROJECT_NAME}.elf PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})

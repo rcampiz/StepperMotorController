@@ -28,7 +28,10 @@ target_include_directories(smc_test_env INTERFACE
 )
 target_compile_options(smc_test_env INTERFACE -Wall -Wextra -g -O0)
 # Host builds never trace; taps are not compiled.
-target_compile_definitions(smc_test_env INTERFACE SMC_HOST_TEST=1 GIT_HASH="host")
+# The release from VERSION; the build id is fixed so the tests can match it.
+include(${CMAKE_CURRENT_SOURCE_DIR}/../cmake/smc_version.cmake)
+target_compile_definitions(smc_test_env INTERFACE SMC_HOST_TEST=1 SMC_BUILD_ID="host"
+                           SMC_FW_VERSION="${SMC_VERSION}")
 
 # smc_add_test(<name> <test source> [production sources...])
 function(smc_add_test name src)

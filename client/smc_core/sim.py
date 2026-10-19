@@ -20,10 +20,11 @@ import zlib
 from typing import Any, Dict, List, Optional
 
 from .protocol_spec import COMMANDS, PROTOCOL_VERSION
+from .version import __version__
 
 
 class FakeBoard:
-    FW = "0.4.0-sim"
+    FW = __version__ + "-sim"
 
     def __init__(self, transport, serial: str = "SIM00001", boot: int = 0x5EED0001,
                  push_threads: bool = True):
