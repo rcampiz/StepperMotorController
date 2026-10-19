@@ -5,8 +5,11 @@
 #include "minitest.hpp"
 #include "fakes/fake_board.hpp"
 #include "L4_drivers/devices/powerstep01.hpp"
+#include "L4_drivers/devices/powerstep01_settings.hpp"
 #include <cmath>
 #include <limits>
+#include <cstring>
+#include <string>
 
 using namespace fakes;
 
@@ -146,4 +149,139 @@ TEST(every_byte_toggles_chip_select) {
     r.motor.hardHiZ();                 // one command byte
     EXPECT_EQ(r.cs.writes - before, 2); // low then high
     EXPECT_TRUE(r.cs.level);
+}
+
+// ---------------------------------------------------------------------------------------
+// Driver boundary step 3: settings in physical units, converted by the driver
+// ---------------------------------------------------------------------------------------
+namespace PS = Drivers::PowerStepSettings;
+
+TEST(acceleration_codes_round_trip_and_whole_requests_match_the_old_integer_path) {
+    // Every code survives code -> full steps/s^2 (stored as a float) -> code
+    for (uint32_t c = 0; c <= 0xFFFu; ++c) {
+        EXPECT_EQ(static_cast<uint32_t>(PS::fsps2ToAcc(PS::accToFsps2(c))), c == 0 ? 0u : c);
+    }
+    // Every whole request gives what MOT:CFG:ACCEL always wrote: n x 1000 / 14552, at least 1
+    bool allSame = true;
+    for (uint32_t n = 1; n <= 59590u; ++n) {
+        uint32_t old = n * 1000u / 14552u;
+        if (old < 1u) old = 1u;
+        if (PS::fsps2ToAcc(static_cast<float>(n)) != old) { allSame = false; break; }
+    }
+    EXPECT_TRUE(allSame);
+    EXPECT_EQ(PS::fsps2ToAcc(0.0f), 0u);
+    EXPECT_EQ(PS::fsps2ToAcc(1.0e9f), 0xFFFu);
+}
+
+TEST(level_and_threshold_codes_round_trip_through_physical_units) {
+    for (uint32_t c = 0; c <= 0x7Fu; ++c) EXPECT_EQ(PS::ampsToTval(PS::tvalToAmps(c)), c);
+    for (uint32_t c = 0; c <= 0xFFu; ++c) EXPECT_EQ(PS::dutyToKval(PS::kvalToDuty(c)), c);
+    for (uint32_t c = 0; c <= 0x1Fu; ++c) EXPECT_EQ(PS::ampsToOcd(PS::ocdToAmps(c)), c);
+    for (uint32_t c = 0; c <= 0x1Fu; ++c) EXPECT_EQ(PS::stallToCode(PS::codeToStall(c)), c);
+    // OCD_TH is a drain-source voltage: (code + 1) x 31.25 mV; the amps are an estimate from
+    // the IHM03A1's ~1.2 mOhm MOSFETs, so even code 0 is ~26 A
+    EXPECT_TRUE(std::fabs(PS::ocdToAmps(21) * PS::BOARD_RDS_ON_OHM - 0.6875f) < 1e-5f);
+    EXPECT_TRUE(PS::ocdToAmps(0) > 25.0f);
+    const Drivers::DriverCaps& c = PS::caps();
+    EXPECT_TRUE(c.overcurrentOhms > 0.0f);                       // displays show volts and the estimate
+    EXPECT_EQ(PS::ampsToTval(1.33f), 0x11u);                       // the GUI's 1.33 A -> 17 x 78 mA
+    EXPECT_EQ(PS::ampsToTval(100.0f), 0x7Fu);
+}
+
+TEST(quantize_is_idempotent_and_caps_the_resolution_by_drive_mode) {
+    Drivers::DriverSettings s = {};
+    s.microsteps = 128;
+    s.mode = Drivers::DriveMode::CURRENT;
+    s.currentA = { 0.3f, 1.3f, 1.5f, 1.6f };
+    s.duty = { 0.1f, 0.2f, 0.3f, 0.4f };
+    s.accelFsps2 = 5000.0f; s.decelFsps2 = 2000.0f; s.maxSpeedFsps = 1000.0f;
+    s.overcurrentA = 300.0f; s.stallThreshold01 = 0.5f;
+    s.faultAlarms = 0xFF;
+    const Drivers::DriverSettings q = PS::quantize(s);
+    EXPECT_EQ(q.microsteps, 16u);
+    EXPECT_EQ(q.faultAlarms, 0x3Fu);
+    const Drivers::DriverSettings qq = PS::quantize(q);
+    EXPECT_TRUE(std::memcmp(&q, &qq, sizeof(q)) == 0);
+    s.mode = Drivers::DriveMode::VOLTAGE;
+    EXPECT_EQ(PS::quantize(s).microsteps, 128u);
+    EXPECT_EQ(PS::caps().maxMicrosteps(Drivers::DriveMode::CURRENT), 16u);
+    EXPECT_EQ(PS::caps().maxMicrosteps(Drivers::DriveMode::VOLTAGE), 128u);
+}
+
+TEST(protocol_2_chip_units_round_trip_through_the_physical_settings) {
+    Drivers::LegacyDriverUnits u = {};
+    u.kval[0] = 0x20; u.kval[1] = 0x30; u.kval[2] = 0x40; u.kval[3] = 0xFF;
+    u.tval[0] = 0x04; u.tval[1] = 0x11; u.tval[2] = 0x14; u.tval[3] = 0x7F;
+    u.driveMode = 1; u.stepMode = 7; u.ocdTh = 21; u.stallTh = 31;
+    u.acc = 344; u.dec = 4095; u.maxSpeed = 87; u.minSpeed = 12; u.fsSpd = 0x27;
+    u.predEn = 0; u.tsw = 20; u.tFast = 0x2A; u.tonMin = 0x10; u.toffMin = 0x30;
+    for (uint8_t alarms : { 0x00, 0x01, 0x10, 0x20, 0x30, 0x7F }) {
+        u.alarms = alarms;
+        Drivers::DriverSettings s = {};
+        PS::fromLegacy(u, s);
+        Drivers::LegacyDriverUnits w = {};
+        PS::toLegacy(s, w);
+        EXPECT_TRUE(std::memcmp(&u, &w, sizeof(u)) == 0);         // stall bridges A/B kept apart
+    }
+}
+
+namespace {
+/// A register file standing in for the chip (the engine's Io port)
+struct Regs {
+    uint32_t r[32] = {};
+    bool hiZ = true;
+    int statusReads = 0;
+    uint32_t readReg(uint8_t a) { return r[a]; }
+    void writeReg(uint8_t a, uint32_t v) {
+        if (!hiZ && (a == Drivers::PowerStepReg::STEP_MODE || a == Drivers::PowerStepReg::CONFIG)) return;
+        r[a] = v;
+    }
+    bool outputsOff() { ++statusReads; return hiZ; }
+    void clearFaults() { ++statusReads; }
+};
+}
+
+TEST(apply_writes_hiz_only_registers_only_with_the_outputs_off) {
+    Drivers::DriverSettings s = {};
+    s.microsteps = 32; s.mode = Drivers::DriveMode::VOLTAGE;
+    s.duty = { 0.125f, 0.1875f, 0.25f, 0.25f };
+    s.accelFsps2 = s.decelFsps2 = 2008.2f; s.maxSpeedFsps = 992.0f;
+    s.overcurrentA = 1.0e6f;
+    Regs chip;
+    chip.hiZ = false;
+    chip.r[Drivers::PowerStepReg::STEP_MODE] = 0x07;
+    EXPECT_TRUE(PS::apply(chip, s) == Drivers::ApplyResult::NEEDS_OUTPUTS_OFF);
+    EXPECT_EQ(chip.r[Drivers::PowerStepReg::KVAL_RUN], 0x30u);     // the rest is in force
+    EXPECT_EQ(chip.r[Drivers::PowerStepReg::ACC], 0x8Au);
+    EXPECT_EQ(chip.r[Drivers::PowerStepReg::MAX_SPEED], 0x41u);
+    EXPECT_EQ(chip.r[Drivers::PowerStepReg::OCD_TH], 0x1Fu);
+    EXPECT_EQ(chip.r[Drivers::PowerStepReg::STEP_MODE], 0x07u);    // not yet
+    chip.hiZ = true;
+    EXPECT_TRUE(PS::apply(chip, s) == Drivers::ApplyResult::APPLIED);
+    EXPECT_EQ(chip.r[Drivers::PowerStepReg::STEP_MODE], 0xC5u);    // SYNC 8/fs, voltage, 1/32
+    Drivers::DriverSettings back = PS::readBack(chip);
+    EXPECT_EQ(back.microsteps, 32u);
+    EXPECT_TRUE(back.mode == Drivers::DriveMode::VOLTAGE);
+    EXPECT_TRUE(back.duty.run == PS::kvalToDuty(0x30));
+    char text[160];
+    PS::diagnostics(chip, Harness::DriverDiagView::SUMMARY, text, sizeof text);
+    EXPECT_STREQ(text, "STEP_MODE=5 OCD_TH=1F STALL_TH=00 ALARM_EN=00 CONFIG=0000 FS_SPD=3FF");
+    PS::diagnostics(chip, Harness::DriverDiagView::REGISTERS, text, sizeof text);
+    EXPECT_TRUE(std::string(text).find("KVAL: HOLD=20 RUN=30 ACC=40 DEC=40\nACC=138 DEC=138 MAXSPD=65 POS=0\n") == 0);
+}
+
+TEST(the_reset_watch_needs_two_mismatches_in_a_row) {
+    Regs chip;
+    PS::ResetWatch w;
+    w.arm(chip);                                                   // GATECFG1 0: no watch (a fake)
+    EXPECT_FALSE(w.check(chip));
+    chip.r[Drivers::PowerStepReg::GATECFG1] = 0xC3;
+    w.arm(chip);
+    chip.r[Drivers::PowerStepReg::GATECFG1] = 0;
+    EXPECT_FALSE(w.check(chip));
+    chip.r[Drivers::PowerStepReg::GATECFG1] = 0xC3;
+    EXPECT_FALSE(w.check(chip));                                   // a glitch
+    chip.r[Drivers::PowerStepReg::GATECFG1] = 0;
+    EXPECT_FALSE(w.check(chip));
+    EXPECT_TRUE(w.check(chip));                                    // a reset
 }

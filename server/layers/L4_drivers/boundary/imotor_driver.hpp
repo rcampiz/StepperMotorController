@@ -9,8 +9,11 @@
 
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 #include "harness/pins/motor_state.hpp"
+#include "harness/pins/driver_settings.hpp"
+#include "harness/pins/motor_debug_params.hpp"
 
 namespace Drivers {
 
@@ -19,6 +22,38 @@ namespace Drivers {
  *        Each chip's status word and bit layout stay inside its L4 driver.
  */
 using MotorStatus = Harness::MotorState;
+using Harness::DriverCaps;
+using Harness::DriverSettings;
+using Harness::DriveLevels;
+using Harness::DriveMode;
+using Harness::ApplyResult;
+
+/**
+ * @brief Protocol 2's powerSTEP01 chip units, kept for one release so the old commands
+ *        (DRV:CFG:KVAL/TVAL/OCD/STALL/MOTION/STEPMODE/PRED/DECAY/FAULT, DRV:CFG?) and the
+ *        V1-V4 config blobs keep working (docs/design/DRIVER_BOUNDARY.md).
+ *
+ * Only a driver can translate them; a driver for another chip cannot. Removed with protocol 3.
+ */
+struct LegacyDriverUnits {
+    uint8_t  kval[4];       ///< voltage-mode duty codes: hold, run, acc, dec
+    uint8_t  tval[4];       ///< current-mode reference codes: hold, run, acc, dec
+    uint8_t  driveMode;     ///< 0 voltage, 1 current
+    uint8_t  stepMode;      ///< log2 of the microsteps asked for (0 full step .. 7 = 1/128)
+    uint8_t  ocdTh;         ///< overcurrent threshold code
+    uint8_t  stallTh;       ///< stall threshold code
+    uint16_t acc;           ///< acceleration code
+    uint16_t dec;           ///< deceleration code
+    uint16_t maxSpeed;      ///< speed ceiling code
+    uint16_t minSpeed;      ///< minimum speed code
+    uint16_t fsSpd;         ///< full-step switch speed code
+    uint8_t  predEn;        ///< current regulation: predictive control 0/1
+    uint8_t  tsw;           ///< target switching period code 0..31 (0xFF in: chip default)
+    uint8_t  tFast;         ///< fast decay timing code (0 in: chip default)
+    uint8_t  tonMin;        ///< minimum on time code (0 in: chip default)
+    uint8_t  toffMin;       ///< minimum off time code (0 in: chip default)
+    uint8_t  alarms;        ///< bit 0 OCD, 1 TH_SD, 2 TH_WARN, 3 UVLO, 4 STALL_A, 5 STALL_B, 6 CMD_ERR
+};
 
 /**
  * @brief Register address constants (match powerSTEP01 addresses)

@@ -13,6 +13,13 @@
 
 namespace Harness {
 
+/// Which diagnostic text a driver produces (driver boundary step 3)
+enum class DriverDiagView : uint8_t {
+    NONE = 0,       ///< decoded fields only (fault checks)
+    REGISTERS,      ///< the driver's register dump, several lines (DBG:MOTOR)
+    SUMMARY         ///< one line of what the last apply left on the chip (DRV:CFG:APPLY)
+};
+
 struct MotorDebugParams {
     uint16_t status;      ///< the chip's status word (opaque; decoded fields below)
     uint8_t  faults;      ///< Harness::DriverFault bits, decoded by the driver
