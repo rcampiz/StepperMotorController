@@ -113,7 +113,7 @@ TEST(menu_paints_every_item_and_the_selection_bar) {
     rig.dump("menu_down");
     const uint32_t moveCost = rig.panel.pixelsWritten - firstFrame;
     printf("  menu: first frame %u px, one selection move %u px\n", firstFrame, moveCost);
-    EXPECT_TRUE(moveCost <= 2u * 228u * 18u);               // two rows, each painted once
+    EXPECT_TRUE(moveCost <= 2u * 228u * 18u + 228u * 16u);  // two rows, each painted once (+ the animated bar)
     EXPECT_TRUE(rig.panel.countColor(UI::Theme::PINK, 0, UI::Theme::CONTENT_Y, 240, 20) == 0);   // bar moved off item 0
     // Nothing changes: only the selected item animates (Hotline Miami), one bar every other frame
     const uint32_t beforeIdle = rig.panel.pixelsWritten;
@@ -186,7 +186,7 @@ TEST(device_info_repaints_only_the_live_cells) {
     rig.frame();
     const uint32_t first = rig.panel.pixelsWritten;
     rig.frame();
-    EXPECT_EQ(rig.panel.pixelsWritten, first);                 // same telemetry: nothing sent
+    EXPECT_TRUE(rig.panel.pixelsWritten - first <= 228u * 16u);  // same telemetry: only the animated selection
     Protocol::SystemTelemetry sys = {};
     sys.uptimeTicks = 61000; sys.freeHeap = 12345; sys.cpuLoad = 7;
     Services::g_telemetryStore.writeSystem(sys);
@@ -194,7 +194,7 @@ TEST(device_info_repaints_only_the_live_cells) {
     rig.dump("device_info");
     const uint32_t cost = rig.panel.pixelsWritten - first;
     printf("  device info: first frame %u px, live update %u px\n", first, cost);
-    EXPECT_TRUE(cost <= 3u * 116u * 16u);                      // three value cells at most
+    EXPECT_TRUE(cost <= 3u * 116u * 16u + 2u * 228u * 16u);    // three value cells at most (+ the animated selection)
     // The wheel: CENTER edits, RIGHT steps through the roles, UP leaves without saving
     rig.key(UI::JoyDirection::CENTER);
     rig.key(UI::JoyDirection::RIGHT);

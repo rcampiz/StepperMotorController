@@ -88,6 +88,7 @@ void ScreenManager::render()
     // Transitions and requested full redraws repaint the whole panel: start at the tearing
     // edge so the fill races ahead of the scan instead of being cut by it.
     if (m_needsClear || screen->needsFullRedraw()) {
+        Chrome::clearSelection();            // the screen registers its selected row again
         m_lcd->waitForVSync();
         if (screen->usesChrome()) {
             m_lcd->fillScreen(Theme::BG);
@@ -114,6 +115,9 @@ void ScreenManager::render()
     }
 
     screen->render(*m_lcd);
+
+    // The selected row (any chrome screen) animates, Hotline Miami style
+    if (screen->usesChrome()) Chrome::animateSelection(*m_lcd);
 }
 
 void ScreenManager::setStatus(const StatusLine& s)

@@ -13,6 +13,126 @@ namespace Chrome {
 
 using namespace Theme;
 
+namespace {
+
+constexpr uint16_t rgb(uint8_t r, uint8_t g, uint8_t b) {
+    return static_cast<uint16_t>(((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3));
+}
+
+uint16_t mix565(uint16_t a, uint16_t b, int t256) {
+    const int ar = (a >> 11) & 0x1F, ag = (a >> 5) & 0x3F, ab = a & 0x1F;
+    const int br = (b >> 11) & 0x1F, bg = (b >> 5) & 0x3F, bb = b & 0x1F;
+    return static_cast<uint16_t>(((ar + (br - ar) * t256 / 256) << 11) |
+                                 ((ag + (bg - ag) * t256 / 256) << 5) | (ab + (bb - ab) * t256 / 256));
+}
+
+int16_t sinApprox(int32_t a1024, int16_t amp) {             // a sine from two parabolas
+    int32_t a = a1024 & 1023;
+    const int32_t sign = (a < 512) ? 1 : -1;
+    a &= 511;
+    return static_cast<int16_t>(sign * a * (512 - a) * amp / 65536);
+}
+
+// The selection's animation (frames at 20 Hz; the bar repaints every other frame)
+constexpr uint16_t SWAY_FRAMES = 32;          // 1.6 s side to side
+constexpr int16_t  SWAY_PX = 3;
+constexpr uint16_t FLASH_FRAMES = 12;         // a new colour every 0.6 s
+constexpr uint16_t STRIPE_W = 7;              // the bar's diagonal stripes
+constexpr uint16_t STRIPE_DARK = rgb(196, 18, 150);
+constexpr uint16_t SHADOW = rgb(46, 0, 70);   // hard shadow, 2 px right and down
+struct Ink { uint16_t top, bottom; };
+constexpr Ink FACES[3] = {
+    {rgb(255, 255, 255), rgb(255, 210, 240)},  // white
+    {rgb(255, 250, 120), rgb(255, 160, 20)},   // yellow to amber
+    {rgb(120, 255, 255), rgb(60, 150, 255)},   // cyan to blue
+};
+
+struct Selection {
+    bool active = false;
+    uint16_t x = 0, y = 0, w = 0, h = 0;
+    char label[28] = {};
+    char value[20] = {};
+};
+Selection s_sel;
+uint16_t s_tick = 0;
+
+bool glyphInk(Services::ICanvas& lcd, const char* text, int16_t len, int16_t gx, int16_t gy) {
+    if (gy < 0 || gy >= MED_H || gx < 0 || gx >= len * MED_W) return false;
+    const uint8_t* rows = lcd.mediumGlyphRows(text[gx / MED_W]);
+    return rows != nullptr && (rows[gy] & (0x80u >> (gx % MED_W))) != 0;
+}
+
+void composeSelection(Services::ICanvas& lcd)
+{
+    const Selection& sel = s_sel;
+    const auto labelLen = static_cast<int16_t>(strlen(sel.label));
+    const auto valueLen = static_cast<int16_t>(strlen(sel.value));
+    const int16_t lx0 = static_cast<int16_t>(4 + SWAY_PX + sinApprox(static_cast<int32_t>(s_tick) * 1024 / SWAY_FRAMES, SWAY_PX));
+    const int16_t vx0 = static_cast<int16_t>(sel.w - 6 - valueLen * MED_W);
+    const Ink& ink = FACES[(s_tick / FLASH_FRAMES) % 3];
+    const uint16_t phase = static_cast<uint16_t>(s_tick / 2);
+    constexpr int16_t PAD_Y = 2;
+
+    // The label leans right at the top (up to 2 px): slanted letters
+    auto labelInk = [&](int16_t gx, int16_t gy) -> bool {
+        if (gy < 0 || gy >= MED_H) return false;
+        return glyphInk(lcd, sel.label, labelLen, static_cast<int16_t>(gx - (MED_H - 1 - gy) / 4), gy);
+    };
+
+    static uint8_t row[WIDTH * 2];
+    lcd.streamBitmapStart(sel.x, sel.y, sel.w, sel.h);
+    for (uint16_t r = 0; r < sel.h; r++) {
+        const int16_t gy = static_cast<int16_t>(r - PAD_Y);
+        const uint16_t face = mix565(ink.top, ink.bottom, gy <= 0 ? 0 : gy * 256 / (MED_H - 1));
+        for (uint16_t x = 0; x < sel.w; x++) {
+            const int16_t lx = static_cast<int16_t>(x - lx0), vx = static_cast<int16_t>(x - vx0);
+            uint16_t c;
+            if (labelInk(lx, gy)) c = face;
+            else if (glyphInk(lcd, sel.value, valueLen, vx, gy)) c = TEXT;
+            else if (labelInk(static_cast<int16_t>(lx - 2), static_cast<int16_t>(gy - 2)) ||
+                     glyphInk(lcd, sel.value, valueLen, static_cast<int16_t>(vx - 1), static_cast<int16_t>(gy - 1)))
+                c = SHADOW;
+            else c = (((x + r + phase) / STRIPE_W) & 1u) ? STRIPE_DARK : PINK;
+            row[x * 2] = static_cast<uint8_t>(c >> 8);
+            row[x * 2 + 1] = static_cast<uint8_t>(c & 0xFF);
+        }
+        lcd.streamBitmapData(row, static_cast<size_t>(sel.w) * 2);
+    }
+    lcd.streamBitmapEnd();
+}
+
+} // namespace
+
+void selectRow(Services::ICanvas& lcd, uint16_t x, uint16_t y, uint16_t w, uint16_t h,
+               const char* label, const char* value)
+{
+    if (lcd.mediumGlyphRows('A') == nullptr || w > WIDTH) {       // no font: a plain bar
+        textBox(lcd, x, y, w, h, 4, 2, label, TEXT, MAGENTA);
+        return;
+    }
+    s_sel.active = true;
+    s_sel.x = x; s_sel.y = y; s_sel.w = w; s_sel.h = h;
+    snprintf(s_sel.label, sizeof s_sel.label, "%s", label != nullptr ? label : "");
+    snprintf(s_sel.value, sizeof s_sel.value, "%s", value != nullptr ? value : "");
+    composeSelection(lcd);
+}
+
+void unselectRowAt(uint16_t y)
+{
+    if (s_sel.active && s_sel.y == y) s_sel.active = false;
+}
+
+void clearSelection()
+{
+    s_sel.active = false;
+}
+
+void animateSelection(Services::ICanvas& lcd)
+{
+    s_tick++;
+    if (s_sel.active && (s_tick & 1) == 0) composeSelection(lcd);
+}
+
 void drawTitleBand(Services::ICanvas& lcd, const char* title)
 {
     size_t len = (title != nullptr) ? strlen(title) : 0;
@@ -122,6 +242,25 @@ void fieldRow(Services::ICanvas& lcd, uint16_t y, const char* label, const char*
         default:                 bg = BG;      fgLabel = TEXT; fgValue = (valueColor != 0) ? valueColor : CYAN; break;
     }
     if (state == RowState::NORMAL && valueColor != 0) fgValue = valueColor;
+
+    if (state == RowState::SELECTED) {
+        char lab[20];
+        size_t n = strlen(label);
+        if (n > 11) n = 11;
+        lab[0] = '>'; lab[1] = ' ';
+        memcpy(lab + 2, label, n);
+        lab[2 + n] = '\0';
+        char vbuf[16];
+        snprintf(vbuf, sizeof vbuf, "%s", value != nullptr ? value : "");
+        if (strlen(vbuf) > 13) vbuf[13] = '\0';
+        selectRow(lcd, X, y, W, H, lab, vbuf);
+        if (labelToo) {
+            lcd.fillRect(X, static_cast<uint16_t>(y + H), W, 1, GRID);
+            lcd.fillRect(X, static_cast<uint16_t>(y + H + 1), W, 1, BG);
+        }
+        return;
+    }
+    unselectRowAt(y);
 
     char text[20];
     if (labelToo) {

@@ -93,9 +93,9 @@ void MotionScreen::renderField(Services::ICanvas& lcd, uint8_t field, bool fault
         case FIELD_SPEED:    label = "Speed";    snprintf(val, sizeof val, "%u RPM", static_cast<unsigned>(m_rpm)); break;
         case FIELD_RUN_CW:   label = "Run CW";   break;
         case FIELD_RUN_CCW:  label = "Run CCW";  break;
-        case FIELD_JOG_SIZE: label = "Jog size"; formatEighths(val, sizeof val, m_jogEighths, 0);   break;
-        case FIELD_JOG_CW:   label = "Jog CW";   formatEighths(val, sizeof val, m_jogEighths, '+'); break;
-        case FIELD_JOG_CCW:  label = "Jog CCW";  formatEighths(val, sizeof val, m_jogEighths, '-'); break;
+        case FIELD_JOG_SIZE: label = "Jog size"; formatEighths(val, sizeof val, m_jogEighths, 0); break;
+        case FIELD_JOG_CW:   label = "Jog CW";   break;     // the size is on the row above
+        case FIELD_JOG_CCW:  label = "Jog CCW";  break;
         case FIELD_STOP:     label = "STOP";     color = Theme::YELLOW; break;
         case FIELD_ENABLE:   label = hiZ ? "Enable" : "Release (Hi-Z)"; snprintf(val, sizeof val, "%s", hiZ ? "coils off" : "coils on");
                              color = hiZ ? Theme::DIM : Theme::GREEN; break;
@@ -140,7 +140,7 @@ void MotionScreen::adjust(int8_t delta)
     if (m_selectedField == FIELD_JOG_SIZE) {
         if (delta < 0 && m_jogEighths > JOG_EIGHTHS_MIN) m_jogEighths--;          // 1/8 rev a step
         if (delta > 0 && m_jogEighths < JOG_EIGHTHS_MAX) m_jogEighths++;
-        markRow(FIELD_JOG_SIZE); markRow(FIELD_JOG_CW); markRow(FIELD_JOG_CCW);
+        markRow(FIELD_JOG_SIZE);
     } else if (m_selectedField == FIELD_SPEED) {
         const uint16_t step = (m_rpm < 100) ? 5 : 10;
         if (delta < 0) m_rpm = (m_rpm > RPM_MIN + step) ? static_cast<uint16_t>(m_rpm - step) : RPM_MIN;

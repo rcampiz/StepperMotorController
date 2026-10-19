@@ -120,12 +120,7 @@ private:
     bool m_dirty;          // Something to draw this frame
     bool m_fullPending;    // Draw every item (activation, scroll, item list change)
     uint8_t m_prevSelected; // The item that lost the selection bar, to repaint
-    uint16_t m_animTick = 0; // frames: the selected item's sway, flash and stripe crawl
 
-    /// The selected item's bar, Hotline Miami style: crawling pink stripes, the name in
-    /// slanted medium letters with a hard shadow, its colour flashing, swaying side to side.
-    /// Composed into rows and streamed once, so nothing under it flickers.
-    void renderSelectedAnimated(Services::ICanvas& lcd);
 
     void ensureSelectionVisible();
     void renderItem(Services::ICanvas& lcd, uint8_t itemIndex, bool selected);
