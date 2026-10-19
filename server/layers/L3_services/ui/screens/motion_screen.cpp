@@ -159,7 +159,8 @@ void MotionScreen::activate(bool hiZ)
             // Revolutions to microsteps at the microstep setting in force now
             const int32_t steps = milliRevToMicrosteps(static_cast<int32_t>(m_jogEighths) * 125,
                                                        Services::motion.stepper.config.getMicrostepsPerRev());
-            Services::Motion::move(m_selectedField == FIELD_JOG_CW ? steps : -steps);
+            // At the Speed row's RPM, like Run (MAX_SPEED for this move, restored after it)
+            Services::Motion::move(m_selectedField == FIELD_JOG_CW ? steps : -steps, rpmToFullStepsPerSec(m_rpm));
             break;
         }
         case FIELD_STOP:    Services::Motion::stop(false); break;

@@ -59,7 +59,7 @@ private:
     static constexpr uint8_t JOG_EIGHTHS_MIN = 1;
     static constexpr uint8_t JOG_EIGHTHS_MAX = 80;
     uint8_t m_jogEighths = 8;        // 1 rev
-    // Speed in RPM: what a person means by "how fast", and independent of the microstep
+    // Speed in RPM, for Run and Jog alike: what a person means by "how fast", independent of the microstep
     // setting; converted to full steps/s with the configured steps per revolution on use
     uint16_t m_rpm = 90;             // clear of the 55-66 and 105-122 RPM resonance bands
     static constexpr uint16_t RPM_MIN = 5;
