@@ -38,17 +38,23 @@ constexpr uint16_t SWAY_FRAMES = 32;          // 1.6 s side to side
 constexpr int16_t  SWAY_PX = 3;
 constexpr uint16_t FLASH_FRAMES = 12;         // a new colour every 0.6 s
 constexpr uint16_t STRIPE_W = 7;              // the bar's diagonal stripes
-constexpr uint16_t STRIPE_DARK = rgb(196, 18, 150);
-constexpr uint16_t SHADOW = rgb(46, 0, 70);   // hard shadow, 2 px right and down
 struct Ink { uint16_t top, bottom; };
-constexpr Ink FACES[3] = {
-    {rgb(255, 255, 255), rgb(255, 210, 240)},  // white
-    {rgb(255, 250, 120), rgb(255, 160, 20)},   // yellow to amber
-    {rgb(120, 255, 255), rgb(60, 150, 255)},   // cyan to blue
-};
+/// A bar's look: stripes, the label's hard shadow, the value's ink, the label's flash colours
+struct BarStyle { uint16_t stripeA, stripeB, shadow, value; Ink faces[3]; };
+constexpr BarStyle SELECT_STYLE = {          // selected: hot pink
+    PINK, rgb(196, 18, 150), rgb(46, 0, 70), TEXT,
+    {{rgb(255, 255, 255), rgb(255, 210, 240)},  // white
+     {rgb(255, 250, 120), rgb(255, 160, 20)},   // yellow to amber
+     {rgb(120, 255, 255), rgb(60, 150, 255)}}}; // cyan to blue
+constexpr BarStyle EDIT_STYLE = {            // editing a value: cyan-blue
+    CYAN, rgb(0, 140, 210), rgb(0, 24, 64), BG,
+    {{rgb(255, 255, 255), rgb(220, 240, 255)},  // white
+     {rgb(255, 250, 120), rgb(255, 170, 30)},   // yellow to amber
+     {rgb(255, 120, 230), rgb(250, 40, 170)}}}; // pink to magenta
 
 struct Selection {
     bool active = false;
+    bool editing = false;
     uint16_t x = 0, y = 0, w = 0, h = 0;
     char label[28] = {};
     char value[20] = {};
@@ -69,7 +75,8 @@ void composeSelection(Services::ICanvas& lcd)
     const auto valueLen = static_cast<int16_t>(strlen(sel.value));
     const int16_t lx0 = static_cast<int16_t>(4 + SWAY_PX + sinApprox(static_cast<int32_t>(s_tick) * 1024 / SWAY_FRAMES, SWAY_PX));
     const int16_t vx0 = static_cast<int16_t>(sel.w - 6 - valueLen * MED_W);
-    const Ink& ink = FACES[(s_tick / FLASH_FRAMES) % 3];
+    const BarStyle& style = sel.editing ? EDIT_STYLE : SELECT_STYLE;
+    const Ink& ink = style.faces[(s_tick / FLASH_FRAMES) % 3];
     const uint16_t phase = static_cast<uint16_t>(s_tick / 2);
     constexpr int16_t PAD_Y = 2;
 
@@ -88,11 +95,12 @@ void composeSelection(Services::ICanvas& lcd)
             const int16_t lx = static_cast<int16_t>(x - lx0), vx = static_cast<int16_t>(x - vx0);
             uint16_t c;
             if (labelInk(lx, gy)) c = face;
-            else if (glyphInk(lcd, sel.value, valueLen, vx, gy)) c = TEXT;
+            else if (glyphInk(lcd, sel.value, valueLen, vx, gy)) c = style.value;
             else if (labelInk(static_cast<int16_t>(lx - 2), static_cast<int16_t>(gy - 2)) ||
-                     glyphInk(lcd, sel.value, valueLen, static_cast<int16_t>(vx - 1), static_cast<int16_t>(gy - 1)))
-                c = SHADOW;
-            else c = (((x + r + phase) / STRIPE_W) & 1u) ? STRIPE_DARK : PINK;
+                     (!sel.editing &&
+                      glyphInk(lcd, sel.value, valueLen, static_cast<int16_t>(vx - 1), static_cast<int16_t>(gy - 1))))
+                c = style.shadow;
+            else c = (((x + r + phase) / STRIPE_W) & 1u) ? style.stripeB : style.stripeA;
             row[x * 2] = static_cast<uint8_t>(c >> 8);
             row[x * 2 + 1] = static_cast<uint8_t>(c & 0xFF);
         }
@@ -104,13 +112,14 @@ void composeSelection(Services::ICanvas& lcd)
 } // namespace
 
 void selectRow(Services::ICanvas& lcd, uint16_t x, uint16_t y, uint16_t w, uint16_t h,
-               const char* label, const char* value)
+               const char* label, const char* value, bool editing)
 {
     if (lcd.mediumGlyphRows('A') == nullptr || w > WIDTH) {       // no font: a plain bar
-        textBox(lcd, x, y, w, h, 4, 2, label, TEXT, MAGENTA);
+        textBox(lcd, x, y, w, h, 4, 2, label, editing ? BG : TEXT, editing ? CYAN : MAGENTA);
         return;
     }
     s_sel.active = true;
+    s_sel.editing = editing;
     s_sel.x = x; s_sel.y = y; s_sel.w = w; s_sel.h = h;
     snprintf(s_sel.label, sizeof s_sel.label, "%s", label != nullptr ? label : "");
     snprintf(s_sel.value, sizeof s_sel.value, "%s", value != nullptr ? value : "");
@@ -243,7 +252,8 @@ void fieldRow(Services::ICanvas& lcd, uint16_t y, const char* label, const char*
     }
     if (state == RowState::NORMAL && valueColor != 0) fgValue = valueColor;
 
-    if (state == RowState::SELECTED) {
+    if (state == RowState::SELECTED || state == RowState::EDITING) {
+        const bool editing = state == RowState::EDITING;
         char lab[20];
         size_t n = strlen(label);
         if (n > 11) n = 11;
@@ -251,9 +261,10 @@ void fieldRow(Services::ICanvas& lcd, uint16_t y, const char* label, const char*
         memcpy(lab + 2, label, n);
         lab[2 + n] = '\0';
         char vbuf[16];
-        snprintf(vbuf, sizeof vbuf, "%s", value != nullptr ? value : "");
+        if (editing) snprintf(vbuf, sizeof vbuf, "<%s>", value != nullptr ? value : "");
+        else         snprintf(vbuf, sizeof vbuf, "%s", value != nullptr ? value : "");
         if (strlen(vbuf) > 13) vbuf[13] = '\0';
-        selectRow(lcd, X, y, W, H, lab, vbuf);
+        selectRow(lcd, X, y, W, H, lab, vbuf, editing);
         if (labelToo) {
             lcd.fillRect(X, static_cast<uint16_t>(y + H), W, 1, GRID);
             lcd.fillRect(X, static_cast<uint16_t>(y + H + 1), W, 1, BG);

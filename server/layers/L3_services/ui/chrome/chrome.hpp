@@ -61,12 +61,13 @@ void fieldRow(Services::ICanvas& lcd, uint16_t y, const char* label, const char*
 
 /// The animated selection, Hotline Miami style, shared by every chrome screen: crawling
 /// pink stripes, the label in slanted medium letters with a hard shadow, its colour flashing
-/// and swaying; the value (if any) right-aligned and still. Whatever draws a row selected
-/// (fieldRow SELECTED, a menu item) registers it with selectRow; a row drawn any other way
-/// at that y drops it (an edited value stays still). The ScreenManager calls
-/// animateSelection after each render and clears the selection on every full repaint.
+/// and swaying; the value (if any) right-aligned and still. While a value is being edited
+/// the same bar runs on cyan-blue stripes with the value in dark ink. Whatever draws a row
+/// selected or editing (fieldRow, a menu item) registers it with selectRow; a row drawn any
+/// other way at that y drops it. The ScreenManager calls animateSelection after each render
+/// and clears the selection on every full repaint.
 void selectRow(Services::ICanvas& lcd, uint16_t x, uint16_t y, uint16_t w, uint16_t h,
-               const char* label, const char* value);
+               const char* label, const char* value, bool editing = false);
 void unselectRowAt(uint16_t y);
 void clearSelection();
 void animateSelection(Services::ICanvas& lcd);
