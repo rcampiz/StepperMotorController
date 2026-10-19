@@ -29,7 +29,9 @@ enum class DriveMode : uint8_t { VOLTAGE = 0, CURRENT = 1 };
 struct DriverCaps {
     // --- Drive modes and resolution ---
     bool     voltageControl;          ///< DriveMode::VOLTAGE exists (DriveLevels as duty 0..1)
-    bool     currentControl;          ///< DriveMode::CURRENT exists (DriveLevels in amps)
+    bool     currentControl;          ///< DriveMode::CURRENT exists (the chip regulates coil current)
+    bool     currentSettable;         ///< its reference is set by DriverSettings::currentA (false:
+                                      ///< set in hardware, e.g. a VREF pot; the amps read 0)
     uint16_t maxMicrostepsVoltage;    ///< finest resolution in voltage mode (power of two; 0: no such mode)
     uint16_t maxMicrostepsCurrent;    ///< finest resolution in current mode (power of two; 0: no such mode)
 
@@ -153,7 +155,7 @@ inline bool withinRange(float v, float lo, float hi, float step)
 /// Current reference, amps (current mode): 0..maxCurrentA
 inline bool currentWithinCaps(const DriverCaps& c, float a)
 {
-    return c.currentControl && withinRange(a, 0.0f, c.maxCurrentA, c.currentStepA);
+    return c.currentControl && c.currentSettable && withinRange(a, 0.0f, c.maxCurrentA, c.currentStepA);
 }
 /// Drive duty (voltage mode): 0..1
 inline bool dutyWithinCaps(const DriverCaps& c, float d)

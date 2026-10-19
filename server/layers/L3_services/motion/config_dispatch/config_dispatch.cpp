@@ -117,12 +117,17 @@ void editLegacy(Edit edit)
 {
     Drivers::LegacyDriverUnits u = {};
     if (!motion.stepper.config.toLegacyUnits(u)) {
-        return;                       // a driver without protocol 2 units: the alias does nothing
+        return;                       // a driver without protocol 2 units (L2 refuses the alias first)
     }
     edit(u);
     (void)motion.stepper.config.setFromLegacyUnits(u);
 }
 } // namespace
+
+bool ConfigDispatch::configHasChipUnits() {
+    Drivers::LegacyDriverUnits u = {};
+    return motion.stepper.config.toLegacyUnits(u);
+}
 
 void ConfigDispatch::configSetKval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec) {
     editLegacy([&](Drivers::LegacyDriverUnits& u) {

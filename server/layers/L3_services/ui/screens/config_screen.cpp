@@ -111,6 +111,9 @@ void ConfigScreen::renderField(Services::ICanvas& lcd, uint8_t field)
             if (!caps.hasMode(eff.mode)) {
                 label = hold ? "Hold" : "Run";
                 snprintf(val, sizeof val, "--");
+            } else if (cm && !caps.currentSettable) {
+                label = hold ? "Hold curr" : "Run curr";
+                snprintf(val, sizeof val, "hardware");   // the driver's reference is a pot
             } else if (cm) {
                 label = hold ? "Hold curr" : "Run curr";
                 formatAmps(val, sizeof val, hold ? eff.currentA.hold : eff.currentA.run);
@@ -197,6 +200,7 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
         }
         case FIELD_HOLD:
             if (!caps.hasMode(eff.mode)) break;
+            if (sc.isCurrentMode() && !caps.currentSettable) break;
             if (sc.isCurrentMode()) {                          // one current step a press
                 s.currentA.hold = clampf(eff.currentA.hold + d * caps.currentStepA,
                                          caps.currentStepA, caps.maxCurrentA);
@@ -207,6 +211,7 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
             break;
         case FIELD_RUN:
             if (!caps.hasMode(eff.mode)) break;
+            if (sc.isCurrentMode() && !caps.currentSettable) break;
             if (sc.isCurrentMode()) {                          // run, with acc/dec kept 3 steps above
                 const float run = clampf(eff.currentA.run + d * caps.currentStepA, caps.currentStepA,
                                          caps.maxCurrentA - 3.0f * caps.currentStepA);

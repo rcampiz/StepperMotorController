@@ -142,6 +142,8 @@ public:
   void respondRange(const char *fmt, long a, long b = 0);
   /// OUT_OF_RANGE "<what> must be <lo>-<hi> <unit>", the range from the driver's caps
   void respondOutOfRange(const char *what, double lo, double hi, const char *unit);
+  /// False (and INVALID_STATE sent) when the driver has no protocol 2 chip units
+  bool requireChipUnits(const char *replacement);
 
   /**
    * @brief Send multi-line data response

@@ -126,7 +126,7 @@ inline Harness::DriverTuning pack(const Tuning& u)
 inline const Harness::DriverCaps& caps()
 {
     static const Harness::DriverCaps c = {
-        /*voltageControl*/ true, /*currentControl*/ true,
+        /*voltageControl*/ true, /*currentControl*/ true, /*currentSettable*/ true,
         /*maxMicrostepsVoltage*/ 128, /*maxMicrostepsCurrent*/ 16,
         /*stallDetect*/ true, /*standbyPin*/ true, /*hardwarePositioning*/ true,
         /*syncPulsesPerFullStep*/ 8,

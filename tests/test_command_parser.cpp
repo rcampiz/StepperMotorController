@@ -870,7 +870,7 @@ struct PhysicalRig {
 TEST(drv_caps_lists_the_powerstep01_capabilities_in_both_formats) {
     PhysicalRig r;
     std::string out = r.run("DRV:CAPS?");
-    EXPECT_TRUE(out.find("\r\nvoltage_mode=1\r\ncurrent_mode=1\r\nmax_microsteps_voltage=128\r\n"
+    EXPECT_TRUE(out.find("\r\nvoltage_mode=1\r\ncurrent_mode=1\r\ncurrent_settable=1\r\nmax_microsteps_voltage=128\r\n"
                          "max_microsteps_current=16\r\n") != std::string::npos);
     EXPECT_TRUE(out.find("fault_bits=overcurrent,undervoltage,thermal_shutdown,thermal_warning,stall,command_error\r\n") != std::string::npos);
     EXPECT_TRUE(out.find("max_current_a=9.906\r\ncurrent_step_a=0.078\r\nduty_step=0.00390625\r\n") != std::string::npos);
@@ -878,7 +878,7 @@ TEST(drv_caps_lists_the_powerstep01_capabilities_in_both_formats) {
     EXPECT_TRUE(out.find("overcurrent_step_a=26.0417\r\n") != std::string::npos);
     EXPECT_TRUE(out.find("max_speed_fsps=15625\r\nmax_speed_limit_fsps=15609.7\r\n") != std::string::npos);
     EXPECT_TRUE(out.find("accel_step_fsps2=14.552\r\n") != std::string::npos);
-    EXPECT_TRUE(out.find("max_position_usteps=2097151\r\nOK 28\r\n") != std::string::npos);
+    EXPECT_TRUE(out.find("max_position_usteps=2097151\r\nOK 29\r\n") != std::string::npos);
     r.run("FMT JSON");
     out = r.run("DRV:CAPS?");
     EXPECT_TRUE(out.rfind("{\"status\":\"ok\",\"command\":\"DRV:CAPS?\",\"data\":{\"voltage_mode\":true,", 0) == 0);
@@ -966,6 +966,29 @@ TEST(protocol_2_aliases_answer_as_before_and_land_in_the_physical_settings) {
     // the deprecated ones say so in SYST:HELP?
     EXPECT_TRUE(r.has("SYST:HELP?", "DRV:CFG:TVAL <hold> <run> <acc> <dec> (hex 00-7F, 78 mA per unit)  [deprecated: DRV:CFG:CURRENT]"));
     EXPECT_TRUE(r.has("SYST:HELP?", "\r\nDRV:CAPS?\r\n"));
+}
+
+TEST(protocol_2_aliases_are_refused_on_a_driver_without_chip_units) {
+    // Driver boundary step 5 finding: they answered "set" and changed nothing
+    PhysicalRig r;
+    r.config.chipUnits = false;
+    const Harness::DriverSettings before = r.config.s;
+    EXPECT_TRUE(r.has("DRV:CFG:TVAL 04 11 14 14",
+                      "ERROR INVALID_STATE the driver has no protocol 2 chip units; use DRV:CFG:CURRENT\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:KVAL 29 29 29 29",
+                      "ERROR INVALID_STATE the driver has no protocol 2 chip units; use DRV:CFG:DUTY\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:OCD 3", "use DRV:CFG:OVERCURRENT\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:STALL 3", "use DRV:CFG:STALL_TH\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:MOTION 344 344 87", "use DRV:CFG:ACCEL/DECEL/MAXSPD\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:PRED ON",
+                      "ERROR INVALID_STATE the driver has no protocol 2 chip units (chip tuning)\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:DECAY 00 00 00", "ERROR INVALID_STATE"));
+    EXPECT_EQ(r.config.s.currentA.run, before.currentA.run);
+    EXPECT_EQ(r.config.s.overcurrentA, before.overcurrentA);
+    EXPECT_EQ(r.config.s.accelFsps2, before.accelFsps2);
+    // the chip-neutral ones still answer
+    EXPECT_TRUE(r.has("DRV:CFG:STEPMODE 16", "OK Step mode set"));
+    EXPECT_TRUE(r.has("DRV:CFG:FAULT ACTION 1", "OK"));
 }
 
 TEST(status_json_carries_driver_faults_raw_word_and_physical_trim_speeds) {

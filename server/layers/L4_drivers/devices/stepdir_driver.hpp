@@ -22,7 +22,8 @@
  *   nFAULT         open drain, low on overcurrent (latched until nRESET or power) or thermal
  *                  shutdown; the chip does not say which, so both faults are reported.
  *   Current        the chopper's reference is set by the VREF pot: I = VREF / (5 x Rsense),
- *                  not software-settable (DriverCaps::currentControl = false).
+ *                  not software-settable (DriverCaps::currentControl = true, the chip
+ *                  regulates current; currentSettable = false).
  *   Overcurrent    the chip's own fixed trip, ~3 A (datasheet IOCP), not settable.
  *   nSLEEP/nRESET  tied high on the carrier; no reset to detect (checkReset() stays false).
  *
@@ -326,7 +327,8 @@ private:
                 * StepDirChip::SPEED_LIMIT_STEP;
         m_caps = DriverCaps{};
         m_caps.voltageControl = false;
-        m_caps.currentControl = false;            // the current mode exists, its reference is a pot
+        m_caps.currentControl = true;             // the chopper regulates coil current...
+        m_caps.currentSettable = false;           // ...to the VREF pot's reference
         m_caps.maxMicrostepsVoltage = 0;
         m_caps.maxMicrostepsCurrent = StepDirChip::MAX_MICROSTEPS;
         m_caps.stallDetect = false;

@@ -131,6 +131,7 @@ void CommandParser::cmdDrvCaps() {
   KvReply r(m_transport, m_format == ResponseFormat::JSON, "DRV:CAPS?", KvReply::Shape::LINES);
   r.flag("voltage_mode", c.voltageControl);
   r.flag("current_mode", c.currentControl);
+  r.flag("current_settable", c.currentSettable);
   r.integer("max_microsteps_voltage", c.maxMicrostepsVoltage);
   r.integer("max_microsteps_current", c.maxMicrostepsCurrent);
   r.flag("stall_detect", c.stallDetect);
@@ -173,7 +174,7 @@ void CommandParser::cmdDrvPhysShow() {
   r.text("drive_mode", driveModeName(q.mode));
   r.integer("microsteps_asked", asked.microsteps);
   r.integer("microsteps", q.microsteps);
-  if (c.currentControl) {
+  if (c.currentControl && c.currentSettable) {
     r.num("hold_a", q.currentA.hold);
     r.num("run_a", q.currentA.run);
     r.num("acc_a", q.currentA.acc);
@@ -213,6 +214,10 @@ void CommandParser::cmdDrvCurrent(const ParsedCommand &cmd) {
   const Harness::DriverCaps caps = m_dispatcher.driverCaps();
   if (!caps.currentControl) {
     respondErr("INVALID_STATE", "the driver has no current mode");
+    return;
+  }
+  if (!caps.currentSettable) {
+    respondErr("INVALID_STATE", "the driver's current is set in hardware");
     return;
   }
   float v[4];

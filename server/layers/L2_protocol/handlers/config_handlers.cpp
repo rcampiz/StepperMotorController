@@ -122,8 +122,23 @@ void CommandParser::cmdMotorConfigReset() {
   }
 }
 
+// The protocol 2 chip-unit aliases (the powerSTEP01's codes) on a driver that has no such
+// units: refuse them, naming the protocol 3 command, instead of answering "set" for nothing
+bool CommandParser::requireChipUnits(const char* replacement) {
+  if (m_dispatcher.configHasChipUnits()) return true;
+  char msg[96];
+  if (replacement != nullptr) {
+    snprintf(msg, sizeof(msg), "the driver has no protocol 2 chip units; use %s", replacement);
+  } else {
+    snprintf(msg, sizeof(msg), "the driver has no protocol 2 chip units (chip tuning)");
+  }
+  respondErr("INVALID_STATE", msg);
+  return false;
+}
+
 void CommandParser::cmdMotorConfigKval(const ParsedCommand &cmd) {
   // @deprecated DRV:CFG:DUTY (protocol 3; kept one release)
+  if (!requireChipUnits("DRV:CFG:DUTY")) return;
   // Usage: DRV:CFG:KVAL <hold> <run> <acc> <dec>
   if (cmd.argCount < 4) {
     respondErr("Usage: DRV:CFG:KVAL <hold> <run> <acc> <dec> (hex 00-FF)");
@@ -172,6 +187,7 @@ void CommandParser::cmdMotorConfigDrive(const ParsedCommand &cmd) {
 // DRV:CFG:TVAL <hold> <run> <acc> <dec> - current-mode references, hex 00-7F (78 mA/LSB)
 void CommandParser::cmdMotorConfigTval(const ParsedCommand &cmd) {
   // @deprecated DRV:CFG:CURRENT (protocol 3; kept one release)
+  if (!requireChipUnits("DRV:CFG:CURRENT")) return;
   if (cmd.argCount < 4) {
     respondErr("Usage: DRV:CFG:TVAL <hold> <run> <acc> <dec> (hex 00-7F, 78 mA per unit)");
     return;
@@ -191,6 +207,7 @@ void CommandParser::cmdMotorConfigTval(const ParsedCommand &cmd) {
 // applied by DRV:CFG:APPLY through the Hi-Z path.
 void CommandParser::cmdMotorConfigPred(const ParsedCommand &cmd) {
   // @deprecated no replacement, chip tuning (protocol 3; kept one release)
+  if (!requireChipUnits(nullptr)) return;
   if (cmd.argCount < 1) {
     respondErr("Usage: DRV:CFG:PRED <ON|OFF> [tsw_us 4-128]");
     return;
@@ -227,6 +244,7 @@ void CommandParser::cmdMotorConfigPred(const ParsedCommand &cmd) {
 // 00 = chip default). Written by DRV:CFG:APPLY with the motor stopped.
 void CommandParser::cmdMotorConfigDecay(const ParsedCommand &cmd) {
   // @deprecated no replacement, chip tuning (protocol 3; kept one release)
+  if (!requireChipUnits(nullptr)) return;
   if (cmd.argCount < 3) {
     respondErr("Usage: DRV:CFG:DECAY <t_fast> <ton_min> <toff_min> (hex, 00 = chip default)");
     return;
@@ -266,6 +284,7 @@ void CommandParser::cmdMotorConfigIdle(const ParsedCommand &cmd) {
 
 void CommandParser::cmdMotorConfigOcd(const ParsedCommand &cmd) {
   // @deprecated DRV:CFG:OVERCURRENT (protocol 3; kept one release)
+  if (!requireChipUnits("DRV:CFG:OVERCURRENT")) return;
   // Usage: DRV:CFG:OCD <threshold>
   if (cmd.argCount < 1) {
     respondErr("Usage: DRV:CFG:OCD <threshold> (0-31, ~375mA/step)");
@@ -287,6 +306,7 @@ void CommandParser::cmdMotorConfigOcd(const ParsedCommand &cmd) {
 
 void CommandParser::cmdMotorConfigStall(const ParsedCommand &cmd) {
   // @deprecated DRV:CFG:STALL_TH (protocol 3; kept one release)
+  if (!requireChipUnits("DRV:CFG:STALL_TH")) return;
   // Usage: DRV:CFG:STALL <threshold>
   // powerSTEP01 STALL_TH is 5-bit (0-31), NOT 7-bit like L6470
   if (cmd.argCount < 1) {
@@ -362,6 +382,7 @@ void CommandParser::cmdMotorConfigFault(const ParsedCommand &cmd) {
 
 void CommandParser::cmdMotorConfigMotion(const ParsedCommand &cmd) {
   // @deprecated DRV:CFG:ACCEL, DRV:CFG:DECEL, DRV:CFG:MAXSPD (protocol 3; kept one release)
+  if (!requireChipUnits("DRV:CFG:ACCEL/DECEL/MAXSPD")) return;
   // Usage: DRV:CFG:MOTION <acc> <dec> <maxspd>
   if (cmd.argCount < 3) {
     respondErr("Usage: DRV:CFG:MOTION <acc> <dec> <maxspd>");

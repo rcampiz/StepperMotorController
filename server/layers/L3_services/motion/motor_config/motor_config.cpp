@@ -20,7 +20,7 @@ MotorConfigManager g_motorConfig;
 namespace {
 /// No driver bound (host tests of the store alone): nothing is capped or offered less
 const Harness::DriverCaps NO_DRIVER_CAPS = {
-    true, true, 256, 256,
+    true, true, true, 256, 256,
     false, false, true, 0, 0x3F, 0x3F,
     100.0f, 0.001f, 1.0f / 256.0f,
     0.0f, 1000.0f, 0.001f, 0.0f, 0.001f,

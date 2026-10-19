@@ -270,7 +270,8 @@ def memory(resp_or_text) -> Dict[str, Any]:
 # Protocol 3: the motor driver in physical units (docs/PROTOCOL.md section 7)
 # ---------------------------------------------------------------------------
 # Keys whose values are not numbers, in DRV:CAPS? / DRV:CFG:PHYS? / the setter replies
-_KV_FLAGS = {"voltage_mode", "current_mode", "stall_detect", "standby_pin", "hardware_positioning"}
+_KV_FLAGS = {"voltage_mode", "current_mode", "current_settable", "stall_detect", "standby_pin",
+             "hardware_positioning"}
 _KV_LISTS = {"fault_bits", "faults_reported", "faults_alarmable", "alarms"}
 _KV_TEXT = {"overcurrent_sense", "drive_mode", "source", "fault_action"}
 

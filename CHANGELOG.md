@@ -57,6 +57,12 @@ Cutting a release: move the Unreleased notes under a new heading, bump `VERSION`
   only for resolutions the driver takes (a finer one must be refused), drive_mode_chip checks
   that a missing drive mode is refused, position_capture compares with the RUN speed when the
   driver has no step-sync output (it read `pulses_per_full_step` 0 as 8).
+- On a driver without powerSTEP01 chip units, the protocol 2 aliases (`DRV:CFG:KVAL`, `TVAL`,
+  `OCD`, `STALL`, `MOTION`, `PRED`, `DECAY`) are refused with `INVALID_STATE` naming the
+  protocol 3 command; they answered "set" and changed nothing.
+- `DRV:CAPS?` gains `current_settable`: a driver whose current is set in hardware (a STEP/DIR
+  chip's VREF pot) reports `current_mode=1 current_settable=0` instead of no current mode;
+  `DRV:CFG:CURRENT` says the current is set in hardware, the LCD Driver page shows "hardware".
 
 ## [0.5.0] - 2026-10-19
 

@@ -38,7 +38,7 @@ FAULT_NAMES = C.FAULT_NAMES             # bit i of the telemetry `motor.faults`
 # A protocol 2 board is a powerSTEP01 on an X-NUCLEO-IHM03A1: its capabilities, as a
 # protocol 3 board would report them (DRV:CAPS?), so the frontends have one code path.
 POWERSTEP01_CAPS: Dict[str, Any] = {
-    "voltage_mode": True, "current_mode": True,
+    "voltage_mode": True, "current_mode": True, "current_settable": True,
     "max_microsteps_voltage": 128, "max_microsteps_current": 16,
     "stall_detect": True, "standby_pin": True, "hardware_positioning": True,
     "sync_pulses_per_full_step": 8,

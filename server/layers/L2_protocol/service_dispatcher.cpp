@@ -95,6 +95,10 @@ bool ServiceDispatcher::configIsValid() {
     return m_config->configIsValid();
 }
 
+bool ServiceDispatcher::configHasChipUnits() {
+    return m_config->configHasChipUnits();
+}
+
 void ServiceDispatcher::configSetKval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec) {
     m_config->configSetKval(hold, run, acc, dec);
 }

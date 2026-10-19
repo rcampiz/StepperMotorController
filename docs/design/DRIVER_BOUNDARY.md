@@ -2,8 +2,8 @@
 
 Status: **approved 2026-10-19; steps 1-5 done** (state, motion units, settings, protocol 3 and
 the client, and the proof: a second, unrelated driver on the virtual Nucleo with no L3/L2
-change; see "Step 3 as built", "Step 4 as built" and "Step 5 as built"). Open: the findings
-at the end of step 5 that need an L2/L3 or harness-pins change.
+change; see "Step 3 as built", "Step 4 as built" and "Step 5 as built"). Step 5's findings 2
+and 3 (L2/L3 and harness-pins changes) were fixed after it, with the owner's go.
 
 Decisions (owner, 2026-10-19): the next chip is unknown, so nothing may assume one: the
 boundary is capability-driven (`DriverCaps`), and every chip-specific fact lives in its L4
@@ -238,15 +238,21 @@ $                                    (empty)
    chopper (current) drive whose reference is a pot. It reports `currentControl` false and
    `maxMicrostepsCurrent` 32, which contradicts the field's own comment (0 = no such mode), and
    `hasMode(CURRENT)` is false although the settings in force say CURRENT; `DRV:CFG:CURRENT`
-   answers "the driver has no current mode". Works, but reads oddly. A chip-neutral fix (e.g. a
-   `currentSettable` flag, or the fixed current as a range of one value) needs a harness-pins and
-   an L2 (`DRV:CAPS?` key) change: **not made, for the owner to decide.**
+   answers "the driver has no current mode". Works, but reads oddly. **Fixed (owner's go,
+   2026-10-19):** `DriverCaps::currentSettable` (harness pin) separates "the chip regulates
+   current" from "the firmware sets the reference". The STEP/DIR driver now says
+   `currentControl` true, `currentSettable` false; `DRV:CAPS?` adds `current_settable`;
+   `DRV:CFG:CURRENT` answers "the driver's current is set in hardware"; `DRV:CFG:PHYS?` leaves
+   the amps out; the LCD Driver page shows "hardware" and does not edit; the GUI keeps the
+   current-mode button and hides the current faders.
 3. **Protocol 2 aliases are silently ignored on a driver without chip units.** `DRV:CFG:KVAL`,
    `TVAL`, `OCD`, `STALL`, `MOTION`, `PRED`, `DECAY` answer OK and change nothing
    (`ConfigDispatch::editLegacy` returns quietly; L2 replies "... set"), although step 3 above
-   says the aliases "report an error". Fixing it needs L3 (return a status) and L2 (send it):
-   **not made**; the aliases are deprecated and go with protocol 2. The test pins that they
-   change nothing, not that they answer OK.
+   says the aliases "report an error". **Fixed (owner's go, 2026-10-19):**
+   `IMotorConfigDispatcher::configHasChipUnits()` (L3) and `CommandParser::requireChipUnits()`
+   (L2): on a driver without chip units the aliases answer `ERROR INVALID_STATE the driver has
+   no protocol 2 chip units; use <protocol 3 command>` and change nothing. On the powerSTEP01
+   they answer exactly as before.
 4. **L3's default asks 1/128** ("the finest; the driver caps it"). Harmless (`quantize` caps it),
    but `DRV:CFG:USTEP 128` is refused on a 1/32 driver, so the default cannot be set again by
    the host; the client restores with `requestable_microsteps` (same resolution in force).

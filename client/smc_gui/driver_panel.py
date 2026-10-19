@@ -993,7 +993,7 @@ class DriverPanel(QWidget):
     def _on_apply_drive(self):
         changes = {"drive_mode": "current" if self._is_current_mode() else "voltage",
                    "idle_release_ms": int(round(self._idle_spin.value() * 1000))}
-        if self._caps.get("current_mode", True):
+        if self._caps.get("current_mode", True) and self._caps.get("current_settable", True):
             changes["current_a"] = tuple(self._raw_to_amps(sl.value()) for sl in self._tval_sliders)
         self.drive_apply_requested.emit(D.settings_requests(changes, self._physical) + [C.cfg_apply()])
 
@@ -1038,8 +1038,9 @@ class DriverPanel(QWidget):
         voltage, current = bool(caps.get("voltage_mode", True)), bool(caps.get("current_mode", True))
         for w in (self._kval_row, self._apply_kval_btn, self._mode_voltage_btn):
             w.setVisible(voltage)
-        for w in (self._tval_row, self._mode_current_btn):
-            w.setVisible(current)
+        self._mode_current_btn.setVisible(current)
+        # a current set in hardware (a VREF pot): the mode exists, there is nothing to set
+        self._tval_row.setVisible(current and bool(caps.get("current_settable", True)))
         if not current and voltage:
             self.set_drive_mode(False)
         elif current and not voltage:

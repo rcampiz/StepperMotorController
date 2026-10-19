@@ -3227,7 +3227,8 @@
       ],
       "errors": [
         "current must be <caps>-<caps> A",
-        "the driver has no current mode"
+        "the driver has no current mode",
+        "the driver's current is set in hardware"
       ],
       "note": "",
       "multiline": false,
@@ -3261,7 +3262,8 @@
       ],
       "errors": [
         "current must be <caps>-<caps> A",
-        "the driver has no current mode"
+        "the driver has no current mode",
+        "the driver's current is set in hardware"
       ],
       "note": "query of DRV:CFG:CURRENT",
       "multiline": false,
@@ -3988,6 +3990,7 @@
             "accel_min_fsps2",
             "accel_step_fsps2",
             "current_mode",
+            "current_settable",
             "current_step_a",
             "duty_step",
             "fault_bits",

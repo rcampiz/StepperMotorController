@@ -43,6 +43,7 @@ public:
     bool configLoadFromFlash() override;
     bool configFactoryReset() override;
     bool configIsValid() override;
+    bool configHasChipUnits() override;
     void configSetKval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec) override;
     void configSetDriveMode(uint8_t mode) override;
     void configSetTval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec) override;

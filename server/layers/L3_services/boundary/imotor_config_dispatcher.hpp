@@ -45,7 +45,10 @@ public:
 
     // Protocol 2 chip-unit setters (DRV:CFG:KVAL/TVAL/OCD/STALL/MOTION/PRED/DECAY/FAULT): kept
     // one release as aliases. L3 asks the driver to translate them into the physical settings
-    // (IMotorDriver::fromLegacyUnits); a driver without these units ignores them.
+    // (IMotorDriver::fromLegacyUnits); a driver without these units ignores them, so L2 asks
+    // configHasChipUnits() first and refuses the alias.
+    /// True when the driver translates protocol 2 chip units (the powerSTEP01's codes)
+    virtual bool configHasChipUnits() = 0;
     virtual void configSetKval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec) = 0;
     /// 0 = voltage mode (duty), 1 = current mode (current references); the driver applies it with the outputs off
     virtual void configSetDriveMode(uint8_t mode) = 0;

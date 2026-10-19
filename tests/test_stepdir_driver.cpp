@@ -64,7 +64,9 @@ TEST(caps_say_what_a_step_dir_chip_cannot_do) {
     Rig r;
     const Harness::DriverCaps& c = r.drv.caps();
     EXPECT_FALSE(c.voltageControl);
-    EXPECT_FALSE(c.currentControl);              // the reference is the VREF pot
+    EXPECT_TRUE(c.currentControl);               // the chopper regulates current...
+    EXPECT_FALSE(c.currentSettable);             // ...to the VREF pot's reference
+    EXPECT_TRUE(c.hasMode(Harness::DriveMode::CURRENT));
     EXPECT_EQ(c.maxMicrostepsVoltage, 0);
     EXPECT_EQ(c.maxMicrostepsCurrent, 32);       // MODE2..0 = 101
     EXPECT_FALSE(c.stallDetect);

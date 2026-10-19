@@ -41,6 +41,8 @@ struct FakeMotorConfigDispatcher : Services::IMotorConfigDispatcher {
     bool configLoadFromFlash()  override { calls.push_back("configLoadFromFlash"); return bool{}; }
     bool configFactoryReset()  override { calls.push_back("configFactoryReset"); return bool{}; }
     bool configIsValid()  override { calls.push_back("configIsValid"); return bool{}; }
+    bool chipUnits = true;   ///< false: a driver without protocol 2 chip units
+    bool configHasChipUnits() override { return chipUnits; }
     void configSetKval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec)  override { calls.push_back("configSetKval"); }
     void configSetDriveMode(uint8_t mode)  override { calls.push_back("configSetDriveMode"); }
     void configSetTval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec)  override { calls.push_back("configSetTval"); }

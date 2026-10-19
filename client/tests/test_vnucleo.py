@@ -131,7 +131,8 @@ def test_stepdir_caps_say_what_the_chip_lacks_and_its_settings_are_refused_not_i
         b = connect(procs[0][0])
         try:
             caps = views.driver_caps(b.request(C.driver_caps()))
-            assert (caps["current_mode"], caps["voltage_mode"]) == (False, False)
+            assert (caps["current_mode"], caps["voltage_mode"]) == (True, False)
+            assert caps["current_settable"] is False             # the VREF pot sets it
             assert (caps["max_microsteps_current"], caps["max_microsteps_voltage"]) == (32, 0)
             assert caps["stall_detect"] is False and caps["hardware_positioning"] is False
             assert caps["standby_pin"] is True and caps["sync_pulses_per_full_step"] == 0
@@ -156,9 +157,9 @@ def test_stepdir_caps_say_what_the_chip_lacks_and_its_settings_are_refused_not_i
             assert phys["overcurrent_a"] == 3 and "hold_a" not in phys and "hold_duty" not in phys
             assert "stall_threshold" not in phys and "overcurrent_v" not in phys
             # The protocol 2 aliases are the powerSTEP01's codes: this driver has none, so they
-            # change nothing (they still answer OK: a finding, see DRIVER_BOUNDARY.md step 5)
-            b.request(C.cfg_tval(0x04, 0x11, 0x14, 0x14))
-            b.request(C.cfg_ocd(3))
+            # are refused (INVALID_STATE, naming the protocol 3 command) and change nothing
+            for r in (b.request(C.cfg_tval(0x04, 0x11, 0x14, 0x14)), b.request(C.cfg_ocd(3))):
+                assert not r.success and r.error_code == "INVALID_STATE", r.raw
             assert views.driver_physical(b.request(C.driver_physical())) == phys
         finally:
             b.close()

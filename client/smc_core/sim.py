@@ -551,7 +551,8 @@ class FakeBoard:
     # --- protocol 3: the driver in physical units (a powerSTEP01's grid and limits) -------
     FAULTS = ("overcurrent", "undervoltage", "thermal_shutdown", "thermal_warning", "stall",
               "command_error")
-    CAPS = {"voltage_mode": True, "current_mode": True, "max_microsteps_voltage": 128,
+    CAPS = {"voltage_mode": True, "current_mode": True, "current_settable": True,
+            "max_microsteps_voltage": 128,
             "max_microsteps_current": 16, "stall_detect": True, "standby_pin": True,
             "hardware_positioning": True, "sync_pulses_per_full_step": 8,
             "fault_bits": list(FAULTS), "faults_reported": list(FAULTS), "faults_alarmable": list(FAULTS),
