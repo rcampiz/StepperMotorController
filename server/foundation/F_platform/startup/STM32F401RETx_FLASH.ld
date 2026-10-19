@@ -17,7 +17,9 @@ _estack = 0x20018000;    /* end of RAM (96K) */
 
 /* Generate a link error if heap and stack don't fit into RAM */
 _Min_Heap_Size = 0x200;      /* required amount of heap  */
-_Min_Stack_Size = 0x400;     /* required amount of stack */
+_Min_Stack_Size = 0x800;     /* main stack (MSP: boot, then every ISR); measured peak 720 B.
+                                DIAG:MEM? reports this symbol as the MSP total
+                                (F_platform/rtos/board_memory_stats.cpp) */
 
 /* Specify the memory areas */
 MEMORY
