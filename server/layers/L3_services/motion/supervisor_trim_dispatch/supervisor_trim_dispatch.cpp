@@ -97,6 +97,8 @@ bool SupervisorTrimDispatch::sysIdStart(uint8_t type, uint16_t targetSpeed, uint
     cfg.activeDuration_ms = durationMs;
     cfg.settleDuration_ms = settleMs;
     cfg.frequency_mHz = freqMHz;
+    const float top = motion.stepper.config.caps().maxSpeedFsps;   // the driver's fastest run
+    cfg.maxSpeed_sps = (top >= 65535.0f) ? 0 : static_cast<uint16_t>(top);
     return motion.control.sysId.start(cfg);
 }
 

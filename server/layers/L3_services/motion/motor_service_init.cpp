@@ -33,7 +33,7 @@ bool initMotorSubsystem(
 
     // L3 config (persistent blob via the L4 config store). The run-time journal erase
     // freezes the MCU for 1-2 s, so it is gated on the motor being stopped.
-    motion.configStore.init(*h.configStore);
+    motion.configStore.init(*h.configStore, h.motor);   // the driver: caps, V1-V4 chip-unit migration
     motion.configStore.setEraseGate([]() -> bool {
         const Protocol::TelemetrySnapshot s = g_telemetryStore.getSnapshot();
         return !s.motor.busy && s.motor.speed == 0;

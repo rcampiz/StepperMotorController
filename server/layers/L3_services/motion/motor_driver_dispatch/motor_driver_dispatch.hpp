@@ -24,7 +24,7 @@ public:
     FaultEnableFlags getFaultEnable() override;
     void motorReinit() override;
     bool motorApplyConfig() override;
-    bool motorGetDebugInfo(Harness::MotorDebugParams& out) override;
+    bool motorGetDebugInfo(Harness::MotorDebugParams& out, Harness::DriverDiagView view) override;
     bool motorSetStepModeSafe(uint8_t mode, uint8_t& readback) override;
 
 private:

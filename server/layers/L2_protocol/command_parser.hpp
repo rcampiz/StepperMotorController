@@ -138,6 +138,8 @@ public:
    */
   void respondErr(const char *msg);               ///< code: USAGE for "Usage:" text, else ERROR
   void respondErr(const char *code, const char *msg);   ///< explicit code (F6)
+  /// ERROR with a range taken from the driver's caps: fmt holds one or two %ld
+  void respondRange(const char *fmt, long a, long b = 0);
 
   /**
    * @brief Send multi-line data response

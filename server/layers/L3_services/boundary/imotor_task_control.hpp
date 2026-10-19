@@ -18,9 +18,11 @@ public:
     virtual ~IMotorTaskControl() = default;
     virtual void reinit() = 0;
     virtual bool applyConfig() = 0;
-    virtual bool getDebugInfo(Harness::MotorDebugParams& out) = 0;
-    /// Queue a SetStepMode command and wait up to STEP_MODE_WAIT_MS for the Motor task's
-    /// readback. Returns false (readback 0xFF) on queue-full or timeout.
+    /// Decoded state, resolution in force, and the driver's diagnostic text for `view`
+    virtual bool getDebugInfo(Harness::MotorDebugParams& out, Harness::DriverDiagView view) = 0;
+    /// Queue a SetStepMode command (mode = log2 of the microsteps per full step) and wait up to
+    /// STEP_MODE_WAIT_MS for the Motor task's readback (log2 of the resolution the driver put
+    /// in force, capped for the drive mode). Returns false (readback 0xFF) on queue-full or timeout.
     virtual bool setStepModeSafe(uint8_t mode, uint8_t& readback) = 0;
     /// Debug: true = the Motor task stops touching the driver (no SPI traffic) until false.
     virtual void setDebugPaused(bool paused) = 0;

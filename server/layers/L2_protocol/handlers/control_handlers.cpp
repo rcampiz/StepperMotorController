@@ -8,9 +8,6 @@
 
 namespace Protocol {
 
-/// SYNC_SEL the Motor task programs into STEP_MODE: 8 pulses per full step (STEP_MODE 0xC0)
-static constexpr unsigned CAPTURE_SYNC_PULSES_PER_FULL_STEP = 8;
-
 void CommandParser::cmdGetMode() {
   char buf[48];
   snprintf(buf, sizeof(buf), "%s encoder=%s", controlModeToString(m_dispatcher.getControlMode()),
@@ -294,6 +291,7 @@ void CommandParser::cmdTrimSave() {
 // --- System Identification commands ---
 
 void CommandParser::cmdSysIdStep(const ParsedCommand &cmd) {
+  const MotionLimits lim = motionLimits(m_dispatcher.driverCaps());
   if (cmd.argCount < 2) {
     respondErr("Usage: CTRL:SYSID:STEP <speed_sps> <dir> [dur_ms] [settle_ms]");
     return;
@@ -306,8 +304,8 @@ void CommandParser::cmdSysIdStep(const ParsedCommand &cmd) {
   uint16_t settleMs =
       (cmd.argCount >= 4) ? static_cast<uint16_t>(atol(cmd.args[3])) : 1000;
 
-  if (targetSpd == 0 || targetSpd > 15625) {
-    respondErr("speed_sps must be 1-15625");
+  if (targetSpd == 0 || targetSpd > lim.speedMax) {
+    respondRange("speed_sps must be 1-%ld", lim.speedMax);
     return;
   }
 
@@ -319,6 +317,7 @@ void CommandParser::cmdSysIdStep(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdSysIdRamp(const ParsedCommand &cmd) {
+  const MotionLimits lim = motionLimits(m_dispatcher.driverCaps());
   if (cmd.argCount < 3) {
     respondErr("Usage: CTRL:SYSID:RAMP <start_sps> <end_sps> <dir> [dur_ms] "
                "[settle_ms]");
@@ -333,8 +332,8 @@ void CommandParser::cmdSysIdRamp(const ParsedCommand &cmd) {
   uint16_t settleMs =
       (cmd.argCount >= 5) ? static_cast<uint16_t>(atol(cmd.args[4])) : 1000;
 
-  if (targetSpd > 15625 || startSpd > 15625) {
-    respondErr("speed must be 0-15625 sps");
+  if (targetSpd > lim.speedMax || startSpd > lim.speedMax) {
+    respondRange("speed must be 0-%ld sps", lim.speedMax);
     return;
   }
 
@@ -411,6 +410,7 @@ void CommandParser::cmdSysIdData(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdSysIdSine(const ParsedCommand &cmd) {
+  const MotionLimits lim = motionLimits(m_dispatcher.driverCaps());
   // CTRL:SYSID:SINE <baseline_sps> <amplitude_sps> <freq_mHz> <dir> [dur_ms]
   // [settle_ms]
   if (cmd.argCount < 4) {
@@ -428,8 +428,8 @@ void CommandParser::cmdSysIdSine(const ParsedCommand &cmd) {
   uint16_t settleMs =
       (cmd.argCount >= 6) ? static_cast<uint16_t>(atol(cmd.args[5])) : 1000;
 
-  if (baseline > 15625 || amplitude > 15625) {
-    respondErr("speed must be 0-15625 sps");
+  if (baseline > lim.speedMax || amplitude > lim.speedMax) {
+    respondRange("speed must be 0-%ld sps", lim.speedMax);
     return;
   }
   if (freqMHz == 0 || freqMHz > 5000) {
@@ -446,6 +446,7 @@ void CommandParser::cmdSysIdSine(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdSysIdTrapezoid(const ParsedCommand &cmd) {
+  const MotionLimits lim = motionLimits(m_dispatcher.driverCaps());
   // CTRL:SYSID:TRAPEZOID <speed_sps> <dir> [dur_ms] [settle_ms]
   if (cmd.argCount < 2) {
     respondErr(
@@ -460,8 +461,8 @@ void CommandParser::cmdSysIdTrapezoid(const ParsedCommand &cmd) {
   uint16_t settleMs =
       (cmd.argCount >= 4) ? static_cast<uint16_t>(atol(cmd.args[3])) : 1000;
 
-  if (targetSpd == 0 || targetSpd > 15625) {
-    respondErr("speed_sps must be 1-15625");
+  if (targetSpd == 0 || targetSpd > lim.speedMax) {
+    respondRange("speed_sps must be 1-%ld", lim.speedMax);
     return;
   }
 
@@ -473,6 +474,7 @@ void CommandParser::cmdSysIdTrapezoid(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdSysIdRect(const ParsedCommand &cmd) {
+  const MotionLimits lim = motionLimits(m_dispatcher.driverCaps());
   // CTRL:SYSID:RECT <speed_sps> <dir> [dur_ms] [settle_ms]
   if (cmd.argCount < 2) {
     respondErr("Usage: CTRL:SYSID:RECT <speed_sps> <dir> [dur_ms] [settle_ms]");
@@ -486,8 +488,8 @@ void CommandParser::cmdSysIdRect(const ParsedCommand &cmd) {
   uint16_t settleMs =
       (cmd.argCount >= 4) ? static_cast<uint16_t>(atol(cmd.args[3])) : 1000;
 
-  if (targetSpd == 0 || targetSpd > 15625) {
-    respondErr("speed_sps must be 1-15625");
+  if (targetSpd == 0 || targetSpd > lim.speedMax) {
+    respondRange("speed_sps must be 1-%ld", lim.speedMax);
     return;
   }
 
@@ -517,18 +519,20 @@ void CommandParser::cmdCaptureFreeze() {
     respondErr("INVALID_STATE", "No encoder sampler to capture");
     return;
   }
+  // Pulses the driver puts on its step-sync output per full step (a capability)
+  const unsigned pulsesPerFullStep = m_dispatcher.driverCaps().syncPulsesPerFullStep;
   if (m_format == ResponseFormat::JSON) {
     char buf[112];
     snprintf(buf, sizeof(buf),
              "{\"samples\":%lu,\"rate_hz\":%u,\"sync\":%s,\"pulses_per_full_step\":%u}",
              static_cast<unsigned long>(samples), static_cast<unsigned>(rateHz),
-             sync ? "true" : "false", static_cast<unsigned>(CAPTURE_SYNC_PULSES_PER_FULL_STEP));
+             sync ? "true" : "false", pulsesPerFullStep);
     respondJsonOk("CAP_FREEZE", buf);
   } else {
     char buf[64];
     snprintf(buf, sizeof(buf), "OK CAP_FREEZE %lu %u %u %u", static_cast<unsigned long>(samples),
              static_cast<unsigned>(rateHz), sync ? 1U : 0U,
-             static_cast<unsigned>(CAPTURE_SYNC_PULSES_PER_FULL_STEP));
+             pulsesPerFullStep);
     m_transport.println(buf);
   }
 }

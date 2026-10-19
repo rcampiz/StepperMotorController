@@ -53,13 +53,10 @@ struct SysIdConfig {
     uint16_t settleDuration_ms;  // Pre/post settle time (default 1000)
     uint16_t activeDuration_ms;  // Active recording time (default 5000)
     uint16_t frequency_mHz;      // Sine: frequency in millihertz (e.g. 500 = 0.5 Hz)
+    uint16_t maxSpeed_sps;       // top of the generated speeds (the driver's: DriverCaps); 0 = no cap
 };
 
 constexpr uint16_t SYSID_MAX_SAMPLES = 400;  // 400 × 8 = 3200 bytes
-
-/// Top of the test speed range, full steps/s (the protocol's speed range; the driver clamps
-/// to what its chip can do)
-constexpr uint16_t SYSID_MAX_SPEED_SPS = 15625;
 
 class SysIdRunner {
 public:
@@ -109,6 +106,9 @@ private:
     uint16_t     m_sampleCount = 0;
 
     SysIdSample  m_samples[SYSID_MAX_SAMPLES];
+
+    /// The cap on generated speeds (full steps/s): the configured one, or none (the driver clamps)
+    uint16_t maxSpeed() const { return m_cfg.maxSpeed_sps != 0 ? m_cfg.maxSpeed_sps : 0xFFFFu; }
 
     // Convert motor steps/sec to encoder ticks/sec
     // tps = sps * encoderPPR / fullStepsPerRev

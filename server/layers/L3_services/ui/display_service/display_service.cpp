@@ -463,7 +463,6 @@ void DisplayService::tick()
 
 void DisplayService::updateStatusLine()
 {
-    static const char* const STEP_NAMES[] = {"1", "1/2", "1/4", "1/8", "1/16", "1/32", "1/64", "1/128"};
     Protocol::TelemetrySnapshot t = Services::g_telemetryStore.getSnapshot();
     UI::StatusLine s = {};
 
@@ -477,9 +476,14 @@ void DisplayService::updateStatusLine()
     else                   { state = "HOLD";  s.leftColor = UI::Theme::CYAN; }
     snprintf(s.left, sizeof(s.left), "%s %ldrpm", state, rpm);
 
-    // Middle: drive mode and microstep setting
+    // Middle: drive mode and the resolution in force (the driver caps what was asked)
     const auto& cfg = Services::motion.stepper.config;
-    snprintf(s.mid, sizeof(s.mid), "%s %s", cfg.getDriveMode() ? "CM" : "VM", STEP_NAMES[cfg.getStepMode()]);
+    const unsigned usteps = cfg.getEffectiveMicrosteps();
+    if (usteps <= 1) {
+        snprintf(s.mid, sizeof(s.mid), "%s 1", cfg.getDriveMode() ? "CM" : "VM");
+    } else {
+        snprintf(s.mid, sizeof(s.mid), "%s 1/%u", cfg.getDriveMode() ? "CM" : "VM", usteps);
+    }
     s.midColor = UI::Theme::VIOLET;
 
     // Right: the wheel this board drives, or OK when it has no role yet

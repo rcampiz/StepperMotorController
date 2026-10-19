@@ -40,6 +40,7 @@ public:
     static constexpr uint32_t SEND_TIMEOUT_MS    = 50;   ///< bounded: never block the Comms task forever
     static constexpr uint32_t STEP_MODE_WAIT_MS  = 250;  ///< Motor task answers within one 50 ms pass
     static constexpr uint32_t STEP_MODE_POLL_MS  = 5;
+    static constexpr uint8_t  MAX_STEP_MODE      = 15;   ///< log2 microsteps a request may carry (the driver caps it)
 
     void init(IMotorControlService& controller,
               MotorController& rawController,
@@ -66,7 +67,7 @@ public:
     // IMotorTaskControl (driver dispatcher, debug service; Comms task context)
     void reinit() override;
     bool applyConfig() override;
-    bool getDebugInfo(Harness::MotorDebugParams& out) override;
+    bool getDebugInfo(Harness::MotorDebugParams& out, Harness::DriverDiagView view) override;
     bool setStepModeSafe(uint8_t mode, uint8_t& readback) override;
     void setDebugPaused(bool paused) override;
     bool isDebugPaused() const override;
@@ -88,8 +89,8 @@ public:
 private:
     void applyPendingTransitions();               ///< Motor task: run the pending stop/clear edge once
     void handleSetStepMode(uint8_t mode);         ///< Motor task: rewrite STEP_MODE, publish the readback
-    void handleJob(MotorCmdType type);            ///< Motor task: Reinit / ApplyConfig / GetDebugInfo, answer the slot
-    bool runJob(MotorCmdType type);               ///< Comms task: queue a job and wait (bounded) for its answer
+    void handleJob(MotorCmdType type, int32_t param);   ///< Motor task: Reinit / ApplyConfig / GetDebugInfo, answer the slot
+    bool runJob(MotorCmdType type, int32_t param = 0);  ///< Comms task: queue a job and wait (bounded) for its answer
     static bool isJob(MotorCmdType t);
 
     IMotorControlService* m_controller = nullptr;

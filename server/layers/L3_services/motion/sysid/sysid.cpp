@@ -45,7 +45,7 @@ uint16_t SysIdRunner::interpolateRampSpeed() const {
                     / static_cast<int32_t>(duration);
 
     if (speed < 0) speed = 0;
-    if (speed > SYSID_MAX_SPEED_SPS) speed = SYSID_MAX_SPEED_SPS;
+    if (speed > maxSpeed()) speed = maxSpeed();
     return static_cast<uint16_t>(speed);
 }
 
@@ -60,7 +60,7 @@ uint16_t SysIdRunner::generateSineSpeed() const {
     float val = baseline + amplitude * sinf(2.0f * 3.14159265f * freqHz * timeS);
 
     if (val < 0.0f) val = 0.0f;
-    if (val > static_cast<float>(SYSID_MAX_SPEED_SPS)) val = static_cast<float>(SYSID_MAX_SPEED_SPS);
+    if (val > static_cast<float>(maxSpeed())) val = static_cast<float>(maxSpeed());
     return static_cast<uint16_t>(val);
 }
 

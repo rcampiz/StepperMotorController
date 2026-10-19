@@ -217,22 +217,24 @@ void MotorController::processCommand(const MotorCommand& cmd)
             m_driver->resetPos();
             break;
 
-        case MotorCmdType::SetAccel:
-            m_driver->setParam(MotorReg::ACC, static_cast<uint32_t>(cmd.param1));
+        case MotorCmdType::SetAccel:            // full steps/s^2 (live; DRV:CFG:APPLY restores the saved one)
+            m_inForce.accelFsps2 = static_cast<float>(cmd.param1);
+            m_driver->setAcceleration(m_inForce.accelFsps2);
             break;
 
         case MotorCmdType::SetDecel:
-            m_driver->setParam(MotorReg::DEC, static_cast<uint32_t>(cmd.param1));
+            m_inForce.decelFsps2 = static_cast<float>(cmd.param1);
+            m_driver->setDeceleration(m_inForce.decelFsps2);
             break;
 
-        case MotorCmdType::SetMaxSpeed:
-            // Config path, register value (config service): driver boundary step 3
-            m_driver->setParam(MotorReg::MAX_SPEED, static_cast<uint32_t>(cmd.param1));
+        case MotorCmdType::SetMaxSpeed:            // full steps/s, the configured ceiling (live)
+            m_inForce.maxSpeedFsps = static_cast<float>(cmd.param1);
+            m_driver->setMaxSpeed(m_inForce.maxSpeedFsps);
             m_speedOverrideActive = false;   // the new configured value is the one to keep
             break;
 
         case MotorCmdType::SetMark:
-            m_driver->setParam(MotorReg::MARK, static_cast<uint32_t>(cmd.param1));
+            m_driver->setMark(cmd.param1);
             break;
 
         case MotorCmdType::GetStatus:
@@ -257,26 +259,21 @@ void MotorController::periodicUpdate()
 {
     Trace::setCurrentServiceId(Trace::SVC_MOTION);
 
-    // The powerSTEP01 can reset behind the firmware's back: its supply dropped (an E-stop
-    // that cuts motor power, a loose VS lead) and every register is back at its default,
-    // the gate drive (4 mA, too weak for the IHM03A1 MOSFETs) and OC_SD (overcurrent
-    // shutdown on) with it, so the next enable trips OCD and falls back to Hi-Z (bench
-    // 2026-10-19: MOT:EN did nothing, STATUS showed OCD). GATECFG1 is written only by init:
-    // when it reads something else twice in a row (~1 s), initialise the chip again.
-    if (m_clock != nullptr && m_initSignature != 0) {
+    // A driver chip can reset behind the firmware's back (its supply dropped: an E-stop that
+    // cuts motor power, a loose lead) and lose its configuration, init-only parts included
+    // (bench 2026-10-19: MOT:EN did nothing, the chip tripped OCD). The driver knows how to
+    // tell (powerSTEP01: a gate-drive register only its init writes, read twice in a row); when it says
+    // so, initialise it again and re-apply the settings, with any run dropped.
+    if (m_clock != nullptr) {
         const uint32_t now = m_clock->getTickMs();
         if (now - m_resetCheckMs >= RESET_CHECK_MS) {
             m_resetCheckMs = now;
-            if (static_cast<uint16_t>(m_driver->getParam(MotorReg::GATECFG1)) != m_initSignature) {
-                if (++m_resetMismatches >= 2) {
-                    m_chipResets++;
-                    m_continuousRunActive = false;
-                    motion.control.supervisor.goIdle();
-                    motion.control.trim.reset();
-                    reinit();
-                }
-            } else {
-                m_resetMismatches = 0;
+            if (m_driver->checkReset()) {
+                m_chipResets++;
+                m_continuousRunActive = false;
+                motion.control.supervisor.goIdle();
+                motion.control.trim.reset();
+                reinit();
             }
         }
     }
@@ -499,141 +496,46 @@ void MotorController::periodicUpdate()
 // Config application
 // ============================================================================
 
-namespace {
-/// STEP_MODE[7:4]: SYNC_EN with SYNC_SEL = 8 pulses per full step on the BUSY/SYNC pin, which
-/// TIM3 counts for the position capture (CTRL:CAP:*). Written with every STEP_MODE update.
-constexpr uint32_t STEP_MODE_SYNC_8FS = 0xC0U;
-
-/// CONFIG[15:10] in current mode: PRED_EN (bit 15) and the target switching period TSW
-uint32_t cmConfigHi(const Services::StepperConfig& c) {
-    return (c.getCmPredEn() ? 0x8000U : 0U) | (static_cast<uint32_t>(c.getCmTsw() & 0x1FU) << 10);
-}
-} // namespace
-
 bool MotorController::applyConfig()
 {
-    const auto& cfg = motion.stepper.config.getConfig();
-
-    // Drive registers: in voltage mode these are KVAL duty cycles, in current mode the same
-    // addresses hold the TVAL current references (powerSTEP01 CM_VM, 7.8 mV/LSB on the sense)
-    const bool currentMode = motion.stepper.config.isCurrentMode();
-    if (currentMode) {
-        m_driver->setParam(MotorReg::KVAL_HOLD, motion.stepper.config.getTvalHold());
-        m_driver->setParam(MotorReg::KVAL_RUN,  motion.stepper.config.getTvalRun());
-        m_driver->setParam(MotorReg::KVAL_ACC,  motion.stepper.config.getTvalAcc());
-        m_driver->setParam(MotorReg::KVAL_DEC,  motion.stepper.config.getTvalDec());
-        // Current regulation timing (writable with the motor stopped)
-        m_driver->setParam(MotorReg::T_FAST,   motion.stepper.config.getCmTFast());
-        m_driver->setParam(MotorReg::TON_MIN,  motion.stepper.config.getCmTonMin());
-        m_driver->setParam(MotorReg::TOFF_MIN, motion.stepper.config.getCmToffMin());
-    } else {
-        m_driver->setParam(MotorReg::KVAL_HOLD, cfg.kvalHold);
-        m_driver->setParam(MotorReg::KVAL_RUN, cfg.kvalRun);
-        m_driver->setParam(MotorReg::KVAL_ACC, cfg.kvalAcc);
-        m_driver->setParam(MotorReg::KVAL_DEC, cfg.kvalDec);
-    }
-
-    // Protection thresholds
-    m_driver->setParam(MotorReg::OCD_TH, cfg.ocdThreshold);
-    m_driver->setParam(MotorReg::STALL_TH, cfg.stallThreshold);
-
-    // Motion parameters
-    m_driver->setParam(MotorReg::ACC, cfg.acceleration);
-    m_driver->setParam(MotorReg::DEC, cfg.deceleration);
-    m_driver->setParam(MotorReg::MAX_SPEED, cfg.maxSpeed);   // config register value: driver boundary step 3
+    // The saved settings, physical; the driver writes its chip and reports the settings it
+    // could not put in force with the outputs on (powerSTEP01: microstep mode, drive mode)
+    m_inForce = motion.stepper.config.getDriverSettings();
     m_speedOverrideActive = false;       // the saved config is the value to keep from here on
-    m_driver->setParam(MotorReg::MIN_SPEED, cfg.minSpeed);
-    m_driver->setParam(MotorReg::FS_SPD, cfg.fsSpeed);
-
-    // Build ALARM_EN register from fault enable flags
-    uint8_t alarmEn = 0x00;
-    if (cfg.faultEnable.ocd)         alarmEn |= (1 << 0);
-    if (cfg.faultEnable.thermalSD)   alarmEn |= (1 << 1);
-    if (cfg.faultEnable.thermalWarn) alarmEn |= (1 << 2);
-    if (cfg.faultEnable.uvlo)        alarmEn |= (1 << 3);
-    // Bit 4 = UVLO_ADC — keep disabled (floating ADCIN causes false trips)
-    if (cfg.faultEnable.stallA)      alarmEn |= (1 << 5);
-    if (cfg.faultEnable.stallB)      alarmEn |= (1 << 6);
-    if (cfg.faultEnable.cmdErr)      alarmEn |= (1 << 7);
-    m_driver->setParam(MotorReg::ALARM_EN, alarmEn);
-
-    // Microstep mode: STEP_MODE is writable only in Hi-Z; a write with the bridges on is
-    // ignored by the chip (bench 2026-10-17: config 1/128, chip stayed 1/32). Write it only
-    // in Hi-Z (boot, reinit, output disabled), read-modify-write to keep CM_VM and SYNC bits,
-    // and verify. Otherwise report it so the caller uses the Motor task's Hi-Z-safe path.
-    // STEP_MODE[2:0] = microstep mode, bit 3 = CM_VM (current mode); both only writable in Hi-Z.
-    // The resolution in force (1/16 at most in current mode), not the raw configured one
-    const uint32_t wanted = STEP_MODE_SYNC_8FS | (motion.stepper.config.getStepMode() & 0x07U) | (currentMode ? 0x08U : 0U);
-    uint32_t stepMode = m_driver->getParam(MotorReg::STEP_MODE);
-    bool stepModeOk = (stepMode & 0xFFU) == wanted;
-    // CONFIG[15:10] in current mode (PRED_EN, TSW) is Hi-Z-only as well; untouched in
-    // voltage mode where those bits set the PWM frequency
-    bool configOk = true;
-    if (currentMode) {
-        configOk = (m_driver->getParam(MotorReg::CONFIG) & 0xFC00U) == cmConfigHi(motion.stepper.config);
-    }
-    if ((!stepModeOk || !configOk) && m_driver->getStatus().hiZ()) {
-        if (!stepModeOk) {
-            m_driver->setParam(MotorReg::STEP_MODE, wanted);
-            stepModeOk = (m_driver->getParam(MotorReg::STEP_MODE) & 0xFFU) == wanted;
-        }
-        if (!configOk) {
-            const uint32_t hi = cmConfigHi(motion.stepper.config);
-            m_driver->setParam(MotorReg::CONFIG, (m_driver->getParam(MotorReg::CONFIG) & 0x03FFU) | hi);
-            configOk = (m_driver->getParam(MotorReg::CONFIG) & 0xFC00U) == hi;
-        }
-    }
-
-    // Clear any latched fault bits from the register write sequence
-    m_driver->getStatus();
-    return stepModeOk && configOk;
+    return m_driver->apply(m_inForce) == ApplyResult::APPLIED;
 }
 
-bool MotorController::setStepModeSafe(uint8_t mode,
-                                       uint8_t& readback)
+bool MotorController::applyWithOutputsOff()
 {
-    // In current mode the chip runs 1/16 at most: write what it will actually do, so the
-    // register, the readback and every conversion agree
-    mode = MotorConfigManager::effectiveStepMode(mode, motion.stepper.config.isCurrentMode());
-
-    // Disable outputs before touching STEP_MODE (the Motor task used to do this)
+    // Release the outputs, apply, energise again (SoftStop holds the position at the hold level)
     m_driver->hardHiZ();
     m_clock->delayMs(5);
-
-    // STEP_MODE: microstep bits from the argument, CM_VM from the saved drive mode (so a
-    // step-mode change never flips voltage/current), SYNC output on (8 pulses per full step)
-    const uint32_t cmBit = motion.stepper.config.isCurrentMode() ? 0x08U : 0U;
-    const uint32_t reg = STEP_MODE_SYNC_8FS | (mode & 0x07) | cmBit;
-    m_driver->setParam(MotorReg::STEP_MODE, reg);
-
-    // Read back and verify (microstep bits are the readback; CM_VM must match too)
-    uint32_t verify = m_driver->getParam(MotorReg::STEP_MODE);
-    readback = static_cast<uint8_t>(verify & 0x07);
-    const bool cmOk = (verify & 0x08U) == cmBit;
-
-    // Current mode: CONFIG[15:10] (PRED_EN, TSW) rides the same Hi-Z window
-    bool cfgOk = true;
-    if (cmBit != 0) {
-        const uint32_t hi = cmConfigHi(motion.stepper.config);
-        m_driver->setParam(MotorReg::CONFIG, (m_driver->getParam(MotorReg::CONFIG) & 0x03FFU) | hi);
-        cfgOk = (m_driver->getParam(MotorReg::CONFIG) & 0xFC00U) == hi;
-    }
-
-    // Clear any latched fault bits
-    m_driver->getStatus();
-
-    // Re-enable motor (SoftStop holds position with configured KVAL_HOLD)
+    const ApplyResult r = m_driver->apply(m_inForce);
     m_driver->softStop();
+    return r == ApplyResult::APPLIED;
+}
 
-    return (readback == mode) && cmOk && cfgOk;
+bool MotorController::applyConfigOutputsOff()
+{
+    m_inForce = motion.stepper.config.getDriverSettings();
+    m_speedOverrideActive = false;
+    return applyWithOutputsOff();
+}
+
+bool MotorController::setMicrostepsSafe(uint16_t microsteps, uint16_t& effective)
+{
+    // The settings in force with a new resolution; the driver caps it for the drive mode,
+    // so what it reads back is what every conversion must use
+    m_inForce.microsteps = microsteps;
+    const bool ok = applyWithOutputsOff();
+    Harness::DriverSettings rb = {};
+    effective = m_driver->readSettings(rb) ? rb.microsteps : 0;
+    return ok;
 }
 
 void MotorController::reinit()
 {
     m_driver->init();
-    // What init leaves in GATECFG1 is the signature of an initialised chip (see periodicUpdate)
-    m_initSignature = static_cast<uint16_t>(m_driver->getParam(MotorReg::GATECFG1));
-    m_resetMismatches = 0;
     applyConfig();
 }
 
@@ -641,33 +543,21 @@ void MotorController::reinit()
 // Debug
 // ============================================================================
 
-void MotorController::getDebugInfo(MotorDebugParams& info)
+void MotorController::getDebugInfo(MotorDebugParams& info, Harness::DriverDiagView view)
 {
+    info = MotorDebugParams{};
     const MotorStatus st = m_driver->readState();          // status + position
     info.status = static_cast<uint16_t>(st.raw & 0xFFFFu);
     info.faults = st.faults;
     info.outputsOff = st.outputsOff;
     info.moving = st.moving;
-    info.kvalHold = static_cast<uint8_t>(m_driver->getParam(MotorReg::KVAL_HOLD));
-    info.kvalRun = static_cast<uint8_t>(m_driver->getParam(MotorReg::KVAL_RUN));
-    info.kvalAcc = static_cast<uint8_t>(m_driver->getParam(MotorReg::KVAL_ACC));
-    info.kvalDec = static_cast<uint8_t>(m_driver->getParam(MotorReg::KVAL_DEC));
-    info.accel = static_cast<uint16_t>(m_driver->getParam(MotorReg::ACC));
-    info.decel = static_cast<uint16_t>(m_driver->getParam(MotorReg::DEC));
-    info.maxSpeed = static_cast<uint16_t>(m_driver->getParam(MotorReg::MAX_SPEED));
-
     info.absPos = st.positionUsteps;
-
-    info.ocdTh = static_cast<uint8_t>(m_driver->getParam(MotorReg::OCD_TH));
-    info.stallTh = static_cast<uint8_t>(m_driver->getParam(MotorReg::STALL_TH));
-    info.config = static_cast<uint16_t>(m_driver->getParam(MotorReg::CONFIG));
-    info.alarmEn = static_cast<uint8_t>(m_driver->getParam(MotorReg::ALARM_EN));
-    info.fsSpd = static_cast<uint16_t>(m_driver->getParam(MotorReg::FS_SPD));
-    const uint32_t stepModeReg = m_driver->getParam(MotorReg::STEP_MODE);
-    info.stepMode = static_cast<uint8_t>(stepModeReg & 0x07);
-    info.driveMode = (stepModeReg & 0x08U) ? 1 : 0;   // CM_VM: 1 = current mode
-    info.adcOut = static_cast<uint8_t>(m_driver->getParam(MotorReg::ADC_OUT) & 0x1FU);
-    info.tFast = static_cast<uint8_t>(m_driver->getParam(MotorReg::T_FAST));
+    Harness::DriverSettings rb = {};
+    if (m_driver->readSettings(rb)) {
+        info.microsteps = rb.microsteps;
+        info.driveMode = (rb.mode == Harness::DriveMode::CURRENT) ? 1 : 0;
+    }
+    m_driver->diagnostics(view, info.driverText, sizeof(info.driverText));
 }
 
 void MotorController::bind(IMotorDriver& driver, Platform::IClock& clock)

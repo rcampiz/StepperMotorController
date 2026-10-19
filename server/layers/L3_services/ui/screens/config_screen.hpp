@@ -1,6 +1,7 @@
 /**
  * @file config_screen.hpp
- * @brief Driver configuration from the joystick: step mode, KVAL, OCD, stall, ramps, save.
+ * @brief Driver configuration from the joystick: resolution, drive levels, overcurrent, stall,
+ *        ramps, idle release, save. Physical values; ranges and steps from the driver's caps.
  *
  * UP/DOWN pick a row, CENTER opens it for editing (LEFT/RIGHT adjust, CENTER closes),
  * LEFT goes back. The Save row writes the configuration to flash.
@@ -29,8 +30,8 @@ public:
 private:
     static constexpr uint8_t NUM_FIELDS = 10;
     static constexpr uint8_t FIELD_STEP_MODE = 0;
-    static constexpr uint8_t FIELD_KVAL_HOLD = 1;
-    static constexpr uint8_t FIELD_KVAL_RUN = 2;
+    static constexpr uint8_t FIELD_HOLD = 1;     ///< hold current (current mode) or duty (voltage mode)
+    static constexpr uint8_t FIELD_RUN = 2;      ///< run current / duty (acc and dec follow it)
     static constexpr uint8_t FIELD_OCD = 3;
     static constexpr uint8_t FIELD_STALL = 4;
     static constexpr uint8_t FIELD_ACC = 5;
@@ -49,7 +50,7 @@ private:
 
     void renderField(Services::ICanvas& lcd, uint8_t field);
     void adjustField(uint8_t field, int8_t delta);
-    void applyToChip();   ///< the edited setting to the powerSTEP01 now
+    void applyToChip();   ///< the edited setting to the motor driver now
     void markRow(uint8_t field) { m_rowsDirty = static_cast<uint16_t>(m_rowsDirty | (1u << field)); }
 };
 

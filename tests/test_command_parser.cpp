@@ -4,6 +4,7 @@
  *        Protocol::ICommandProcessor with a fake Transport::ITransport (lower side of H_L1_L2).
  */
 #include "minitest.hpp"
+#include "L4_drivers/devices/powerstep01_settings.hpp"
 #include "harness/defs/harness_l1_l2.hpp"
 #include "L2_protocol/command_parser.hpp"
 #include "L2_protocol/command_parser_internal.hpp"
@@ -602,6 +603,11 @@ struct CapEncoder : FakeL3::FakeEncoderDispatcher {
     void captureResume() override { frozen = false; }
 };
 
+/// The motor config dispatcher of a board with a powerSTEP01: its capabilities set the limits
+struct PowerStepConfig : FakeL3::FakeMotorConfigDispatcher {
+    Harness::DriverCaps driverCaps() override { return Drivers::PowerStepSettings::caps(); }
+};
+
 struct UploadRig {
     FakeTransport transport;
     Protocol::ServiceDispatcher dispatcher;
@@ -609,7 +615,8 @@ struct UploadRig {
     StreamingDisplay display;
     HiZSystem system;
     CapEncoder encoder;
-    Harness::L3Dispatchers dispatchers{l3.motion, l3.config, l3.safety, l3.queue, l3.controlMode,
+    PowerStepConfig config;
+    Harness::L3Dispatchers dispatchers{l3.motion, config, l3.safety, l3.queue, l3.controlMode,
                                        l3.supervisorTrim, encoder, l3.motorDriver, display,
                                        l3.flash, system, l3.trace, l3.debug};
     Protocol::CommandParser parser{transport, dispatcher};
@@ -700,6 +707,29 @@ TEST(bitmap_upload_rejects_bad_base64_and_a_wrong_crc) {
     for (int i = 0; i < 4; ++i) body.push_back(0);             // CRC32 of 8 x 0x55 is not zero
     out = r2.run("UI:DISP:BITMAP 0 0 2 2 CRC", b64(body));
     EXPECT_TRUE(out.find("CRC mismatch") != std::string::npos);
+}
+
+TEST(motion_limits_come_from_the_drivers_caps_with_the_old_replies) {
+    // Wire-compatible: the powerSTEP01's caps give exactly the protocol 2 limits and texts
+    UploadRig r;
+    std::string out = r.run("MOT:RUN 15626 1", "");
+    EXPECT_TRUE(out.find("speed out of range (0-15625 steps/s)") != std::string::npos);
+    out = r.run("MOT:MOVE 2097152 1", "");
+    EXPECT_TRUE(out.find("steps out of range (0-2097151)") != std::string::npos);
+    out = r.run("MOT:GOTO -2097153", "");
+    EXPECT_TRUE(out.find("position out of range (-2097152 to 2097151)") != std::string::npos);
+    out = r.run("MOT:HOME 15626", "");
+    EXPECT_TRUE(out.find("speed out of range (1-15625 steps/s)") != std::string::npos);
+    out = r.run("CTRL:SYSID:STEP 15626 1", "");
+    EXPECT_TRUE(out.find("speed_sps must be 1-15625") != std::string::npos);
+    out = r.run("DRV:STEP_MODE 8", "");
+    EXPECT_TRUE(out.find("Step mode must be 0-7") != std::string::npos);
+    out = r.run("DRV:CFG:STEPMODE 256", "");
+    EXPECT_TRUE(out.find("Invalid mode. Use 0-7 or microstep count (8/16/32/64/128)") != std::string::npos);
+    out = r.run("DRV:CFG:STEPMODE 32", "");
+    EXPECT_TRUE(out.find("Step mode set: 5 (1/32 microstep, not saved)") != std::string::npos);
+    out = r.run("MOT:RUN 15625 1", "");
+    EXPECT_TRUE(out.find("ERROR") == std::string::npos);
 }
 
 TEST(position_capture_freezes_pages_the_rings_and_resumes) {

@@ -73,22 +73,23 @@ public:
     // ── Config application ──
 
     /**
-     * @brief Apply MotorConfig to driver registers
+     * @brief Put the saved driver settings (physical) in force
      *
-     * STEP_MODE is a "WH" register: the chip accepts the write only with the bridges in
-     * Hi-Z and silently ignores it otherwise (measured on the bench 2026-10-17). It is
-     * written here only in Hi-Z and read back; returns false when it could not be applied,
-     * and the caller must go through setStepModeSafe() on the Motor task.
+     * The driver writes its chip; settings it can only change with the outputs off
+     * (powerSTEP01: microstep and drive mode, written only in Hi-Z, silently ignored
+     * otherwise: bench 2026-10-17) are applied when the outputs already are off. Returns
+     * false when some are not in force: the caller then uses applyConfigOutputsOff().
      */
     bool applyConfig() override;
 
+    /** @brief The saved settings with the outputs released for the write, then energised (SoftStop) */
+    bool applyConfigOutputsOff() override;
+
     /**
-     * @brief Write STEP_MODE with readback verify
-     *
-     * Caller must HiZ the driver + delay 5ms before calling this.
-     * This method does the register write, readback, fault clear, and SoftStop.
+     * @brief The settings in force with a new resolution (outputs released for the write)
+     * @param effective the resolution the driver reads back (capped for the drive mode)
      */
-    bool setStepModeSafe(uint8_t mode, uint8_t& readback) override;
+    bool setMicrostepsSafe(uint16_t microsteps, uint16_t& effective) override;
 
     /** @brief Reinitialize driver hardware + reapply config */
     void reinit() override;
@@ -104,8 +105,8 @@ public:
 
     // ── Debug ──
 
-    /** @brief Read all powerSTEP01 registers into debug struct */
-    void getDebugInfo(MotorDebugParams& info) override;
+    /** @brief Decoded state, the resolution in force and the driver's diagnostic text */
+    void getDebugInfo(MotorDebugParams& info, Harness::DriverDiagView view) override;
 
 private:
     // Speed override state: the driver's speed ceiling in force before the override
@@ -115,14 +116,13 @@ private:
     uint32_t m_stoppedSinceMs = 0;     ///< tick when the motor was last seen stopped and energised (0: not)
     bool     m_stoppedSeen = false;
 
-    // Chip-reset watch: the powerSTEP01 can reset behind the firmware's back (its supply
-    // dropped). GATECFG1 is written only by init; when it stops reading what init left,
-    // twice in a row, the chip is initialised again.
+    // Chip-reset watch: how often the driver is asked whether its chip lost its configuration
     static constexpr uint32_t RESET_CHECK_MS = 500;
-    uint16_t m_initSignature = 0;      ///< GATECFG1 as init left it (0: no check, e.g. fakes)
     uint32_t m_resetCheckMs = 0;
-    uint8_t  m_resetMismatches = 0;
     uint32_t m_chipResets = 0;         ///< chip resets seen and repaired since boot
+
+    /// The settings last put in force (the saved ones, plus live MOT:CFG ramp/ceiling changes)
+    Harness::DriverSettings m_inForce = {};
 
     // Direction/mode tracking
     bool m_lastRunForward = true;
@@ -142,6 +142,7 @@ private:
     void applySpeedOverride(float maxFullStepsPerSec);
     void restoreSpeedIfOverridden();
     void handleRunCommand(const MotorCommand& cmd);
+    bool applyWithOutputsOff();
 };
 
 extern MotorController g_motorController;

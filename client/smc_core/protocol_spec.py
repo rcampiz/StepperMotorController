@@ -215,12 +215,5 @@ LIMITS: Dict[str, int] = {
     'binary_chunk_bytes': 64,
     'motor_queue_send_timeout_ms': 50,
     'step_mode_wait_ms': 250,
-    'pos_min': -2097152,
-    'pos_max': 2097151,
     'speed_min': 0,
-    'speed_max': 15625,
-    'accel_min': 1,
-    'accel_max': 4095,
-    'maxspd_min': 1,
-    'maxspd_max': 1023,
 }

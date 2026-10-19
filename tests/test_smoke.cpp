@@ -24,8 +24,14 @@ struct FakeMotor : Drivers::IMotorDriver {
     void goHome() override {}   void goMark() override {} void resetPos() override {}
     void setMaxSpeed(float) override {}
     float getMaxSpeed() override { return 0.0f; }
-    uint32_t getParam(uint8_t) override { return 0; }
-    void setParam(uint8_t, uint32_t) override {}
+    void setMark(int32_t) override {}
+    void setAcceleration(float) override {}
+    void setDeceleration(float) override {}
+    // A chip-neutral driver: its own caps, settings taken as they come, no protocol 2 units
+    const Drivers::DriverCaps& caps() const override { static const Drivers::DriverCaps c = {}; return c; }
+    Drivers::DriverSettings quantize(const Drivers::DriverSettings& s) const override { return s; }
+    Drivers::ApplyResult apply(const Drivers::DriverSettings&) override { return Drivers::ApplyResult::APPLIED; }
+    bool readSettings(Drivers::DriverSettings&) override { return false; }
     Drivers::MotorStatus getStatus() override { return Drivers::MotorStatus{}; }
     Drivers::MotorStatus readState() override { return Drivers::MotorStatus{}; }
     bool isBusy() override { return false; }
@@ -44,6 +50,15 @@ TEST(fake_driver_implements_l4_boundary) {
     d.run(true, 1200.0f);                      // full steps/s
     EXPECT_EQ(m.runs, 1);
     EXPECT_TRUE(m.lastSpeed == 1200.0f);
+    // The boundary's defaults: no reset watch, no diagnostics, no protocol 2 chip units
+    Drivers::LegacyDriverUnits u = {};
+    Drivers::DriverSettings s = {};
+    EXPECT_FALSE(d.checkReset());
+    EXPECT_FALSE(d.toLegacyUnits(s, u));
+    EXPECT_FALSE(d.fromLegacyUnits(u, s));
+    char text[8] = "x";
+    EXPECT_EQ(d.diagnostics(Harness::DriverDiagView::REGISTERS, text, sizeof text), 0u);
+    EXPECT_EQ(text[0], '\0');
 }
 
 TEST(null_platform_primitives_are_usable_on_host) {

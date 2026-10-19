@@ -43,20 +43,29 @@ inline void i64toa(int64_t val, char *buf, size_t bufSize) {
 }
 
 // ============================================================================
-// Argument validation limits (based on powerSTEP01 register sizes)
+// Argument validation limits. Position and speed ranges are the motor driver's
+// (Harness::DriverCaps through IMotorConfigDispatcher::driverCaps()), not chip constants.
 // ============================================================================
 namespace Limits {
-constexpr int32_t POS_MIN = -2097152;
-constexpr int32_t POS_MAX = 2097151;
 constexpr int32_t SPEED_MIN = 0;
-constexpr int32_t SPEED_MAX = 15625;
-constexpr int32_t ACCEL_MIN = 1;
-constexpr int32_t ACCEL_MAX = 4095;
-constexpr int32_t MAXSPD_MIN = 1;
-constexpr int32_t MAXSPD_MAX = 1023;
 constexpr int32_t DIR_MIN = 0;
 constexpr int32_t DIR_MAX = 1;
 } // namespace Limits
+
+/// Position (microsteps) and speed (whole full steps/s) ranges a command may ask for
+struct MotionLimits {
+  int32_t posMin;
+  int32_t posMax;
+  int32_t speedMax;
+};
+
+inline MotionLimits motionLimits(const Harness::DriverCaps &caps) {
+  MotionLimits m;
+  m.posMin = caps.minPositionUsteps;
+  m.posMax = caps.maxPositionUsteps;
+  m.speedMax = static_cast<int32_t>(caps.maxSpeedFsps);
+  return m;
+}
 
 // ============================================================================
 // L2 string ↔ enum mapping (protocol layer owns wire-format strings)

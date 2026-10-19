@@ -102,18 +102,51 @@ public:
         m_real.resetPos();
     }
 
-    uint32_t getParam(uint8_t reg) override {
-        uint32_t val = m_real.getParam(reg);
-        Harness::ITrace::logResult(Harness::ITrace::L3_L4_MOTOR, "[L3<L4]", "getParam", val);
-        return val;
+    void setMark(int32_t positionMicrosteps) override {
+        char detail[16];
+        snprintf(detail, sizeof(detail), "%ld", (long)positionMicrosteps);
+        Harness::ITrace::log(Harness::ITrace::L3_L4_MOTOR, "[L3>L4]", "setMark", detail);
+        m_real.setMark(positionMicrosteps);
     }
 
-    void setParam(uint8_t reg, uint32_t value) override {
-        char detail[16];
-        snprintf(detail, sizeof(detail), "r%u=%lu",
-                 (unsigned)reg, (unsigned long)value);
-        Harness::ITrace::log(Harness::ITrace::L3_L4_MOTOR, "[L3>L4]", "setParam", detail);
-        m_real.setParam(reg, value);
+    void setAcceleration(float fsps2) override {
+        Harness::ITrace::log(Harness::ITrace::L3_L4_MOTOR, "[L3>L4]", "setAcceleration", fsps(fsps2).s);
+        m_real.setAcceleration(fsps2);
+    }
+
+    void setDeceleration(float fsps2) override {
+        Harness::ITrace::log(Harness::ITrace::L3_L4_MOTOR, "[L3>L4]", "setDeceleration", fsps(fsps2).s);
+        m_real.setDeceleration(fsps2);
+    }
+
+    // Pure calls (no bus traffic, any task): forwarded untraced
+    const Drivers::DriverCaps& caps() const override { return m_real.caps(); }
+    Drivers::DriverSettings quantize(const Drivers::DriverSettings& s) const override { return m_real.quantize(s); }
+    bool toLegacyUnits(const Drivers::DriverSettings& s, Drivers::LegacyDriverUnits& out) const override {
+        return m_real.toLegacyUnits(s, out);
+    }
+    bool fromLegacyUnits(const Drivers::LegacyDriverUnits& in, Drivers::DriverSettings& s) const override {
+        return m_real.fromLegacyUnits(in, s);
+    }
+
+    Drivers::ApplyResult apply(const Drivers::DriverSettings& s) override {
+        const Drivers::ApplyResult r = m_real.apply(s);
+        Harness::ITrace::logResult(Harness::ITrace::L3_L4_MOTOR, "[L3<L4]", "apply", static_cast<uint32_t>(r));
+        return r;
+    }
+
+    bool readSettings(Drivers::DriverSettings& inForce) override {
+        Harness::ITrace::log(Harness::ITrace::L3_L4_MOTOR, "[L3>L4]", "readSettings");
+        return m_real.readSettings(inForce);
+    }
+
+    bool checkReset() override {
+        return m_real.checkReset();   // every 500 ms, too noisy
+    }
+
+    size_t diagnostics(Harness::DriverDiagView view, char* buf, size_t size) override {
+        Harness::ITrace::log(Harness::ITrace::L3_L4_MOTOR, "[L3>L4]", "diagnostics");
+        return m_real.diagnostics(view, buf, size);
     }
 
     Drivers::MotorStatus getStatus() override {
@@ -129,6 +162,10 @@ public:
 
     bool flagActive() override {
         return m_real.flagActive();
+    }
+
+    void setStandby(bool standby) override {
+        m_real.setStandby(standby);   // ISR-safe GPIO write (out-of-band E-STOP): never traced
     }
 
 private:

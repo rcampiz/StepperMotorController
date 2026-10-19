@@ -192,7 +192,10 @@ Telemetry structures behind it (`harness/pins/telemetry_types.hpp`):
 Columns: command as typed; minimum arguments and the usage string(s) from the handler;
 what a successful reply contains (ASCII message literals, `<status>` = the service status
 message, JSON command name and keys); error messages the handler can produce besides the
-usage error. "Handler" is the firmware function, for cross-reference.
+usage error. "Handler" is the firmware function, for cross-reference. `<caps>` in an error is
+a limit taken from the motor driver's capabilities (DriverCaps), not a protocol constant: with
+the powerSTEP01 it reads speed 15625 full steps/s, positions -2097152..2097151 microsteps,
+step mode 0-7, the same texts as before.
 
 ### (top level)
 
@@ -206,11 +209,11 @@ usage error. "Handler" is the firmware function, for cross-reference.
 
 | Command | Min args | Usage | Reply | Errors | Handler |
 |---|---|---|---|---|---|
-| `MOT:MOVE` | 2 | MOT:MOVE <rev> REV <dir> [speed]<br>MOT:MOVE <steps> <dir> [speed] \| MOT:MOVE <rev> REV <dir> [speed] | ASCII: `OK <status> or ` | `dir must be 0 or 1`<br>`speed out of range (1-15625 steps/s)`<br>`steps out of range (0-2097151)` | `cmdMove` (motion_handlers.cpp) |
-| `MOT:GOTO` | 1 | MOT:GOTO <pos> [speed] \| MOT:GOTO <rev> REV [speed] | ASCII: `OK <status> or ` | `position out of range (-2097152 to 2097151)`<br>`speed out of range (1-15625 steps/s)` | `cmdGoTo` (motion_handlers.cpp) |
-| `MOT:RUN` | 2 | MOT:RUN <rpm> RPM <dir><br>MOT:RUN <speed> <dir> \| MOT:RUN <rpm> RPM <dir> | ASCII: `OK <status> or ` | `dir must be 0 or 1`<br>`speed out of range (0-15625 steps/s)` | `cmdRun` (motion_handlers.cpp) |
+| `MOT:MOVE` | 2 | MOT:MOVE <rev> REV <dir> [speed]<br>MOT:MOVE <steps> <dir> [speed] \| MOT:MOVE <rev> REV <dir> [speed] | ASCII: `OK <status> or ` | `dir must be 0 or 1`<br>`speed out of range (1-<caps> steps/s)`<br>`steps out of range (0-<caps>)` | `cmdMove` (motion_handlers.cpp) |
+| `MOT:GOTO` | 1 | MOT:GOTO <pos> [speed] \| MOT:GOTO <rev> REV [speed] | ASCII: `OK <status> or ` | `position out of range (<caps> to <caps>)`<br>`speed out of range (1-<caps> steps/s)` | `cmdGoTo` (motion_handlers.cpp) |
+| `MOT:RUN` | 2 | MOT:RUN <rpm> RPM <dir><br>MOT:RUN <speed> <dir> \| MOT:RUN <rpm> RPM <dir> | ASCII: `OK <status> or ` | `dir must be 0 or 1`<br>`speed out of range (0-<caps> steps/s)` | `cmdRun` (motion_handlers.cpp) |
 | `MOT:STOP` | 0 | — | ASCII: `OK <status> or ` | — | `cmdStop` (motion_handlers.cpp) |
-| `MOT:HOME` | 0 | — | ASCII: `OK <status> or ` | `speed out of range (1-15625 steps/s)` | `cmdHome` (motion_handlers.cpp) |
+| `MOT:HOME` | 0 | — | ASCII: `OK <status> or ` | `speed out of range (1-<caps> steps/s)` | `cmdHome` (motion_handlers.cpp) |
 | `MOT:CFG:ACCEL` | 1 | MOT:CFG:ACCEL <steps/s^2> | ASCII: `OK <status> or ` | `accel must be positive` | `cmdAccelPhysical` (config_handlers.cpp) |
 | `MOT:CFG:DECEL` | 1 | MOT:CFG:DECEL <steps/s^2> | ASCII: `OK <status> or ` | `decel must be positive` | `cmdDecelPhysical` (config_handlers.cpp) |
 | `MOT:CFG:MAXSPD` | 1 | MOT:CFG:MAXSPD <steps/s> | ASCII: `OK <status> or ` | `maxspd must be positive` | `cmdMaxSpdPhysical` (config_handlers.cpp) |
@@ -250,7 +253,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 
 | Command | Min args | Usage | Reply | Errors | Handler |
 |---|---|---|---|---|---|
-| `SYNC:QUEUE` | 1 | SYNC:QUEUE <cmd> [args...]<br>SYNC:QUEUE GOTO <position><br>SYNC:QUEUE MOVE <steps> <dir><br>SYNC:QUEUE RUN <speed> <dir> | `OK <status>` | `Unknown queue command`<br>`dir must be 0 or 1`<br>`position out of range (-2097152 to 2097151)`<br>`speed out of range (0-15625 steps/s)`<br>`steps out of range (0-2097151)` | `cmdQueue` (queue_handlers.cpp) |
+| `SYNC:QUEUE` | 1 | SYNC:QUEUE <cmd> [args...]<br>SYNC:QUEUE GOTO <position><br>SYNC:QUEUE MOVE <steps> <dir><br>SYNC:QUEUE RUN <speed> <dir> | `OK <status>` | `Unknown queue command`<br>`dir must be 0 or 1`<br>`position out of range (<caps> to <caps>)`<br>`speed out of range (0-<caps> steps/s)`<br>`steps out of range (0-<caps>)` | `cmdQueue` (queue_handlers.cpp) |
 | `SYNC:START:AT` | 1 | SYNC:START:AT <tick> | ASCII: `OK <status> or SCHEDULED` | — | `cmdStartAt` (queue_handlers.cpp) |
 | `SYNC:ARM` | 0 | — | ASCII: `OK <status> or ARMED` | — | `cmdArm` (queue_handlers.cpp) |
 | `SYNC:START` | 0 | — | ASCII: `OK <status> or RUNNING` | — | `cmdStart` (queue_handlers.cpp) |
@@ -278,11 +281,11 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `CTRL:TRIM:GAINS` | 2 | CTRL:TRIM:GAINS <kp> <ki> | ASCII: `OK Trim gains set`; JSON `CTRL:TRIM:GAINS` keys: `ki`, `kp` | — | `cmdTrimSetGains` (control_handlers.cpp) |
 | `CTRL:TRIM:LIMITS` | 2 | CTRL:TRIM:LIMITS <output_limit> <integral_limit> | ASCII: `OK Trim limits set`; JSON `CTRL:TRIM:LIMITS` keys: `i_limit`, `out_limit` | — | `cmdTrimSetLimits` (control_handlers.cpp) |
 | `CTRL:TRIM:MAXPCT` | 1 | CTRL:TRIM:MAXPCT <1-50> | ASCII: `OK Trim max percent set`; JSON `CTRL:TRIM:MAXPCT` keys: `max_pct` | `maxPct must be 1-50` | `cmdTrimSetMaxPct` (control_handlers.cpp) |
-| `CTRL:SYSID:STEP` | 2 | CTRL:SYSID:STEP <speed_sps> <dir> [dur_ms] [settle_ms] | ASCII: `OK SYSID step started` | `SYSID already running`<br>`speed_sps must be 1-15625` | `cmdSysIdStep` (control_handlers.cpp) |
-| `CTRL:SYSID:RAMP` | 3 | CTRL:SYSID:RAMP <start_sps> <end_sps> <dir> [dur_ms] | ASCII: `OK SYSID ramp started` | `SYSID already running`<br>`speed must be 0-15625 sps` | `cmdSysIdRamp` (control_handlers.cpp) |
-| `CTRL:SYSID:SINE` | 4 | CTRL:SYSID:SINE <baseline> <amplitude> <freq_mHz> <dir> | ASCII: `OK SYSID sine started` | `SYSID already running`<br>`freq_mHz must be 1-5000 (0.001-5.0 Hz)`<br>`speed must be 0-15625 sps` | `cmdSysIdSine` (control_handlers.cpp) |
-| `CTRL:SYSID:TRAPEZOID` | 2 | CTRL:SYSID:TRAPEZOID <speed_sps> <dir> [dur_ms] [settle_ms] | ASCII: `OK SYSID trapezoid started` | `SYSID already running`<br>`speed_sps must be 1-15625` | `cmdSysIdTrapezoid` (control_handlers.cpp) |
-| `CTRL:SYSID:RECT` | 2 | CTRL:SYSID:RECT <speed_sps> <dir> [dur_ms] [settle_ms] | ASCII: `OK SYSID rect started` | `SYSID already running`<br>`speed_sps must be 1-15625` | `cmdSysIdRect` (control_handlers.cpp) |
+| `CTRL:SYSID:STEP` | 2 | CTRL:SYSID:STEP <speed_sps> <dir> [dur_ms] [settle_ms] | ASCII: `OK SYSID step started` | `SYSID already running`<br>`speed_sps must be 1-<caps>` | `cmdSysIdStep` (control_handlers.cpp) |
+| `CTRL:SYSID:RAMP` | 3 | CTRL:SYSID:RAMP <start_sps> <end_sps> <dir> [dur_ms] | ASCII: `OK SYSID ramp started` | `SYSID already running`<br>`speed must be 0-<caps> sps` | `cmdSysIdRamp` (control_handlers.cpp) |
+| `CTRL:SYSID:SINE` | 4 | CTRL:SYSID:SINE <baseline> <amplitude> <freq_mHz> <dir> | ASCII: `OK SYSID sine started` | `SYSID already running`<br>`freq_mHz must be 1-5000 (0.001-5.0 Hz)`<br>`speed must be 0-<caps> sps` | `cmdSysIdSine` (control_handlers.cpp) |
+| `CTRL:SYSID:TRAPEZOID` | 2 | CTRL:SYSID:TRAPEZOID <speed_sps> <dir> [dur_ms] [settle_ms] | ASCII: `OK SYSID trapezoid started` | `SYSID already running`<br>`speed_sps must be 1-<caps>` | `cmdSysIdTrapezoid` (control_handlers.cpp) |
+| `CTRL:SYSID:RECT` | 2 | CTRL:SYSID:RECT <speed_sps> <dir> [dur_ms] [settle_ms] | ASCII: `OK SYSID rect started` | `SYSID already running`<br>`speed_sps must be 1-<caps>` | `cmdSysIdRect` (control_handlers.cpp) |
 | `CTRL:SYSID:DATA?` | 0 | — | ASCII: `<lines> then OK <n>`; JSON `SYSID_DATA` keys: `count`, `lines`, `offset`, `samples`, `total` | `No data ready (test not DONE)`<br>`offset past end` | `cmdSysIdData` (control_handlers.cpp) |
 | `CTRL:CAP:DATA?` | 0 | — | ASCII: `<lines> then OK <n>`; JSON `CAP_DATA` keys: `count`, `lines`, `offset` | — | `cmdCaptureData` (control_handlers.cpp) |
 | `CTRL:MODE?` | 0 | — | ASCII: `OK <formatted text>` | — | `cmdGetMode` (control_handlers.cpp) |
@@ -369,7 +372,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `DRV:CFG:FAULT` | 1 | DRV:CFG:FAULT <ocd> <th_sd> <th_w> <uvlo> <sta> <stb> <cmd>\n<br>DRV:CFG:FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd><br>DRV:CFG:FAULT ACTION <0\|1\|2> | ASCII: `OK Fault enables set (not saved)`, `OK <formatted text>` | `Action must be 0=HardStop, 1=HardHiZ, 2=SoftStop` | `cmdMotorConfigFault` (config_handlers.cpp) |
 | `DRV:CFG:MOTION` | 3 | DRV:CFG:MOTION <acc> <dec> <maxspd> | ASCII: `OK <formatted text>` | `ACC/DEC must be 0-4095`<br>`MAXSPD must be 0-1023` | `cmdMotorConfigMotion` (config_handlers.cpp) |
 | `DRV:CFG:STEPMODE` | 1 | DRV:CFG:STEPMODE <mode><br>DRV:CFG:STEPMODE <mode> (0-7 or 1/2/4/8/16/32/64/128) | ASCII: `OK <formatted text>` | `Invalid mode. Use 0-7 or microstep count (8/16/32/64/128)` | `cmdMotorConfigStepMode` (config_handlers.cpp) |
-| `DRV:STEP_MODE` | 1 | DRV:STEP_MODE <0-7> | ASCII: `OK <formatted text>`; JSON `DRV:STEP_MODE` keys: `microstep_ratio`, `microsteps_per_rev`, `step_mode` | `MOTOR_BUSY: Motor must be idle to change microstep mode`<br>`Step mode must be 0-7`<br>`VERIFY_FAILED: STEP_MODE readback mismatch` | `cmdDrvStepMode` (driver_handlers.cpp) |
+| `DRV:STEP_MODE` | 1 | DRV:STEP_MODE <0-7> | ASCII: `OK <formatted text>`; JSON `DRV:STEP_MODE` keys: `microstep_ratio`, `microsteps_per_rev`, `step_mode` | `MOTOR_BUSY: Motor must be idle to change microstep mode`<br>`Step mode must be 0-<caps>`<br>`VERIFY_FAILED: STEP_MODE readback mismatch` | `cmdDrvStepMode` (driver_handlers.cpp) |
 | `DRV:FULL_STEPS` | 1 | DRV:FULL_STEPS <steps_per_rev> | ASCII: `OK <formatted text>`; JSON `DRV:FULL_STEPS` keys: `full_steps_per_rev`, `microsteps_per_rev` | `Full steps/rev must be 1-10000` | `cmdDrvFullSteps` (driver_handlers.cpp) |
 | `DRV:ENC_PPR` | 1 | DRV:ENC_PPR <pulses_per_rev> | ASCII: `OK <formatted text>`; JSON `DRV:ENC_PPR` keys: `encoder_ppr` | `Encoder PPR must be 1-65535` | `cmdDrvEncoderPPR` (driver_handlers.cpp) |
 | `DRV:CFG?` | 0 | — | ASCII: `<lines> then OK <n>`; JSON `MCONFIG` keys: `count`, `lines` | — | `cmdMotorConfigShow` (config_handlers.cpp) |

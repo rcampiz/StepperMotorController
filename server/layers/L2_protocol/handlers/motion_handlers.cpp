@@ -8,6 +8,7 @@
 namespace Protocol {
 
 void CommandParser::cmdMove(const ParsedCommand &cmd) {
+  const MotionLimits lim = motionLimits(m_dispatcher.driverCaps());
   if (cmd.argCount < 2) {
     respondErr(
         "Usage: MOT:MOVE <steps> <dir> [speed] | MOT:MOVE <rev> REV <dir> [speed]");
@@ -44,8 +45,8 @@ void CommandParser::cmdMove(const ParsedCommand &cmd) {
   }
 
   // Validate steps (within position range)
-  if (steps < 0 || steps > Limits::POS_MAX) {
-    respondErr("steps out of range (0-2097151)");
+  if (steps < 0 || steps > lim.posMax) {
+    respondRange("steps out of range (0-%ld)", lim.posMax);
     return;
   }
 
@@ -56,8 +57,8 @@ void CommandParser::cmdMove(const ParsedCommand &cmd) {
   uint32_t speedOverride = 0;
   if (cmd.argCount > speedArgIdx) {
     auto spd = static_cast<int32_t>(atol(cmd.args[speedArgIdx]));
-    if (spd < 1 || spd > Limits::SPEED_MAX) {
-      respondErr("speed out of range (1-15625 steps/s)");
+    if (spd < 1 || spd > lim.speedMax) {
+      respondRange("speed out of range (1-%ld steps/s)", lim.speedMax);
       return;
     }
     speedOverride = static_cast<uint32_t>(spd);
@@ -68,6 +69,7 @@ void CommandParser::cmdMove(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdGoTo(const ParsedCommand &cmd) {
+  const MotionLimits lim = motionLimits(m_dispatcher.driverCaps());
   if (cmd.argCount < 1) {
     respondErr("Usage: MOT:GOTO <pos> [speed] | MOT:GOTO <rev> REV [speed]");
     return;
@@ -91,8 +93,8 @@ void CommandParser::cmdGoTo(const ParsedCommand &cmd) {
   }
 
   // Validate position (22-bit signed range)
-  if (position < Limits::POS_MIN || position > Limits::POS_MAX) {
-    respondErr("position out of range (-2097152 to 2097151)");
+  if (position < lim.posMin || position > lim.posMax) {
+    respondRange("position out of range (%ld to %ld)", lim.posMin, lim.posMax);
     return;
   }
 
@@ -101,8 +103,8 @@ void CommandParser::cmdGoTo(const ParsedCommand &cmd) {
   uint32_t speedOverride = 0;
   if (cmd.argCount > speedArgIdx) {
     auto spd = static_cast<int32_t>(atol(cmd.args[speedArgIdx]));
-    if (spd < 1 || spd > Limits::SPEED_MAX) {
-      respondErr("speed out of range (1-15625 steps/s)");
+    if (spd < 1 || spd > lim.speedMax) {
+      respondRange("speed out of range (1-%ld steps/s)", lim.speedMax);
       return;
     }
     speedOverride = static_cast<uint32_t>(spd);
@@ -113,6 +115,7 @@ void CommandParser::cmdGoTo(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdRun(const ParsedCommand &cmd) {
+  const MotionLimits lim = motionLimits(m_dispatcher.driverCaps());
   if (cmd.argCount < 2) {
     respondErr("Usage: MOT:RUN <speed> <dir> | MOT:RUN <rpm> RPM <dir>");
     return;
@@ -147,8 +150,8 @@ void CommandParser::cmdRun(const ParsedCommand &cmd) {
   }
 
   // Validate speed (in steps/s)
-  if (speed < Limits::SPEED_MIN || speed > Limits::SPEED_MAX) {
-    respondErr("speed out of range (0-15625 steps/s)");
+  if (speed < Limits::SPEED_MIN || speed > lim.speedMax) {
+    respondRange("speed out of range (0-%ld steps/s)", lim.speedMax);
     return;
   }
 
@@ -207,13 +210,14 @@ void CommandParser::cmdDisable() {
 }
 
 void CommandParser::cmdHome(const ParsedCommand &cmd) {
+  const MotionLimits lim = motionLimits(m_dispatcher.driverCaps());
   // Optional speed override (steps/s) — temporarily sets MAX_SPEED for this
   // move
   uint32_t speedOverride = 0;
   if (cmd.argCount >= 1) {
     auto spd = static_cast<int32_t>(atol(cmd.args[0]));
-    if (spd < 1 || spd > Limits::SPEED_MAX) {
-      respondErr("speed out of range (1-15625 steps/s)");
+    if (spd < 1 || spd > lim.speedMax) {
+      respondRange("speed out of range (1-%ld steps/s)", lim.speedMax);
       return;
     }
     speedOverride = static_cast<uint32_t>(spd);

@@ -59,6 +59,7 @@ inline int run() {
 #define EXPECT_FALSE(x) do { if (x)    minitest::fail(__FILE__, __LINE__, "expected false: " #x); } while (0)
 #define EXPECT_EQ(a, b) do { if (!((a) == (b))) minitest::fail(__FILE__, __LINE__, "expected equal: " #a " == " #b); } while (0)
 #define EXPECT_NE(a, b) do { if ((a) == (b))    minitest::fail(__FILE__, __LINE__, "expected not equal: " #a " != " #b); } while (0)
+#define EXPECT_NEAR(a, b, tol) do { double d_ = static_cast<double>(a) - static_cast<double>(b); if (d_ < 0) d_ = -d_; if (!(d_ <= (tol))) minitest::fail(__FILE__, __LINE__, "expected near: " #a " ~ " #b); } while (0)
 #define EXPECT_STREQ(a, b) do { if (std::strcmp((a), (b)) != 0) minitest::fail(__FILE__, __LINE__, "expected string equal: " #a " == " #b); } while (0)
 
 #ifndef MINITEST_NO_MAIN

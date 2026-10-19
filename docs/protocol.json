@@ -16,14 +16,7 @@
     "binary_chunk_bytes": 64,
     "motor_queue_send_timeout_ms": 50,
     "step_mode_wait_ms": 250,
-    "pos_min": -2097152,
-    "pos_max": 2097151,
-    "speed_min": 0,
-    "speed_max": 15625,
-    "accel_min": 1,
-    "accel_max": 4095,
-    "maxspd_min": 1,
-    "maxspd_max": 1023
+    "speed_min": 0
   },
   "status_codes": [
     {
@@ -504,8 +497,8 @@
       "json": [],
       "errors": [
         "dir must be 0 or 1",
-        "speed out of range (1-15625 steps/s)",
-        "steps out of range (0-2097151)"
+        "speed out of range (1-<caps> steps/s)",
+        "steps out of range (0-<caps>)"
       ],
       "note": "",
       "multiline": false,
@@ -526,8 +519,8 @@
       ],
       "json": [],
       "errors": [
-        "position out of range (-2097152 to 2097151)",
-        "speed out of range (1-15625 steps/s)"
+        "position out of range (<caps> to <caps>)",
+        "speed out of range (1-<caps> steps/s)"
       ],
       "note": "",
       "multiline": false,
@@ -550,7 +543,7 @@
       "json": [],
       "errors": [
         "dir must be 0 or 1",
-        "speed out of range (0-15625 steps/s)"
+        "speed out of range (0-<caps> steps/s)"
       ],
       "note": "",
       "multiline": false,
@@ -586,7 +579,7 @@
       ],
       "json": [],
       "errors": [
-        "speed out of range (1-15625 steps/s)"
+        "speed out of range (1-<caps> steps/s)"
       ],
       "note": "",
       "multiline": false,
@@ -1257,9 +1250,9 @@
       "errors": [
         "Unknown queue command",
         "dir must be 0 or 1",
-        "position out of range (-2097152 to 2097151)",
-        "speed out of range (0-15625 steps/s)",
-        "steps out of range (0-2097151)"
+        "position out of range (<caps> to <caps>)",
+        "speed out of range (0-<caps> steps/s)",
+        "steps out of range (0-<caps>)"
       ],
       "note": "",
       "multiline": false,
@@ -1668,7 +1661,7 @@
       "json": [],
       "errors": [
         "SYSID already running",
-        "speed_sps must be 1-15625"
+        "speed_sps must be 1-<caps>"
       ],
       "note": "",
       "multiline": false,
@@ -1690,7 +1683,7 @@
       "json": [],
       "errors": [
         "SYSID already running",
-        "speed must be 0-15625 sps"
+        "speed must be 0-<caps> sps"
       ],
       "note": "",
       "multiline": false,
@@ -1713,7 +1706,7 @@
       "errors": [
         "SYSID already running",
         "freq_mHz must be 1-5000 (0.001-5.0 Hz)",
-        "speed must be 0-15625 sps"
+        "speed must be 0-<caps> sps"
       ],
       "note": "",
       "multiline": false,
@@ -1735,7 +1728,7 @@
       "json": [],
       "errors": [
         "SYSID already running",
-        "speed_sps must be 1-15625"
+        "speed_sps must be 1-<caps>"
       ],
       "note": "",
       "multiline": false,
@@ -1757,7 +1750,7 @@
       "json": [],
       "errors": [
         "SYSID already running",
-        "speed_sps must be 1-15625"
+        "speed_sps must be 1-<caps>"
       ],
       "note": "",
       "multiline": false,
@@ -3007,7 +3000,7 @@
       ],
       "errors": [
         "MOTOR_BUSY: Motor must be idle to change microstep mode",
-        "Step mode must be 0-7",
+        "Step mode must be 0-<caps>",
         "VERIFY_FAILED: STEP_MODE readback mismatch"
       ],
       "note": "",

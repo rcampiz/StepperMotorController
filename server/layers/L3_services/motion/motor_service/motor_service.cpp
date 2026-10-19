@@ -10,7 +10,8 @@
  *                        re-asserts Hi-Z; clearEmergencyStop() re-enables them after CLEAR.
  *
  * Step mode (Comms task -> Motor task -> Comms task): setStepModeSafe() queues a SetStepMode
- * command and waits (bounded) for the readback the Motor task publishes in an atomic slot.
+ * command (log2 of the microsteps) and waits (bounded) for the resolution the driver reads back,
+ * published by the Motor task in an atomic slot.
  * Debug pause (SPI_STOP/SPI_START): a flag; while set the Motor task does not touch the driver.
  *
  * All MotorController mutation stays on the Motor task. The Comms task only touches the
@@ -129,10 +130,13 @@ bool MotorService::estopTiming(uint32_t& pinUs, uint32_t& hizUs) const
 
 void MotorService::handleSetStepMode(uint8_t mode)
 {
+    // The protocol's step mode is log2 of the microsteps; the driver caps the resolution
     uint8_t readback = 0xFF;
     bool ok = false;
-    if (m_controller != nullptr && mode <= 7) {
-        ok = m_controller->setStepModeSafe(mode, readback);
+    if (m_controller != nullptr && mode <= MAX_STEP_MODE) {
+        uint16_t effective = 0;
+        ok = m_controller->setMicrostepsSafe(static_cast<uint16_t>(1u << mode), effective);
+        readback = (effective != 0) ? Harness::microstepsLog2(effective) : 0xFF;
     }
     m_stepModeResult.store(STEP_MODE_ANSWERED | (ok ? STEP_MODE_OK : 0u) | readback);
 }
@@ -176,7 +180,7 @@ void MotorService::onCommand(const MotorCommand& cmd)
         return;
     }
     if (isJob(cmd.type)) {
-        handleJob(cmd.type);
+        handleJob(cmd.type, cmd.param1);
         return;
     }
     if (cmd.type == MotorCmdType::SetStepMode) {
@@ -247,7 +251,7 @@ bool MotorService::isJob(MotorCmdType t)
     return t == MotorCmdType::Reinit || t == MotorCmdType::ApplyConfig || t == MotorCmdType::GetDebugInfo;
 }
 
-bool MotorService::runJob(MotorCmdType type)
+bool MotorService::runJob(MotorCmdType type, int32_t param)
 {
     if (m_controller == nullptr) {
         return false;
@@ -255,6 +259,7 @@ bool MotorService::runJob(MotorCmdType type)
     m_jobResult.store(JOB_PENDING);
     MotorCommand cmd = {};
     cmd.type = type;
+    cmd.param1 = param;
     if (!sendCommand(cmd, SEND_TIMEOUT_MS)) {
         return false;
     }
@@ -268,7 +273,7 @@ bool MotorService::runJob(MotorCmdType type)
     return (result & JOB_ANSWERED) != 0u && (result & JOB_OK) != 0u;
 }
 
-void MotorService::handleJob(MotorCmdType type)
+void MotorService::handleJob(MotorCmdType type, int32_t param)
 {
     bool ok = false;
     if (m_controller != nullptr) {
@@ -280,14 +285,13 @@ void MotorService::handleJob(MotorCmdType type)
             case MotorCmdType::ApplyConfig: {
                 ok = m_controller->applyConfig();
                 if (!ok) {
-                    // Bridges on: STEP_MODE needs the Hi-Z path, which is ours to run here
-                    uint8_t readback = 0xFF;
-                    ok = m_controller->setStepModeSafe(motion.stepper.config.getStepMode(), readback);
+                    // Outputs on: what needs them off is ours to apply here (released briefly)
+                    ok = m_controller->applyConfigOutputsOff();
                 }
                 break;
             }
             case MotorCmdType::GetDebugInfo:
-                m_controller->getDebugInfo(m_jobDebugInfo);
+                m_controller->getDebugInfo(m_jobDebugInfo, static_cast<Harness::DriverDiagView>(param));
                 ok = true;
                 break;
             default:
@@ -314,9 +318,9 @@ bool MotorService::applyConfig()
     return runJob(MotorCmdType::ApplyConfig);
 }
 
-bool MotorService::getDebugInfo(Harness::MotorDebugParams& out)
+bool MotorService::getDebugInfo(Harness::MotorDebugParams& out, Harness::DriverDiagView view)
 {
-    if (!runJob(MotorCmdType::GetDebugInfo)) {
+    if (!runJob(MotorCmdType::GetDebugInfo, static_cast<int32_t>(view))) {
         return false;
     }
     out = m_jobDebugInfo;
@@ -326,7 +330,7 @@ bool MotorService::getDebugInfo(Harness::MotorDebugParams& out)
 bool MotorService::setStepModeSafe(uint8_t mode, uint8_t& readback)
 {
     readback = 0xFF;
-    if (m_controller == nullptr || mode > 7) {
+    if (m_controller == nullptr || mode > MAX_STEP_MODE) {
         return false;
     }
     // Message to the Motor task: it owns the driver, so it rewrites STEP_MODE between its own

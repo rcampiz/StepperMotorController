@@ -606,6 +606,12 @@ void CommandParser::respondErr(const char *msg) {
   respondErr(strncmp(msg, "Usage:", 6) == 0 ? "USAGE" : "ERROR", msg);
 }
 
+void CommandParser::respondRange(const char *fmt, long a, long b) {
+  char msg[64];
+  snprintf(msg, sizeof(msg), fmt, a, b);
+  respondErr(msg);
+}
+
 // F6: every error carries a machine-readable code: ASCII "ERROR <CODE> <message>",
 // JSON "code":"<CODE>". Clients split the ASCII form on the first two spaces.
 void CommandParser::respondErr(const char *code, const char *msg) {

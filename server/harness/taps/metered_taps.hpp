@@ -175,8 +175,18 @@ public:
     void resetPos() override { Meter::Scope m(N); m_real.resetPos(); }
     void setMaxSpeed(float fullStepsPerSec) override { Meter::Scope m(N); m_real.setMaxSpeed(fullStepsPerSec); }
     float getMaxSpeed() override { Meter::Scope m(N); return m_real.getMaxSpeed(); }
-    uint32_t getParam(uint8_t reg) override { Meter::Scope m(N); return m_real.getParam(reg); }
-    void setParam(uint8_t reg, uint32_t value) override { Meter::Scope m(N); m_real.setParam(reg, value); }
+    void setMark(int32_t positionMicrosteps) override { Meter::Scope m(N); m_real.setMark(positionMicrosteps); }
+    void setAcceleration(float fsps2) override { Meter::Scope m(N); m_real.setAcceleration(fsps2); }
+    void setDeceleration(float fsps2) override { Meter::Scope m(N); m_real.setDeceleration(fsps2); }
+    // Pure calls (no bus traffic, any task): forwarded, not counted
+    const Drivers::DriverCaps& caps() const override { return m_real.caps(); }
+    Drivers::DriverSettings quantize(const Drivers::DriverSettings& s) const override { return m_real.quantize(s); }
+    bool toLegacyUnits(const Drivers::DriverSettings& s, Drivers::LegacyDriverUnits& out) const override { return m_real.toLegacyUnits(s, out); }
+    bool fromLegacyUnits(const Drivers::LegacyDriverUnits& in, Drivers::DriverSettings& s) const override { return m_real.fromLegacyUnits(in, s); }
+    Drivers::ApplyResult apply(const Drivers::DriverSettings& s) override { Meter::Scope m(N); return m_real.apply(s); }
+    bool readSettings(Drivers::DriverSettings& inForce) override { Meter::Scope m(N); return m_real.readSettings(inForce); }
+    bool checkReset() override { Meter::Scope m(N); return m_real.checkReset(); }
+    size_t diagnostics(Harness::DriverDiagView view, char* buf, size_t size) override { Meter::Scope m(N); return m_real.diagnostics(view, buf, size); }
     Drivers::MotorStatus getStatus() override { Meter::Scope m(N); return m_real.getStatus(); }
     Drivers::MotorStatus readState() override { Meter::Scope m(N); return m_real.readState(); }
     bool isBusy() override { return m_real.isBusy(); }              // a pin read, not a crossing worth counting

@@ -119,7 +119,7 @@ void DebugService::cmdMotorDebug(Harness::IResponseSink& out)
         return;
     }
     Harness::MotorDebugParams info;
-    m_motorCtrl->getDebugInfo(info);
+    m_motorCtrl->getDebugInfo(info, Harness::DriverDiagView::REGISTERS);
 
     // Flags decoded by the driver; STATUS is printed raw for the bring-up record
     const char *hiZ = info.outputsOff ? "HiZ" : "Active";
@@ -131,21 +131,22 @@ void DebugService::cmdMotorDebug(Harness::IResponseSink& out)
     const bool ocd = (info.faults & Harness::DriverFault::OVERCURRENT) != 0u;
     const bool stall = (info.faults & Harness::DriverFault::STALL) != 0u;
 
+    // Line 1: the decoded flags; then the driver's own register dump (opaque here, it carries
+    // the position); a driver without one gets the position on its own line
     char buf[256];
-    snprintf(buf, sizeof(buf),
-             "STATUS=%04X (%s %s%s%s%s%s%s%s)\n"
-             "KVAL: HOLD=%02X RUN=%02X ACC=%02X DEC=%02X\n"
-             "ACC=%u DEC=%u MAXSPD=%u POS=%ld\n"
-             "ADC_OUT=%u CONFIG=%04X T_FAST=%02X",
-             (unsigned)info.status, hiZ, busy, cmdErr ? " CMDERR" : "",
-             uvlo ? " UVLO" : "",
-             thStatus >= 2 ? " TH_SD" : (thStatus >= 1 ? " TH_WARN" : ""),
-             ocd ? " OCD" : "", stall ? " STALL" : "",
-             "", (unsigned)info.kvalHold,
-             (unsigned)info.kvalRun, (unsigned)info.kvalAcc,
-             (unsigned)info.kvalDec, (unsigned)info.accel, (unsigned)info.decel,
-             (unsigned)info.maxSpeed, (long)info.absPos, (unsigned)info.adcOut,
-             (unsigned)info.config, (unsigned)info.tFast);
+    if (info.driverText[0] != '\0') {
+        snprintf(buf, sizeof(buf), "STATUS=%04X (%s %s%s%s%s%s%s)\n%s",
+                 (unsigned)info.status, hiZ, busy, cmdErr ? " CMDERR" : "",
+                 uvlo ? " UVLO" : "",
+                 thStatus >= 2 ? " TH_SD" : (thStatus >= 1 ? " TH_WARN" : ""),
+                 ocd ? " OCD" : "", stall ? " STALL" : "", info.driverText);
+    } else {
+        snprintf(buf, sizeof(buf), "STATUS=%04X (%s %s%s%s%s%s%s)\nPOS=%ld",
+                 (unsigned)info.status, hiZ, busy, cmdErr ? " CMDERR" : "",
+                 uvlo ? " UVLO" : "",
+                 thStatus >= 2 ? " TH_SD" : (thStatus >= 1 ? " TH_WARN" : ""),
+                 ocd ? " OCD" : "", stall ? " STALL" : "", (long)info.absPos);
+    }
     out.writeLine(buf);
 }
 

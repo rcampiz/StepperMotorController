@@ -11,6 +11,7 @@
 
 #include "L4_drivers/devices/powerstep01_status.hpp"
 #include "L4_drivers/devices/powerstep01_units.hpp"
+#include "L4_drivers/devices/powerstep01_settings.hpp"
 #include "harness/defs/harness_l4_l5.hpp"
 #include "L4_drivers/boundary/imotor_driver.hpp"
 
@@ -137,7 +138,44 @@ public:
 
         // Clear any faults from initialization
         getStatus();
+
+        // What init left in GATECFG1 is the signature the reset watch compares against
+        m_resetWatch.arm(*this);
     }
+
+    // --- Settings (driver boundary step 3): the engine in powerstep01_settings.hpp ---
+    const DriverCaps& caps() const override { return PowerStepSettings::caps(); }
+    DriverSettings quantize(const DriverSettings& s) const override { return PowerStepSettings::quantize(s); }
+    ApplyResult apply(const DriverSettings& s) override { return PowerStepSettings::apply(*this, s); }
+    bool readSettings(DriverSettings& inForce) override
+    {
+        inForce = PowerStepSettings::readBack(*this);
+        return true;
+    }
+    bool checkReset() override { return m_resetWatch.check(*this); }
+    size_t diagnostics(Harness::DriverDiagView view, char* buf, size_t size) override
+    {
+        return PowerStepSettings::diagnostics(*this, view, buf, size);
+    }
+    bool toLegacyUnits(const DriverSettings& s, LegacyDriverUnits& out) const override
+    {
+        PowerStepSettings::toLegacy(s, out);
+        return true;
+    }
+    bool fromLegacyUnits(const LegacyDriverUnits& in, DriverSettings& s) const override
+    {
+        PowerStepSettings::fromLegacy(in, s);
+        return true;
+    }
+    void setAcceleration(float fsps2) override { setParam(Reg::ACC, PowerStepSettings::fsps2ToAcc(fsps2)); }
+    void setDeceleration(float fsps2) override { setParam(Reg::DEC, PowerStepSettings::fsps2ToAcc(fsps2)); }
+    void setMark(int32_t positionMicrosteps) override { setParam(Reg::MARK, static_cast<uint32_t>(positionMicrosteps)); }
+
+    // Register port for the settings engine (L4 only; nothing above L4 names a register)
+    uint32_t readReg(uint8_t reg) { return getParam(static_cast<Reg>(reg)); }
+    void writeReg(uint8_t reg, uint32_t value) { setParam(static_cast<Reg>(reg), value); }
+    bool outputsOff() { return getStatus().hiZ(); }
+    void clearFaults() { (void)getStatus(); }
 
     Drivers::MotorStatus getStatus() override {
         m_spi.lock();
@@ -149,14 +187,6 @@ public:
         uint8_t lo = transferByte(0x00);
         m_spi.unlock();
         return decodePowerStepStatus(static_cast<uint16_t>((hi << 8) | lo));   // the bit layout stays in L4
-    }
-
-    // IMotorDriver overrides (uint8_t register address)
-    uint32_t getParam(uint8_t reg) override {
-        return getParam(static_cast<Reg>(reg));
-    }
-    void setParam(uint8_t reg, uint32_t value) override {
-        setParam(static_cast<Reg>(reg), value);
     }
 
     uint32_t getParam(Reg reg) {
@@ -266,8 +296,9 @@ private:
     Board::IGPIO& m_stbyRst;
     Board::IGPIO& m_busy;
     Board::IGPIO& m_flag;
+    PowerStepSettings::ResetWatch m_resetWatch;
 
-    void csLow()  { m_cs.write(false); }
+    void csLow() { m_cs.write(false); }
     void csHigh() { m_cs.write(true); }
 
     /**

@@ -11,8 +11,8 @@
 #include <chrono>
 #include <cstdio>
 
-using Drivers::MotorReg::ABS_POS;
-using Drivers::MotorReg::SPEED;
+using Drivers::PowerStepReg::ABS_POS;
+using Drivers::PowerStepReg::SPEED;
 
 namespace Sim {
 
@@ -37,22 +37,22 @@ void FakePowerStep::logMotion(const char* what, long long value) {
 void FakePowerStep::resetRegisters() {
     // powerSTEP01 power-on defaults (voltage mode)
     for (auto& r : regs_) r = 0;
-    regs_[Drivers::MotorReg::ACC] = 0x08A;
-    regs_[Drivers::MotorReg::DEC] = 0x08A;
-    regs_[Drivers::MotorReg::MAX_SPEED] = 0x041;
-    regs_[Drivers::MotorReg::MIN_SPEED] = 0x000;
-    regs_[Drivers::MotorReg::FS_SPD] = 0x027;
-    regs_[Drivers::MotorReg::KVAL_HOLD] = 0x29;
-    regs_[Drivers::MotorReg::KVAL_RUN] = 0x29;
-    regs_[Drivers::MotorReg::KVAL_ACC] = 0x29;
-    regs_[Drivers::MotorReg::KVAL_DEC] = 0x29;
-    regs_[Drivers::MotorReg::INT_SPEED] = 0x0408;
-    regs_[Drivers::MotorReg::OCD_TH] = 0x08;
-    regs_[Drivers::MotorReg::STALL_TH] = 0x10;
-    regs_[Drivers::MotorReg::ADC_OUT] = 2;       // a 12 V supply on the shield divider
-    regs_[Drivers::MotorReg::STEP_MODE] = 0x07;
-    regs_[Drivers::MotorReg::ALARM_EN] = 0xFF;
-    regs_[Drivers::MotorReg::CONFIG] = 0x2C88;
+    regs_[Drivers::PowerStepReg::ACC] = 0x08A;
+    regs_[Drivers::PowerStepReg::DEC] = 0x08A;
+    regs_[Drivers::PowerStepReg::MAX_SPEED] = 0x041;
+    regs_[Drivers::PowerStepReg::MIN_SPEED] = 0x000;
+    regs_[Drivers::PowerStepReg::FS_SPD] = 0x027;
+    regs_[Drivers::PowerStepReg::KVAL_HOLD] = 0x29;
+    regs_[Drivers::PowerStepReg::KVAL_RUN] = 0x29;
+    regs_[Drivers::PowerStepReg::KVAL_ACC] = 0x29;
+    regs_[Drivers::PowerStepReg::KVAL_DEC] = 0x29;
+    regs_[Drivers::PowerStepReg::INT_SPEED] = 0x0408;
+    regs_[Drivers::PowerStepReg::OCD_TH] = 0x08;
+    regs_[Drivers::PowerStepReg::STALL_TH] = 0x10;
+    regs_[Drivers::PowerStepReg::ADC_OUT] = 2;       // a 12 V supply on the shield divider
+    regs_[Drivers::PowerStepReg::STEP_MODE] = 0x07;
+    regs_[Drivers::PowerStepReg::ALARM_EN] = 0xFF;
+    regs_[Drivers::PowerStepReg::CONFIG] = 0x2C88;
 }
 
 void FakePowerStep::update() {
@@ -120,6 +120,7 @@ void FakePowerStep::init() {
     mode_ = Mode::Idle;
     hiZ_ = true;
     last_ = nowSeconds();
+    resetWatch_.arm(*this);
 }
 
 void FakePowerStep::setStandby(bool standby) {
@@ -140,18 +141,18 @@ void FakePowerStep::run(bool forward, float fullStepsPerSec) {
 }
 
 void FakePowerStep::setMaxSpeed(float fullStepsPerSec) {
-    setParam(Drivers::MotorReg::MAX_SPEED, Drivers::PowerStepUnits::fspsToMaxSpeedReg(fullStepsPerSec));
+    writeReg(Drivers::PowerStepReg::MAX_SPEED, Drivers::PowerStepUnits::fspsToMaxSpeedReg(fullStepsPerSec));
 }
 
 float FakePowerStep::getMaxSpeed() {
-    return Drivers::PowerStepUnits::maxSpeedRegToFsps(getParam(Drivers::MotorReg::MAX_SPEED));
+    return Drivers::PowerStepUnits::maxSpeedRegToFsps(readReg(Drivers::PowerStepReg::MAX_SPEED));
 }
 
 Drivers::MotorStatus FakePowerStep::readState() {
     std::lock_guard<std::recursive_mutex> lk(m_);
     Drivers::MotorStatus s = getStatus();
-    s.positionUsteps = Drivers::PowerStepUnits::absPosToUsteps(getParam(ABS_POS));
-    s.speedFsps = Drivers::PowerStepUnits::speedRegToFsps(getParam(SPEED));
+    s.positionUsteps = Drivers::PowerStepUnits::absPosToUsteps(readReg(ABS_POS));
+    s.speedFsps = Drivers::PowerStepUnits::speedRegToFsps(readReg(SPEED));
     return s;
 }
 
@@ -230,7 +231,7 @@ void FakePowerStep::hardHiZ() {
 void FakePowerStep::goHome() { goTo(0); }
 
 void FakePowerStep::goMark() {
-    goTo(static_cast<int32_t>(regs_[Drivers::MotorReg::MARK]));
+    goTo(static_cast<int32_t>(regs_[Drivers::PowerStepReg::MARK]));
 }
 
 void FakePowerStep::resetPos() {
@@ -240,7 +241,58 @@ void FakePowerStep::resetPos() {
     if (mode_ == Mode::Position) targetPos_ = 0.0;
 }
 
-uint32_t FakePowerStep::getParam(uint8_t reg) {
+void FakePowerStep::setMark(int32_t positionMicrosteps) {
+    writeReg(Drivers::PowerStepReg::MARK, static_cast<uint32_t>(positionMicrosteps));
+}
+
+void FakePowerStep::setAcceleration(float fsps2) {
+    writeReg(Drivers::PowerStepReg::ACC, Drivers::PowerStepSettings::fsps2ToAcc(fsps2));
+}
+
+void FakePowerStep::setDeceleration(float fsps2) {
+    writeReg(Drivers::PowerStepReg::DEC, Drivers::PowerStepSettings::fsps2ToAcc(fsps2));
+}
+
+const Drivers::DriverCaps& FakePowerStep::caps() const {
+    return Drivers::PowerStepSettings::caps();
+}
+
+Drivers::DriverSettings FakePowerStep::quantize(const Drivers::DriverSettings& s) const {
+    return Drivers::PowerStepSettings::quantize(s);
+}
+
+Drivers::ApplyResult FakePowerStep::apply(const Drivers::DriverSettings& s) {
+    std::lock_guard<std::recursive_mutex> lk(m_);
+    return Drivers::PowerStepSettings::apply(*this, s);
+}
+
+bool FakePowerStep::readSettings(Drivers::DriverSettings& inForce) {
+    std::lock_guard<std::recursive_mutex> lk(m_);
+    inForce = Drivers::PowerStepSettings::readBack(*this);
+    return true;
+}
+
+bool FakePowerStep::checkReset() {
+    std::lock_guard<std::recursive_mutex> lk(m_);
+    return resetWatch_.check(*this);
+}
+
+size_t FakePowerStep::diagnostics(Harness::DriverDiagView view, char* buf, size_t size) {
+    std::lock_guard<std::recursive_mutex> lk(m_);
+    return Drivers::PowerStepSettings::diagnostics(*this, view, buf, size);
+}
+
+bool FakePowerStep::toLegacyUnits(const Drivers::DriverSettings& s, Drivers::LegacyDriverUnits& out) const {
+    Drivers::PowerStepSettings::toLegacy(s, out);
+    return true;
+}
+
+bool FakePowerStep::fromLegacyUnits(const Drivers::LegacyDriverUnits& in, Drivers::DriverSettings& s) const {
+    Drivers::PowerStepSettings::fromLegacy(in, s);
+    return true;
+}
+
+uint32_t FakePowerStep::readReg(uint8_t reg) {
     std::lock_guard<std::recursive_mutex> lk(m_);
     update();
     if (reg == ABS_POS) {
@@ -252,7 +304,7 @@ uint32_t FakePowerStep::getParam(uint8_t reg) {
     return reg < 32 ? regs_[reg] : 0;
 }
 
-void FakePowerStep::setParam(uint8_t reg, uint32_t value) {
+void FakePowerStep::writeReg(uint8_t reg, uint32_t value) {
     std::lock_guard<std::recursive_mutex> lk(m_);
     update();
     if (reg == ABS_POS) {
@@ -261,7 +313,7 @@ void FakePowerStep::setParam(uint8_t reg, uint32_t value) {
         pos_ = p;
         return;
     }
-    if (reg == Drivers::MotorReg::STEP_MODE && !hiZ_) {
+    if (reg == Drivers::PowerStepReg::STEP_MODE && !hiZ_) {
         // STEP_MODE is writable only with the bridges in Hi-Z (datasheet "WH" register);
         // measured on hardware 2026-10-17: the write is silently ignored otherwise.
         logMotion("stepmode-ignored", static_cast<long long>(value));

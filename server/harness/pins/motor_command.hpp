@@ -23,20 +23,20 @@ enum class MotorCmdType : uint8_t {
     GoHome,         // Return to home position: param2 = speed override (full steps/s, 0 = none)
     GoMark,         // Go to mark position
     ResetPos,       // Set current position as zero
-    SetAccel,       // param1 = acceleration value
-    SetDecel,       // param1 = deceleration value
-    SetMaxSpeed,    // param1 = MAX_SPEED config register value (driver boundary step 3: physical)
-    SetMark,        // param1 = mark position
+    SetAccel,       // param1 = profile acceleration, full steps/s^2 (live)
+    SetDecel,       // param1 = profile deceleration, full steps/s^2 (live)
+    SetMaxSpeed,    // param1 = profile speed ceiling, full steps/s (live)
+    SetMark,        // param1 = mark position, microsteps
     GetStatus,      // Trigger status read and telemetry update
-    SetStepMode,    // param1 = STEP_MODE (0..7); handled by MotorService on the Motor task, readback published
+    SetStepMode,    // param1 = log2 of the microsteps per full step; handled by MotorService on the Motor task, readback published
     StartAt,        // param1 = TickTimer tick (us, bit-cast); the Motor task waits for it, then flushes the
                     // armed CommandQueue itself (SYNC:START:AT), so the Comms task never blocks
     // Motor-task jobs (Phase 4 step 5): the Comms task used to run these on the controller
     // directly, interleaving with the Motor task's own driver sequences. Now they are
     // messages answered through MotorService's job slot (bounded wait on the Comms side).
     Reinit,         // IMotorDriver::init() + applyConfig()
-    ApplyConfig,    // write the saved config (STEP_MODE via the Hi-Z-safe path when the bridges are on)
-    GetDebugInfo    // read every register into the job's MotorDebugParams
+    ApplyConfig,    // apply the saved driver settings (outputs released briefly when the driver needs them off)
+    GetDebugInfo    // param1 = Harness::DriverDiagView: the decoded state + the driver's diagnostic text
 };
 
 struct MotorCommand {

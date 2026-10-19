@@ -55,6 +55,10 @@ Harness::ServiceStatus ServiceDispatcher::configSetMaxSpeedPhysical(uint32_t ste
     return m_config->configSetMaxSpeedPhysical(stepsPerS);
 }
 
+Harness::DriverCaps ServiceDispatcher::driverCaps() {
+    return m_config->driverCaps();
+}
+
 uint32_t ServiceDispatcher::getMicrostepsPerRev() {
     return m_config->getMicrostepsPerRev();
 }
@@ -373,8 +377,8 @@ bool ServiceDispatcher::motorApplyConfig() {
     return m_motorDrv->motorApplyConfig();
 }
 
-bool ServiceDispatcher::motorGetDebugInfo(Harness::MotorDebugParams& out) {
-    return m_motorDrv->motorGetDebugInfo(out);
+bool ServiceDispatcher::motorGetDebugInfo(Harness::MotorDebugParams& out, Harness::DriverDiagView view) {
+    return m_motorDrv->motorGetDebugInfo(out, view);
 }
 
 bool ServiceDispatcher::motorSetStepModeSafe(uint8_t mode, uint8_t& readback) {

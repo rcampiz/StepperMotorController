@@ -14,6 +14,7 @@
 #pragma once
 
 #include "L4_drivers/boundary/imotor_driver.hpp"
+#include "L4_drivers/devices/powerstep01_settings.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -44,8 +45,27 @@ public:
     void resetPos() override;
     void setMaxSpeed(float fullStepsPerSec) override;
     float getMaxSpeed() override;
-    uint32_t getParam(uint8_t reg) override;
-    void setParam(uint8_t reg, uint32_t value) override;
+    void setMark(int32_t positionMicrosteps) override;
+    void setAcceleration(float fsps2) override;
+    void setDeceleration(float fsps2) override;
+
+    // Settings: the real driver's engine (powerstep01_settings.hpp) over these registers, so
+    // the fake chip sees exactly the register traffic the firmware's driver would send
+    const Drivers::DriverCaps& caps() const override;
+    Drivers::DriverSettings quantize(const Drivers::DriverSettings& s) const override;
+    Drivers::ApplyResult apply(const Drivers::DriverSettings& s) override;
+    bool readSettings(Drivers::DriverSettings& inForce) override;
+    bool checkReset() override;
+    size_t diagnostics(Harness::DriverDiagView view, char* buf, size_t size) override;
+    bool toLegacyUnits(const Drivers::DriverSettings& s, Drivers::LegacyDriverUnits& out) const override;
+    bool fromLegacyUnits(const Drivers::LegacyDriverUnits& in, Drivers::DriverSettings& s) const override;
+
+    // Register port (the settings engine's Io): the emulated chip's registers
+    uint32_t readReg(uint8_t reg);
+    void writeReg(uint8_t reg, uint32_t value);
+    bool outputsOff() { return getStatus().hiZ(); }
+    void clearFaults() { (void)getStatus(); }
+
     Drivers::MotorStatus getStatus() override;
     Drivers::MotorStatus readState() override;
     bool isBusy() override;
@@ -65,10 +85,10 @@ private:
     void update();                       // integrate to now (call with m_ held)
     static void logMotion(const char* what, long long value);
     void runRaw(bool forward, uint32_t speed);   // RUN with a SPEED register value
-    double vmax() const { return regs_[Drivers::MotorReg::MAX_SPEED] * MAXSPD_LSB; }
-    double acc() const { return std::max(1.0, regs_[Drivers::MotorReg::ACC] * ACC_LSB); }
-    double dec() const { return std::max(1.0, regs_[Drivers::MotorReg::DEC] * ACC_LSB); }
-    int usPerFs() const { return 1 << (regs_[Drivers::MotorReg::STEP_MODE] & 7); }
+    double vmax() const { return regs_[Drivers::PowerStepReg::MAX_SPEED] * MAXSPD_LSB; }
+    double acc() const { return std::max(1.0, regs_[Drivers::PowerStepReg::ACC] * ACC_LSB); }
+    double dec() const { return std::max(1.0, regs_[Drivers::PowerStepReg::DEC] * ACC_LSB); }
+    int usPerFs() const { return 1 << (regs_[Drivers::PowerStepReg::STEP_MODE] & 7); }
 
     std::recursive_mutex m_;
     uint32_t regs_[32] = {};
@@ -81,6 +101,7 @@ private:
     bool hiZAfterStop_ = false;
     int motStatus_ = 0;
     double last_ = -1.0;
+    Drivers::PowerStepSettings::ResetWatch resetWatch_;   // GATECFG1 stays 0 here: never fires
 };
 
 } // namespace Sim

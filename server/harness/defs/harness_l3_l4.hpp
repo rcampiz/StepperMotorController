@@ -6,7 +6,7 @@
  *   Drivers::IMotorDriver, ICanvas, IJoystick, IFlash, IEncoderHardware, IConfigStore.
  * L3 uses these types directly. The former Services:: duplicate ports and their
  * generated adapters are gone; the aliases at the bottom let L3 keep its unqualified
- * names (ICanvas, MotorReg::...) — they are the sheet entries of this harness.
+ * names (ICanvas, DriverSettings...) — they are the sheet entries of this harness.
  *
  * Every signal is Lower-provided and called downward, synchronously, in task context
  * (or pre-scheduler during init). SPI-backed devices block on the bus mutex, so none
@@ -66,7 +66,12 @@ const L3L4Harness& connectL3L4(Platform::IClock& clock);
 namespace Services {
 using Drivers::IMotorDriver;
 using Drivers::MotorStatus;
-namespace MotorReg = Drivers::MotorReg;
+using Drivers::DriverCaps;
+using Drivers::DriverSettings;
+using Drivers::DriveLevels;
+using Drivers::DriveMode;
+using Drivers::ApplyResult;
+using Drivers::LegacyDriverUnits;
 using Drivers::ICanvas;
 namespace Canvas = Drivers::Canvas;
 using Drivers::IJoystick;

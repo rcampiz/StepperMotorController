@@ -33,7 +33,8 @@ using Harness::ApplyResult;
  *        (DRV:CFG:KVAL/TVAL/OCD/STALL/MOTION/STEPMODE/PRED/DECAY/FAULT, DRV:CFG?) and the
  *        V1-V4 config blobs keep working (docs/design/DRIVER_BOUNDARY.md).
  *
- * Only a driver can translate them; a driver for another chip cannot. Removed with protocol 3.
+ * Only a driver can translate them (IMotorDriver::toLegacyUnits / fromLegacyUnits); a driver
+ * for another chip answers false and the aliases report an error. Removed with protocol 3.
  */
 struct LegacyDriverUnits {
     uint8_t  kval[4];       ///< voltage-mode duty codes: hold, run, acc, dec
@@ -56,42 +57,13 @@ struct LegacyDriverUnits {
 };
 
 /**
- * @brief Register address constants (match powerSTEP01 addresses)
- */
-namespace MotorReg {
-    constexpr uint8_t ABS_POS    = 0x01;
-    constexpr uint8_t EL_POS     = 0x02;
-    constexpr uint8_t MARK       = 0x03;
-    constexpr uint8_t SPEED      = 0x04;
-    constexpr uint8_t ACC        = 0x05;
-    constexpr uint8_t DEC        = 0x06;
-    constexpr uint8_t MAX_SPEED  = 0x07;
-    constexpr uint8_t MIN_SPEED  = 0x08;
-    constexpr uint8_t KVAL_HOLD  = 0x09;
-    constexpr uint8_t KVAL_RUN   = 0x0A;
-    constexpr uint8_t KVAL_ACC   = 0x0B;
-    constexpr uint8_t KVAL_DEC   = 0x0C;
-    constexpr uint8_t INT_SPEED  = 0x0D;
-    constexpr uint8_t T_FAST     = 0x0E;   // current mode (ST_SLP in voltage mode)
-    constexpr uint8_t TON_MIN    = 0x0F;   // current mode (FN_SLP_ACC in voltage mode)
-    constexpr uint8_t TOFF_MIN   = 0x10;   // current mode (FN_SLP_DEC in voltage mode)
-    constexpr uint8_t ADC_OUT    = 0x12;   // 5-bit reading of the ADCIN pin (read-only)
-    constexpr uint8_t OCD_TH     = 0x13;
-    constexpr uint8_t STALL_TH   = 0x14;
-    constexpr uint8_t FS_SPD     = 0x15;
-    constexpr uint8_t STEP_MODE  = 0x16;
-    constexpr uint8_t ALARM_EN   = 0x17;
-    constexpr uint8_t GATECFG1   = 0x18;   // gate drive: written only by init, 0 after a chip reset
-    constexpr uint8_t CONFIG     = 0x1A;
-} // namespace MotorReg
-
-/**
  * @brief Abstract motor driver interface
  *
- * Motion speaks physical units (docs/design/DRIVER_BOUNDARY.md, step 2): speeds in full
- * steps/s (float: Cortex-M4F, task context only, never from an ISR), positions and
- * distances in microsteps at the resolution in force. Each driver converts to its chip's
- * own units and limits (powerSTEP01: L4_drivers/devices/powerstep01_units.hpp).
+ * Physical units (docs/design/DRIVER_BOUNDARY.md, steps 2-3): speeds in full steps/s,
+ * accelerations in full steps/s^2, currents in amps, positions and distances in microsteps
+ * at the resolution in force (floats: Cortex-M4F, task context only, never from an ISR).
+ * Each driver converts to its chip's own units and limits and keeps its register map,
+ * quirks and recovery to itself (powerSTEP01: L4_drivers/devices/powerstep01_*.hpp).
  * Hot path: readState() every 50 ms in the motor loop.
  * Virtual dispatch ~5ns vs ~50us SPI transaction = negligible overhead.
  */
@@ -99,7 +71,7 @@ class IMotorDriver {
 public:
     virtual ~IMotorDriver() = default;
 
-    /** @brief Initialize/reinitialize the driver hardware */
+    /** @brief Initialize/reinitialize the driver hardware (the chip's own init-only setup) */
     virtual void init() = 0;
 
     // --- Motion commands (physical units) ---
@@ -117,6 +89,8 @@ public:
     virtual void goHome() = 0;
     virtual void goMark() = 0;
     virtual void resetPos() = 0;
+    /// The MARK position goMark() goes to, microsteps
+    virtual void setMark(int32_t positionMicrosteps) = 0;
 
     /// Speed ceiling of the motion profiles (MOVE/GOTO/HOME, and RUN), full steps/s. A
     /// positive value never rounds to 0 (the chip's smallest step instead); 0 sets 0.
@@ -124,10 +98,46 @@ public:
     /// exactly (the per-move override relies on that).
     virtual void setMaxSpeed(float fullStepsPerSec) = 0;
     virtual float getMaxSpeed() = 0;
+    /// Profile acceleration / deceleration, full steps/s^2 (a positive value never rounds to 0)
+    virtual void setAcceleration(float fullStepsPerSec2) = 0;
+    virtual void setDeceleration(float fullStepsPerSec2) = 0;
 
-    // --- Register access (config and bring-up only; driver boundary step 3 removes it from L3) ---
-    virtual uint32_t getParam(uint8_t reg) = 0;
-    virtual void setParam(uint8_t reg, uint32_t value) = 0;
+    // --- Settings (driver boundary step 3) ---
+    /// What this driver can do. Pure: no bus traffic, any task.
+    virtual const DriverCaps& caps() const = 0;
+    /// The settings as apply() would put them in force (resolution capped, every value on the
+    /// chip's grid). Pure: no bus traffic, any task. quantize(quantize(s)) == quantize(s).
+    virtual DriverSettings quantize(const DriverSettings& s) const = 0;
+    /// Put the settings in force. Settings the chip accepts only with the outputs off are
+    /// written when they already are off; otherwise NEEDS_OUTPUTS_OFF (the rest is in force)
+    /// and the caller decides when to release the outputs and apply again. Clears latched faults.
+    virtual ApplyResult apply(const DriverSettings& s) = 0;
+    /// Read back what is in force on the chip (resolution and drive mode always; the levels of
+    /// the active drive mode; tuning not decoded). False when the chip cannot be read.
+    virtual bool readSettings(DriverSettings& inForce) = 0;
+    /// The chip lost its configuration behind the firmware's back (supply drop): call
+    /// periodically (task context); true = re-initialise and apply the settings again.
+    virtual bool checkReset() { return false; }
+    /// The driver's own diagnostic text for a view (opaque above L4): the length written.
+    virtual size_t diagnostics(Harness::DriverDiagView view, char* buf, size_t size)
+    {
+        (void)view;
+        if (buf != nullptr && size != 0) buf[0] = '\0';
+        return 0;
+    }
+
+    // --- Protocol 2 chip units (one release, see LegacyDriverUnits). Pure, any task. ---
+    virtual bool toLegacyUnits(const DriverSettings& s, LegacyDriverUnits& out) const
+    {
+        (void)s; (void)out;
+        return false;
+    }
+    /// Overwrites `s` with the settings the units describe (fields the units do not cover kept)
+    virtual bool fromLegacyUnits(const LegacyDriverUnits& in, DriverSettings& s) const
+    {
+        (void)in; (void)s;
+        return false;
+    }
 
     // --- Status ---
     /// The decoded status only (positionUsteps/speedFsps left 0): fault clears, Hi-Z checks

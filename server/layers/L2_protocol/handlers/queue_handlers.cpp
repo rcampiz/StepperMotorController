@@ -8,6 +8,7 @@
 namespace Protocol {
 
 void CommandParser::cmdQueue(const ParsedCommand &cmd) {
+  const MotionLimits lim = motionLimits(m_dispatcher.driverCaps());
   if (cmd.argCount < 1) {
     respondErr("Usage: SYNC:QUEUE <cmd> [args...]");
     return;
@@ -28,8 +29,8 @@ void CommandParser::cmdQueue(const ParsedCommand &cmd) {
       respondErr("dir must be 0 or 1");
       return;
     }
-    if (steps < 0 || steps > Limits::POS_MAX) {
-      respondErr("steps out of range (0-2097151)");
+    if (steps < 0 || steps > lim.posMax) {
+      respondRange("steps out of range (0-%ld)", lim.posMax);
       return;
     }
     r = m_dispatcher.queueMove((dir == 0) ? -steps : steps);
@@ -39,8 +40,8 @@ void CommandParser::cmdQueue(const ParsedCommand &cmd) {
       return;
     }
     auto position = static_cast<int32_t>(atol(cmd.args[1]));
-    if (position < Limits::POS_MIN || position > Limits::POS_MAX) {
-      respondErr("position out of range (-2097152 to 2097151)");
+    if (position < lim.posMin || position > lim.posMax) {
+      respondRange("position out of range (%ld to %ld)", lim.posMin, lim.posMax);
       return;
     }
     r = m_dispatcher.queueGoTo(position);
@@ -55,8 +56,8 @@ void CommandParser::cmdQueue(const ParsedCommand &cmd) {
       respondErr("dir must be 0 or 1");
       return;
     }
-    if (speed < Limits::SPEED_MIN || speed > Limits::SPEED_MAX) {
-      respondErr("speed out of range (0-15625 steps/s)");
+    if (speed < Limits::SPEED_MIN || speed > lim.speedMax) {
+      respondRange("speed out of range (0-%ld steps/s)", lim.speedMax);
       return;
     }
     r = m_dispatcher.queueRun(static_cast<uint32_t>(speed), dir);   // full steps/s

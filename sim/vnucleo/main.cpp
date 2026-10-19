@@ -134,7 +134,7 @@ int main(int argc, char** argv) {
     // --- Phase 4: subsystems (initMotorSubsystem with the fake L4) -----------------------
     motor.init();
     Services::motion.stepper.controller.bind(motor, clock);
-    Services::motion.configStore.init(configStore);
+    Services::motion.configStore.init(configStore, &motor);
     Services::g_motorService.init(Services::motion.stepper.controller,
                                   Services::motion.stepper.controller,
                                   motorQueue, clock, nullptr, Services::g_telemetryStore);

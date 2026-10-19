@@ -31,6 +31,7 @@ struct FakeMotorConfigDispatcher : Services::IMotorConfigDispatcher {
     Harness::ServiceStatus configSetAccelPhysical(uint32_t stepsPerS2)  override { calls.push_back("configSetAccelPhysical"); return Harness::ServiceStatus{}; }
     Harness::ServiceStatus configSetDecelPhysical(uint32_t stepsPerS2)  override { calls.push_back("configSetDecelPhysical"); return Harness::ServiceStatus{}; }
     Harness::ServiceStatus configSetMaxSpeedPhysical(uint32_t stepsPerS)  override { calls.push_back("configSetMaxSpeedPhysical"); return Harness::ServiceStatus{}; }
+    Harness::DriverCaps driverCaps()  override { calls.push_back("driverCaps"); return Harness::DriverCaps{}; }
     uint32_t getMicrostepsPerRev()  override { calls.push_back("getMicrostepsPerRev"); return uint32_t{}; }
     uint16_t getFullStepsPerRev()  override { calls.push_back("getFullStepsPerRev"); return uint16_t{}; }
     Harness::ServiceStatus configSaveToFlash()  override { calls.push_back("configSaveToFlash"); return Harness::ServiceStatus{}; }
@@ -129,7 +130,7 @@ struct FakeMotorDriverDispatcher : Services::IMotorDriverDispatcher {
     mutable std::vector<std::string> calls;
     void motorReinit()  override { calls.push_back("motorReinit"); }
     bool motorApplyConfig()  override { calls.push_back("motorApplyConfig"); return bool{}; }
-    bool motorGetDebugInfo(Harness::MotorDebugParams& out)  override { calls.push_back("motorGetDebugInfo"); out = Harness::MotorDebugParams{}; return bool{}; }
+    bool motorGetDebugInfo(Harness::MotorDebugParams& out, Harness::DriverDiagView view)  override { calls.push_back("motorGetDebugInfo"); out = Harness::MotorDebugParams{}; return bool{}; }
     bool motorSetStepModeSafe(uint8_t mode, uint8_t& readback)  override { calls.push_back("motorSetStepModeSafe"); readback = uint8_t{}; return bool{}; }
     FaultEnableFlags getFaultEnable()  override { calls.push_back("getFaultEnable"); return FaultEnableFlags{}; }
 };

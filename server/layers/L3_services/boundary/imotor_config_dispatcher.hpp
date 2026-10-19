@@ -6,6 +6,7 @@
 #pragma once
 
 #include "harness/pins/dispatch_result.hpp"
+#include "harness/pins/driver_settings.hpp"
 #include <stdint.h>
 
 namespace Services {
@@ -20,6 +21,8 @@ public:
     virtual Harness::ServiceStatus configSetMaxSpeedPhysical(uint32_t stepsPerS) = 0;
 
     // Motor config queries
+    /// What the motor driver can do: protocol limits come from here, not from chip constants
+    virtual Harness::DriverCaps driverCaps() = 0;
     virtual uint32_t getMicrostepsPerRev() = 0;
     virtual uint16_t getFullStepsPerRev() = 0;
 
@@ -30,9 +33,11 @@ public:
     virtual bool configFactoryReset() = 0;
     virtual bool configIsValid() = 0;
 
-    // DRV register setters
+    // Protocol 2 chip-unit setters (DRV:CFG:KVAL/TVAL/OCD/STALL/MOTION/PRED/DECAY/FAULT): kept
+    // one release as aliases. L3 asks the driver to translate them into the physical settings
+    // (IMotorDriver::fromLegacyUnits); a driver without these units ignores them.
     virtual void configSetKval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec) = 0;
-    /// 0 = voltage mode (KVAL duty), 1 = current mode (TVAL references); applied through the Hi-Z path
+    /// 0 = voltage mode (duty), 1 = current mode (current references); the driver applies it with the outputs off
     virtual void configSetDriveMode(uint8_t mode) = 0;
     virtual void configSetTval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec) = 0;
     /// Current-mode regulation: PRED_EN, TSW (0..31, 0xFF = chip default), T_FAST / TON_MIN /
@@ -46,12 +51,14 @@ public:
     virtual void configSetFaultEnableFlags(bool ocd, bool thermalSD, bool thermalWarn,
                                             bool uvlo, bool stallA, bool stallB, bool cmdErr) = 0;
     virtual void configSetMotionParams(uint16_t acc, uint16_t dec, uint16_t maxSpd) = 0;
+    /// Step mode = log2 of the microsteps per full step asked for (the driver caps it)
     virtual void configSetStepMode(uint8_t mode) = 0;
     virtual void configSetFullStepsPerRev(uint16_t steps) = 0;
     virtual void configSetEncoderPPR(uint16_t ppr) = 0;
     virtual uint16_t configGetEncoderPPR() = 0;
 
-    // Config snapshot (L2 owns formatting)
+    // Config snapshot in protocol 2 chip units (L2 owns formatting; the driver translated the
+    // physical settings, see configSet* above; all zero when the driver has no such units)
     struct MotorConfigSnapshot {
         uint8_t kvalHold, kvalRun, kvalAcc, kvalDec;
         uint8_t driveMode;
@@ -63,7 +70,7 @@ public:
         bool faultOcd, faultThermalSD, faultThermalWarn, faultUvlo;
         bool faultStallA, faultStallB, faultCmdErr;
         uint8_t faultAction;
-        uint8_t stepMode;
+        uint8_t stepMode;       // log2 of the microsteps asked for
         bool valid;
     };
     virtual MotorConfigSnapshot getMotorConfig() = 0;

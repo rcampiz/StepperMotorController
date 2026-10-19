@@ -1,10 +1,11 @@
 /**
  * @file config_service.cpp
- * @brief Configuration service — ACC/DEC/MAXSPD with integer unit conversion
+ * @brief Configuration service — live ramps and speed ceiling in physical units
  */
 
 #include "L3_services/config/config_service/config_service.hpp"
 #include "L3_services/motion/motor_service/motor_service.hpp"
+#include "L3_services/motion/motion.hpp"
 #include "L3_services/infra/trace/trace.hpp"
 
 namespace Services::Config {
@@ -14,20 +15,6 @@ using Services::MotorCmdType;
 using Services::MotorCommand;
 static Services::IMotorCommandSink* const g_motorCommandSink = &Services::g_motorService;
 
-// ACC/DEC register limits (12-bit)
-static constexpr uint16_t ACCEL_RAW_MIN = 1;
-static constexpr uint16_t ACCEL_RAW_MAX = 4095;
-
-// MAX_SPEED register limits (10-bit)
-static constexpr uint16_t MAXSPD_RAW_MIN = 1;
-static constexpr uint16_t MAXSPD_RAW_MAX = 1023;
-
-// Physical limit for ACC/DEC: 4095 * 14552 / 1000 = 59,590 steps/s^2
-static constexpr uint32_t ACCEL_PHYS_MAX = 59590;
-
-// Physical limit for MAX_SPEED: 1023 * 15625 / 1024 = 15,609 steps/s
-static constexpr uint32_t MAXSPD_PHYS_MAX = 15609;
-
 const char *resultToString(Result r) {
     switch (r) {
     case Result::OK:            return "OK";
@@ -35,24 +22,6 @@ const char *resultToString(Result r) {
     case Result::INVALID_PARAM: return "Invalid parameter";
     default:                    return "Unknown";
     }
-}
-
-// --- Unit conversion helpers ---
-
-uint32_t accelRawToPhysical(uint16_t raw) {
-    return static_cast<uint32_t>(raw) * 14552U / 1000U;
-}
-
-uint16_t accelPhysicalToRaw(uint32_t stepsPerSecSq) {
-    return static_cast<uint16_t>(stepsPerSecSq * 1000U / 14552U);
-}
-
-uint32_t maxSpeedRawToPhysical(uint16_t raw) {
-    return static_cast<uint32_t>(raw) * 15625U / 1024U;
-}
-
-uint16_t maxSpeedPhysicalToRaw(uint32_t stepsPerSec) {
-    return static_cast<uint16_t>(stepsPerSec * 1024U / 15625U);
 }
 
 // --- Internal send helper ---
@@ -64,39 +33,35 @@ static Result sendParam(MotorCmdType type, int32_t value) {
     return g_motorCommandSink->sendCommand(cmd) ? Result::OK : Result::QUEUE_FULL;
 }
 
+/// 1..the driver's maximum (a request below the driver's resolution gets its smallest step)
+static bool inRange(uint32_t value, float max) {
+    return value != 0 && static_cast<float>(value) <= max;
+}
+
 // --- Physical-unit setters (SCPI commands) ---
 
 Result setAccelPhysical(uint32_t stepsPerSecSq) {
     Trace::ServiceScope svc(Trace::SVC_CONFIG);
-    if (stepsPerSecSq == 0 || stepsPerSecSq > ACCEL_PHYS_MAX) {
+    if (!inRange(stepsPerSecSq, motion.stepper.config.caps().accelMaxFsps2)) {
         return Result::INVALID_PARAM;
     }
-    uint16_t raw = accelPhysicalToRaw(stepsPerSecSq);
-    if (raw < ACCEL_RAW_MIN) raw = ACCEL_RAW_MIN;
-    if (raw > ACCEL_RAW_MAX) raw = ACCEL_RAW_MAX;
-    return sendParam(MotorCmdType::SetAccel, raw);
+    return sendParam(MotorCmdType::SetAccel, static_cast<int32_t>(stepsPerSecSq));
 }
 
 Result setDecelPhysical(uint32_t stepsPerSecSq) {
     Trace::ServiceScope svc(Trace::SVC_CONFIG);
-    if (stepsPerSecSq == 0 || stepsPerSecSq > ACCEL_PHYS_MAX) {
+    if (!inRange(stepsPerSecSq, motion.stepper.config.caps().accelMaxFsps2)) {
         return Result::INVALID_PARAM;
     }
-    uint16_t raw = accelPhysicalToRaw(stepsPerSecSq);
-    if (raw < ACCEL_RAW_MIN) raw = ACCEL_RAW_MIN;
-    if (raw > ACCEL_RAW_MAX) raw = ACCEL_RAW_MAX;
-    return sendParam(MotorCmdType::SetDecel, raw);
+    return sendParam(MotorCmdType::SetDecel, static_cast<int32_t>(stepsPerSecSq));
 }
 
 Result setMaxSpeedPhysical(uint32_t stepsPerSec) {
     Trace::ServiceScope svc(Trace::SVC_CONFIG);
-    if (stepsPerSec == 0 || stepsPerSec > MAXSPD_PHYS_MAX) {
+    if (!inRange(stepsPerSec, motion.stepper.config.caps().maxSpeedLimitFsps)) {
         return Result::INVALID_PARAM;
     }
-    uint16_t raw = maxSpeedPhysicalToRaw(stepsPerSec);
-    if (raw < MAXSPD_RAW_MIN) raw = MAXSPD_RAW_MIN;
-    if (raw > MAXSPD_RAW_MAX) raw = MAXSPD_RAW_MAX;
-    return sendParam(MotorCmdType::SetMaxSpeed, raw);
+    return sendParam(MotorCmdType::SetMaxSpeed, static_cast<int32_t>(stepsPerSec));
 }
 
 } // namespace Services::Config

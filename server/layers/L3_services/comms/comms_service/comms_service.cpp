@@ -99,7 +99,7 @@ bool CommsService::getMotorFaults(uint8_t& faults)
 {
     faults = 0;
     Harness::MotorDebugParams info;
-    if (m_motorCtrl != nullptr && m_motorCtrl->getDebugInfo(info)) {
+    if (m_motorCtrl != nullptr && m_motorCtrl->getDebugInfo(info, Harness::DriverDiagView::NONE)) {
         faults = info.faults;
         return true;
     }

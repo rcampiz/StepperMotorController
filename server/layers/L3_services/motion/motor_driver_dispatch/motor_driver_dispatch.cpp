@@ -9,9 +9,18 @@
 namespace Services {
 
 Services::IMotorDriverDispatcher::FaultEnableFlags MotorDriverDispatch::getFaultEnable() {
-    const auto& fe = motion.stepper.config.getFaultEnable();
-    return {fe.ocd != 0, fe.thermalSD != 0, fe.thermalWarn != 0,
-            fe.uvlo != 0, fe.stallA != 0, fe.stallB != 0, fe.cmdErr != 0};
+    // Protocol 2 flags (stall per bridge) through the driver's chip units when it has them,
+    // else from the chip-neutral alarm bits
+    Drivers::LegacyDriverUnits u = {};
+    if (motion.stepper.config.toLegacyUnits(u)) {
+        return {(u.alarms & 1u) != 0, (u.alarms & 2u) != 0, (u.alarms & 4u) != 0, (u.alarms & 8u) != 0,
+                (u.alarms & 16u) != 0, (u.alarms & 32u) != 0, (u.alarms & 64u) != 0};
+    }
+    const uint8_t f = motion.stepper.config.getFaultAlarms();
+    const bool stall = (f & Harness::DriverFault::STALL) != 0;
+    return {(f & Harness::DriverFault::OVERCURRENT) != 0, (f & Harness::DriverFault::THERMAL_SHUTDOWN) != 0,
+            (f & Harness::DriverFault::THERMAL_WARNING) != 0, (f & Harness::DriverFault::UNDERVOLTAGE) != 0,
+            stall, stall, (f & Harness::DriverFault::COMMAND_ERROR) != 0};
 }
 
 void MotorDriverDispatch::motorReinit() {
@@ -22,8 +31,8 @@ bool MotorDriverDispatch::motorApplyConfig() {
     return m_motorCtrl->applyConfig();
 }
 
-bool MotorDriverDispatch::motorGetDebugInfo(Harness::MotorDebugParams& out) {
-    return m_motorCtrl->getDebugInfo(out);
+bool MotorDriverDispatch::motorGetDebugInfo(Harness::MotorDebugParams& out, Harness::DriverDiagView view) {
+    return m_motorCtrl->getDebugInfo(out, view);
 }
 
 bool MotorDriverDispatch::motorSetStepModeSafe(uint8_t mode, uint8_t& readback) {

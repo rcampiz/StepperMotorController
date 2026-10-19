@@ -1,6 +1,12 @@
 /**
  * @file config_handlers.cpp
  * @brief CommandParser motor config command handlers (DRV:CFG namespace)
+ *
+ * Protocol 2 still speaks powerSTEP01 chip units here (KVAL/TVAL codes, OCD/STALL codes,
+ * raw ACC/DEC/MAX_SPEED, DRV:CFG? register-shaped lines). They are aliases kept one release
+ * (docs/design/DRIVER_BOUNDARY.md): L3 asks the motor driver to translate them to and from
+ * its physical settings (IMotorDriver::toLegacyUnits / fromLegacyUnits), so the chip's
+ * knowledge stays in L4. The ranges checked below are those aliases' own wire contract.
  */
 
 #include "L2_protocol/command_parser_internal.hpp"
@@ -372,32 +378,34 @@ void CommandParser::cmdMotorConfigMotion(const ParsedCommand &cmd) {
 
 void CommandParser::cmdMotorConfigStepMode(const ParsedCommand &cmd) {
   // Usage: DRV:CFG:STEPMODE <mode>
-  // mode: 0=full, 1=half, 2=1/4, 3=1/8, 4=1/16, 5=1/32, 6=1/64, 7=1/128
-  // Also accepts microstep counts: 1,2,4,8,16,32,64,128
+  // mode: 0=full, 1=half, 2=1/4, ... up to the driver's finest resolution (powerSTEP01: 7=1/128)
+  // Also accepts microstep counts 8, 16, ... up to that resolution
+  const uint8_t maxMode = Harness::microstepsLog2(m_dispatcher.driverCaps().maxMicrostepsAny());
   if (cmd.argCount < 1) {
     respondErr("Usage: DRV:CFG:STEPMODE <mode> (0-7 or 1/2/4/8/16/32/64/128)");
     return;
   }
 
   unsigned long val = strtoul(cmd.args[0], nullptr, 10);
-  uint8_t mode;
+  uint8_t mode = 0xFF;
 
-  // Values 0-7: raw register value (STEP_SEL field)
-  // Values 8,16,32,64,128: microstep denominator
-  if (val <= 7) {
+  // Values 0..maxMode: log2 of the microsteps; 8 and up: the microstep denominator
+  if (val <= maxMode) {
     mode = static_cast<uint8_t>(val);
-  } else if (val == 8) {
-    mode = 3;
-  } else if (val == 16) {
-    mode = 4;
-  } else if (val == 32) {
-    mode = 5;
-  } else if (val == 64) {
-    mode = 6;
-  } else if (val == 128) {
-    mode = 7;
-  } else {
-    respondErr("Invalid mode. Use 0-7 or microstep count (8/16/32/64/128)");
+  } else if (val >= 8 && (val & (val - 1)) == 0) {
+    const uint8_t k = Harness::microstepsLog2(static_cast<uint16_t>(val > 0x8000 ? 0x8000 : val));
+    if (k <= maxMode) mode = k;
+  }
+  if (mode == 0xFF) {
+    // The list follows the driver's caps; for the powerSTEP01 it reads
+    // respondErr("Invalid mode. Use 0-7 or microstep count (8/16/32/64/128)")
+    char err[96];
+    int n = snprintf(err, sizeof(err), "Invalid mode. Use 0-%u or microstep count (", (unsigned)maxMode);
+    for (uint8_t k = 3; k <= maxMode && n > 0 && n < (int)sizeof(err) - 8; ++k) {
+      n += snprintf(err + n, sizeof(err) - n, k == 3 ? "%u" : "/%u", 1U << k);
+    }
+    snprintf(err + n, sizeof(err) - n, ")");
+    respondErr(err);
     return;
   }
 
@@ -423,7 +431,8 @@ void CommandParser::cmdMotorConfigApply() {
     return;
   }
 
-  // Apply current config to motor driver; false = STEP_MODE did not reach the chip
+  // Apply the config through the driver; false = a setting it needs the outputs off for
+  // (powerSTEP01: STEP_MODE) did not read back
   if (!m_dispatcher.motorApplyConfig()) {
     if (m_format == ResponseFormat::JSON) {
       respondJsonErr("DRV:CFG:APPLY", "VERIFY_FAILED",
@@ -442,16 +451,11 @@ void CommandParser::cmdMotorConfigApply() {
     return;
   }
 
-  // Readback chip registers to verify writes actually reached the powerSTEP01
+  // What reached the chip, in the driver's own words (its diagnostic summary, opaque here)
   Harness::MotorDebugParams info;
-  if (m_dispatcher.motorGetDebugInfo(info)) {
-    char buf[128];
-    snprintf(buf, sizeof(buf),
-             "Config applied. CHIP: STEP_MODE=%u OCD_TH=%02X STALL_TH=%02X "
-             "ALARM_EN=%02X CONFIG=%04X FS_SPD=%03X",
-             (unsigned)info.stepMode, (unsigned)info.ocdTh,
-             (unsigned)info.stallTh, (unsigned)info.alarmEn,
-             (unsigned)info.config, (unsigned)info.fsSpd);
+  if (m_dispatcher.motorGetDebugInfo(info, Harness::DriverDiagView::SUMMARY) && info.driverText[0] != '\0') {
+    char buf[160];
+    snprintf(buf, sizeof(buf), "Config applied. CHIP: %s", info.driverText);
     respondOk(buf);
   } else {
     respondOk("Config applied and saved to flash");

@@ -17,6 +17,7 @@ public:
     Harness::ServiceStatus configSetAccelPhysical(uint32_t stepsPerS2) override;
     Harness::ServiceStatus configSetDecelPhysical(uint32_t stepsPerS2) override;
     Harness::ServiceStatus configSetMaxSpeedPhysical(uint32_t stepsPerS) override;
+    Harness::DriverCaps driverCaps() override;
     uint32_t getMicrostepsPerRev() override;
     uint16_t getFullStepsPerRev() override;
     Harness::ServiceStatus configSaveToFlash() override;

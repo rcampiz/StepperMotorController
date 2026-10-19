@@ -1,22 +1,24 @@
 /**
  * @file driver_handlers.cpp
- * @brief DRV: driver configuration command handlers (powerSTEP01 unit model)
+ * @brief DRV: driver configuration command handlers (step mode = log2 microsteps, mechanics)
  */
 
 #include "L2_protocol/command_parser_internal.hpp"
 
 namespace Protocol {
 
-// DRV:STEP_MODE <0-7> — Hi-Z safe microstep mode change
+// DRV:STEP_MODE <0-7> — microstep mode change (log2 of the microsteps per full step; the
+// driver releases its outputs for the write if it needs to, and caps the resolution)
 void CommandParser::cmdDrvStepMode(const ParsedCommand &cmd) {
+  const unsigned maxMode = Harness::microstepsLog2(m_dispatcher.driverCaps().maxMicrostepsAny());
   if (cmd.argCount < 1) {
-    respondErr("Usage: DRV:STEP_MODE <0-7>");
+    respondErr("Usage: DRV:STEP_MODE <0-7>");   // protocol 2's step-mode range (log2 microsteps)
     return;
   }
 
   unsigned long mode = strtoul(cmd.args[0], nullptr, 10);
-  if (mode > 7) {
-    respondErr("Step mode must be 0-7");
+  if (mode > maxMode) {
+    respondRange("Step mode must be 0-%ld", static_cast<long>(maxMode));
     return;
   }
 
@@ -70,12 +72,11 @@ void CommandParser::cmdDrvStepMode(const ParsedCommand &cmd) {
   }
 }
 
-// DRV:STEP_MODE? — read step mode from hardware
+// DRV:STEP_MODE? — the resolution in force, read back by the driver (capped for the drive mode)
 void CommandParser::cmdDrvStepModeQuery() {
   Harness::MotorDebugParams info = {};
-  m_dispatcher.motorGetDebugInfo(info);
-  uint8_t mode = info.stepMode;
-  if (info.driveMode && mode > 4) mode = 4;   // current mode runs 1/16 at most, whatever the register holds
+  m_dispatcher.motorGetDebugInfo(info, Harness::DriverDiagView::NONE);
+  const uint8_t mode = Harness::microstepsLog2(info.microsteps != 0 ? info.microsteps : 1);
   uint32_t ustepsPerRev =
       static_cast<uint32_t>(m_dispatcher.getFullStepsPerRev()) * (1U << mode);
 

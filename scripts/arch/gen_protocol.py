@@ -167,7 +167,11 @@ def describe(handler, bodies, sub=None, inline_text=""):
         keys = sorted(set(re.findall(r'\\"(\w+)\\":', body)))
         for j in json_cmds:
             j["keys"] = keys
-    errors = sorted(set(e for e in re.findall(r'respondErr\("([^"]*)"\)', body) if not e.startswith("Usage")))
+    errors = set(e for e in re.findall(r'respondErr\("([^"]*)"\)', body) if not e.startswith("Usage"))
+    # Ranges from the motor driver's capabilities (DriverCaps): respondRange("... %ld ...", ...)
+    errors |= set(re.sub(r'%l?[du]', '<caps>', e)
+                  for e in re.findall(r'respondRange\("([^"]*)"', body) if not e.startswith("Usage"))
+    errors = sorted(errors)
     multiline = any(a.startswith("<lines>") for a in ascii_ok)
     binary = '"OK READY' in body
     # writes flash (motor config: internal sector 7, 128 KB, erase ~1-2 s with the CPU stalled)
@@ -409,7 +413,10 @@ Telemetry structures behind it (`harness/pins/telemetry_types.hpp`):
 Columns: command as typed; minimum arguments and the usage string(s) from the handler;
 what a successful reply contains (ASCII message literals, `<status>` = the service status
 message, JSON command name and keys); error messages the handler can produce besides the
-usage error. "Handler" is the firmware function, for cross-reference.
+usage error. "Handler" is the firmware function, for cross-reference. `<caps>` in an error is
+a limit taken from the motor driver's capabilities (DriverCaps), not a protocol constant: with
+the powerSTEP01 it reads speed 15625 full steps/s, positions -2097152..2097151 microsteps,
+step mode 0-7, the same texts as before.
 
 """
 

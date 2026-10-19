@@ -182,7 +182,7 @@ void CommandParser::fillStatusView(const TelemetrySnapshot &snap, StatusJsonView
   bool stallA = (fl & Harness::DriverFault::STALL) != 0u;
   bool stallB = stallA;
 
-  // Filter faults against ALARM_EN config — only report faults the user
+  // Filter faults against the fault-alarm config — only report faults the user
   // has enabled. STATUS register always reflects raw hardware state, but
   // disabled faults (e.g. OCD noise) should not cause GUI error state.
   auto fe = m_dispatcher.getFaultEnable();
