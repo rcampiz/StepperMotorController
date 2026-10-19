@@ -44,6 +44,7 @@ from smc_gui.display_panel import DisplayPanel
 from smc_gui.motion_panel import MotionPanel
 from smc_gui.sysid_panel import SysIdPanel
 from smc_gui.tests_panel import TestsPanel
+from smc_gui.memory_panel import MemoryPanel
 from smc_gui.status_strip import StatusStrip
 from smc_gui.rle_codec import encode_rle_rgb565
 from smc_gui.image_loader import LCD_WIDTH, LCD_HEIGHT
@@ -207,6 +208,11 @@ class MainWindow(QMainWindow):
         diag.addTab(self._tests_panel, "Tests")
         diag.addTab(self._sysid_panel, "System ID")
         diag.addTab(self._display_panel, "Display")
+        # Memory: flash, RAM and stack peaks (DIAG:MEM?), polled only while on screen
+        self._memory_panel = MemoryPanel()
+        self._memory_panel.refresh_requested.connect(lambda: self._call(C.mem_query(), "MEM"))
+        diag.addTab(self._memory_panel, "Memory")
+        self._diag_tabs = diag
         self._right_tabs.addTab(diag, "Diagnostics")
 
         # Fleet: four boards (FL/FR/RL/RR) driven as one base, the Pi's role on this PC
@@ -314,7 +320,7 @@ class MainWindow(QMainWindow):
         mode = "light" if light else "dark"
         theme.apply_theme(QApplication.instance(), mode)
         theme.save_mode(mode)
-        for panel in (self._status_strip, self._graph_panel, self._tests_panel):
+        for panel in (self._status_strip, self._graph_panel, self._tests_panel, self._memory_panel):
             panel.restyle()
         if self._light_action.isChecked() != light:
             self._light_action.setChecked(light)
@@ -541,6 +547,7 @@ class MainWindow(QMainWindow):
         self._stepmode_panel.clear()
         self._graph_panel.clear()
         self._motion_panel.clear()
+        self._memory_panel.clear()
 
     @Slot()
     def _refresh_trim_config(self):
@@ -843,6 +850,14 @@ class MainWindow(QMainWindow):
     @Slot(str, str, object)
     def _on_response_received(self, tag: str, command: str, response):
         """Route worker responses to appropriate UI handlers."""
+        if tag == "MEM":                     # polled every 2 s: the panel shows its own errors
+            if response is None:
+                self._memory_panel.show_error("no response")
+            elif not response.success:
+                self._memory_panel.show_error(response.error_message or "error")
+            else:
+                self._memory_panel.update_memory(V.memory(response))
+            return
         if response is None:
             self._status_bar.showMessage(f"Error: no response to {command}", 5000)
             if tag == "BITMAP_TRANSFER":

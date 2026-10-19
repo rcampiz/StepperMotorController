@@ -310,3 +310,32 @@ def test_tests_tab_runs_a_scenario(gui):
     w._tests_panel.start("bringup", {})
     assert pump(app, lambda: w._tests_panel.results, timeout=10.0)
     assert w._tests_panel.results[0].ok
+
+
+def test_memory_panel_polls_only_while_visible_and_renders(gui):
+    app, w, fake = gui
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    panel = w._memory_panel
+    assert not panel.polling and "DIAG:MEM?" not in fake.received       # off screen: never asked
+    w.show()
+    w._right_tabs.setCurrentIndex(4)                                     # Diagnostics
+    w._diag_tabs.setCurrentWidget(panel)
+    assert pump(app, lambda: panel.polling and "ram" in panel.view)
+    assert "DIAG:MEM?" in fake.received
+    assert panel.flash.region["level"] == "ok" and panel.ram.region["level"] == "tight"   # 55 %, 84 %
+    assert panel.split.split["stacks"] == 4096 * 4
+    names = [r["name"] for r in panel.stacks.rows]
+    assert names[0] == "ISR (main)" and names[1] == "Comms" and names[-1] == "IDLE"   # biggest stack first
+    # the figures move: the next poll shows them
+    fake.mem["ram"] = (95 * 1024, 96 * 1024)
+    panel.refresh_requested.emit()
+    assert pump(app, lambda: panel.ram.region["level"] == "full")
+    # a board that cannot answer: said on the panel, not in the status bar
+    fake.mem = {}
+    fake.mem_tasks = []
+    panel.refresh_requested.emit()
+    assert pump(app, lambda: "unavailable" in panel._status.text())
+    # another page: polling stops
+    w._diag_tabs.setCurrentIndex(0)
+    app.processEvents()
+    assert not panel.polling
