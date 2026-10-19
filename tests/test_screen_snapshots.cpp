@@ -346,27 +346,14 @@ TEST(panel_sleeps_after_the_saver_has_run_and_wakes_every_time) {
     EXPECT_TRUE(ps.tick(true, t + 100, AFTER) == A::NONE);
     EXPECT_TRUE(ps.tick(true, t + 100 + AFTER, AFTER) == A::SLEEP);
     EXPECT_TRUE(ps.tick(false, t + 100 + AFTER + 1000, AFTER) == A::WAKE);
-    // a wake right after sleeping waits for the controller's 120 ms
+    // a wake right after sleeping is immediate (the controller is never put to sleep)
     EXPECT_TRUE(ps.tick(true, 0, 1000) == A::NONE);
     EXPECT_TRUE(ps.tick(true, 1000, 1000) == A::SLEEP);
-    EXPECT_TRUE(ps.tick(false, 1050, 1000) == A::NONE);
-    EXPECT_TRUE(ps.asleep());
-    EXPECT_TRUE(ps.tick(false, 1000 + UI::PanelSleep::MIN_SLEEP_MS, 1000) == A::WAKE);
+    EXPECT_TRUE(ps.tick(false, 1001, 1000) == A::WAKE);
     // 0 = never
     UI::PanelSleep never;
     EXPECT_TRUE(never.tick(true, 0, 0) == A::NONE);
     EXPECT_TRUE(never.tick(true, 100000000u, 0) == A::NONE);
-}
-
-TEST(lcd_panel_sleep_turns_the_display_off_and_back_on) {
-    Rig rig;
-    rig.lcd.setPanelSleep(true);
-    EXPECT_TRUE(rig.panel.asleep && !rig.panel.displayOn);
-    rig.lcd.setPanelSleep(false);
-    EXPECT_TRUE(!rig.panel.asleep && rig.panel.displayOn);
-    rig.lcd.setPanelSleep(true);                                    // and again: not one-shot
-    rig.lcd.setPanelSleep(false);
-    EXPECT_TRUE(!rig.panel.asleep && rig.panel.displayOn);
 }
 
 TEST(motion_jog_is_sized_in_revolutions_at_the_microstep_setting) {

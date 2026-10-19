@@ -91,11 +91,6 @@ public:
     /// false for any register outside the driver's allow-list. Default: not supported.
     virtual bool writePanelRegister(uint8_t reg, const uint8_t* data, uint8_t len) { (void)reg; (void)data; (void)len; return false; }
 
-    /// Panel sleep: true turns the display off and puts the controller to sleep (no refresh,
-    /// the frame memory keeps its contents and still accepts writes); false brings it back.
-    /// The caller keeps 120 ms between the two. Default: not supported.
-    virtual void setPanelSleep(bool sleep) { (void)sleep; }
-
     // --- Inline helpers (delegate to fillRect) ---
 
     void fillScreen(uint16_t color) {

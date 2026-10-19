@@ -92,7 +92,7 @@ void ScreenCareScreen::render(Services::ICanvas& lcd)
             "Saver: nothing still after the quiet",
             "time. Sleep: once the saver has run",
             "that long, the panel goes black and",
-            "sleeps. Any move wakes it.",
+            "stays still. Any move wakes it.",
             "",
             "Recovery drives every pixel through",
             "full-scale colours for the time set,",

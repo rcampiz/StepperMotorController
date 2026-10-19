@@ -412,18 +412,18 @@ void DisplayService::tick()
 
     estopTick(mode);
 
-    // Panel sleep: the saver's last stage. Asleep only while the saver is in charge; a move
-    // (the saver pops), an E-STOP page or the host taking the screen wakes it, every time.
+    // Panel sleep: the saver's last stage, a black frame and no more traffic (the controller
+    // keeps refreshing it from its memory). DISPOFF/SLPIN are not used: this glass shows WHITE
+    // with the controller off (bench 2026-10-18). Asleep only while the saver is in charge; a
+    // move (the saver pops), an E-STOP page or any client taking the screen wakes it, every time.
     if (m_lcd != nullptr) {
         const bool saverInCharge = mode == UI::UIMode::LOCAL && m_screenManager.current() == &m_saverScreen;
         switch (m_panelSleep.tick(saverInCharge, m_clock->getTickMs(), m_care.sleepAfterMs)) {
             case UI::PanelSleep::Action::SLEEP:
                 m_lcd->waitForVSync();
                 m_lcd->fillScreen(UI::Theme::BLACK);
-                m_lcd->setPanelSleep(true);
                 break;
             case UI::PanelSleep::Action::WAKE:
-                m_lcd->setPanelSleep(false);
                 if (m_indicator != nullptr) m_indicator->invalidate();   // REMOTE: redraw it whole
                 break;
             default:
