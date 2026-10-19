@@ -6,6 +6,7 @@
 #include "ui/screens/saver_screen.hpp"
 #include "ui/theme.hpp"
 #include "harness/defs/harness_l3_l4.hpp"
+#include "harness/pins/protocol_version.hpp"
 #include <string.h>
 
 namespace UI {
@@ -240,6 +241,14 @@ constexpr Glyph TITLE_GLYPHS[] = {
     {'R', {0x7F, 0x09, 0x19, 0x29, 0x4F}}, {'M', {0x7F, 0x01, 0x7E, 0x01, 0x7F}},
     {'O', {0x3E, 0x41, 0x41, 0x41, 0x3E}}, {'C', {0x3E, 0x41, 0x41, 0x41, 0x22}},
     {'N', {0x7F, 0x04, 0x08, 0x10, 0x7F}}, {'L', {0x7F, 0x40, 0x40, 0x40, 0x40}},
+    // the release line under it
+    {'v', {0x1C, 0x20, 0x40, 0x20, 0x1C}}, {'.', {0x60, 0x60, 0x00, 0x00, 0x00}},
+    {'-', {0x08, 0x08, 0x08, 0x08, 0x08}},
+    {'0', {0x3E, 0x41, 0x41, 0x41, 0x3E}}, {'1', {0x00, 0x42, 0x7F, 0x40, 0x00}},
+    {'2', {0x62, 0x51, 0x49, 0x49, 0x46}}, {'3', {0x22, 0x41, 0x49, 0x49, 0x36}},
+    {'4', {0x18, 0x14, 0x12, 0x7F, 0x10}}, {'5', {0x27, 0x45, 0x45, 0x45, 0x39}},
+    {'6', {0x3E, 0x49, 0x49, 0x49, 0x32}}, {'7', {0x01, 0x71, 0x09, 0x05, 0x03}},
+    {'8', {0x36, 0x49, 0x49, 0x49, 0x36}}, {'9', {0x26, 0x49, 0x49, 0x49, 0x3E}},
 };
 // The whole name at once, three centred lines, in the Hotline Miami manner: tall slanted
 // block letters with a hard offset shadow and a dark outline, neon colours that flash, the
@@ -253,10 +262,23 @@ constexpr int16_t TITLE_W = 10 * TITLE_ADV - CELL_W;    // the longest line, CON
 constexpr int16_t TITLE_H = 2 * TITLE_PITCH + TITLE_LINE_H;
 constexpr int16_t SLANT = (TITLE_LINE_H - 1) / 4;       // italic: tops lean right by up to 6 px
 constexpr int16_t SHADOW = 3;                           // shadow offset, right and down
+// The release under the name ("v0.5.0", Harness::FW_VERSION): the same 5x7 glyphs, smaller
+// (2x3 cells), spaced by their ink, with the same lean, a shallower shadow and a neon rule
+// either side; white-to-cyan on a magenta shadow that holds still while the name flashes. It
+// is part of the title's mask, so it fades, rocks and bobs with the name in the same box and
+// the same pass.
+constexpr int16_t VER_CW = 2, VER_CH = 3;               // 10 x 21 glyphs: tall and narrow too
+constexpr int16_t VER_H = 7 * VER_CH;
+constexpr int16_t VER_GAP = 6;                          // CONTROLLER's baseline to the version's top
+constexpr int16_t VER_TOP = TITLE_H + VER_GAP;          // in title coordinates
+constexpr int16_t VER_SHADOW = 2;
+constexpr int16_t VER_RULE_GAP = 7;                     // text to rule
+constexpr int16_t VER_RULE_ROW = 3 * VER_CH;            // the rules sit on the middle glyph row
+static_assert(VER_GAP >= SHADOW + 3, "the version's outline must not touch CONTROLLER's shadow");
 // The mask: the unrotated title, 2 bits a pixel (0 sky, 1 outline, 2 shadow, 3 face), with
 // a pixel of margin for the outline
 constexpr int16_t MW = TITLE_W + SLANT + SHADOW + 2;
-constexpr int16_t MH = TITLE_H + SHADOW + 2;
+constexpr int16_t MH = VER_TOP + VER_H + VER_SHADOW + 2;
 constexpr int16_t MW4 = (MW + 3) / 4;                   // bytes a mask row
 uint8_t s_mask[MH * MW4];
 bool s_maskBuilt = false;
@@ -268,6 +290,11 @@ constexpr int16_t BOB = 2;
 // The box the rocking title can reach (fixed for a scene): half-width and half-height
 constexpr int16_t BOX_HW = MW / 2 + (MH / 2) * 72 / 1000 + 2;
 constexpr int16_t BOX_HH = MH / 2 + (MW / 2) * 72 / 1000 + BOB + 2;
+// Scene layout: the horizon's range, and the title box's top; the box stays in the sky (it is
+// composited over synthUpper, which knows nothing of the floor)
+constexpr int16_t HORIZON_MIN = 150, HORIZON_SPAN = 80;
+constexpr int16_t TITLE_Y_MIN = 2, TITLE_Y_SPAN = 6;
+static_assert(TITLE_Y_MIN + TITLE_Y_SPAN - 1 + 2 * BOX_HH - 1 <= HORIZON_MIN, "the title box must stay above the horizon");
 // Colour schemes that flash in turn, each line one step along: face top, face bottom, shadow
 struct TitleInk { uint16_t top, bottom, shadow; };
 constexpr TitleInk TITLE_INKS[3] = {
@@ -276,6 +303,9 @@ constexpr TitleInk TITLE_INKS[3] = {
     {rgb(90, 255, 255), rgb(30, 110, 255), rgb(255, 30, 120)},    // cyan to blue, hot pink
 };
 constexpr uint16_t TITLE_OUTLINE = rgb(14, 0, 24);
+// The version: white at the top to neon cyan, a magenta shadow
+constexpr uint16_t VER_TOP_INK = rgb(250, 255, 255), VER_BOTTOM_INK = rgb(40, 220, 255);
+constexpr uint16_t VER_SHADOW_INK = rgb(255, 20, 170);
 constexpr uint16_t FLASH_FRAMES = 16;                   // a new colour step every 0.8 s
 // Fade in, hold, fade out (frames at 20 Hz)
 constexpr uint16_t FADE_FRAMES = 16;
@@ -296,6 +326,77 @@ inline void maskSet(int16_t x, int16_t y, uint8_t v) {
     uint8_t& b = s_mask[y * MW4 + (x >> 2)];
     const int sh = (x & 3) * 2;
     b = static_cast<uint8_t>((b & ~(3u << sh)) | (static_cast<unsigned>(v) << sh));
+}
+
+/// The columns a glyph inks: the version line is spaced by ink, not by cell
+int16_t glyphInk(const uint8_t* g, int16_t& first) {
+    first = 0;
+    int16_t last = -1;
+    for (int16_t c = 0; c < 5; c++) {
+        if (g[c] == 0) continue;
+        if (last < 0) first = c;
+        last = c;
+    }
+    return static_cast<int16_t>(last - first + 1);
+}
+
+/// One face pixel of the version line: title coordinates, leaning like the name
+void versionPixel(int16_t x, int16_t ly) {
+    const int16_t lean = static_cast<int16_t>((VER_H - 1 - ly) / 4);
+    maskSet(static_cast<int16_t>(1 + x + lean), static_cast<int16_t>(1 + VER_TOP + ly), 3);
+}
+
+/// "v<FW_VERSION>" centred under the name, with a rule either side of it
+void buildVersionLine() {
+    char text[16];
+    text[0] = 'v';
+    size_t n = 1;
+    for (const char* p = Harness::FW_VERSION; *p != '\0' && n < sizeof text - 1; p++) text[n++] = *p;
+    text[n] = '\0';
+    // Width in cells: a blank cell between glyphs and an extra one either side of a point (it
+    // is small, and leaning it would crowd the digits); what does not fit under the name is dropped
+    auto span = [](char ch, const uint8_t*& g, int16_t& first, int16_t& lead) -> int16_t {
+        g = glyphFor(ch);
+        first = 0;
+        lead = (ch == '.') ? 1 : 0;
+        const int16_t cols = g ? glyphInk(g, first) : 3;
+        return static_cast<int16_t>(cols + 2 * lead);
+    };
+    int16_t widthCells = 0;
+    size_t shown = 0;
+    for (; shown < n; shown++) {
+        const uint8_t* g;
+        int16_t first, lead;
+        const int16_t next = static_cast<int16_t>(widthCells + (shown ? 1 : 0) + span(text[shown], g, first, lead));
+        if (next * VER_CW > TITLE_W - VER_CW * 4) break;
+        widthCells = next;
+    }
+    const int16_t width = static_cast<int16_t>(widthCells * VER_CW);
+    const int16_t x0 = static_cast<int16_t>((TITLE_W - width) / 2);
+    int16_t x = x0;
+    for (size_t i = 0; i < shown; i++) {
+        const uint8_t* g;
+        int16_t first, lead;
+        const int16_t cells = span(text[i], g, first, lead);
+        const int16_t gx = static_cast<int16_t>(x + lead * VER_CW);
+        for (int16_t c = 0; g != nullptr && c < cells - 2 * lead; c++)
+            for (int16_t r = 0; r < 7; r++) {
+                if ((g[first + c] & (1u << r)) == 0) continue;
+                for (int16_t py = 0; py < VER_CH; py++)
+                    for (int16_t px = 0; px < VER_CW; px++)
+                        versionPixel(static_cast<int16_t>(gx + c * VER_CW + px), static_cast<int16_t>(r * VER_CH + py));
+            }
+        x = static_cast<int16_t>(x + (cells + 1) * VER_CW);
+    }
+    // The rules: from under CONTROLLER's ends in to the text, where there is room
+    const int16_t inset = TITLE_ADV;
+    const int16_t leftEnd = static_cast<int16_t>(x0 - VER_RULE_GAP);
+    const int16_t rightStart = static_cast<int16_t>(x0 + width + VER_RULE_GAP);
+    if (leftEnd - inset < 8) return;
+    for (int16_t ly = VER_RULE_ROW; ly < VER_RULE_ROW + VER_CW; ly++) {
+        for (int16_t rx = inset; rx < leftEnd; rx++) versionPixel(rx, ly);
+        for (int16_t rx = rightStart; rx < TITLE_W - inset; rx++) versionPixel(rx, ly);
+    }
 }
 
 /// Lay the letters into the mask once: faces (slanted), then the shadow behind them, then
@@ -324,12 +425,15 @@ void buildTitleMask() {
                 }
         }
     }
+    buildVersionLine();
     for (int16_t y = MH - 1; y >= 0; y--)                  // shadow: faces moved right and down
-        for (int16_t x = MW - 1; x >= 0; x--)
-            if (maskAt(x, y) == 3 && maskAt(static_cast<int16_t>(x + SHADOW), static_cast<int16_t>(y + SHADOW)) == 0)
-                for (int16_t k = 1; k <= SHADOW; k++)      // a solid extrusion, not a copy
+        for (int16_t x = MW - 1; x >= 0; x--) {
+            const int16_t depth = (y - 1 >= VER_TOP) ? VER_SHADOW : SHADOW;
+            if (maskAt(x, y) == 3 && maskAt(static_cast<int16_t>(x + depth), static_cast<int16_t>(y + depth)) == 0)
+                for (int16_t k = 1; k <= depth; k++)       // a solid extrusion, not a copy
                     if (maskAt(static_cast<int16_t>(x + k), static_cast<int16_t>(y + k)) == 0)
                         maskSet(static_cast<int16_t>(x + k), static_cast<int16_t>(y + k), 2);
+        }
     for (int16_t y = 0; y < MH; y++)                       // outline round faces and shadow
         for (int16_t x = 0; x < MW; x++) {
             if (maskAt(x, y) != 0) continue;
@@ -349,7 +453,7 @@ void SaverScreen::synthNewScene()
     // Never the same palette, horizon or sun twice in a row
     m_palette = static_cast<uint8_t>((m_palette + 1 + nextRandom() % (PALETTE_COUNT - 1)) % PALETTE_COUNT);
     const Palette& P = PALETTES[m_palette];
-    m_horizon = static_cast<int16_t>(150 + nextRandom() % 80);           // 150..229
+    m_horizon = static_cast<int16_t>(HORIZON_MIN + nextRandom() % HORIZON_SPAN);   // 150..229
     m_sunR = static_cast<int16_t>(32 + nextRandom() % 22);               // 32..53
     m_sunX = static_cast<int16_t>(W / 2 - 50 + static_cast<int16_t>(nextRandom() % 101));
     m_city = (nextRandom() % 3) == 0;                                    // a skyline one time in three
@@ -402,7 +506,7 @@ void SaverScreen::synthNewScene()
     m_titleX = static_cast<int16_t>(W / 2 - BOX_HW - 10 + static_cast<int16_t>(nextRandom() % 21));
     if (m_titleX < 0) m_titleX = 0;
     if (m_titleX + 2 * BOX_HW > W) m_titleX = static_cast<int16_t>(W - 2 * BOX_HW);
-    m_titleY = static_cast<int16_t>(2 + nextRandom() % 10);
+    m_titleY = static_cast<int16_t>(TITLE_Y_MIN + nextRandom() % TITLE_Y_SPAN);
     m_titleAlpha = 0;
 }
 
@@ -568,6 +672,8 @@ void SaverScreen::synthTitle(Services::ICanvas& lcd, uint16_t t)
         shadow[line] = k.shadow;
         for (int ly = 0; ly < TITLE_LINE_H; ly++) face[line][ly] = mix(k.top, k.bottom, ly * 256 / (TITLE_LINE_H - 1));
     }
+    uint16_t verFace[VER_H];                              // the version's colours do not flash
+    for (int ly = 0; ly < VER_H; ly++) verFace[ly] = mix(VER_TOP_INK, VER_BOTTOM_INK, ly * 256 / (VER_H - 1));
 
     const int32_t cx = x0 + BOX_HW, cy = y0 + BOX_HH + bob;   // where the mask's centre lands
     lcd.streamBitmapStart(static_cast<uint16_t>(x0), static_cast<uint16_t>(y0), static_cast<uint16_t>(w),
@@ -588,7 +694,12 @@ void SaverScreen::synthTitle(Services::ICanvas& lcd, uint16_t t)
                 int16_t line = static_cast<int16_t>(ty / TITLE_PITCH);
                 if (line < 0) line = 0;
                 if (line > 2) line = 2;
-                if (m == 3) {
+                if (ty >= VER_TOP - 1) {                      // the version line, its outline included
+                    int16_t ly = static_cast<int16_t>(ty - VER_TOP);
+                    if (ly < 0) ly = 0;
+                    if (ly >= VER_H) ly = VER_H - 1;
+                    c = (m == 3) ? verFace[ly] : (m == 2 ? VER_SHADOW_INK : TITLE_OUTLINE);
+                } else if (m == 3) {
                     int16_t ly = static_cast<int16_t>(ty - line * TITLE_PITCH);
                     if (ly < 0) ly = 0;
                     if (ly >= TITLE_LINE_H) ly = TITLE_LINE_H - 1;

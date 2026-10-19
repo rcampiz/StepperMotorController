@@ -287,6 +287,30 @@ TEST(saver_styles_animate_and_any_key_leaves) {
                rig.panel.countColor(c565(255, 30, 120));
     };
     EXPECT_TRUE(shadows() > 300);
+    // the release ("v" + Harness::FW_VERSION) under the name: its magenta shadow lies below the
+    // title's shadows and centred under them
+    {
+        const uint16_t titleInk[3] = {c565(40, 200, 255), c565(240, 0, 150), c565(255, 30, 120)};
+        const uint16_t verInk = c565(255, 20, 170);
+        uint32_t nT = 0, nV = 0;
+        long sxT = 0, syT = 0, syTmax = 0, sxV = 0, syV = 0, syVmin = 320;
+        for (uint16_t y = 0; y < 320; y++)
+            for (uint16_t x = 0; x < 240; x++) {
+                const uint16_t c = rig.panel.px(x, y);
+                if (c == titleInk[0] || c == titleInk[1] || c == titleInk[2]) {
+                    nT++; sxT += x; syT += y; if (y > syTmax) syTmax = y;
+                } else if (c == verInk) {
+                    nV++; sxV += x; syV += y; if (y < syVmin) syVmin = y;
+                }
+            }
+        printf("  saver: title shadow %u px (rows to %ld), version shadow %u px (rows from %ld)\n",
+               nT, syTmax, nV, syVmin);
+        EXPECT_TRUE(nV > 60);
+        EXPECT_TRUE(nT > 0 && nV > 0 && syV / static_cast<long>(nV) > syT / static_cast<long>(nT) + 40);
+        const long dx = (nT > 0 && nV > 0) ? sxV / static_cast<long>(nV) - sxT / static_cast<long>(nT) : 99;
+        EXPECT_TRUE(dx > -12 && dx < 12);
+        EXPECT_TRUE(syVmin + 12 > syTmax);                       // under CONTROLLER, give or take the rock
+    }
     for (int i = 0; i < 21; i++) rig.frame();                  // a quarter rock later, another flash
     rig.dump("saver_synth_title_rock");
     EXPECT_TRUE(shadows() > 300);

@@ -9,7 +9,8 @@
  *    acid), horizon height, sun size and place, so no pixel holds one picture. Once per
  *    scene "STEPPER / MOTOR / CONTROLLER" fades in on three lines, Hotline Miami style
  *    (tall slanted block letters, hard offset shadow, dark outline, neon colours that flash),
- *    rocks and bobs like that game's menu for 10 s and fades out. Per frame the floor and the
+ *    with the release ("v0.5.0", Harness::FW_VERSION) under it in smaller letters of the same
+ *    cut, rocks and bobs like that game's menu for 10 s and fades out. Per frame the floor and the
  *    sun's box are repainted, and the title's box every other frame while it shows.
  *  - HOTLINE: a diagonal stripe band and a blocky SMC card with chromatic aberration,
  *    relaid every 2 s, with VHS glitch slices in between.
