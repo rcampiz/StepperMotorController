@@ -20,8 +20,8 @@ Enforced by `scripts/arch/check_includes.py --strict` and `scripts/arch/check_ha
 - **L3 Services** â€” All business logic and safety, host-testable, no RTOS loops: Motor/Comms/Encoder/Display/Debug services, controllers, dispatchers, telemetry store, UI, trace. (189 files)
 - **L4 Drivers** â€” Device drivers over Board pin bundles: powerSTEP01, ST7789, NOR flash, joystick, quadrature encoder (+ index ISR), config store, debug access. (28 files)
 - **L5 Board** â€” Register/peripheral access: clocks, GPIO, SPI1/SPI2, USART2 + RTT byte channels, TIM4, TIM3+DMA sampler, EXTI, TE sync, internal flash, bring-up commands. (35 files)
-- **TASKS Task sheet (Scheduler::)** â€” Four RTOS task loops that only wait, then call one L3 entry point; owns priorities, periods, stack sizes, task handles and the task-init contracts the composition root calls. (16 files)
-- **PLATFORM Platform (power net)** â€” RTOS-neutral primitives any sheet may use: clock, microsecond clock, locks, queues, scheduler, task stats, memory stats, critical section, task notifier; FreeRTOS implementations, startup. (54 files)
+- **TASKS Task sheet (Scheduler::)** â€” Four RTOS task loops that only wait, then call one L3 entry point; owns priorities, periods, stack sizes, task handles and the task-init contracts the composition root calls. (17 files)
+- **PLATFORM Platform (power net)** â€” RTOS-neutral primitives any sheet may use: clock, microsecond clock, locks, queues, scheduler, task stats, memory stats, critical section, task notifier; FreeRTOS implementations, startup. (55 files)
 - **HARNESS Harness** â€” Harness definitions (defs/), connect() functions (the only place taps are applied), shared POD pins, traced taps, interface trace. (64 files)
 - **SYSTEM Composition root** â€” main.cpp + system_init.cpp: phase sequencing, Platform resources, RTOS task creation over the L3 services. (3 files)
 
@@ -115,7 +115,7 @@ Two header sets are wired like power rails: any sheet may include them directly,
 
 | Task | Priority | Stack (words) | Trigger | Period (ms) | Body |
 |---|---|---|---|---|---|
-| Motor | 4 | 1024 | event | 50 | queue receive (50 ms timeout) -> IMotorService::onCommand; every 50 ms -> IMotorService::periodicUpdate |
+| Motor | 4 | 512 | event | 50 | queue receive (50 ms timeout) -> IMotorService::onCommand; every 50 ms -> IMotorService::periodicUpdate |
 | Comms | 3 | 2048 | event | 10 | ITaskNotifier wait (USART2 RX wake) with 10 ms fallback -> ICommsService::tick |
 | Encoder | 2 | 256 | periodic | 10 | sleepUntil 10 ms -> IEncoderService::sample (task not created without encoder hardware) |
 | Display | 1 | 640 | periodic | 50 | sleepUntil 50 ms -> IDisplayService::tick |

@@ -342,7 +342,8 @@
         "server/foundation/F_platform/tasks/motor_task.cpp",
         "server/foundation/F_platform/tasks/motor_task.hpp",
         "server/foundation/F_platform/tasks/motor_task_init.cpp",
-        "server/foundation/F_platform/tasks/motor_task_init.hpp"
+        "server/foundation/F_platform/tasks/motor_task_init.hpp",
+        "server/foundation/F_platform/tasks/task_stacks.hpp"
       ]
     },
     {
@@ -403,6 +404,7 @@
         "server/foundation/F_platform/tasks/motor_task.hpp",
         "server/foundation/F_platform/tasks/motor_task_init.cpp",
         "server/foundation/F_platform/tasks/motor_task_init.hpp",
+        "server/foundation/F_platform/tasks/task_stacks.hpp",
         "server/foundation/F_platform/types/velocity_quality_t.hpp"
       ]
     },
@@ -493,7 +495,7 @@
       {
         "name": "Motor",
         "priority": 4,
-        "stack": 1024,
+        "stack": 512,
         "trigger": "event",
         "period_ms": 50,
         "layer_affinity": [

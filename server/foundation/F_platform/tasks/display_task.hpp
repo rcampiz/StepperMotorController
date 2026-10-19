@@ -9,6 +9,7 @@
 #define DISPLAY_TASK_HPP
 
 #include "F_platform/boundary/ischeduler.hpp"   // Platform::TaskHandle
+#include "F_platform/tasks/task_stacks.hpp"
 #include <stdint.h>
 
 namespace Platform { class IClock; }
@@ -16,7 +17,7 @@ namespace Services { class IDisplayService; }
 
 namespace Scheduler {
 
-constexpr uint32_t DISPLAY_TASK_STACK_SIZE = 640;  // uxTaskGetSystemState + snprintf + trig
+// DISPLAY_TASK_STACK_SIZE: tasks/task_stacks.hpp (all the stack sizes, in one place)
 constexpr uint32_t DISPLAY_TASK_PRIORITY = 1;
 constexpr uint32_t DISPLAY_REFRESH_PERIOD_MS = 50; // 20 Hz refresh
 

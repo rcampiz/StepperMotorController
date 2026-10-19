@@ -8,6 +8,7 @@
 #define COMMS_TASK_HPP
 
 #include "F_platform/boundary/ischeduler.hpp"
+#include "F_platform/tasks/task_stacks.hpp"
 #include <stdint.h>
 
 namespace Platform { class IClock; class ITaskNotifier; }
@@ -15,7 +16,7 @@ namespace Services { class ICommsService; }
 
 namespace Scheduler {
 
-constexpr uint32_t COMMS_TASK_STACK_SIZE = 2048;  // 8192 bytes (GET_STATUS JSON uses 640B local buf + snprintf)
+// COMMS_TASK_STACK_SIZE: tasks/task_stacks.hpp (all the stack sizes, in one place)
 constexpr uint32_t COMMS_TASK_PRIORITY = 3;
 constexpr uint32_t COMMS_POLL_PERIOD_MS = 10;     // Fallback poll when no RX wake arrives
 

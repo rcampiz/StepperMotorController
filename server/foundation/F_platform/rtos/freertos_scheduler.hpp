@@ -9,14 +9,18 @@
 #define PLATFORM_FREERTOS_SCHEDULER_HPP
 
 #include "harness/pins/ischeduler.hpp"
+#include "F_platform/tasks/task_stacks.hpp"
 
 namespace Platform {
 
 class FreeRTOSScheduler : public Platform::IScheduler {
 public:
-    /// Static stack pool shared by every task created through this scheduler (F11).
-    /// Motor 1024 + Comms 2048 + Encoder 256 + Display 640 = 3968 words today.
-    static constexpr uint32_t STACK_POOL_WORDS = 4096;
+    /// Static stack pool shared by every task created through this scheduler (F11): the task
+    /// sheet's stacks (F_platform/tasks/task_stacks.hpp, the one place to change them) plus a
+    /// spare of POOL_SPARE_WORDS. Motor 512 + Comms 2048 + Encoder 256 + Display 640 + 128 =
+    /// 3584 words today (was 4096 with Motor at 1024).
+    static constexpr uint32_t POOL_SPARE_WORDS = 128;
+    static constexpr uint32_t STACK_POOL_WORDS = Scheduler::TASK_STACKS_TOTAL_WORDS + POOL_SPARE_WORDS;
     static constexpr uint32_t MAX_TASKS = 6;
     /// Words of the pool not yet handed to a task (diagnostics).
     static uint32_t stackPoolFreeWords();

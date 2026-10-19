@@ -37,11 +37,18 @@ LAYERS = [
 ]
 
 TASKS = [
-    {"name": "Motor",   "priority": 4, "stack": 1024, "trigger": "event",    "period_ms": 50, "layer_affinity": ["TASKS", "L3"], "body": "queue receive (50 ms timeout) -> IMotorService::onCommand; every 50 ms -> IMotorService::periodicUpdate"},
-    {"name": "Comms",   "priority": 3, "stack": 2048, "trigger": "event",    "period_ms": 10, "layer_affinity": ["TASKS", "L3"], "body": "ITaskNotifier wait (USART2 RX wake) with 10 ms fallback -> ICommsService::tick"},
-    {"name": "Encoder", "priority": 2, "stack": 256,  "trigger": "periodic", "period_ms": 10, "layer_affinity": ["TASKS", "L3"], "body": "sleepUntil 10 ms -> IEncoderService::sample (task not created without encoder hardware)"},
-    {"name": "Display", "priority": 1, "stack": 640,  "trigger": "periodic", "period_ms": 50, "layer_affinity": ["TASKS", "L3"], "body": "sleepUntil 50 ms -> IDisplayService::tick"},
+    {"name": "Motor",   "priority": 4, "stack": None, "trigger": "event",    "period_ms": 50, "layer_affinity": ["TASKS", "L3"], "body": "queue receive (50 ms timeout) -> IMotorService::onCommand; every 50 ms -> IMotorService::periodicUpdate"},
+    {"name": "Comms",   "priority": 3, "stack": None, "trigger": "event",    "period_ms": 10, "layer_affinity": ["TASKS", "L3"], "body": "ITaskNotifier wait (USART2 RX wake) with 10 ms fallback -> ICommsService::tick"},
+    {"name": "Encoder", "priority": 2, "stack": None, "trigger": "periodic", "period_ms": 10, "layer_affinity": ["TASKS", "L3"], "body": "sleepUntil 10 ms -> IEncoderService::sample (task not created without encoder hardware)"},
+    {"name": "Display", "priority": 1, "stack": None, "trigger": "periodic", "period_ms": 50, "layer_affinity": ["TASKS", "L3"], "body": "sleepUntil 50 ms -> IDisplayService::tick"},
 ]
+
+# Stack sizes (words) come from the task sheet's one table, so the doc cannot drift from it
+TASK_STACKS = os.path.join(SERVER, "foundation", "F_platform", "tasks", "task_stacks.hpp")
+with open(TASK_STACKS, encoding="utf-8") as _f:
+    _stacks = dict(re.findall(r'constexpr\s+uint32_t\s+(\w+)_TASK_STACK_SIZE\s*=\s*(\d+)\s*;', _f.read()))
+for _t in TASKS:
+    _t["stack"] = int(_stacks[_t["name"].upper()])
 
 HARNESS_FILES = {
     "L1_L2": "harness_l1_l2.hpp", "L2_L3": "harness_l2_l3.hpp", "L3_L4": "harness_l3_l4.hpp",

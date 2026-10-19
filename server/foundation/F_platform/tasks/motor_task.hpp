@@ -11,6 +11,7 @@
 #include "harness/pins/motor_command.hpp"
 #include "F_platform/boundary/iqueue.hpp"
 #include "F_platform/boundary/ischeduler.hpp"
+#include "F_platform/tasks/task_stacks.hpp"
 #include <stdint.h>
 
 namespace Platform { class IClock; }
@@ -18,7 +19,7 @@ namespace Services { class IMotorService; }
 
 namespace Scheduler {
 
-constexpr uint32_t MOTOR_TASK_STACK_SIZE = 1024;  // words
+// MOTOR_TASK_STACK_SIZE: tasks/task_stacks.hpp (all the stack sizes, in one place)
 constexpr uint32_t MOTOR_TASK_PRIORITY = 4;
 constexpr uint32_t MOTOR_STATUS_PERIOD_MS = 50;   // periodicUpdate cadence / queue timeout
 

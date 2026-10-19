@@ -174,7 +174,7 @@ Lock-free cross-task state (no RTOS object): `MotorService` atomics (ESTOP latch
 stop/clear pending, debug pause, step-mode result slot), `DisplayService::m_enabled`,
 `EncoderService::m_ackedIndexPulses`, and the `SeqSnapshot<IndexSnapshot>` in `Drivers::Encoder`.
 
-FreeRTOS config: V11.1, ARM_CM4F port, no heap (static allocation, 4096-word stack pool), tick 1 kHz, `configUSE_TIMERS 0`,
+FreeRTOS config: V11.1, ARM_CM4F port, no heap (static allocation, a stack pool sized from `tasks/task_stacks.hpp` + 128 words: 3584 words), tick 1 kHz, `configUSE_TIMERS 0`,
 `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY 5`, `configASSERT` defined unconditionally,
 `configCHECK_FOR_STACK_OVERFLOW 2`. Hooks in `rtos/freertos_hooks.cpp`.
 
