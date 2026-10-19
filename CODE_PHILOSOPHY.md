@@ -223,6 +223,18 @@ Constraints:
 
 Observability must never change semantics.
 
+As built (2026-10-19), two stacked decorators per harness signal, applied only in
+`harness/defs/harness_connect.cpp`:
+- **Metered** (`harness/taps/metered_taps.hpp`, every build): counts calls, bytes, time
+  inside and the crossing task into the harness meter (`harness/trace/harness_meter.hpp`,
+  read by `DIAG:HARNESS?` and the LCD). The task sheet (H_TASKS_L3) and the L2 router
+  (H_L2_L3 commands) count their own crossing.
+- **Traced** (`harness/taps/traced_*.hpp`, debug builds): ITrace records, on top.
+- A decorator forwards *every* method, defaulted ones too (a missing forward silently
+  falls back to the interface default). Keep metered forwards plain virtual calls.
+- The task id is kept per task by Platform (`ITaskStats` task tag), never in a global:
+  a preempting task would overwrite it.
+
 ---
 
 ## 10) Stable API vs Bring-Up Debug API
@@ -420,6 +432,23 @@ register/bus commands to `Drivers::IDebugAccess` -> `Board::IBoardDebug`. Debug 
 the layers; it is a service like any other, just locked by default.
 
 ---
+
+### Tasks and layers are orthogonal
+
+Layers say what code does; tasks say when it runs. A task is a thread that crosses the
+layers through their harnesses; layers are never processes. Consequences:
+- L3 must not wait on another task to make progress. Known exception to retire:
+  `MotorService::runJob` (a cross-task rendezvous by polling; it times out under a
+  single-loop scheduler). New code: post the work and pick up the result later, or use a
+  Platform completion primitive.
+- The RTOS is swappable by re-implementing `F_platform/boundary` and the task sheet.
+
+### The motor driver must be swappable (direction)
+
+L3 should be chip-agnostic: physical units (steps/s, steps/s^2, amps, microsteps) and a
+generic fault/state across H_L3_L4; register maps, unit conversions and STATUS decoding
+belong in the L4 driver. Today L3/L2 still know the powerSTEP01 (MotorReg addresses,
+STATUS bits, chip speed units): debt to retire, do not add to it.
 
 ## Summary
 
