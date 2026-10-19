@@ -183,6 +183,11 @@ public:
         }
     }
 
+    const uint8_t* mediumGlyphRows(char c) const override {
+        const auto u = static_cast<unsigned char>(c);
+        return (u >= 32 && u <= 126) ? FONT_8X12[u - 32] : nullptr;
+    }
+
     bool writePanelRegister(uint8_t reg, const uint8_t* data, uint8_t len) override {
         if (!isTunableRegister(reg) || len == 0 || len > 14 || data == nullptr) return false;
         writeCmd(reg);

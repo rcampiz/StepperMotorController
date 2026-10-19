@@ -115,8 +115,13 @@ TEST(menu_paints_every_item_and_the_selection_bar) {
     printf("  menu: first frame %u px, one selection move %u px\n", firstFrame, moveCost);
     EXPECT_TRUE(moveCost <= 2u * 228u * 18u);               // two rows, each painted once
     EXPECT_TRUE(rig.panel.countColor(UI::Theme::PINK, 0, UI::Theme::CONTENT_Y, 240, 20) == 0);   // bar moved off item 0
-    rig.frame();
-    EXPECT_EQ(rig.panel.pixelsWritten - firstFrame, moveCost);   // nothing changes: nothing is sent
+    // Nothing changes: only the selected item animates (Hotline Miami), one bar every other frame
+    const uint32_t beforeIdle = rig.panel.pixelsWritten;
+    rig.frame(); rig.frame();
+    EXPECT_EQ(rig.panel.pixelsWritten - beforeIdle, 228u * 16u);
+    rig.dump("menu_anim_a");
+    for (int i = 0; i < 9; i++) rig.frame();
+    rig.dump("menu_anim_b");
     // A status change repaints only the status strip
     UI::StatusLine s = {};
     snprintf(s.left, sizeof s.left, "HOLD 0rpm"); s.leftColor = UI::Theme::CYAN;
@@ -124,7 +129,7 @@ TEST(menu_paints_every_item_and_the_selection_bar) {
     const uint32_t beforeStatus = rig.panel.pixelsWritten;
     rig.mgr.setStatus(s);
     rig.frame();
-    EXPECT_TRUE(rig.panel.pixelsWritten - beforeStatus < 240u * 12u);
+    EXPECT_TRUE(rig.panel.pixelsWritten - beforeStatus < 240u * 12u + 228u * 16u);   // + maybe the bar
 }
 
 TEST(a_long_menu_scrolls_and_the_back_hint_appears_below_the_root) {

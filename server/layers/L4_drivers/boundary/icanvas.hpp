@@ -91,6 +91,11 @@ public:
     /// false for any register outside the driver's allow-list. Default: not supported.
     virtual bool writePanelRegister(uint8_t reg, const uint8_t* data, uint8_t len) { (void)reg; (void)data; (void)len; return false; }
 
+    /// The medium font's (FONT_MEDIUM, 8 x 12) rows for `c`: 12 bytes, high bit = leftmost
+    /// pixel; nullptr outside ASCII 32..126. Lets a screen compose text into its own pixel
+    /// rows (animated text streamed in one pass). Default: no font.
+    virtual const uint8_t* mediumGlyphRows(char c) const { (void)c; return nullptr; }
+
     // --- Inline helpers (delegate to fillRect) ---
 
     void fillScreen(uint16_t color) {
