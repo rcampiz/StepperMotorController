@@ -35,6 +35,7 @@ from smc_gui.protection_panel import ProtectionPanel
 from smc_gui.stepmode_panel import StepModePanel
 from smc_gui.controller_panel import ControllerPanel
 from smc_gui.motor_profile_panel import MotorProfilePanel
+from smc_core import driver as D
 from smc_core import motors
 from smc_core import views as V
 from smc_gui.fleet_panel import FleetPanel
@@ -100,6 +101,12 @@ class MainWindow(QMainWindow):
     connected = Signal()
     disconnected = Signal()
     status_updated = Signal(dict)
+
+    # The board's protocol (session) and whether it took DRV:CAPS? (protocol 3: physical
+    # commands); a protocol 2 board gets the chip-code aliases through smc_core.driver
+    _proto: Optional[int] = None
+    _physical: bool = False
+    _caps: dict = D.POWERSTEP01_CAPS        # replaced (not mutated) by DRV:CAPS?
 
     def __init__(self):
         super().__init__()
@@ -476,11 +483,37 @@ class MainWindow(QMainWindow):
         if self._bridge is not None:
             self._bridge.call(req, tag)
 
-    def _queue_refresh(self):
-        """The three text refreshes (driver registers, encoder, motor config)."""
+    def _queue_refresh(self, physical: bool = True):
+        """The text refreshes (driver diagnostics, encoder, motor config) and, on a protocol 3
+        board, the driver settings in physical units (DRV:CFG:PHYS?). DRV:CFG? stays: the
+        current-regulation tuning has no physical command, and a protocol 2 board's settings
+        come from it (translated by smc_core.driver)."""
         self._call(C.motor_debug(), "REFRESH_MOTOR_DEBUG")
         self._call(C.encoder(), "REFRESH_ENC")
         self._call(C.driver_config(), "REFRESH_MCONFIG")
+        if physical and self._physical:
+            self._call(C.driver_physical(), "REFRESH_PHYS")
+
+    def _resolution_query(self) -> C.Request:
+        """The resolution in force: DRV:USTEP? (protocol 3) or DRV:STEP_MODE? (protocol 2)."""
+        return C.microsteps_query() if self._physical else C.step_mode_query()
+
+    def _apply_caps(self, caps: dict, physical: bool) -> None:
+        """The driver's capabilities (DRV:CAPS?, or the powerSTEP01's for a protocol 2 board)
+        to the panels that edit its settings."""
+        self._physical = bool(physical)
+        self._caps = dict(caps)
+        self._driver_panel.set_caps(caps, self._physical)
+        self._protection_panel.set_caps(caps, self._physical)
+        self._stepmode_panel.set_caps(caps, self._physical)
+        self._profile_panel.set_physical(self._physical)
+
+    def _update_physical(self, phys: dict) -> None:
+        if not phys:
+            return
+        self._driver_panel.update_physical(phys)
+        self._protection_panel.update_physical(phys)
+        self._stepmode_panel.update_physical(phys)
 
     @Slot()
     def _on_connected(self):
@@ -497,10 +530,13 @@ class MainWindow(QMainWindow):
         self._populate()
 
     def _populate(self):
-        """Queries that fill the panels (also re-run after a board reset)."""
-        self._queue_refresh()
+        """Queries that fill the panels (also re-run after a board reset). DRV:CAPS? (a
+        protocol 2 board refuses it and the panels fall back to the chip-code commands; its
+        answer asks for DRV:CFG:PHYS?)."""
+        self._queue_refresh(physical=False)
+        self._call(C.driver_caps(), "REFRESH_CAPS")
         # Motor/encoder config for the Motion panel's unit conversion
-        for req in (C.step_mode_query(), C.full_steps_query(), C.encoder_ppr_query(),
+        for req in (self._resolution_query(), C.full_steps_query(), C.encoder_ppr_query(),
                     C.transport_delay_query()):
             self._call(req, "REFRESH_DRV_CONFIG")
         self._call(C.trim_query(), "REFRESH_TRIM_CONFIG")
@@ -508,6 +544,9 @@ class MainWindow(QMainWindow):
 
     @Slot(object)
     def _on_session(self, identity):
+        self._proto = identity.proto if identity is not None else None
+        # until DRV:CAPS? confirms (or refuses): the protocol says which commands to send
+        self._apply_caps(self._caps, D.supports_physical(self._proto))
         if identity is not None:
             self.setWindowTitle(f"STM32 Motor Controller - {identity.serial} "
                                 f"(fw {identity.fw}, protocol {identity.proto})")
@@ -661,10 +700,14 @@ class MainWindow(QMainWindow):
         """The board's DRV:CFG? as a profile file in the user's folder."""
         if self._bridge is None:
             return
+        physical = self._physical
+
         def job(ctx):
             cfg = V.motor_config(ctx.call(C.driver_config()))
-            p = motors.export_profile(cfg, name, title, rated_current_a=self._driver_panel.rated_current(),
-                                      resonance_bands_rpm=list(self._controller_panel.stick.bands_rpm))
+            phys = V.driver_physical(ctx.call(C.driver_physical())) if physical else {}
+            p = motors.export_profile(phys or cfg, name, title, rated_current_a=self._driver_panel.rated_current(),
+                                      resonance_bands_rpm=list(self._controller_panel.stick.bands_rpm),
+                                      regulation=cfg.get("cm"))
             return motors.save_profile(p)
         self._bridge.job(job, "EXPORT_PROFILE")
 
@@ -871,6 +914,11 @@ class MainWindow(QMainWindow):
                     False, "No response from FLASH_TEST")
             return
 
+        if not response.success and tag == "REFRESH_CAPS":
+            # a protocol 2 board: the powerSTEP01's capabilities, the chip-code commands
+            self._apply_caps(dict(D.POWERSTEP01_CAPS), False)
+            return
+
         if not response.success:
             self._status_bar.showMessage(
                 f"Error: {response.error_message}", 5000)
@@ -892,7 +940,7 @@ class MainWindow(QMainWindow):
                 self._status_bar.showMessage(
                     f"Step mode not applied: {response.error_code or ''} "
                     f"{response.error_message}", 8000)
-                self._call(C.step_mode_query(), "REFRESH_DRV_CONFIG")
+                self._call(self._resolution_query(), "REFRESH_DRV_CONFIG")
             # Flash operation failures
             if tag in ("FLASH_UPLOAD_SLOT",
                        "FLASH_SHOW",
@@ -923,13 +971,22 @@ class MainWindow(QMainWindow):
         elif tag == "REFRESH_ENC":
             self._telemetry_panel.update_encoder_data(V.encoder(response))
 
+        elif tag == "REFRESH_CAPS":
+            caps = V.driver_caps(response)
+            self._apply_caps(caps or dict(D.POWERSTEP01_CAPS), bool(caps))
+            if caps:
+                self._call(C.driver_physical(), "REFRESH_PHYS")
+
+        elif tag == "REFRESH_PHYS":
+            self._update_physical(V.driver_physical(response))
+
         elif tag == "REFRESH_MCONFIG":
             cfg = V.motor_config(response)
             self._telemetry_panel.update_motor_config(cfg)
-            self._protection_panel.update_protection_params(cfg)
-            self._stepmode_panel.update_step_mode(cfg)
             self._motion_panel.update_mconfig(cfg)
             self._driver_panel.update_motor_config(cfg)
+            if not self._physical:                       # protocol 2: translate the chip codes
+                self._update_physical(D.settings_from_legacy(cfg))
 
         elif tag == "SET_FORMAT":
             self._status_bar.showMessage("Format set", 2000)
@@ -949,7 +1006,7 @@ class MainWindow(QMainWindow):
             self._status_bar.showMessage(
                 f"Step mode applied: {response.data.get('message', '')}", 4000)
             self._stepmode_panel._dirty = False
-            self._call(C.step_mode_query(), "REFRESH_DRV_CONFIG")   # the chip, not the config
+            self._call(self._resolution_query(), "REFRESH_DRV_CONFIG")   # the driver, not the config
             self._queue_refresh()
 
         elif tag == "APPLY_PROTECTION":
@@ -1006,14 +1063,17 @@ class MainWindow(QMainWindow):
 
         elif tag == "REFRESH_DRV_CONFIG":
             if response.data:
-                self._motion_panel.update_drv_config(response.data)
-                self._motor_panel.update_drv_config(response.data)
-                self._stepmode_panel.update_chip_step_mode(response.data)
-                self._graph_panel.update_drv_config(response.data)
-                self._driver_panel.update_drv_config(response.data)
-                self._telemetry_panel.update_drv_config(response.data)
-                self._status_strip.set_geometry(response.data.get("full_steps_per_rev"),
-                                                response.data.get("encoder_ppr"))
+                data = dict(response.data)
+                data.update(V.resolution(response))        # step_mode / microsteps from either query
+                data.pop("message", None)
+                self._motion_panel.update_drv_config(data)
+                self._motor_panel.update_drv_config(data)
+                self._stepmode_panel.update_chip_step_mode(data)
+                self._graph_panel.update_drv_config(data)
+                self._driver_panel.update_drv_config(data)
+                self._telemetry_panel.update_drv_config(data)
+                self._status_strip.set_geometry(data.get("full_steps_per_rev"),
+                                                data.get("encoder_ppr"))
 
         elif tag == "REFRESH_TRIM_CONFIG":
             if response.data:

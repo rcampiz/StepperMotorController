@@ -9,8 +9,10 @@ smc: the command-line frontend (Raspberry Pi and bench). Same core as the GUI.
     smc test list
     smc test run NAME (--port P | --sim) [-p key=value ...] [--out results.jsonl]
     smc motor list                              motor profiles (client files + ~/.smc/motors)
-    smc motor show NAME                         one profile and the commands it sends
+    smc motor show NAME [--protocol 2]          one profile and the commands it sends
     smc motor apply NAME (--port P | --sim) [--save]   configure the board from a profile
+    smc driver caps (--port P | --sim)          what the motor driver can do (DRV:CAPS?)
+    smc driver show (--port P | --sim)          its settings in physical units (DRV:CFG:PHYS?)
     smc fleet check  --config fleet.json        open four boards, verify corners, show a frame
     smc fleet estop  --config fleet.json        stop the whole base (all writes, then confirms)
     smc fleet drive  --config fleet.json --vx 0.2 [--vy 0] [--wz 0] [--seconds 2]
@@ -33,6 +35,7 @@ if _CLIENT not in sys.path:
     sys.path.insert(0, _CLIENT)
 
 from smc_core import commands as C  # noqa: E402
+from smc_core import driver as D  # noqa: E402
 from smc_core import runner  # noqa: E402
 from smc_core.board import Board, BoardConfig, Liveness  # noqa: E402
 from smc_core.codec import parse_idn  # noqa: E402
@@ -256,18 +259,21 @@ def cmd_motor_list(args) -> int:
 def cmd_motor_show(args) -> int:
     from smc_core import motors
     p = motors.load_profile(args.name)
-    _out({"name": p.name, "profile": p.to_dict(), "commands": [r.line for r in p.requests()]})
+    physical = D.supports_physical(args.protocol)
+    _out({"name": p.name, "profile": p.to_dict(), "protocol": args.protocol,
+          "commands": [r.line for r in p.requests(physical)]})
     return 0
 
 
 def cmd_motor_apply(args) -> int:
     from smc_core import motors
     p = motors.load_profile(args.name)
-    reqs = p.requests()
-    if args.save:
-        reqs.append(C.cfg_save())
     board = _open(args, heartbeat=False)
     try:
+        # protocol 3: the physical commands; a protocol 2 board gets the chip codes
+        reqs = p.requests(D.supports_physical(board.protocol))
+        if args.save:
+            reqs.append(C.cfg_save())
         sent = []
         for req in reqs:
             resp = _wait(board, board.submit(req), timeout=10.0)
@@ -276,6 +282,31 @@ def cmd_motor_apply(args) -> int:
                 _out({"profile": p.name, "applied": False, "sent": sent})
                 return 1
         _out({"profile": p.name, "applied": True, "saved": bool(args.save), "sent": sent})
+        return 0
+    finally:
+        board.close()
+
+
+def _driver_access(board: Board) -> "D.DriverAccess":
+    return D.DriverAccess(lambda req: _wait(board, board.submit(req), timeout=10.0), board.protocol)
+
+
+def cmd_driver_caps(args) -> int:
+    board = _open(args, heartbeat=False)
+    try:
+        drv = _driver_access(board)
+        caps = drv.caps()
+        _out({"protocol": board.protocol, "from_board": drv.physical, "caps": caps})
+        return 0
+    finally:
+        board.close()
+
+
+def cmd_driver_show(args) -> int:
+    board = _open(args, heartbeat=False)
+    try:
+        drv = _driver_access(board)
+        _out({"protocol": board.protocol, "settings": drv.settings(), "in_force": drv.resolution()})
         return 0
     finally:
         board.close()
@@ -365,10 +396,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(fn=cmd_test_run)
     m = sub.add_parser("motor").add_subparsers(dest="mcmd", required=True)
     m.add_parser("list").set_defaults(fn=cmd_motor_list)
-    p = m.add_parser("show"); p.add_argument("name"); p.set_defaults(fn=cmd_motor_show)
+    p = m.add_parser("show"); p.add_argument("name")
+    p.add_argument("--protocol", type=int, default=D.PHYSICAL_PROTOCOL,
+                   help="the board's protocol: 3 physical commands (default), 2 chip codes")
+    p.set_defaults(fn=cmd_motor_show)
     p = m.add_parser("apply"); board_args(p); p.add_argument("name")
     p.add_argument("--save", action="store_true", help="DRV:CFG:SAVE afterwards")
     p.set_defaults(fn=cmd_motor_apply)
+    dr = sub.add_parser("driver").add_subparsers(dest="dcmd", required=True)
+    p = dr.add_parser("caps"); board_args(p); p.set_defaults(fn=cmd_driver_caps)
+    p = dr.add_parser("show"); board_args(p); p.set_defaults(fn=cmd_driver_show)
     fl = sub.add_parser("fleet").add_subparsers(dest="fcmd", required=True)
     for name, fn in (("check", cmd_fleet_check), ("estop", cmd_fleet_estop), ("drive", cmd_fleet_drive)):
         p = fl.add_parser(name)

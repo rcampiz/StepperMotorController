@@ -619,13 +619,132 @@ def debug_raw(name: str, *args) -> Request:
 
 # ---------------------------------------------------------------------------
 # DRV: driver configuration
+#
+# Protocol 3 (docs/PROTOCOL.md section 7): the driver's capabilities and its settings in
+# physical units. Ranges and resolutions come from the board (DRV:CAPS?, smc_core.driver);
+# the builders only refuse what no driver could take. Each setter changes the stored
+# settings; DRV:CFG:APPLY puts them in force and saves. The chip-unit builders further down
+# (cfg_kval, cfg_tval, cfg_ocd, cfg_stall, cfg_motion, cfg_step_mode, step_mode, ...) are the
+# protocol 2 aliases, deprecated: smc_core.driver picks one or the other per board.
 # ---------------------------------------------------------------------------
+PHYSICAL_SETTINGS = ("CURRENT", "DUTY", "USTEP", "ACCEL", "DECEL", "MAXSPD", "OVERCURRENT",
+                     "STALL_TH", "ALARMS")
+FAULT_NAMES = ("overcurrent", "undervoltage", "thermal_shutdown", "thermal_warning", "stall",
+               "command_error")
+
+
+def _levels(name: str, values, hi: Optional[float]) -> Tuple[float, ...]:
+    out = tuple(float(v) for v in values)
+    if len(out) != 4:
+        raise CommandError(f"{name} takes hold, run, acc, dec")
+    for v in out:
+        if not v >= 0.0 or (hi is not None and v > hi):
+            raise CommandError(f"{name} values are 0..{hi}" if hi is not None else f"{name} values are >= 0")
+    return out
+
+
+def _positive(name: str, v) -> float:
+    f = float(v)
+    if not f > 0.0:
+        raise CommandError(f"{name} must be positive")
+    return f
+
+
 @builds("DRV:REINIT")
 def driver_reinit() -> Request: return request("DRV:REINIT")
 
-@builds("DRV:CFG?")
-def driver_config() -> Request: return request("DRV:CFG?")
+@builds("DRV:CAPS?")
+def driver_caps() -> Request:
+    """What the motor driver can do (ranges, resolutions, modes, faults): smc_core.views.driver_caps."""
+    return request("DRV:CAPS?")
 
+@builds("DRV:CFG:PHYS?")
+def driver_physical() -> Request:
+    """Every driver setting in physical units (smc_core.views.driver_physical)."""
+    return request("DRV:CFG:PHYS?")
+
+@builds("DRV:CFG:CURRENT")
+def cfg_current(hold_a: float, run_a: float, acc_a: float, dec_a: float) -> Request:
+    """Current-mode coil current references, amps (the driver rounds onto its grid)."""
+    return request("DRV:CFG:CURRENT", *_levels("currents", (hold_a, run_a, acc_a, dec_a), None))
+
+@builds("DRV:CFG:DUTY")
+def cfg_duty(hold: float, run: float, acc: float, dec: float) -> Request:
+    """Voltage-mode drive duty, 0..1 of the supply."""
+    return request("DRV:CFG:DUTY", *_levels("duties", (hold, run, acc, dec), 1.0))
+
+@builds("DRV:CFG:USTEP")
+def cfg_microsteps(microsteps: int) -> Request:
+    """Microsteps per full step asked for (a power of two); the reply says what is in force."""
+    n = int(microsteps)
+    if n < 1 or n & (n - 1):
+        raise CommandError("microsteps is a power of two (1, 2, 4, ...)")
+    return request("DRV:CFG:USTEP", n)
+
+@builds("DRV:CFG:ACCEL")
+def cfg_accel(fsps2: float) -> Request:
+    """Stored profile acceleration, full steps/s^2 (MOT:CFG:ACCEL is the live one)."""
+    return request("DRV:CFG:ACCEL", _positive("acceleration", fsps2))
+
+@builds("DRV:CFG:DECEL")
+def cfg_decel(fsps2: float) -> Request:
+    return request("DRV:CFG:DECEL", _positive("deceleration", fsps2))
+
+@builds("DRV:CFG:MAXSPD")
+def cfg_max_speed(fsps: float) -> Request:
+    """Stored profile speed ceiling, full steps/s (MOT:CFG:MAXSPD is the live one)."""
+    return request("DRV:CFG:MAXSPD", _positive("max speed", fsps))
+
+@builds("DRV:CFG:OVERCURRENT")
+def cfg_overcurrent(amps: float) -> Request:
+    """Overcurrent threshold, amps (an estimate when DRV:CAPS? says overcurrent_sense=voltage)."""
+    return request("DRV:CFG:OVERCURRENT", _positive("overcurrent", amps))
+
+@builds("DRV:CFG:STALL_TH")
+def cfg_stall_threshold(level: float) -> Request:
+    """Stall threshold on the driver's 0..1 scale (0 = most sensitive)."""
+    v = float(level)
+    if not 0.0 <= v <= 1.0:
+        raise CommandError("stall threshold is 0..1")
+    return request("DRV:CFG:STALL_TH", v)
+
+@builds("DRV:CFG:ALARMS")
+def cfg_alarms(faults: Sequence[str]) -> Request:
+    """The faults that raise the driver's alarm, by name (FAULT_NAMES); empty = none."""
+    names = [str(f).lower() for f in faults]
+    for n in names:
+        if n not in FAULT_NAMES:
+            raise CommandError(f"unknown fault {n!r}; known: {', '.join(FAULT_NAMES)}")
+    return request("DRV:CFG:ALARMS", *(names or ["NONE"]))
+
+@builds(*("DRV:CFG:%s?" % s for s in PHYSICAL_SETTINGS))
+def cfg_query(setting: str) -> Request:
+    """The query of one physical setter: cfg_query("CURRENT") -> DRV:CFG:CURRENT?."""
+    s = str(setting).upper()
+    if s not in PHYSICAL_SETTINGS:
+        raise CommandError(f"no physical setting {setting!r}; known: {', '.join(PHYSICAL_SETTINGS)}")
+    return request("DRV:CFG:%s?" % s)
+
+@builds("DRV:USTEP")
+def microsteps(n: int) -> Request:
+    """Change the resolution now (motor idle; Hi-Z safe) and keep it as the request."""
+    m = int(n)
+    if m < 1 or m & (m - 1):
+        raise CommandError("microsteps is a power of two (1, 2, 4, ...)")
+    return request("DRV:USTEP", m)
+
+@builds("DRV:USTEP?")
+def microsteps_query() -> Request:
+    """The resolution in force, read back from the driver (smc_core.views.resolution)."""
+    return request("DRV:USTEP?")
+
+@builds("DRV:CFG?")
+def driver_config() -> Request:
+    """Deprecated (protocol 2 alias): the settings in chip units; driver_physical() replaces it."""
+    return request("DRV:CFG?")
+
+# --- Protocol 2 chip-unit aliases (powerSTEP01 codes): deprecated since protocol 3, kept one
+# release. smc_core.driver uses them only for a protocol 2 board.
 @builds("DRV:CFG:KVAL")
 def cfg_kval(hold: int, run: int, acc: int, dec: int) -> Request:
     for v in (hold, run, acc, dec):
@@ -719,12 +838,15 @@ def cfg_apply() -> Request: return request("DRV:CFG:APPLY")
 
 @builds("DRV:STEP_MODE")
 def step_mode(mode: int) -> Request:
+    """Deprecated (protocol 2): log2 step-mode code, applied now; microsteps() replaces it."""
     if not 0 <= int(mode) <= 7:
         raise CommandError("step mode is 0..7")
     return request("DRV:STEP_MODE", int(mode))
 
 @builds("DRV:STEP_MODE?")
-def step_mode_query() -> Request: return request("DRV:STEP_MODE?")
+def step_mode_query() -> Request:
+    """Deprecated (protocol 2): microsteps_query() replaces it (smc_core.views.resolution reads both)."""
+    return request("DRV:STEP_MODE?")
 
 @builds("DRV:FULL_STEPS")
 def full_steps(steps_per_rev: int) -> Request: return request("DRV:FULL_STEPS", int(steps_per_rev))

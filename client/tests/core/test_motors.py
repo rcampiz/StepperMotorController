@@ -20,14 +20,25 @@ def test_the_project_motor_ships_as_a_profile():
     assert "NEMA 23" in p.label
 
 
-def test_profile_requests_are_the_drive_config_commands_in_order():
+def test_profile_requests_are_the_physical_drive_config_commands_in_order():
     p = motors.load_profile("23HS22-2804-ME1K")
     lines = [r.line for r in p.requests()]
     assert lines[0] == "DRV:CFG:DRIVE CURRENT"
-    assert lines[1] == "DRV:CFG:TVAL 04 11 14 14"            # 0.31 / 1.33 / 1.56 / 1.56 A at 78 mA per unit
-    assert "DRV:CFG:PRED ON 48" in lines
-    assert "DRV:CFG:STEPMODE 3" in lines and "DRV:CFG:IDLE 3000" in lines
+    assert lines[1] == "DRV:CFG:CURRENT 0.31 1.33 1.56 1.56"   # amps, as the file stores them
+    assert "DRV:CFG:USTEP 8" in lines
+    assert "DRV:CFG:PRED ON 48" in lines and "DRV:CFG:IDLE 3000" in lines
     assert lines[-1] == "DRV:CFG:APPLY"
+
+
+def test_a_protocol_2_board_gets_the_chip_codes():
+    p = motors.load_profile("23HS22-2804-ME1K")
+    lines = [r.line for r in p.requests(physical=False)]
+    assert lines[:3] == ["DRV:CFG:DRIVE CURRENT", "DRV:CFG:TVAL 04 11 14 14", "DRV:CFG:STEPMODE 3"]
+    assert lines[-1] == "DRV:CFG:APPLY"
+    old = motors._from_dict("old", {"drive_mode": "current", "tval_a": {"hold": 0.31, "run": 1.33},
+                                    "step_mode": 4, "ocd_th": 21})
+    assert [r.line for r in old.requests()][1:4] == ["DRV:CFG:CURRENT 0.31 1.33 1.33 1.33",
+                                                     "DRV:CFG:USTEP 16", "DRV:CFG:OCD 21"]
     with pytest.raises(KeyError):
         motors.load_profile("no-such-motor")
 
@@ -57,6 +68,17 @@ def test_applying_a_profile_configures_the_fake_board(board):
     assert fake.drive_current and fake.step_mode == 4
     cfg = V.motor_config(board.request(motors.C.driver_config(), timeout=2.0))
     assert cfg["tval"][1] == 15                               # 1.17 A -> 0x0F
+
+
+def test_export_from_the_physical_view(board, tmp_path):
+    phys = V.driver_physical(board.request(motors.C.driver_physical(), timeout=2.0))
+    p = motors.export_profile(phys, "phys", rated_current_a=2.8, regulation={"pred": True, "tsw_us": 48})
+    assert p.tval_a == {"hold": 0.312, "run": 1.326, "acc": 1.56, "dec": 1.56}
+    assert p.microsteps == 8 and p.overcurrent_a == 234.375 and p.pred is True
+    lines = [r.line for r in p.requests()]
+    assert "DRV:CFG:CURRENT 0.312 1.326 1.56 1.56" in lines and "DRV:CFG:OVERCURRENT 234.375" in lines
+    for req in p.requests():
+        assert board.request(req, timeout=2.0).success, req.line
 
 
 def test_export_round_trips_through_the_user_folder(board, tmp_path):

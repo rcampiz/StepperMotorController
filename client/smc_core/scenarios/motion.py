@@ -14,34 +14,61 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from .. import commands as C
+from .. import driver as D
 from .. import views as V
 from . import ScenarioContext, scenario
 
 
 # --- helpers -------------------------------------------------------------------------------
 
+def _drv(ctx: ScenarioContext) -> D.DriverAccess:
+    """The board's driver settings over its protocol (3: physical commands, 2: chip codes)."""
+    drv = getattr(ctx, "_driver_access", None)
+    if drv is None:
+        drv = D.DriverAccess.for_ctx(ctx)
+        ctx._driver_access = drv
+    return drv
+
+
 def _chip_geometry(ctx: ScenarioContext) -> Dict[str, int]:
-    """Step mode as the chip reports it, full steps and encoder counts per revolution."""
-    q = ctx.call(C.step_mode_query())
-    ctx.require("read DRV:STEP_MODE?", q.success, q.error_message or "")
+    """Step mode (log2 of the microsteps) the driver reports in force, full steps and encoder
+    counts per revolution."""
+    r = _drv(ctx).resolution()
+    ctx.require("read the resolution in force", "microsteps" in r, "DRV:USTEP? / DRV:STEP_MODE? refused")
     fs = ctx.call(C.full_steps_query())
     full = int(fs.data.get("full_steps_per_rev", 200)) if fs.success else 200
-    mode = int(q.data.get("step_mode", 0))
-    upr = int(q.data.get("microsteps_per_rev") or full * (1 << mode))
+    mode = int(r["step_mode"])
+    upr = int(r.get("microsteps_per_rev") or full * (1 << mode))
     ppr = ctx.call(C.encoder_ppr_query())
     cpr = int(ppr.data.get("encoder_ppr", 0)) if ppr.success else 0
     return {"step_mode": mode, "full_steps_per_rev": full, "microsteps_per_rev": upr,
             "encoder_cpr": cpr}
 
 
-def _effective_mode(mode: int, drive_mode: str) -> int:
-    """The step mode in force: the powerSTEP01 in current mode runs 1/16 at most."""
-    return min(mode, 4) if drive_mode == "current" else mode
+def _effective_mode(ctx: ScenarioContext, mode: int, drive_mode: str) -> int:
+    """The step mode in force for a request: the driver caps it per drive mode (DRV:CAPS?;
+    the powerSTEP01 in current mode runs 1/16 at most)."""
+    return D.microsteps_in_force(_drv(ctx).caps(), 1 << int(mode), drive_mode).bit_length() - 1
 
 
 def _drive_mode(ctx: ScenarioContext) -> str:
-    q = ctx.call(C.step_mode_query())
-    return str(q.data.get("drive_mode", "voltage")) if q.success else "voltage"
+    return str(_drv(ctx).resolution().get("drive_mode", "voltage"))
+
+
+def _configured_mode(ctx: ScenarioContext) -> Optional[int]:
+    """log2 of the microsteps asked for in the stored settings (None if unreadable)."""
+    n = _drv(ctx).configured_microsteps()
+    return (int(n).bit_length() - 1) if n else None
+
+
+def _set_mode(ctx: ScenarioContext, mode: int) -> None:
+    """Store the resolution (DRV:CFG:USTEP, or DRV:CFG:STEPMODE on a protocol 2 board)."""
+    _drv(ctx).set_microsteps(1 << int(mode))
+
+
+def _chip_mode(ctx: ScenarioContext) -> int:
+    r = _drv(ctx).resolution()
+    return int(r["step_mode"]) if "step_mode" in r else -1
 
 
 def _status(ctx: ScenarioContext) -> Dict[str, Any]:
@@ -141,63 +168,60 @@ def motion_scale(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
         ctx.call(C.mot_disable())
 
 
-@scenario("step_mode_chip", "Change the step mode through DRV:CFG:STEPMODE + APPLY with the "
-                            "output disabled and then enabled; the chip (DRV:STEP_MODE?) must "
-                            "follow in both cases. Restores the original mode in Hi-Z.",
+@scenario("step_mode_chip", "Change the step mode through DRV:CFG:USTEP (protocol 2: STEPMODE) + "
+                            "APPLY with the output disabled and then enabled; the driver's readback "
+                            "(DRV:USTEP?) must follow in both cases. Restores the original mode in Hi-Z.",
           params={"mode": 7}, moves_motor=True)
 def step_mode_chip(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     mode = int(params["mode"])
     drive = _drive_mode(ctx)
     # restore what was configured (the chip may run less: current mode is 1/16 at most)
-    original = V.motor_config(ctx.call(C.driver_config())).get("step_mode")
+    original = _configured_mode(ctx)
     if original is None:
         original = _chip_geometry(ctx)["step_mode"]
     ctx.measure("original", original)
-    eff = lambda m: _effective_mode(m, drive)                       # noqa: E731
+    eff = lambda m: _effective_mode(ctx, m, drive)                  # noqa: E731
     # a mode the chip will really run differently from the original
     other = next((m for m in (mode, 3, 2, 1) if eff(m) != eff(original)), (mode + 1) % 8)
     ctx.measure("mode", other)
 
     def apply(m: int) -> int:
-        ctx.call(C.cfg_step_mode(m))
+        _set_mode(ctx, m)
         a = ctx.call(C.cfg_apply())
         ctx.check(f"APPLY {m} accepted", a.success, a.error_message or "")
-        q = ctx.call(C.step_mode_query())
-        return int(q.data.get("step_mode", -1)) if q.success else -1
+        return _chip_mode(ctx)
 
     ctx.call(C.fault_clear())
     try:
         ctx.require("disable (Hi-Z)", ctx.call(C.mot_disable()).success)
         got = apply(other)
-        ctx.check(f"chip at {eff(other)} after APPLY in Hi-Z", got == eff(other), f"DRV:STEP_MODE?={got}")
+        ctx.check(f"chip at {eff(other)} after APPLY in Hi-Z", got == eff(other), f"readback={got}")
         got = apply(original)
-        ctx.check(f"chip back at {eff(original)} in Hi-Z", got == eff(original), f"DRV:STEP_MODE?={got}")
+        ctx.check(f"chip back at {eff(original)} in Hi-Z", got == eff(original), f"readback={got}")
 
         ctx.require("enable", ctx.call(C.mot_enable()).success)
         ctx.sleep(0.2)
         got = apply(other)
-        cfg = V.motor_config(ctx.call(C.driver_config())).get("step_mode")
-        ctx.check(f"config says {other} with the output enabled", cfg == other, f"DRV:CFG?={cfg}")
+        cfg = _configured_mode(ctx)
+        ctx.check(f"config says {other} with the output enabled", cfg == other, f"configured={cfg}")
         ctx.check(f"chip at {eff(other)} after APPLY with the output enabled", got == eff(other),
-                  f"DRV:STEP_MODE?={got} (config {cfg})")
+                  f"readback={got} (config {cfg})")
     finally:
         ctx.call(C.mot_disable())
-        ctx.call(C.cfg_step_mode(original))
+        _set_mode(ctx, original)
         ctx.call(C.cfg_apply())
-        q = ctx.call(C.step_mode_query())
-        ctx.check("original restored", q.success and int(q.data.get("step_mode", -1)) == eff(original),
-                  f"DRV:STEP_MODE?={q.data.get('step_mode') if q.success else q.error_message}")
+        got = _chip_mode(ctx)
+        ctx.check("original restored", got == eff(original), f"readback={got}")
 
 
 @scenario("drive_mode_chip", "Switch the powerSTEP01 between voltage mode (KVAL) and current "
                             "mode (TVAL) through DRV:CFG:DRIVE + APPLY and require the chip's "
-                            "CM_VM bit (DRV:STEP_MODE? drive_mode) to follow, in Hi-Z and with "
+                            "drive mode readback (DRV:USTEP? drive_mode) to follow, in Hi-Z and with "
                             "the output enabled. Restores the original mode.",
           params={}, moves_motor=True)
 def drive_mode_chip(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     def chip() -> str:
-        q = ctx.call(C.step_mode_query())
-        return str(q.data.get("drive_mode", "?")) if q.success else "?"
+        return str(_drv(ctx).resolution().get("drive_mode", "?"))
 
     def apply(current: bool) -> str:
         ctx.call(C.cfg_drive_mode(current))
@@ -210,7 +234,7 @@ def drive_mode_chip(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     ctx.require("chip reports its drive mode", original in ("voltage", "current"), original)
     ctx.measure("original", original)
     other = "current" if original == "voltage" else "voltage"
-    configured = V.motor_config(ctx.call(C.driver_config())).get("step_mode")
+    configured = _configured_mode(ctx)
     if configured is None:
         configured = _chip_geometry(ctx)["step_mode"]
 
@@ -228,7 +252,7 @@ def drive_mode_chip(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
         ctx.check(f"chip in {other} mode after APPLY with the output enabled", got == other,
                   f"drive_mode={got}")
         step_after = _chip_geometry(ctx)["step_mode"]
-        want = _effective_mode(configured, other)
+        want = _effective_mode(ctx, configured, other)
         ctx.check("step mode kept across the drive-mode change (1/16 cap in current mode)",
                   step_after == want, f"configured {configured}, chip {step_after}, expected {want}")
     finally:
@@ -300,7 +324,7 @@ def resonance_sweep(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
 
 
 @scenario("resonance_map", "The resonance sweep at each microstep mode in `modes` (0 = full step "
-                            "... 7 = 1/128), through DRV:CFG:STEPMODE + APPLY in Hi-Z; reports the "
+                            "... 7 = 1/128), through DRV:CFG:USTEP + APPLY in Hi-Z; reports the "
                             "peak RPM per mode and restores the original mode. Full step usually "
                             "stalls above ~50 RPM, so it is not in the default list.",
           params={"modes": [1, 2, 3, 4, 5, 6, 7], "rpm_from": 40, "rpm_to": 130, "rpm_step": 5,
@@ -316,24 +340,23 @@ def resonance_map(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     ctx.call(C.fault_clear())
 
     drive = _drive_mode(ctx)
-    configured = V.motor_config(ctx.call(C.driver_config())).get("step_mode")
+    configured = _configured_mode(ctx)
     if configured is not None:
         original = configured                                   # restore what was configured
 
     def set_mode(m: int) -> bool:
         ctx.call(C.mot_disable())
-        ctx.call(C.cfg_step_mode(m))
+        _set_mode(ctx, m)
         a = ctx.call(C.cfg_apply())
-        q = ctx.call(C.step_mode_query())
-        got = int(q.data.get("step_mode", -1)) if q.success else -1
-        want = _effective_mode(m, drive)
+        got = _chip_mode(ctx)
+        want = _effective_mode(ctx, m, drive)
         return ctx.check(f"chip at 1/{1 << want}", a.success and got == want,
-                         f"APPLY {a.error_message or 'ok'}, DRV:STEP_MODE?={got}")
+                         f"APPLY {a.error_message or 'ok'}, readback={got}")
 
     try:
         mapped = set()
         for m in [int(x) & 7 for x in params["modes"]]:
-            m = _effective_mode(m, drive)                       # current mode: 1/16 at most
+            m = _effective_mode(ctx, m, drive)                  # current mode: 1/16 at most
             if m in mapped:
                 continue
             mapped.add(m)

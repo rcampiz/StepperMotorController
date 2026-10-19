@@ -33,6 +33,8 @@ SAMPLE_ARGS = {
     "cfg_fault_action": (1,),
     "disp_indicator": (90, 1, True),
     "lcd_reg": (0xBB, 0x19),
+    "cfg_alarms": (["overcurrent", "stall"],),
+    "cfg_query": ("CURRENT",),
 }
 
 
@@ -73,8 +75,40 @@ def test_spec_is_fresh_against_the_firmware_parser():
     assert r.returncode == 0, r.stdout + r.stderr
 
 
-def test_protocol_version_is_two():
-    assert PROTOCOL_VERSION == 2
+def test_protocol_version_is_three_and_the_client_still_takes_two():
+    from smc_core import board, driver
+    assert PROTOCOL_VERSION == 3
+    assert board.SUPPORTED_PROTOCOLS == (2, 3) and driver.SUPPORTED_PROTOCOLS == (2, 3)
+    assert driver.supports_physical(3) and not driver.supports_physical(2)
+
+
+def test_physical_builders_format_units_and_refuse_impossible_values():
+    assert C.cfg_current(0.312, 1.326, 1.56, 1.56).line == "DRV:CFG:CURRENT 0.312 1.326 1.56 1.56"
+    assert C.cfg_duty(0.16, 0.5, 0.5, 0.5).line == "DRV:CFG:DUTY 0.16 0.5 0.5 0.5"
+    assert C.cfg_microsteps(128).line == "DRV:CFG:USTEP 128"
+    assert C.cfg_accel(5005.89).line == "DRV:CFG:ACCEL 5005.89"
+    assert C.cfg_max_speed(1327.51).line == "DRV:CFG:MAXSPD 1327.51"
+    assert C.cfg_overcurrent(573).line == "DRV:CFG:OVERCURRENT 573"
+    assert C.cfg_stall_threshold(0.5).line == "DRV:CFG:STALL_TH 0.5"
+    assert C.cfg_alarms([]).line == "DRV:CFG:ALARMS NONE"
+    assert C.cfg_query("ustep").line == "DRV:CFG:USTEP?"
+    assert C.microsteps(16).line == "DRV:USTEP 16"
+    assert C.driver_caps().reply == C.Reply.LINES and C.driver_physical().reply == C.Reply.LINES
+    for bad in (lambda: C.cfg_microsteps(12), lambda: C.cfg_duty(0.5, 0.5, 1.5, 0.5),
+                lambda: C.cfg_current(-0.1, 1, 1, 1), lambda: C.cfg_accel(0),
+                lambda: C.cfg_stall_threshold(2), lambda: C.cfg_alarms(["overheat"]),
+                lambda: C.cfg_query("KVAL"), lambda: C.microsteps(3)):
+        with pytest.raises(C.CommandError):
+            bad()
+
+
+def test_deprecated_commands_are_marked_in_the_spec():
+    for name, repl in (("DRV:CFG:TVAL", "DRV:CFG:CURRENT"), ("DRV:CFG:KVAL", "DRV:CFG:DUTY"),
+                       ("DRV:CFG:STEPMODE", "DRV:CFG:USTEP"), ("DRV:STEP_MODE", "DRV:USTEP"),
+                       ("DRV:STEP_MODE?", "DRV:USTEP?"), ("DRV:CFG?", "DRV:CFG:PHYS?"),
+                       ("DRV:CFG:OCD", "DRV:CFG:OVERCURRENT"), ("DRV:CFG:STALL", "DRV:CFG:STALL_TH")):
+        assert COMMANDS[name].deprecated.startswith(repl), name
+    assert not COMMANDS["DRV:CFG:CURRENT"].deprecated and not COMMANDS["DRV:CFG:DRIVE"].deprecated
 
 
 @pytest.mark.parametrize("req,line", [

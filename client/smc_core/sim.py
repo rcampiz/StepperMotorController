@@ -1,5 +1,6 @@
 """
-FakeBoard: a small pure-Python protocol-2 responder for tests and demos.
+FakeBoard: a small pure-Python protocol responder for tests and demos (protocol 3 by default;
+FakeBoard(t, protocol=2) answers like a protocol 2 board: no DRV:CAPS?, no physical commands).
 
 It is NOT the firmware: the virtual Nucleo (real L2 + L3 compiled for the host) is
 the fidelity target. This fake covers what the core needs to be tested without
@@ -27,8 +28,9 @@ class FakeBoard:
     FW = __version__ + "-sim"
 
     def __init__(self, transport, serial: str = "SIM00001", boot: int = 0x5EED0001,
-                 push_threads: bool = True):
+                 push_threads: bool = True, protocol: int = PROTOCOL_VERSION):
         self.t = transport
+        self.protocol = int(protocol)
         transport.attach(self)
         self.serial = serial
         self.boot = boot
@@ -45,6 +47,14 @@ class FakeBoard:
         self.step_mode = 3
         self.drive_current = True
         self.tval = (0x04, 0x11, 0x14, 0x14)      # firmware defaults: 23HS22-2804-ME1K
+        # the rest of the driver settings, kept as the powerSTEP01 codes they round to (the
+        # physical commands land on the same grid, so the fake quantises like the chip)
+        self.kval = (0x29, 0x29, 0x29, 0x29)
+        self.acc, self.dec, self.maxspd = 500, 500, 800
+        self.ocd_th, self.stall_th = 0x08, 0x10
+        self.alarms = ["overcurrent", "undervoltage", "thermal_shutdown", "thermal_warning",
+                       "command_error"]
+        self.fault_action = "HardHiZ"
         self.cm = {"pred": True, "tsw_us": 48, "t_fast": 0x19, "ton_min": 0x29, "toff_min": 0x29}
         self.full_steps = 200
         self.direction = 1
@@ -96,7 +106,7 @@ class FakeBoard:
             self.tlm_ms, self.events_on, self.seq, self.hb_timeout_ms = 0, False, 0, 0
             self.state = "IDLE"
             for line in ("!RESET boot=%08X fw=%s proto=%d build=sim" % (self.boot, self.FW,
-                                                                        PROTOCOL_VERSION),
+                                                                        self.protocol),
                          "", "========================================",
                          "   Stepper Motor Controller v%s" % self.FW,
                          "========================================",
@@ -145,7 +155,18 @@ class FakeBoard:
             "system": {"uptime_ticks": 0, "free_heap": 512, "rx_overflows": 0,
                        "rx_overflow_lines": 0},
             "mode": "OPEN_LOOP", "encoder_status": "READY", "error": False,
-        }
+        } if self.protocol < 3 else self._status_p3()
+
+    def _status_p3(self) -> Dict[str, Any]:
+        """Protocol 3 adds motor.faults, motor.driver_raw, control.base_fsps / final_fsps."""
+        p, self.protocol = self.protocol, 2
+        try:
+            st = self.status()
+        finally:
+            self.protocol = p
+        st["motor"].update({"faults": 0, "driver_raw": 0x7E03})
+        st["control"].update({"base_fsps": 0.0, "final_fsps": 0.0})
+        return st
 
     # ------------------------------------------------------------------
     def on_host_bytes(self, data: bytes) -> None:
@@ -212,6 +233,9 @@ class FakeBoard:
             self.t.feed_line(line)
         parts = line.split()
         name, args = parts[0].upper(), parts[1:]
+        if self.protocol < 3 and name in self.PROTOCOL_3_ONLY:
+            self._err(name, "UNKNOWN_CMD", "Unknown DRV command")
+            return
         h = getattr(self, "_c_" + name.replace(":", "_").replace("?", "_Q").replace("*", "S"), None)
         if h is not None:
             h(name, args)
@@ -246,10 +270,10 @@ class FakeBoard:
     def _c_SIDN_Q(self, name, args):
         if self.json:
             self._ok("IDN", data={"vendor": "SMC", "model": "NUCLEO-F401RE-IHM03A1",
-                                  "serial": self.serial, "fw": self.FW, "proto": PROTOCOL_VERSION})
+                                  "serial": self.serial, "fw": self.FW, "proto": self.protocol})
         else:
             self._ok(name, "SMC,NUCLEO-F401RE-IHM03A1,%s,%s,%d" % (self.serial, self.FW,
-                                                                  PROTOCOL_VERSION))
+                                                                  self.protocol))
 
     def _c_FMT(self, name, args):
         if args and args[0].upper() == "JSON":
@@ -405,28 +429,32 @@ class FakeBoard:
         self._ok(name, data={"encoder_ppr": self.enc_ppr})
 
     def _c_DRV_CFG_Q(self, name, args):
+        a = set(self.alarms)
         self._lines("MCONFIG", [
-            "Motor Config (defaults)", "KVAL: HOLD=29 RUN=29 ACC=29 DEC=29",
+            "Motor Config (defaults)", "KVAL: HOLD=%02X RUN=%02X ACC=%02X DEC=%02X" % self.kval,
             "Drive: %s" % ("CURRENT" if self.drive_current else "VOLTAGE"),
             "TVAL: HOLD=%02X RUN=%02X ACC=%02X DEC=%02X" % self.tval,
             "CM: PRED=%d TSW=%dus T_FAST=%02X TON_MIN=%02X TOFF_MIN=%02X" % (
                 self.cm["pred"], self.cm["tsw_us"], self.cm["t_fast"], self.cm["ton_min"], self.cm["toff_min"]),
-            "OCD_TH=08 STALL_TH=10", "ACC=500 DEC=500 MAXSPD=800 MINSPD=0 FS_SPD=1023",
-            "Faults: OCD=1 TH_SD=1 TH_W=1 UVLO=1 STALL_A=0 STALL_B=0 CMD=1",
-            "Action: HardHiZ", "StepMode: %d (1/%d)" % (self.step_mode, 1 << self.step_mode),
+            "OCD_TH=%02X STALL_TH=%02X" % (self.ocd_th, self.stall_th),
+            "ACC=%d DEC=%d MAXSPD=%d MINSPD=0 FS_SPD=1023" % (self.acc, self.dec, self.maxspd),
+            "Faults: OCD=%d TH_SD=%d TH_W=%d UVLO=%d STALL_A=%d STALL_B=%d CMD=%d" % tuple(
+                int(n in a) for n in ("overcurrent", "thermal_shutdown", "thermal_warning",
+                                      "undervoltage", "stall", "stall", "command_error")),
+            "Action: %s" % self.fault_action, "StepMode: %d (1/%d)" % (self.step_mode, 1 << self.step_mode),
             "IdleRelease: %d ms" % self.idle_release_ms])
 
     def _c_DBG_MOTOR(self, name, args):
         self._lines("MOTOR_DEBUG", [
             "STATUS=7E03 (%s Idle)" % ("HiZ" if self.hi_z else "Active"),
-            "KVAL: HOLD=29 RUN=29 ACC=29 DEC=29",
-            "ACC=500 DEC=500 MAXSPD=800 POS=%d" % self.position,
+            "KVAL: HOLD=%02X RUN=%02X ACC=%02X DEC=%02X" % self.kval,
+            "ACC=%d DEC=%d MAXSPD=%d POS=%d" % (self.acc, self.dec, self.maxspd, self.position),
             "ADC_OUT=2 CONFIG=%04X T_FAST=%02X" % (
                 (0x8000 if self.cm["pred"] else 0) | ((self.cm["tsw_us"] // 4 - 1) << 10) | 0x088, self.cm["t_fast"])])
 
     def _c_SYST_VER_Q(self, name, args):
         self._lines("VERSION", ["Stepper Motor Controller v%s" % self.FW, "Build: sim",
-                                "Protocol: %d (boot %08X)" % (PROTOCOL_VERSION, self.boot),
+                                "Protocol: %d (boot %08X)" % (self.protocol, self.boot),
                                 "Device: %d (%s)" % (self.dev_id, self.role),
                                 "Mode: OPEN_LOOP (encoder: READY)"])
 
@@ -492,6 +520,225 @@ class FakeBoard:
     def _c_DRV_CFG_TVAL(self, name, args):
         self.tval = tuple(int(a, 16) & 0x7F for a in args[:4])
         self._ok(name, "TVAL set")
+
+    def _c_DRV_CFG_KVAL(self, name, args):
+        self.kval = tuple(int(a, 16) & 0xFF for a in args[:4])
+        self._ok(name, "KVAL set")
+
+    def _c_DRV_CFG_MOTION(self, name, args):
+        self.acc, self.dec, self.maxspd = (int(a) for a in args[:3])
+        self._ok(name, "Motion params set")
+
+    def _c_DRV_CFG_OCD(self, name, args):
+        self.ocd_th = int(args[0]) & 0x1F
+        self._ok(name, "OCD threshold set: %d (not saved)" % self.ocd_th)
+
+    def _c_DRV_CFG_STALL(self, name, args):
+        self.stall_th = int(args[0]) & 0x1F
+        self._ok(name, "Stall threshold set: %d (not saved)" % self.stall_th)
+
+    def _c_DRV_CFG_FAULT(self, name, args):
+        if args and args[0].upper() == "ACTION":
+            self.fault_action = ("HardStop", "HardHiZ", "SoftStop")[int(args[1])]
+            self._ok(name, "Fault action set")
+            return
+        f = [a != "0" for a in args[:7]]
+        on = {n for n, x in zip(("overcurrent", "thermal_shutdown", "thermal_warning",
+                                 "undervoltage", "stall", "stall", "command_error"), f) if x}
+        self.alarms = [n for n in self.FAULTS if n in on]
+        self._ok(name, "Fault enables set (not saved)")
+
+    # --- protocol 3: the driver in physical units (a powerSTEP01's grid and limits) -------
+    FAULTS = ("overcurrent", "undervoltage", "thermal_shutdown", "thermal_warning", "stall",
+              "command_error")
+    CAPS = {"voltage_mode": True, "current_mode": True, "max_microsteps_voltage": 128,
+            "max_microsteps_current": 16, "stall_detect": True, "standby_pin": True,
+            "hardware_positioning": True, "sync_pulses_per_full_step": 8,
+            "fault_bits": list(FAULTS), "faults_reported": list(FAULTS), "faults_alarmable": list(FAULTS),
+            "max_current_a": 9.906, "current_step_a": 0.078, "duty_step": 0.00390625,
+            "overcurrent_sense": "voltage", "overcurrent_ohms": 0.0012,
+            "overcurrent_min_a": 26.0417, "overcurrent_max_a": 833.333, "overcurrent_step_a": 26.0417,
+            "stall_step": 0.0322581, "max_speed_fsps": 15625, "max_speed_limit_fsps": 15609.7,
+            "speed_limit_step_fsps": 15.2588, "accel_min_fsps2": 14.552, "accel_max_fsps2": 59590.4,
+            "accel_step_fsps2": 14.552, "min_position_usteps": -2097152, "max_position_usteps": 2097151}
+    PROTOCOL_3_ONLY = {"DRV:CAPS?", "DRV:CFG:PHYS?", "DRV:USTEP", "DRV:USTEP?"} | {
+        "DRV:CFG:%s%s" % (s, q) for s in ("CURRENT", "DUTY", "USTEP", "ACCEL", "DECEL", "MAXSPD",
+                                          "OVERCURRENT", "STALL_TH", "ALARMS") for q in ("", "?")}
+    NOT_SAVED = "(not saved; DRV:CFG:APPLY puts it in force)"
+
+    @staticmethod
+    def _g(v: float) -> float:
+        return float("%.6g" % v)
+
+    def _phys(self) -> Dict[str, Any]:
+        """The settings as DRV:CFG:PHYS? reports them (codes back to physical units)."""
+        d: Dict[str, Any] = {"source": "defaults",
+                             "drive_mode": "current" if self.drive_current else "voltage",
+                             "microsteps_asked": 1 << self.step_mode,
+                             "microsteps": 1 << self._eff_step_mode()}
+        for k, c in zip(("hold_a", "run_a", "acc_a", "dec_a"), self.tval):
+            d[k] = self._g(c * 0.078)
+        for k, c in zip(("hold_duty", "run_duty", "acc_duty", "dec_duty"), self.kval):
+            d[k] = self._g(c / 256.0)
+        d.update({"accel_fsps2": self._g(self.acc * 14.552), "decel_fsps2": self._g(self.dec * 14.552),
+                  "max_speed_fsps": self._g(self.maxspd * 15625.0 / 1024.0),
+                  "overcurrent_a": self._g((self.ocd_th + 1) * 0.03125 / 0.0012),
+                  "overcurrent_v": self._g((self.ocd_th + 1) * 0.03125),
+                  "stall_threshold": self._g(self.stall_th / 31.0),
+                  "alarms": list(self.alarms), "fault_action": self.fault_action,
+                  "idle_release_ms": self.idle_release_ms, "full_steps_per_rev": self.full_steps})
+        return d
+
+    @staticmethod
+    def _txt(v) -> str:
+        if isinstance(v, bool):
+            return "1" if v else "0"
+        if isinstance(v, list):
+            return ",".join(v) if v else "NONE"
+        return str(v)
+
+    def _kv(self, name: str, what: str, d: Dict[str, Any], note: str = "") -> None:
+        """A named-value reply: one JSON object, or `OK <WHAT> key=value ... [note]`."""
+        if self.json:
+            self._reply(json.dumps({"status": "ok", "command": name, "data": d}, separators=(",", ":")))
+            return
+        words = ["OK", what] + ["%s=%s" % (k, self._txt(v)) for k, v in d.items()]
+        self._reply(" ".join(words + ([note] if note else [])))
+
+    def _kv_lines(self, name: str, d: Dict[str, Any]) -> None:
+        if self.json:
+            self._reply(json.dumps({"status": "ok", "command": name, "data": d}, separators=(",", ":")))
+            return
+        for k, v in d.items():
+            self._reply("%s=%s" % (k, self._txt(v)))
+        self._reply("OK %d" % len(d))
+
+    _GROUPS = {"CURRENT": ("hold_a", "run_a", "acc_a", "dec_a", "drive_mode"),
+               "DUTY": ("hold_duty", "run_duty", "acc_duty", "dec_duty", "drive_mode"),
+               "USTEP": ("microsteps_asked", "microsteps", "drive_mode"),
+               "ACCEL": ("accel_fsps2",), "DECEL": ("decel_fsps2",), "MAXSPD": ("max_speed_fsps",),
+               "OVERCURRENT": ("overcurrent_a", "overcurrent_v"), "STALL_TH": ("stall_threshold",),
+               "ALARMS": ("alarms",)}
+
+    def _group(self, name: str, what: str, changed: bool) -> None:
+        p = self._phys()
+        self._kv(name, what, {k: p[k] for k in self._GROUPS[what]}, self.NOT_SAVED if changed else "")
+
+    def _setter(self, name, args, what, n, usage, check, store):
+        """A physical setter, or its query when the name ends with '?'."""
+        if name.endswith("?"):
+            self._group(name, what, False)
+            return
+        try:
+            v = [float(a) for a in args[:n]]
+        except ValueError:
+            v = []
+        if len(v) < n:
+            self._err(name, "USAGE", "Usage: " + usage)
+            return
+        bad = check(v)
+        if bad:
+            self._err(name, "OUT_OF_RANGE", ("%s must be %s-%s %s" % bad).strip()
+                      if len(bad) == 4 else "%s must be %s-%s" % bad)
+            return
+        store(v)
+        self._group(name, what, True)
+
+    def _c_DRV_CAPS_Q(self, name, args):
+        self._kv_lines(name, dict(self.CAPS))
+
+    def _c_DRV_CFG_PHYS_Q(self, name, args):
+        self._kv_lines(name, self._phys())
+
+    def _c_DRV_CFG_CURRENT(self, name, args):
+        self._setter(name, args, "CURRENT", 4, "DRV:CFG:CURRENT <hold_A> <run_A> <acc_A> <dec_A>",
+                     lambda v: ("current", 0, 9.906, "A") if any(x < 0 or x > 9.945 for x in v) else None,
+                     lambda v: setattr(self, "tval", tuple(min(127, int(x / 0.078 + 0.5)) for x in v)))
+    _c_DRV_CFG_CURRENT_Q = _c_DRV_CFG_CURRENT
+
+    def _c_DRV_CFG_DUTY(self, name, args):
+        self._setter(name, args, "DUTY", 4, "DRV:CFG:DUTY <hold> <run> <acc> <dec> (0..1)",
+                     lambda v: ("duty", 0, 1) if any(x < 0 or x > 1 for x in v) else None,
+                     lambda v: setattr(self, "kval", tuple(min(255, int(x * 256 + 0.5)) for x in v)))
+    _c_DRV_CFG_DUTY_Q = _c_DRV_CFG_DUTY
+
+    def _c_DRV_CFG_USTEP(self, name, args):
+        def check(v):
+            n = int(v[0])
+            ok = n == v[0] and 1 <= n <= 128 and not n & (n - 1)
+            return None if ok else ("microsteps (a power of two)", 1, 128)
+        self._setter(name, args, "USTEP", 1, "DRV:CFG:USTEP <microsteps 1|2|4|...>", check,
+                     lambda v: setattr(self, "step_mode", int(v[0]).bit_length() - 1))
+    _c_DRV_CFG_USTEP_Q = _c_DRV_CFG_USTEP
+
+    def _ramp(self, name, args, what, attr):
+        self._setter(name, args, what, 1, "DRV:CFG:%s <full_steps/s^2>" % what,
+                     lambda v: None if 7.27 < v[0] <= 59597 else (what.lower(), 14.552, 59590.4, "full steps/s^2"),
+                     lambda v: setattr(self, attr, max(1, min(4095, int(v[0] * 1000 + 7) // 14552))))
+
+    def _c_DRV_CFG_ACCEL(self, name, args): self._ramp(name, args, "ACCEL", "acc")
+    def _c_DRV_CFG_DECEL(self, name, args): self._ramp(name, args, "DECEL", "dec")
+    _c_DRV_CFG_ACCEL_Q = _c_DRV_CFG_ACCEL
+    _c_DRV_CFG_DECEL_Q = _c_DRV_CFG_DECEL
+
+    def _c_DRV_CFG_MAXSPD(self, name, args):
+        self._setter(name, args, "MAXSPD", 1, "DRV:CFG:MAXSPD <full_steps/s>",
+                     lambda v: None if 7.6 < v[0] <= 15617.4 else ("max speed", 15.2588, 15609.7, "full steps/s"),
+                     lambda v: setattr(self, "maxspd", max(1, min(1023, int(v[0] * 1024) // 15625))))
+    _c_DRV_CFG_MAXSPD_Q = _c_DRV_CFG_MAXSPD
+
+    def _c_DRV_CFG_OVERCURRENT(self, name, args):
+        self._setter(name, args, "OVERCURRENT", 1, "DRV:CFG:OVERCURRENT <amps>",
+                     lambda v: None if 13.02 <= v[0] <= 846.36 else ("overcurrent", 26.0417, 833.333, "A"),
+                     lambda v: setattr(self, "ocd_th", max(0, min(31, int(v[0] / 26.041667 + 0.5) - 1))))
+    _c_DRV_CFG_OVERCURRENT_Q = _c_DRV_CFG_OVERCURRENT
+
+    def _c_DRV_CFG_STALL_TH(self, name, args):
+        self._setter(name, args, "STALL_TH", 1, "DRV:CFG:STALL_TH <0..1>",
+                     lambda v: None if 0 <= v[0] <= 1 else ("stall threshold", 0, 1),
+                     lambda v: setattr(self, "stall_th", min(31, int(v[0] * 31 + 0.5))))
+    _c_DRV_CFG_STALL_TH_Q = _c_DRV_CFG_STALL_TH
+
+    def _c_DRV_CFG_ALARMS(self, name, args):
+        if name.endswith("?"):
+            self._group(name, "ALARMS", False)
+            return
+        if not args:
+            self._err(name, "USAGE", "Usage: DRV:CFG:ALARMS <fault> [fault...] | NONE | ALL")
+            return
+        got = set()
+        for a in args:
+            a = a.lower()
+            if a == "none":
+                continue
+            if a == "all":
+                got |= set(self.FAULTS)
+            elif a in self.FAULTS:
+                got.add(a)
+            else:
+                self._err(name, "INVALID_PARAM", "unknown or not alarmable fault (DRV:CAPS? faults_alarmable)")
+                return
+        self.alarms = [f for f in self.FAULTS if f in got]
+        self._group(name, "ALARMS", True)
+    _c_DRV_CFG_ALARMS_Q = _c_DRV_CFG_ALARMS
+
+    def _c_DRV_USTEP(self, name, args):
+        try:
+            n = int(args[0])
+        except (ValueError, IndexError):
+            self._err(name, "USAGE", "Usage: DRV:USTEP <microsteps 1|2|4|...>")
+            return
+        if not 1 <= n <= 128 or n & (n - 1):
+            self._err(name, "OUT_OF_RANGE", "microsteps (a power of two) must be 1-128")
+            return
+        self.step_mode = n.bit_length() - 1
+        self._kv(name, "USTEP", {"microsteps_asked": n, "microsteps": 1 << self._eff_step_mode(),
+                                 "microsteps_per_rev": self._usteps_per_rev()})
+
+    def _c_DRV_USTEP_Q(self, name, args):
+        self._kv(name, "USTEP", {"microsteps": 1 << self._eff_step_mode(),
+                                 "microsteps_per_rev": self._usteps_per_rev(),
+                                 "drive_mode": "current" if self.drive_current else "voltage"})
 
     def _c_CTRL_ENC_FILT_RATE(self, name, args):
         self.enc_rate = max(100, min(10000, int(args[0])))

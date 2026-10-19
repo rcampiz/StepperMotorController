@@ -39,7 +39,7 @@ def test_registry_lists_the_builtin_scenarios():
 def test_bringup_passes_and_measures_identity(board):
     r = run(board, "bringup")
     assert r.ok, r.summary
-    assert r.measurements["serial"] == "SIM00001" and r.measurements["step_mode"] == 3
+    assert r.measurements["serial"] == "SIM00001" and r.measurements["microsteps"] == 8
     assert "*IDN?" in r.tx and not any(l.startswith("SYST:HB ") for l in r.tx)
 
 

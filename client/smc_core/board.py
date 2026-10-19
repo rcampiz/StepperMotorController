@@ -42,6 +42,10 @@ from .codec import (Event, Identity, ProtocolError, ResetInfo, Response, parse_e
                     parse_response, parse_telemetry)
 from .framing import FrameKind, classify
 from .protocol_spec import COMMANDS, LIMITS, OOB_ESTOP_BYTE, PROTOCOL_VERSION
+
+# The protocols this client speaks: 3 (PROTOCOL_VERSION, the driver in physical units) and 2
+# (the chip-unit commands; smc_core.driver translates). Any other is refused at session setup.
+SUPPORTED_PROTOCOLS = (2, PROTOCOL_VERSION)
 from .transport.base import ITransport, TransportError
 from .version import release_mismatch
 
@@ -344,6 +348,11 @@ class Board:
         except Exception:  # noqa: BLE001
             pass
         self._link_up = False
+
+    @property
+    def protocol(self) -> Optional[int]:
+        """The board's protocol version (from *IDN?), None before the session is set up."""
+        return self.identity.proto if self.identity is not None else None
 
     @property
     def connected(self) -> bool:
@@ -688,9 +697,9 @@ class Board:
                 self.identity = parse_idn(idn)
             except ProtocolError as e:
                 self._emit("error", str(e))
-        if self.identity is not None and self.identity.proto != PROTOCOL_VERSION:
+        if self.identity is not None and self.identity.proto not in SUPPORTED_PROTOCOLS:
             self._emit("error", f"board speaks protocol {self.identity.proto}, "
-                                f"this client protocol {PROTOCOL_VERSION}")
+                                f"this client protocols {'/'.join(map(str, SUPPORTED_PROTOCOLS))}")
         if self.identity is not None:
             mismatch = release_mismatch(self.identity.fw)
             if mismatch:

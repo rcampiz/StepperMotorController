@@ -12,7 +12,8 @@ client/
     protocol_spec.py   GENERATED from the firmware parser (scripts/arch/gen_protocol.py)
     commands.py        one typed builder per PROTOCOL.md command -> Request
     views.py           typed views of text replies (DBG:MOTOR, DRV:CFG?, CTRL:ENC?, SYSID)
-    units.py           motion units and powerSTEP01 register scaling
+    units.py           motion units and powerSTEP01 register scaling (protocol 2)
+    driver.py          the motor driver in physical units on protocol 3 or 2 (DRV:CAPS?, settings)
     board.py           Board: the link's threads, session, heartbeat, ESTOP, reset handling
     scenarios/         named tests: basic.py (bringup, estop_latency, heartbeat_loss, step_mode_readback,
                        sysid) and motion.py (motion_scale, step_mode_chip, telemetry_load)
@@ -20,7 +21,7 @@ client/
     kinematics.py      mecanum inverse/forward, motor speed scaling (pure functions)
     fleet.py           Fleet: four boards as one base (identity, base ESTOP, one-lost policy,
                        clock sync, synchronised start, merged telemetry)
-    sim.py             FakeBoard: a small protocol-2 responder for tests and --sim
+    sim.py             FakeBoard: a small protocol 3 (or 2) responder for tests and --sim
   smc_gui/             PySide6 frontend; bridge.py is the only Qt <-> core seam
   smc_cli/             `smc` command line (Raspberry Pi, bench)
   tests/               pytest: core unit tests, board/scenario tests on the fake board,

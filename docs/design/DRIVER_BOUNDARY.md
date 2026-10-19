@@ -1,7 +1,8 @@
 # Design: a swappable motor driver (H_L3_L4 in physical units)
 
-Status: **approved 2026-10-19, in progress**: steps 1-3 done (state, motion units, settings);
-blob V5 landed with step 3 (see "Step 3 as built"); the physical commands and `DRV:CAPS?` are step 4.
+Status: **approved 2026-10-19, in progress**: steps 1-4 done (state, motion units, settings,
+protocol 3 and the client; see "Step 3 as built" and "Step 4 as built"); step 5 (a second driver)
+is next.
 
 Decisions (owner, 2026-10-19): the next chip is unknown, so nothing may assume one: the
 boundary is capability-driven (`DriverCaps`), and every chip-specific fact lives in its L4
@@ -130,3 +131,39 @@ Raw register access stays only on the bring-up path (`IDebugAccess`, `DBG:*`), n
   non-driver fields. V1-V4 blobs are migrated at load via `fromLegacyUnits` (not rewritten until
   the next save, so a rollback still finds its V4 record); a driver without those units keeps
   its defaults and the non-driver fields.
+
+## Step 4 as built (2026-10-19)
+
+- **Protocol 3** (`PROTOCOL_VERSION` 3, docs/PROTOCOL.md section 7). New commands, in
+  `L2_protocol/handlers/driver_settings_handlers.cpp`: `DRV:CAPS?` (every `DriverCaps` field, units
+  in the key names, fault lists by chip-neutral name, `overcurrent_sense` voltage/current);
+  `DRV:CFG:CURRENT/DUTY/USTEP/ACCEL/DECEL/MAXSPD/OVERCURRENT/STALL_TH/ALARMS` and their `?`
+  queries (same handler); `DRV:CFG:PHYS?`; `DRV:USTEP` / `DRV:USTEP?` (now, through the Hi-Z safe
+  step-mode path, replacing `DRV:STEP_MODE`). `OCD` and `STALL` kept their protocol 2 meaning
+  (codes), so the physical ones are named `OVERCURRENT` and `STALL_TH`.
+- **Semantics:** the setters edit the stored settings (RAM) like every `DRV:CFG` setter;
+  `DRV:CFG:APPLY` puts them in force and saves. Replies show `quantize()`d values, i.e. what
+  APPLY writes (bench values: 0.312/1.326/1.56/1.56 A, 1/128 asked = 1/16 in force, ACC/DEC 344 =
+  5005.89 fsps2, MAX_SPEED 87 = 1327.51 fsps, OCD_TH 21 = 0.6875 V ~ 572.917 A). Ranges:
+  `Harness::*WithinCaps` (half a step of slack) in `driver_settings.hpp`, used by L2 (error text
+  with the range) and by L3 (`IMotorConfigDispatcher::configSetDriverSettings` checks the
+  changed fields only). L3 gained `driverSettings()`, `driverSettingsInForce()`,
+  `configSetDriverSettings()`.
+- **Replies without printf floats:** `L2_protocol/kv_reply.hpp/.cpp` streams named values to the
+  transport (JSON object, one `OK <WHAT> k=v` line, or `k=v` lines + `OK <n>`), with
+  `formatReal` (6 significant digits) and `formatFixed`. Release text +14.2 KB, data/bss
+  unchanged.
+- **Telemetry:** `motor.faults` (DriverFault bits), `motor.driver_raw`, `control.base_fsps` /
+  `final_fsps` (`trim_fsps` only in `CTRL:TRIM?`: the worst-case status line stays at 1200 of
+  1280 bytes, so the rate floor is unchanged). Every protocol 2 field stays.
+- **Deprecation:** a `// @deprecated <replacement> (protocol 3; kept one release)` line in a
+  handler body; `gen_protocol.py` carries it into PROTOCOL.md, protocol.json, `SYST:HELP?` and
+  the client's `CommandSpec.deprecated`. Deprecated: KVAL, TVAL, OCD, STALL, MOTION, STEPMODE,
+  PRED, DECAY (chip tuning, no replacement), the FAULT flags, `DRV:CFG?`, `DRV:STEP_MODE[?]`.
+- **Client:** `smc_core.driver` is the one physical code path: `DriverAccess` (caps, settings,
+  resolution, change sets) sends the physical commands to a protocol 3 board and the chip codes
+  to a protocol 2 one (the powerSTEP01 translation and caps live there and go with the aliases).
+  Board accepts protocols 2 and 3. Motor profiles store microsteps / amps (older step_mode / OCD
+  codes still load). GUI driver, step-mode and protection panels take their ranges from
+  `DRV:CAPS?` (a refusal = protocol 2 fallback); the fake board speaks protocol 3 or 2.
+- **Not changed:** the LCD Driver page (it already edits physical settings in L3).

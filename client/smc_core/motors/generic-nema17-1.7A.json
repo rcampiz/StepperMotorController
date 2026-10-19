@@ -9,7 +9,7 @@
   "drive_mode": "current",
   "tval_a": {"hold": 0.31, "run": 1.17, "acc": 1.4, "dec": 1.4},
   "pred": true,
-  "step_mode": 4,
+  "microsteps": 16,
   "idle_release_ms": 3000,
   "resonance_bands_rpm": [],
   "notes": "A starting point for a common 42 mm motor: run at ~70 % of the nameplate, hold at ~20 %. Measure the resonance bands with the resonance_map scenario and add them here."

@@ -4,9 +4,9 @@ import time
 from typing import Any, Dict
 
 from .. import commands as C
+from .. import driver as D
 from .. import views as V
 from ..codec import parse_idn
-from ..protocol_spec import PROTOCOL_VERSION
 from . import ScenarioContext, scenario
 
 
@@ -18,8 +18,9 @@ def bringup(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     ident = parse_idn(idn)
     ctx.measure("serial", ident.serial)
     ctx.measure("fw", ident.fw)
-    ctx.check("protocol version", ident.proto == PROTOCOL_VERSION,
-              f"board {ident.proto}, client {PROTOCOL_VERSION}")
+    ctx.measure("protocol", ident.proto)
+    ctx.check("protocol version", D.protocol_supported(ident.proto),
+              f"board {ident.proto}, client {'/'.join(map(str, D.SUPPORTED_PROTOCOLS))}")
     ver = ctx.call(C.version())
     ctx.check("version lines", ver.success and len(ver.lines) >= 3, f"{len(ver.lines)} lines")
     st = ctx.call(C.status())
@@ -30,11 +31,14 @@ def bringup(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     sysd = st.data.get("system", {}) or {}
     ctx.check("no RX overflow", int(sysd.get("rx_overflows", 0)) == 0,
               f"rx_overflows={sysd.get('rx_overflows', 0)}")
-    cfg = ctx.call(C.driver_config())
-    view = V.motor_config(cfg) if cfg.success else {}
-    ctx.check("driver config readable", "step_mode" in view, view.get("text", "")[:60])
-    if "step_mode" in view:
-        ctx.measure("step_mode", view["step_mode"])
+    drv = D.DriverAccess(ctx.call, ident.proto)
+    view = drv.settings()
+    ctx.check("driver config readable", "microsteps_asked" in view, str(view)[:60])
+    if "microsteps_asked" in view:
+        ctx.measure("microsteps", view["microsteps_asked"])
+    if drv.physical:
+        caps = drv.caps()
+        ctx.check("driver capabilities (DRV:CAPS?)", "max_microsteps_voltage" in caps, str(caps)[:60])
     hb = ctx.call(C.heartbeat_status())
     ctx.check("heartbeat status", hb.success)
     ev = ctx.call(C.events_status())
@@ -80,30 +84,33 @@ def heartbeat_loss(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     ctx.call(C.heartbeat_timeout(restore))
 
 
-@scenario("step_mode_readback", "Set each step mode through DRV:CFG:STEPMODE + APPLY, read it "
-                                "back through DRV:STEP_MODE? and DRV:CFG?, restore the original.",
+@scenario("step_mode_readback", "Set each step mode (log2 of the microsteps) through DRV:CFG:USTEP "
+                                "(protocol 2: DRV:CFG:STEPMODE) + APPLY, read back the resolution in "
+                                "force (DRV:USTEP?) and the one asked for, restore the original.",
           params={"modes": [0, 3, 7]})
 def step_mode_readback(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
-    before = ctx.call(C.step_mode_query())
-    ctx.require("read current", before.success, before.error_message or "")
-    current_mode = str(before.data.get("drive_mode", "voltage")) == "current"
-    configured = V.motor_config(ctx.call(C.driver_config())).get("step_mode")
-    original = int(configured if configured is not None else before.data.get("step_mode", 0))
+    drv = D.DriverAccess.for_ctx(ctx)
+    before = drv.resolution()
+    ctx.require("read current", "microsteps" in before, "no resolution readback")
+    drive = str(before.get("drive_mode", "voltage"))
+    caps = drv.caps()
+    asked = drv.configured_microsteps()
+    original = int(asked if asked is not None else before["microsteps"])
     ctx.measure("original", original)
     try:
         for mode in params["modes"]:
-            ctx.call(C.cfg_step_mode(int(mode)))
+            n = 1 << int(mode)
+            drv.set_microsteps(n)
             ctx.call(C.cfg_apply())
-            q = ctx.call(C.step_mode_query())
-            cfg = V.motor_config(ctx.call(C.driver_config()))
-            got = int(q.data.get("step_mode", -1)) if q.success else -1
-            # the chip runs the resolution in force (current mode: 1/16 at most); the config
-            # keeps what was asked
-            want = min(int(mode), 4) if current_mode else int(mode)
-            ctx.check(f"mode {mode}", got == want and cfg.get("step_mode") == int(mode),
-                      f"DRV:STEP_MODE?={got} (expected {want}) DRV:CFG?={cfg.get('step_mode')}")
+            got = drv.resolution().get("microsteps", -1)
+            cfg = drv.configured_microsteps()
+            # the driver runs the resolution in force (capped per drive mode by its caps;
+            # powerSTEP01 current mode: 1/16 at most); the config keeps what was asked
+            want = D.microsteps_in_force(caps, n, drive)
+            ctx.check(f"mode {mode}", got == want and cfg == n,
+                      f"in force {got} (expected {want}), asked {cfg} (expected {n})")
     finally:
-        ctx.call(C.cfg_step_mode(original))
+        drv.set_microsteps(original)
         ctx.call(C.cfg_apply())
 
 

@@ -46,7 +46,7 @@ def board():
 
 
 def test_identity_and_protocol(board):
-    assert board.identity.serial == "VN000001" and board.identity.proto == 2
+    assert board.identity.serial == "VN000001" and board.identity.proto == 3 and board.protocol == 3
     ver = board.request(C.version())
     assert ver.lines[0].startswith("Stepper Motor Controller v")
 
@@ -66,6 +66,42 @@ def test_identity_and_protocol(board):
 def test_scenarios_pass_on_the_real_firmware_code(board, name, params):
     r = run(board, name, **params)
     assert r.ok, (r.summary, r.checks, r.error)
+
+
+def test_driver_caps_and_physical_settings_on_the_real_firmware_code(board):
+    from smc_core import driver
+    caps = views.driver_caps(board.request(C.driver_caps()))
+    assert caps["max_microsteps_current"] == 16 and caps["max_microsteps_voltage"] == 128
+    assert caps["max_current_a"] == 9.906 and caps["current_step_a"] == 0.078
+    assert caps["overcurrent_sense"] == "voltage" and caps["faults_alarmable"] == list(driver.FAULT_NAMES)
+    got = views.driver_setting(board.request(C.cfg_current(0.3, 1.3, 1.6, 1.6)))
+    assert (got["hold_a"], got["run_a"], got["acc_a"], got["dec_a"]) == (0.312, 1.326, 1.638, 1.638)
+    bad = board.request(C.cfg_current(0.3, 1.3, 10.5, 1.0))
+    assert not bad.success and bad.error_code == "OUT_OF_RANGE" and "9.906 A" in bad.error_message
+    # the protocol 2 alias lands in the same settings
+    assert board.request(C.cfg_tval(0x04, 0x11, 0x14, 0x14)).success
+    got = views.driver_setting(board.request(C.cfg_query("CURRENT")))
+    assert (got["hold_a"], got["run_a"], got["acc_a"], got["dec_a"]) == (0.312, 1.326, 1.56, 1.56)
+    assert views.driver_setting(board.request(C.cfg_accel(5005.9)))["accel_fsps2"] == 5005.89
+    assert views.driver_setting(board.request(C.cfg_max_speed(1327.6)))["max_speed_fsps"] == 1327.51
+    oc = views.driver_setting(board.request(C.cfg_overcurrent(573)))
+    assert oc == {"overcurrent_a": 572.917, "overcurrent_v": 0.6875}
+    assert views.motor_config(board.request(C.driver_config()))["ocd_th"] == 21
+    us = views.driver_setting(board.request(C.cfg_microsteps(128)))
+    drive = us["drive_mode"]
+    assert us["microsteps_asked"] == 128 and us["microsteps"] == (16 if drive == "current" else 128)
+    board.request(C.mot_disable())
+    assert board.request(C.cfg_apply()).success
+    assert views.resolution(board.request(C.microsteps_query()))["microsteps"] == us["microsteps"]
+    phys = views.driver_physical(board.request(C.driver_physical()))
+    assert phys["microsteps_asked"] == 128 and phys["run_a"] == 1.326 and "overcurrent_v" in phys
+    r = views.resolution(board.request(C.microsteps(8)))
+    assert r["microsteps"] == 8
+    st = board.request(C.status()).data
+    assert "faults" in st["motor"] and "driver_raw" in st["motor"] and "base_fsps" in st["control"]
+    assert "status_reg" in st["motor"] and "base_spd" in st["control"]          # protocol 2 kept
+    s = driver.DriverAccess(board.request, board.protocol).settings()
+    assert s["microsteps_asked"] == 8 and driver.DriverAccess(board.request, board.protocol).physical
 
 
 def test_motion_moves_the_fake_motor_and_the_encoder_follows(board):

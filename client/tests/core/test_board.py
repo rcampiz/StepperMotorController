@@ -67,7 +67,7 @@ def test_session_setup_runs_json_identity_events_telemetry_watchdog(rig):
     rig.open()
     setup = rig.tx({"setup"})
     assert setup == ["FMT JSON", "*IDN?", "SYST:EVT:EN", "SYST:TLM:RATE 50", "SYST:HB:TIMEOUT 500"]
-    assert rig.board.identity.serial == "SIM00001" and rig.board.identity.proto == 2
+    assert rig.board.identity.serial == "SIM00001" and rig.board.identity.proto == 3 and rig.board.protocol == 3
     assert rig.seen["connected"] and rig.seen["session"]
     assert rig.fake.json and rig.fake.hb_timeout_ms == 500
 

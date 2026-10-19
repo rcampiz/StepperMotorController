@@ -12,7 +12,32 @@ Cutting a release: move the Unreleased notes under a new heading, bump `VERSION`
 
 ## [Unreleased]
 
+### Added
+- Protocol 3 (driver boundary step 4): the host configures the motor driver in physical units
+  and learns what it can do. `DRV:CAPS?` (modes and resolutions, current / duty / overcurrent /
+  stall ranges and steps, speed and acceleration limits, faults); `DRV:CFG:CURRENT` (amps),
+  `DUTY` (0..1), `USTEP` (microsteps), `ACCEL` / `DECEL` (full steps/s^2), `MAXSPD` (full steps/s),
+  `OVERCURRENT` (amps, plus the volts a voltage-sensing driver compares), `STALL_TH` (0..1),
+  `ALARMS` (fault names), each with a `?` query; `DRV:CFG:PHYS?`; `DRV:USTEP` / `DRV:USTEP?`.
+  Values are rounded by the driver and the replies show what `DRV:CFG:APPLY` puts in force;
+  ranges come from the driver (`ERROR OUT_OF_RANGE`). Telemetry: `motor.faults` (chip-neutral
+  bits), `motor.driver_raw`, `control.base_fsps` / `final_fsps` (`CTRL:TRIM?` also `trim_fsps`).
+- Client: typed builders for the new commands, `smc_core.driver` (one physical code path for
+  protocol 2 and 3 boards), views for `DRV:CAPS?` / `DRV:CFG:PHYS?`, `smc driver caps|show`;
+  the fake board speaks protocol 3 (or 2 with `protocol=2`).
+
+### Deprecated
+- Protocol 2 chip-unit commands, kept one release (marked in docs/PROTOCOL.md and
+  `SYST:HELP?`): `DRV:CFG:KVAL`, `TVAL`, `OCD`, `STALL`, `MOTION`, `STEPMODE`, `PRED`, `DECAY`, the
+  flag form of `DRV:CFG:FAULT`, `DRV:CFG?`, `DRV:STEP_MODE`, `DRV:STEP_MODE?`; the status fields
+  `status_reg`, `stall_a` / `stall_b`, `base_spd` / `trim_spd` / `final_spd`.
+
 ### Changed
+- `PROTOCOL_VERSION` 3. The client accepts protocol 2 and 3 boards and uses the physical
+  commands when the board has them: motor profiles (amps, microsteps), the GUI's driver,
+  step-mode and protection panels (ranges and steps from `DRV:CAPS?`, currents in amps,
+  overcurrent in amps with the sensed volts, voltage-mode controls hidden when the driver has
+  none), scenarios and the CLI. `DRV:CFG:DRIVE` refuses a drive mode the driver lacks.
 - Driver boundary step 3: the motor driver's settings are physical (amps, duty, full steps/s^2,
   full steps/s, microsteps) and the driver advertises its capabilities; every powerSTEP01
   register, unit and quirk (Hi-Z-only writes, the current-mode 1/16 cap, the chip-reset watch)

@@ -264,3 +264,91 @@ def memory(resp_or_text) -> Dict[str, Any]:
         stacks = min(out.get("stack_pool", {}).get("total", 0), ram["used"])
         out["split"] = {"stacks": stacks, "globals": ram["used"] - stacks, "free": ram["free"]}
     return out
+
+
+# ---------------------------------------------------------------------------
+# Protocol 3: the motor driver in physical units (docs/PROTOCOL.md section 7)
+# ---------------------------------------------------------------------------
+# Keys whose values are not numbers, in DRV:CAPS? / DRV:CFG:PHYS? / the setter replies
+_KV_FLAGS = {"voltage_mode", "current_mode", "stall_detect", "standby_pin", "hardware_positioning"}
+_KV_LISTS = {"fault_bits", "faults_reported", "faults_alarmable", "alarms"}
+_KV_TEXT = {"overcurrent_sense", "drive_mode", "source", "fault_action"}
+
+
+def _kv_value(key: str, raw: str) -> Any:
+    if key in _KV_FLAGS:
+        return raw.strip().lower() in ("1", "true")
+    if key in _KV_LISTS:
+        raw = raw.strip()
+        return [] if raw in ("", "NONE") else [s for s in raw.split(",") if s]
+    if key in _KV_TEXT:
+        return raw.strip()
+    try:
+        return int(raw)
+    except ValueError:
+        try:
+            return float(raw)
+        except ValueError:
+            return raw.strip()
+
+
+def _named_values(resp: Response) -> Dict[str, Any]:
+    """The named values of a protocol 3 reply in either format: the JSON data object as is,
+    or ASCII `key=value` lines (DRV:CAPS?, DRV:CFG:PHYS?) / one `OK <WHAT> key=value ...` line."""
+    d = resp.data or {}
+    if d and "lines" not in d and "message" not in d and "raw" not in d:
+        return dict(d)                                        # JSON object
+    out: Dict[str, Any] = {}
+    texts = resp.lines or str(d.get("message", d.get("raw", resp.raw))).split()
+    for item in texts:
+        key, sep, raw = str(item).strip().partition("=")
+        if sep and key and " " not in key:
+            out[key] = _kv_value(key, raw)
+    return out
+
+
+def driver_caps(resp: Response) -> Dict[str, Any]:
+    """DRV:CAPS? -> {voltage_mode, current_mode, max_microsteps_voltage, max_microsteps_current,
+    max_current_a, current_step_a, duty_step, overcurrent_sense ('voltage'|'current'),
+    overcurrent_ohms, overcurrent_min_a/max_a/step_a, stall_detect, stall_step, max_speed_fsps,
+    max_speed_limit_fsps, speed_limit_step_fsps, accel_min/max/step_fsps2,
+    min/max_position_usteps, fault_bits, faults_reported, faults_alarmable, ...}; {} when the
+    board refused (a protocol 2 board answers UNKNOWN_CMD)."""
+    return _named_values(resp) if resp.success else {}
+
+
+def driver_physical(resp: Response) -> Dict[str, Any]:
+    """DRV:CFG:PHYS? -> {source, drive_mode, microsteps_asked, microsteps (in force), hold_a,
+    run_a, acc_a, dec_a, hold_duty..dec_duty, accel_fsps2, decel_fsps2, max_speed_fsps,
+    overcurrent_a, overcurrent_v (voltage-sensing driver), stall_threshold, alarms,
+    fault_action, idle_release_ms, full_steps_per_rev}; {} on an error."""
+    return _named_values(resp) if resp.success else {}
+
+
+def driver_setting(resp: Response) -> Dict[str, Any]:
+    """A physical setter's or its query's reply (DRV:CFG:CURRENT ..., DRV:USTEP?) -> its named
+    values, rounded by the driver ({hold_a, run_a, ...} or {microsteps_asked, microsteps}...)."""
+    return _named_values(resp) if resp.success else {}
+
+
+def resolution(resp: Response) -> Dict[str, Any]:
+    """DRV:USTEP? (protocol 3) or DRV:STEP_MODE? (protocol 2) -> {microsteps, step_mode (log2),
+    microsteps_per_rev, drive_mode}: the resolution in force, as the driver reads it back."""
+    if not resp.success:
+        return {}
+    d = _named_values(resp)
+    out: Dict[str, Any] = {}
+    if "microsteps" in d:
+        out["microsteps"] = int(d["microsteps"])
+    elif "step_mode" in d:
+        out["microsteps"] = 1 << int(d["step_mode"])
+    elif "STEP_MODE" in d:                                     # protocol 2 ASCII line
+        out["microsteps"] = 1 << int(d["STEP_MODE"])
+    if "microsteps" in out:
+        out["step_mode"] = int(out["microsteps"]).bit_length() - 1
+    for k in ("microsteps_per_rev", "MICROSTEPS_PER_REV"):
+        if k in d:
+            out["microsteps_per_rev"] = int(d[k])
+    if "drive_mode" in d:
+        out["drive_mode"] = str(d["drive_mode"])
+    return out

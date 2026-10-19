@@ -10,7 +10,7 @@
   "tval_a": {"hold": 0.31, "run": 1.33, "acc": 1.56, "dec": 1.56},
   "pred": true,
   "tsw_us": 48,
-  "step_mode": 3,
+  "microsteps": 8,
   "idle_release_ms": 3000,
   "resonance_bands_rpm": [[55, 66], [105, 122]],
   "notes": "The project's motor and the firmware's defaults. Bench 2026-10-18 at 12.5 V: 64 mA holding at 0.39 A, run 1.72 A is ~25 % under the earlier 2.03 A with no stall to 250 RPM; the two bands are mechanical and the same in every microstep mode. Chopper timings at chip defaults (T_FAST/TON_MIN/TOFF_MIN 0): 2 us minimum on/off times inflate the 60 RPM band 3-4x."

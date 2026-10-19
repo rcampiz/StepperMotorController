@@ -1,8 +1,9 @@
 """
 Microstep resolution configuration panel.
 
-Allows selecting the powerSTEP01 STEP_MODE register value (0-7)
-to set microstep resolution from full step to 1/128.
+Selects the microsteps per full step (full step to the driver's finest resolution, DRV:CAPS?)
+and shows the resolution in force as the driver reads it back. A protocol 3 board takes
+DRV:CFG:USTEP, a protocol 2 one DRV:CFG:STEPMODE (smc_core.driver picks).
 """
 
 from PySide6.QtWidgets import (
@@ -16,13 +17,11 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, Slot, Signal
 
-from smc_core import commands as C
+from smc_core import driver as D
 from PySide6.QtGui import QFont
 
-CURRENT_MODE_MAX_STEP_MODE = 4      # powerSTEP01 current mode: 1/16 at most
 
-
-# (register value, display label, denominator)
+# (log2 of the microsteps, display label, microsteps per full step)
 STEP_MODES = [
     (0, "Full Step (1)", 1),
     (1, "Half Step (1/2)", 2),
@@ -36,7 +35,7 @@ STEP_MODES = [
 
 
 class StepModePanel(QWidget):
-    """Panel for powerSTEP01 microstep resolution configuration."""
+    """Panel for the motor driver's microstep resolution."""
 
     stepmode_apply_requested = Signal(object)  # Request
     refresh_requested = Signal()
@@ -44,8 +43,10 @@ class StepModePanel(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._dirty = False
-        self._config_mode = None   # DRV:CFG? (flash config)
-        self._chip_mode = None     # DRV:STEP_MODE? (what the powerSTEP01 really runs)
+        self._config_mode = None   # the stored settings (DRV:CFG:PHYS? / DRV:CFG?), log2
+        self._chip_mode = None     # the driver's readback (DRV:USTEP? / DRV:STEP_MODE?), log2
+        self._caps = dict(D.POWERSTEP01_CAPS)
+        self._physical = False
         self._setup_ui()
         self._connect_dirty_tracking()
 
@@ -128,22 +129,44 @@ class StepModePanel(QWidget):
     def _mark_dirty(self):
         self._dirty = True
 
+    def set_caps(self, caps: dict, physical: bool) -> None:
+        """The driver's finest resolution (DRV:CAPS?) limits the choices; physical picks the
+        command (DRV:CFG:USTEP or the protocol 2 DRV:CFG:STEPMODE)."""
+        self._caps = dict(caps)
+        self._physical = bool(physical)
+        finest = max(int(caps.get("max_microsteps_voltage") or 1), int(caps.get("max_microsteps_current") or 1))
+        top = finest.bit_length() - 1
+        self._mode_combo.blockSignals(True)
+        try:
+            keep = self._mode_combo.currentIndex()
+            self._mode_combo.clear()
+            for log2, label, _n in STEP_MODES[:top + 1]:
+                self._mode_combo.addItem(label)
+            for log2 in range(len(STEP_MODES), top + 1):
+                self._mode_combo.addItem("1/%d Step" % (1 << log2))
+            self._mode_combo.setCurrentIndex(min(keep if keep >= 0 else top, top))
+        finally:
+            self._mode_combo.blockSignals(False)
+        self._render_current()
+
     @Slot()
     def _on_apply(self):
-        reg_val = self._mode_combo.currentIndex()
-        self.stepmode_apply_requested.emit(C.cfg_step_mode(reg_val))
+        microsteps = 1 << self._mode_combo.currentIndex()
+        self.stepmode_apply_requested.emit(D.settings_requests({"microsteps": microsteps}, self._physical)[0])
 
     @Slot()
     def _on_refresh(self):
         self._dirty = False
         self.refresh_requested.emit()
 
-    def update_step_mode(self, cfg: dict):
-        """Parse step mode from MCONFIG response.
+    def update_physical(self, phys: dict):
+        """The stored settings (smc_core.views.driver_physical): the microsteps asked for."""
+        if "microsteps_asked" in phys:
+            self.update_step_mode({"step_mode": int(phys["microsteps_asked"]).bit_length() - 1})
 
-        Looks for 'StepMode: <n> (1/<d>)' in the MCONFIG output.
-        Skipped if the user has unsaved edits (dirty flag set).
-        """
+    def update_step_mode(self, cfg: dict):
+        """The step mode (log2 of the microsteps) of the stored settings, from a DRV:CFG? view.
+        Skipped if the user has unsaved edits (dirty flag set)."""
         if self._dirty:
             return
 
@@ -154,16 +177,16 @@ class StepModePanel(QWidget):
 
         self._mode_combo.blockSignals(True)
         try:
-            if 0 <= reg_val <= 7:
+            if 0 <= reg_val < self._mode_combo.count():
                 self._mode_combo.setCurrentIndex(reg_val)
             self._render_current()
         finally:
             self._mode_combo.blockSignals(False)
 
     def update_chip_step_mode(self, data: dict):
-        """DRV:STEP_MODE? reply: the mode read back from the chip. Shown as the current
-        value, with a warning when the saved config disagrees (the chip accepts STEP_MODE
-        only with the output disabled)."""
+        """The resolution read back from the driver (smc_core.views.resolution of DRV:USTEP? or
+        DRV:STEP_MODE?). Shown as the current value, with a warning when the stored settings
+        disagree (a driver may take a new resolution only with its outputs off)."""
         if "step_mode" not in data:
             return
         self._chip_mode = int(data["step_mode"])
@@ -176,16 +199,17 @@ class StepModePanel(QWidget):
         if chip is None and cfg is None:
             return
         shown = chip if chip is not None else cfg
-        text = f"1/{1 << shown} microstep (reg={shown})"
+        text = f"1/{1 << shown} microstep (mode {shown})"
         if chip is None:
             text += "  [config]"
-        # In current mode the powerSTEP01 runs 1/16 at most: the chip at 1/16 with 1/32..1/128
-        # configured is right, not a mismatch (the firmware converts with the 1/16)
+        # The driver caps the resolution per drive mode (DRV:CAPS?; the powerSTEP01 runs 1/16 at
+        # most in current mode): in force below the request is right, not a mismatch
         expected = cfg
-        if cfg is not None and getattr(self, "_current_mode", False):
-            expected = min(cfg, CURRENT_MODE_MAX_STEP_MODE)
+        drive = "current" if getattr(self, "_current_mode", False) else "voltage"
+        if cfg is not None:
+            expected = D.microsteps_in_force(self._caps, 1 << cfg, drive).bit_length() - 1
         if chip is not None and cfg is not None and chip == expected and expected != cfg:
-            text += f"  -- current mode runs 1/16 at most (config 1/{1 << cfg})"
+            text += f"  -- {drive} mode runs 1/{1 << expected} at most (config 1/{1 << cfg})"
         if chip is not None and expected is not None and chip != expected:
             text += f"  -- config says 1/{1 << expected}: apply again with the motor idle"
             self._current_label.setStyleSheet("color: #ff4040;")

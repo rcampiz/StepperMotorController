@@ -17,15 +17,30 @@ def pump(app, cond, timeout=4.0):
     return False
 
 
-@pytest.fixture
-def gui(qapp):
+def _gui(qapp, protocol):
     from smc_core.sim import FakeBoard
     from smc_core.transport.memory import MemoryTransport
     from smc_gui.main_window import MainWindow
     w = MainWindow()
     t = MemoryTransport(name="sim")
-    fake = FakeBoard(t)
+    fake = FakeBoard(t, protocol=protocol)
     assert w.attach_transport(t, "sim")
+    return w, fake
+
+
+@pytest.fixture
+def gui(qapp):
+    w, fake = _gui(qapp, 3)
+    yield qapp, w, fake
+    w.close()
+    fake.stop()
+    qapp.processEvents()
+
+
+@pytest.fixture
+def gui2(qapp):
+    """The GUI against a protocol 2 board: no DRV:CAPS?, the chip-code commands."""
+    w, fake = _gui(qapp, 2)
     yield qapp, w, fake
     w.close()
     fake.stop()
@@ -104,10 +119,11 @@ def test_step_mode_apply_reads_the_chip_back(gui):
     assert pump(app, lambda: fake.step_mode == 7 and "DRV:CFG:APPLY" in fake.received)
     label = w._stepmode_panel._current_label
     # the fake board is in current mode: the chip runs 1/16 and that is not a mismatch
-    assert pump(app, lambda: "reg=4" in label.text() and "current mode runs 1/16" in label.text()
+    assert pump(app, lambda: "mode 4" in label.text() and "current mode runs 1/16" in label.text()
                 and "config says" not in label.text())
+    assert "DRV:CFG:USTEP 128" in fake.received                 # protocol 3: microsteps
     after_apply = fake.received.index("DRV:CFG:APPLY")
-    assert "DRV:STEP_MODE?" in fake.received[after_apply:]       # the chip is read back, not the config
+    assert "DRV:USTEP?" in fake.received[after_apply:]           # the driver is read back, not the config
 
 
 def test_drive_mode_apply_sends_mode_tval_and_apply(gui):
@@ -122,6 +138,7 @@ def test_drive_mode_apply_sends_mode_tval_and_apply(gui):
     w._driver_panel._on_apply_drive()
     assert pump(app, lambda: fake.drive_current and "DRV:CFG:APPLY" in fake.received)
     assert fake.tval[1] == 0x11 and fake.idle_release_ms == 2500
+    assert any(r.startswith("DRV:CFG:CURRENT ") and " 1.326 " in r for r in fake.received)   # amps
     assert fake.received.index("DRV:CFG:DRIVE CURRENT") < fake.received.index("DRV:CFG:APPLY")
 
 
@@ -143,12 +160,16 @@ def test_current_regulation_apply_sends_pred_decay_and_apply(gui):
 def test_protection_apply_sends_typed_requests_in_order(gui):
     app, w, fake = gui
     assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    assert pump(app, lambda: w._protection_panel._ocd_slider.value() == 8)   # DRV:CFG:PHYS? arrived
     w._protection_panel._on_apply()
     assert pump(app, lambda: "DRV:CFG:APPLY" in fake.received)
-    tail = [l for l in fake.received if l.startswith("DRV:CFG:")][-5:]
-    assert [l.split()[0] for l in tail] == ["DRV:CFG:OCD", "DRV:CFG:STALL", "DRV:CFG:FAULT",
+    tail = [l for l in fake.received if l.startswith("DRV:CFG:") and not l.endswith("?")][-5:]
+    assert [l.split()[0] for l in tail] == ["DRV:CFG:OVERCURRENT", "DRV:CFG:STALL_TH", "DRV:CFG:ALARMS",
                                             "DRV:CFG:FAULT", "DRV:CFG:APPLY"]
     assert tail[3].startswith("DRV:CFG:FAULT ACTION ")
+    # the board's 0x08 OCD code is 234 A estimated, 0.28 V across the switch
+    assert tail[0].startswith("DRV:CFG:OVERCURRENT 234.37")
+    assert "0.281" in w._protection_panel._ocd_note.text() and "~234 A" in w._protection_panel._ocd_note.text()
 
 
 def test_sysid_panel_runs_its_tests_through_the_core_scenario(gui):
@@ -269,8 +290,8 @@ def test_motor_profile_applies_to_the_board_and_sets_the_rating(gui):
     w._profile_panel._save_cb.setChecked(True)
     w._profile_panel._on_apply()
     assert pump(app, lambda: "DRV:CFG:SAVE" in fake.received, timeout=5.0), fake.received[-8:]
-    assert any(r.startswith("DRV:CFG:TVAL 04 0F") for r in fake.received)
-    assert fake.step_mode == 4
+    assert "DRV:CFG:CURRENT 0.31 1.17 1.4 1.4" in fake.received and "DRV:CFG:USTEP 16" in fake.received
+    assert fake.tval[1] == 0x0F and fake.step_mode == 4
     assert pump(app, lambda: abs(w._driver_panel.rated_current() - 1.7) < 1e-6, timeout=5.0), w._driver_panel.rated_current()
 
 
@@ -339,3 +360,43 @@ def test_memory_panel_polls_only_while_visible_and_renders(gui):
     w._diag_tabs.setCurrentIndex(0)
     app.processEvents()
     assert not panel.polling
+
+
+def test_driver_panels_follow_the_drivers_caps(gui):
+    app, w, fake = gui
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    assert pump(app, lambda: w._physical and "DRV:CFG:PHYS?" in fake.received)
+    p = w._driver_panel
+    assert p._tval_sliders[1].maximum() <= 127 and abs(p._current_step - 0.078) < 1e-9
+    caps = dict(fake.CAPS, voltage_mode=False, current_step_a=0.05, max_current_a=5.0)
+    p.set_caps(caps, True)
+    assert p._kval_row.isHidden() and p._apply_kval_btn.isHidden() and p._mode_voltage_btn.isHidden()
+    assert not p._tval_row.isHidden() and p._is_current_mode()
+    p._rated_spin.setValue(5.0)
+    p._tval_spins[1].setValue(1.3)                       # 26 steps of 50 mA
+    assert p._tval_sliders[1].value() == 26 and p._tval_sliders[1].maximum() == 100
+    p._on_apply_params()
+    assert pump(app, lambda: any(r.startswith("DRV:CFG:ACCEL ") for r in fake.received))
+    assert "DRV:CFG:MOTION" not in " ".join(fake.received)
+
+
+def test_a_protocol_2_board_gets_the_chip_codes(gui2):
+    app, w, fake = gui2
+    assert pump(app, lambda: w._board is not None and w._board.session_ready)
+    assert pump(app, lambda: "DRV:CAPS?" in fake.received and "DRV:CFG?" in fake.received)
+    assert pump(app, lambda: w._driver_panel._tval_sliders[1].value() == 0x11)   # from DRV:CFG?
+    assert not w._physical and "DRV:CFG:PHYS?" not in fake.received
+    assert pump(app, lambda: w._stepmode_panel._mode_combo.currentIndex() == 3)
+    assert pump(app, lambda: w._protection_panel._ocd_slider.value() == 8)
+    w._protection_panel._on_apply()
+    assert pump(app, lambda: "DRV:CFG:APPLY" in fake.received)
+    tail = [l for l in fake.received if l.startswith("DRV:CFG:") and not l.endswith("?")][-5:]
+    assert [l.split()[0] for l in tail] == ["DRV:CFG:OCD", "DRV:CFG:STALL", "DRV:CFG:FAULT",
+                                            "DRV:CFG:FAULT", "DRV:CFG:APPLY"]
+    assert tail[0] == "DRV:CFG:OCD 8"                    # the board's code comes back unchanged
+    w._driver_panel._on_apply_drive()
+    assert pump(app, lambda: any(r.startswith("DRV:CFG:TVAL 04 11 14 14") for r in fake.received))
+    w._stepmode_panel._mode_combo.setCurrentIndex(5)
+    w._stepmode_panel._on_apply()
+    assert pump(app, lambda: "DRV:CFG:STEPMODE 5" in fake.received)
+    assert pump(app, lambda: "DRV:STEP_MODE?" in fake.received[fake.received.index("DRV:CFG:STEPMODE 5"):])

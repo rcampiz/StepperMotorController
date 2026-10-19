@@ -22,6 +22,7 @@ class MotorProfilePanel(QGroupBox):
     def __init__(self, parent=None):
         super().__init__("Motor profile", parent)
         self._profiles = []
+        self._physical = True           # protocol 3 board: physical commands (set_physical)
         v = QVBoxLayout(self)
         row = QHBoxLayout()
         self._combo = QComboBox()
@@ -75,6 +76,10 @@ class MotorProfilePanel(QGroupBox):
     def save_to_flash(self) -> bool:
         return self._save_cb.isChecked()
 
+    def set_physical(self, physical: bool) -> None:
+        """Whether the board takes the physical commands (protocol 3) or the chip codes."""
+        self._physical = bool(physical)
+
     def _on_pick(self, *_):
         p = self.current_profile()
         if p is None:
@@ -85,7 +90,7 @@ class MotorProfilePanel(QGroupBox):
                 "%d cpr encoder" % p.encoder_cpr if p.encoder_cpr else "no encoder",
                 "%s mode" % p.drive_mode]
         if p.tval_a:
-            bits.append("TVAL hold %.2f run %.2f acc %.2f dec %.2f A" % (
+            bits.append("current hold %.2f run %.2f acc %.2f dec %.2f A" % (
                 p.tval_a.get("hold", 0), p.tval_a.get("run", 0), p.tval_a.get("acc", 0), p.tval_a.get("dec", 0)))
         if p.resonance_bands_rpm:
             bits.append("bands " + ", ".join("%g-%g RPM" % b for b in p.resonance_bands_rpm))
@@ -98,7 +103,7 @@ class MotorProfilePanel(QGroupBox):
         p = self.current_profile()
         if p is None:
             return
-        reqs = p.requests()
+        reqs = p.requests(self._physical)
         if self.save_to_flash:
             reqs.append(motors.C.cfg_save())
         self.apply_requested.emit(reqs, p)
