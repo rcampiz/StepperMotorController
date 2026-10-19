@@ -16,10 +16,14 @@ struct MotorTelemetry {
     int32_t position;
     int32_t targetPosition;
     uint32_t speed;
-    uint16_t statusReg;
+    uint32_t statusReg;      ///< the driver chip's own status word: opaque, diagnostics only
+    uint8_t faults;          ///< Harness::DriverFault bits, decoded by the driver
+    uint8_t phase;           ///< Harness::MotionPhase
     bool busy;
     bool hiZ;
     bool stalled;
+    bool forward;
+    bool statusReadable;     ///< false while the chip is held in standby
 };
 
 struct EncoderTelemetry {

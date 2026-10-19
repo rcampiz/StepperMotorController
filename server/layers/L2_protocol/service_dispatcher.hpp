@@ -171,7 +171,7 @@ public:
     void getDeviceInfo(uint16_t& deviceId, uint8_t& role) override;
     bool setDeviceId(uint16_t id) override;
     Harness::ServiceStatus setRole(uint8_t role) override;
-    void enableEvents(uint8_t mask, uint16_t currentStatus) override;
+    void enableEvents(uint8_t mask, uint8_t currentFaults, uint16_t currentStatus) override;
     void disableEvents() override;
     EventStats getEventStats() override;
     uint32_t getLastEventSeq() override;

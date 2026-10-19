@@ -182,7 +182,7 @@ Top level `data`: `state`, `tick`, `queue_depth`, `motor`, `position`, `speed`, 
 
 Telemetry structures behind it (`harness/pins/telemetry_types.hpp`):
 
-- `MotorTelemetry`: `position` (int32_t), `targetPosition` (int32_t), `speed` (uint32_t), `statusReg` (uint16_t), `busy` (bool), `hiZ` (bool), `stalled` (bool)
+- `MotorTelemetry`: `position` (int32_t), `targetPosition` (int32_t), `speed` (uint32_t), `statusReg` (uint32_t), `faults` (uint8_t), `phase` (uint8_t), `busy` (bool), `hiZ` (bool), `stalled` (bool), `forward` (bool), `statusReadable` (bool)
 - `EncoderTelemetry`: `count` (int64_t), `velocity` (int32_t), `indexSeen` (bool), `indexTick` (uint32_t), `revolutions` (int32_t), `indexPeriodUs` (uint32_t), `velocityQuality` (uint8_t), `filterFlags` (uint8_t), `measWindowMs` (uint8_t), `sampleRateHz` (uint16_t)
 - `SystemTelemetry`: `uptimeTicks` (uint32_t), `freeHeap` (uint32_t), `cpuLoad` (uint8_t)
 - `ControlTelemetry`: `followingError` (int32_t), `setpoint` (int32_t), `mode` (uint8_t), `tracking` (bool), `pidOutput` (int16_t), `pTerm` (int16_t), `iTerm` (int16_t), `dTerm` (int16_t), `supervisorState` (uint8_t), `currentTier` (uint8_t), `velError` (int32_t), `retryCount` (uint8_t), `baseSpeedRaw` (int32_t), `trimSpeedRaw` (int32_t), `finalSpeedRaw` (int32_t), `trimFrozen` (uint8_t), `velQuality` (uint8_t)

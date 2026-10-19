@@ -137,7 +137,7 @@ private:
     SpeedTrimResult m_lastTrimResult = {};
 
     // Edge detection state
-    uint16_t m_prevStatusReg = 0xFFFF;
+    uint8_t m_prevFaults = 0;          ///< Harness::DriverFault bits at the last poll (edge detection)
     IMotorDriver* m_driver = nullptr;      ///< owned reference, bound at init (H_L3_L4)
     Platform::IClock* m_clock = nullptr;   ///< Platform power net
     bool m_prevBusy = false;

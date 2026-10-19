@@ -38,7 +38,7 @@ struct StatusJsonView {
     uint32_t    queueDepth = 0;
     int         direction = 0;
     unsigned    motStat = 0;
-    uint16_t    statusReg = 0;
+    uint32_t    statusReg = 0;   ///< the driver chip's status word (opaque)
     bool cmdErr = false, ocd = false, thermalSD = false, thermalWarn = false;
     bool uvlo = false, stallA = false, stallB = false;
     bool     hbEnabled = false;

@@ -14,10 +14,10 @@ public:
     virtual ~ISafetyActions() = default;
 
     /**
-     * @brief Read the motor driver STATUS register
-     * @return 16-bit STATUS value (0 on failure)
+     * @brief The motor driver's active faults, decoded by the driver
+     * @return false when the driver could not be read (faults then 0)
      */
-    virtual uint16_t getMotorStatusReg() = 0;
+    virtual bool getMotorFaults(uint8_t& faults) = 0;   ///< Harness::DriverFault bits
     /// True while the out-of-band ESTOP holds the driver in standby (status reads are garbage).
     virtual bool isMotorInStandby() = 0;
     /// Out-of-band ESTOP timing (see IMotorTaskControl::estopTiming).

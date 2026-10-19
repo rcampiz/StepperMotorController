@@ -14,7 +14,10 @@
 namespace Harness {
 
 struct MotorDebugParams {
-    uint16_t status;
+    uint16_t status;      ///< the chip's status word (opaque; decoded fields below)
+    uint8_t  faults;      ///< Harness::DriverFault bits, decoded by the driver
+    bool     outputsOff;
+    bool     moving;
     uint8_t  kvalHold;
     uint8_t  kvalRun;
     uint8_t  kvalAcc;

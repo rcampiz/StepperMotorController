@@ -39,7 +39,7 @@ void formatJson(Transport::ITransport& transport, const AsyncEvent& evt, uint32_
  * @param buf Output buffer
  * @param bufSize Buffer size
  */
-void faultDetail(uint16_t statusReg, char* buf, size_t bufSize);
+void faultDetail(uint8_t faults, char* buf, size_t bufSize);
 
 /**
  * @brief Build the detail string for a stall event
@@ -47,6 +47,6 @@ void faultDetail(uint16_t statusReg, char* buf, size_t bufSize);
  * @param buf Output buffer
  * @param bufSize Buffer size
  */
-void stallDetail(uint16_t statusReg, char* buf, size_t bufSize);
+void stallDetail(uint8_t faults, char* buf, size_t bufSize);
 
 } // namespace Protocol::EventCodec

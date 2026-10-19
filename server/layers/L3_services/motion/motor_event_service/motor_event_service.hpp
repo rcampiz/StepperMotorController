@@ -34,7 +34,7 @@ public:
      * @param mask Bitmask of event types to enable (EVT_MASK_* constants)
      * @param currentStatusReg Current motor STATUS register for snapshot
      */
-    void enable(uint8_t mask, uint16_t currentStatusReg);
+    void enable(uint8_t mask, uint8_t currentFaults, uint16_t currentStatusReg);
 
     /**
      * @brief Disable all events (clear mask to 0).
@@ -57,7 +57,7 @@ public:
      * Checks enable mask, applies reserved-slot policy for informational events.
      * Returns false if event was dropped (queue full or not enabled).
      */
-    bool post(EventType type, uint16_t statusReg);
+    bool post(EventType type, uint16_t statusReg, uint8_t faults = 0);
 
     /**
      * @brief Receive next event from queue. Non-blocking.

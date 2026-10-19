@@ -175,7 +175,7 @@ struct FakeSystemDispatcher : Services::ISystemDispatcher {
     void getDeviceInfo(uint16_t& deviceId, uint8_t& role)  override { calls.push_back("getDeviceInfo"); deviceId = uint16_t{}; role = uint8_t{}; }
     bool setDeviceId(uint16_t id)  override { calls.push_back("setDeviceId"); return bool{}; }
     Harness::ServiceStatus setRole(uint8_t role)  override { calls.push_back("setRole"); return Harness::ServiceStatus{}; }
-    void enableEvents(uint8_t mask, uint16_t currentStatus)  override { calls.push_back("enableEvents"); }
+    void enableEvents(uint8_t mask, uint8_t currentFaults, uint16_t currentStatus)  override { calls.push_back("enableEvents"); }
     void disableEvents()  override { calls.push_back("disableEvents"); }
     EventStats getEventStats()  override { calls.push_back("getEventStats"); return EventStats{}; }
     uint32_t getLastEventSeq()  override { calls.push_back("getLastEventSeq"); return uint32_t{}; }

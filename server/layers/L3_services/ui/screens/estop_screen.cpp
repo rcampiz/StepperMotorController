@@ -12,6 +12,7 @@
 #include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include <stdio.h>
 #include <string.h>
+#include "harness/pins/motor_state.hpp"
 
 namespace UI {
 
@@ -344,13 +345,14 @@ void EstopScreen::drawMiddle(Services::ICanvas& lcd)
     m_drawnStatus = 0xFFFF;
 }
 
-void EstopScreen::drawFaults(Services::ICanvas& lcd, uint16_t statusReg, bool stalled)
+void EstopScreen::drawFaults(Services::ICanvas& lcd, uint8_t faults, bool readable)
 {
     char line[40];
-    const bool ocd = !(statusReg & (1u << 13));
-    const bool uvlo = !(statusReg & (1u << 9));
-    const bool thsd = ((statusReg >> 11) & 0x3u) >= 2;
-    if (statusReg == 0) {
+    const bool ocd = (faults & Harness::DriverFault::OVERCURRENT) != 0u;
+    const bool uvlo = (faults & Harness::DriverFault::UNDERVOLTAGE) != 0u;
+    const bool thsd = (faults & Harness::DriverFault::THERMAL_SHUTDOWN) != 0u;
+    const bool stalled = (faults & Harness::DriverFault::STALL) != 0u;
+    if (!readable) {
         snprintf(line, sizeof line, "in standby");
     } else if (ocd || uvlo || thsd || stalled) {
         snprintf(line, sizeof line, "%s%s%s%s", ocd ? "OCD " : "", uvlo ? "UVLO " : "",
@@ -358,7 +360,7 @@ void EstopScreen::drawFaults(Services::ICanvas& lcd, uint16_t statusReg, bool st
     } else {
         snprintf(line, sizeof line, "no fault");
     }
-    const bool bad = statusReg != 0 && (ocd || uvlo || thsd || stalled);
+    const bool bad = readable && (ocd || uvlo || thsd || stalled);
     lcd.blitTextLine(static_cast<uint16_t>(70 + m_offX), static_cast<uint16_t>(PANEL_Y + 28 + m_offY), 140, 8,
                      line, ink(bad ? Theme::ORANGE : Theme::GREEN), ink(PALETTES[m_pal].panel));
 }
@@ -428,10 +430,10 @@ void EstopScreen::render(Services::ICanvas& lcd)
     }
 
     Protocol::TelemetrySnapshot t = Services::g_telemetryStore.getSnapshot();
-    if (t.motor.statusReg != m_drawnStatus || t.motor.stalled != m_drawnStall) {
-        m_drawnStatus = t.motor.statusReg;
-        m_drawnStall = t.motor.stalled;
-        drawFaults(lcd, t.motor.statusReg, t.motor.stalled);
+    const uint16_t shown = static_cast<uint16_t>(t.motor.faults | (t.motor.statusReadable ? 0x100u : 0u));
+    if (shown != m_drawnStatus) {
+        m_drawnStatus = shown;
+        drawFaults(lcd, t.motor.faults, t.motor.statusReadable);
     }
     if (m_progress != m_drawnProgress) {
         // Segments, filled left to right, cyan shading to magenta

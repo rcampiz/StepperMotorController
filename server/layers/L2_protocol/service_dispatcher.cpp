@@ -515,8 +515,8 @@ Harness::ServiceStatus ServiceDispatcher::setRole(uint8_t role) {
     return m_system->setRole(role);
 }
 
-void ServiceDispatcher::enableEvents(uint8_t mask, uint16_t currentStatus) {
-    m_system->enableEvents(mask, currentStatus);
+void ServiceDispatcher::enableEvents(uint8_t mask, uint8_t currentFaults, uint16_t currentStatus) {
+    m_system->enableEvents(mask, currentFaults, currentStatus);
 }
 
 void ServiceDispatcher::disableEvents() {

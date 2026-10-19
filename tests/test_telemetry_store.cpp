@@ -28,14 +28,20 @@ TEST(motor_writes_surface_as_converted_telemetry) {
     Services::TelemetryStore snap;
     EXPECT_TRUE(snap.init(lock, clock));
 
-    // What MotorController::periodicUpdate writes after polling the driver
-    const uint16_t statusBusyLow = 0x0000;         // powerSTEP01 BUSY is active-low: 0 => busy
-    snap.writeMotorStatus(statusBusyLow);
+    // What MotorController::periodicUpdate writes after polling the driver: its decoded state
+    Harness::MotorState st;
+    st.raw = 0x1234u;                              // the chip's word rides along, opaque
+    st.moving = true;
+    st.outputsOff = false;
+    st.faults = Harness::DriverFault::STALL | Harness::DriverFault::THERMAL_WARNING;
+    snap.writeMotorStatus(st);
     snap.writeMotorParam(Drivers::MotorReg::ABS_POS, 0x3FFFFFu);   // 22-bit two's complement -1
     snap.writeMotorParam(Drivers::MotorReg::SPEED, 0);
 
     Protocol::TelemetrySnapshot t = snap.getSnapshot();
-    EXPECT_EQ(t.motor.statusReg, statusBusyLow);
+    EXPECT_EQ(t.motor.statusReg, 0x1234u);
+    EXPECT_TRUE(t.motor.busy && !t.motor.hiZ && t.motor.stalled && t.motor.statusReadable);
+    EXPECT_EQ(t.motor.faults, static_cast<uint8_t>(Harness::DriverFault::STALL | Harness::DriverFault::THERMAL_WARNING));
     EXPECT_EQ(t.motor.position, -1);
     EXPECT_EQ(t.motor.speed, 0u);
     EXPECT_EQ(t.timestamp, 1234u);
@@ -52,7 +58,7 @@ TEST(unrelated_params_do_not_touch_motor_telemetry) {
 TEST(every_write_and_read_is_lock_balanced) {
     CountingLock lock; FixedClock clock;
     Services::TelemetryStore snap; snap.init(lock, clock);
-    snap.writeMotorStatus(1);
+    snap.writeMotorStatus(Harness::MotorState{});
     snap.writeMotorParam(Drivers::MotorReg::SPEED, 2);
     Protocol::SystemTelemetry sys{}; sys.uptimeTicks = 7; snap.writeSystem(sys);
     (void)snap.getSnapshot();

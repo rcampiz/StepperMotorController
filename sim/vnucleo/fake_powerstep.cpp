@@ -2,6 +2,7 @@
  * @file fake_powerstep.cpp
  * @brief Fake powerSTEP01 physics (see fake_powerstep.hpp).
  */
+#include "L4_drivers/devices/powerstep01_status.hpp"
 #include "fake_powerstep.hpp"
 #include "host_platform.hpp"
 
@@ -256,9 +257,7 @@ Drivers::MotorStatus FakePowerStep::getStatus() {
     if (v_ > 0 || (v_ == 0 && targetV_ >= 0)) s |= 1u << 4;
     s |= static_cast<uint16_t>((motStatus_ & 3) << 5);
     s |= (1u << 9) | (1u << 13) | (1u << 14) | (1u << 15);   // no UVLO/OCD/stall
-    Drivers::MotorStatus st;
-    st.raw = s;
-    return st;
+    return Drivers::decodePowerStepStatus(s);
 }
 
 bool FakePowerStep::isBusy() {

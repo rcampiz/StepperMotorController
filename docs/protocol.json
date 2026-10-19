@@ -248,8 +248,16 @@
         "name": "speed"
       },
       {
-        "type": "uint16_t",
+        "type": "uint32_t",
         "name": "statusReg"
+      },
+      {
+        "type": "uint8_t",
+        "name": "faults"
+      },
+      {
+        "type": "uint8_t",
+        "name": "phase"
       },
       {
         "type": "bool",
@@ -262,6 +270,14 @@
       {
         "type": "bool",
         "name": "stalled"
+      },
+      {
+        "type": "bool",
+        "name": "forward"
+      },
+      {
+        "type": "bool",
+        "name": "statusReadable"
       }
     ],
     "EncoderTelemetry": [

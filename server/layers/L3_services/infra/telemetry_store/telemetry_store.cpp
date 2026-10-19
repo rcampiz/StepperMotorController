@@ -16,7 +16,7 @@ bool TelemetryStore::init(Platform::ILock& lock, Platform::IClock& clock)
 {
     m_lock = &lock;
     m_clock = &clock;
-    m_motorStatusReg = 0;
+    m_motorStatus = Harness::MotorState::standby();
     m_motorRawAbsPos = 0;
     m_motorRawSpeed = 0;
     memset(&m_encoder, 0, sizeof(m_encoder));
@@ -32,14 +32,18 @@ Protocol::TelemetrySnapshot TelemetryStore::getSnapshot()
 
     m_lock->acquire();
 
-    // Motor: convert raw register values -> display units
-    Drivers::MotorStatus mst{m_motorStatusReg};
-    snap.motor.statusReg = m_motorStatusReg;
+    // Motor: the driver's decoded state; position/speed from their registers
+    const Harness::MotorState& mst = m_motorStatus;
+    snap.motor.statusReg = mst.raw;
+    snap.motor.faults = mst.faults;
+    snap.motor.phase = static_cast<uint8_t>(mst.phase);
+    snap.motor.forward = mst.forward;
+    snap.motor.statusReadable = mst.readable;
     snap.motor.position = Harness::signExtendAbsPos(m_motorRawAbsPos);
     snap.motor.speed = Harness::rawSpeedToStepsPerSec(m_motorRawSpeed);
     snap.motor.busy = mst.busy();
     snap.motor.hiZ = mst.hiZ();
-    snap.motor.stalled = mst.stallA() || mst.stallB();
+    snap.motor.stalled = mst.stalled();
     snap.motor.targetPosition = 0;
 
     // Encoder, control, system: direct copy
@@ -52,10 +56,10 @@ Protocol::TelemetrySnapshot TelemetryStore::getSnapshot()
     return snap;
 }
 
-void TelemetryStore::writeMotorStatus(uint16_t statusReg)
+void TelemetryStore::writeMotorStatus(const Harness::MotorState& status)
 {
     m_lock->acquire();
-    m_motorStatusReg = statusReg;
+    m_motorStatus = status;
     m_timestamp = m_clock->getTickMs();
     m_lock->release();
 }

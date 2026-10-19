@@ -4,6 +4,7 @@
  */
 
 #include "L3_services/safety/safety_service/safety_service.hpp"
+#include "harness/pins/motor_state.hpp"
 #include "L3_services/dispatch/command_queue/command_queue.hpp"
 #include "L3_services/infra/trace/trace.hpp"
 #include "L3_services/comms/comms_service/comms_service.hpp"
@@ -25,15 +26,14 @@ Result emergencyStop() {
 Result clearFault(char *activeFaults, uint32_t activeFaultsSize) {
     Trace::ServiceScope svc(Trace::SVC_SAFETY);
     TRACE_ENTRY("SAFE:CLR");
-    // Safety check: read powerSTEP01 STATUS register before allowing clear. After an
-    // out-of-band stop the chip is in standby (SPI off, registers reset): nothing to read;
-    // the Motor task re-initialises it on clear and the next status poll reports real faults.
-    uint16_t statusReg = g_safetyActions->isMotorInStandby() ? 0 : g_safetyActions->getMotorStatusReg();
-    if (statusReg != 0) {
-        bool ocd   = !(statusReg & (1 << 13));  // Overcurrent (bit 13, active-low)
-        uint8_t thStatus = (statusReg >> 11) & 0x3;  // Bits 11-12: TH_STATUS
-        bool th_sd = (thStatus >= 2);                   // Bridge or device shutdown
-        bool uvlo  = !(statusReg & (1 << 9));         // Undervoltage (active-low)
+    // Safety check: the driver's active faults before allowing clear. After an out-of-band
+    // stop the chip is in standby (registers reset): nothing to read; the Motor task
+    // re-initialises it on clear and the next status poll reports real faults.
+    uint8_t faults = 0;
+    if (!g_safetyActions->isMotorInStandby() && g_safetyActions->getMotorFaults(faults)) {
+        const bool ocd   = (faults & Harness::DriverFault::OVERCURRENT) != 0u;
+        const bool th_sd = (faults & Harness::DriverFault::THERMAL_SHUTDOWN) != 0u;
+        const bool uvlo  = (faults & Harness::DriverFault::UNDERVOLTAGE) != 0u;
         if (ocd || th_sd || uvlo) {
             if (activeFaults != nullptr && activeFaultsSize > 0) {
                 snprintf(activeFaults, activeFaultsSize,

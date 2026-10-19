@@ -25,7 +25,8 @@ enum class EventType : uint8_t {
 
 struct AsyncEvent {
     EventType type;
-    uint16_t  statusReg;
+    uint16_t  statusReg;    ///< FAULT/STALL/MOTION: the chip's status word (opaque); ESTOP: the source
+    uint8_t   faults = 0;   ///< FAULT/STALL: Harness::DriverFault bits, decoded by the driver
 };
 
 static constexpr uint8_t EVT_MASK_FAULT       = (1 << 0);

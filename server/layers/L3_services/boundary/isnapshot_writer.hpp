@@ -6,6 +6,7 @@
 #pragma once
 
 #include "harness/pins/telemetry_types.hpp"
+#include "harness/pins/motor_state.hpp"
 #include "L3_services/boundary/iencoder_status_sink.hpp"
 #include <stdint.h>
 
@@ -16,7 +17,7 @@ public:
     virtual ~ISnapshotWriter() = default;
 
     /** @brief Write raw motor STATUS register (from TracedMotorDriver::getStatus) */
-    virtual void writeMotorStatus(uint16_t statusReg) = 0;
+    virtual void writeMotorStatus(const Harness::MotorState& status) = 0;   ///< decoded by the driver
 
     /** @brief Write raw motor register value (from TracedMotorDriver::getParam) */
     virtual void writeMotorParam(uint8_t reg, uint32_t value) = 0;

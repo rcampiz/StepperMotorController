@@ -37,7 +37,7 @@ public:
         uint8_t queueDepth;
     };
 
-    virtual void enableEvents(uint8_t mask, uint16_t currentStatus) = 0;
+    virtual void enableEvents(uint8_t mask, uint8_t currentFaults, uint16_t currentStatus) = 0;
     virtual void disableEvents() = 0;
     virtual EventStats getEventStats() = 0;
 

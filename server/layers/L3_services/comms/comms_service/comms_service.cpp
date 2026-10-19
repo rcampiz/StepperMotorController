@@ -95,13 +95,15 @@ bool CommsService::estopTiming(uint32_t& pinUs, uint32_t& hizUs)
     return m_motorCtrl != nullptr && m_motorCtrl->estopTiming(pinUs, hizUs);
 }
 
-uint16_t CommsService::getMotorStatusReg()
+bool CommsService::getMotorFaults(uint8_t& faults)
 {
+    faults = 0;
     Harness::MotorDebugParams info;
     if (m_motorCtrl != nullptr && m_motorCtrl->getDebugInfo(info)) {
-        return info.status;
+        faults = info.faults;
+        return true;
     }
-    return 0;
+    return false;
 }
 
 void CommsService::clearCommsTimeout()

@@ -10,32 +10,15 @@
 #pragma once
 
 #include <stdint.h>
+#include "harness/pins/motor_state.hpp"
 
 namespace Drivers {
 
 /**
- * @brief Motor driver status register decoded fields
- *
- * Bit layout matches powerSTEP01 STATUS register.
+ * @brief The driver's state, decoded by the driver (chip-neutral; see harness/pins/motor_state.hpp).
+ *        Each chip's status word and bit layout stay inside its L4 driver.
  */
-struct MotorStatus {
-    uint16_t raw;
-
-    bool hiZ()       const { return raw & (1 << 0); }
-    bool busy()      const { return !(raw & (1 << 1)); }
-    bool swOn()      const { return raw & (1 << 2); }
-    bool swEvent()   const { return raw & (1 << 3); }
-    bool dir()       const { return raw & (1 << 4); }
-    uint8_t motStatus() const { return (raw >> 5) & 0x3; }
-    bool cmdErr()    const { return raw & (1 << 7); }
-    bool uvlo()      const { return !(raw & (1 << 9)); }
-    uint8_t thStatus() const { return (raw >> 11) & 0x3; }
-    bool thermalWarn() const { return thStatus() >= 1; }
-    bool thermalSD()   const { return thStatus() >= 2; }
-    bool ocd()       const { return !(raw & (1 << 13)); }
-    bool stallA()    const { return !(raw & (1 << 14)); }
-    bool stallB()    const { return !(raw & (1 << 15)); }
-};
+using MotorStatus = Harness::MotorState;
 
 /**
  * @brief Register address constants (match powerSTEP01 addresses)

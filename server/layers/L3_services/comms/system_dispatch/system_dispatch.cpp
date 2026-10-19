@@ -45,8 +45,8 @@ Harness::ServiceStatus SystemDispatch::setRole(uint8_t role) {
     return Harness::ServiceStatus::FlashError;
 }
 
-void SystemDispatch::enableEvents(uint8_t mask, uint16_t currentStatus) {
-    motion.stepper.event.enable(mask, currentStatus);
+void SystemDispatch::enableEvents(uint8_t mask, uint8_t currentFaults, uint16_t currentStatus) {
+    motion.stepper.event.enable(mask, currentFaults, currentStatus);
 }
 
 void SystemDispatch::disableEvents() {

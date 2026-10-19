@@ -5,6 +5,8 @@
  *
  * Runs the real MotorService + MotorController (+ sysid/trim/supervisor) over a fake driver.
  */
+#include <string.h>
+#include "L4_drivers/devices/powerstep01_status.hpp"
 #include "minitest.hpp"
 #include "L3_services/motion/motor_service/motor_service.hpp"
 #include "L3_services/motion/motion.hpp"
@@ -39,8 +41,8 @@ struct FakeDriver : Drivers::IMotorDriver {
     uint32_t getParam(uint8_t reg) override { return (reg < 32) ? params[reg] : 0; }
     void setParam(uint8_t reg, uint32_t v) override { ++setParams; if (reg < 32) params[reg] = v; }
     Drivers::MotorStatus getStatus() override {
-        Drivers::MotorStatus s; s.raw = 0xFFFE;            // no faults, not busy (bit1 set)
-        if (hiZ) s.raw |= 1u; else s.raw &= ~1u;
+        Drivers::MotorStatus s;                            // no faults, not moving
+        s.outputsOff = hiZ;
         return s;
     }
     bool isBusy() override { return false; }
@@ -201,6 +203,26 @@ TEST(apply_config_is_a_motor_task_job_that_writes_step_mode_in_hiz_or_via_the_sa
     EXPECT_EQ(r.drv.params[Drivers::MotorReg::STEP_MODE] & 0x07u, 3u);
     EXPECT_EQ(r.drv.hardHiZCalls, 1);
     Services::motion.stepper.config.setStepMode(original);
+}
+
+TEST(the_powerstep01_status_word_is_decoded_in_the_driver_only) {
+    // Idle in Hi-Z, no faults: HiZ=1, BUSY=1 (active low: not moving), UVLO/OCD/STALL bits high
+    Harness::MotorState idle = Drivers::decodePowerStepStatus(0xE203);
+    EXPECT_TRUE(idle.outputsOff && !idle.moving && idle.faults == 0 && idle.readable);
+    EXPECT_EQ(idle.raw, 0xE203u);
+    // Running forward (BUSY low, DIR high, MOT_STATUS constant), overcurrent and bridge-A stall
+    const uint16_t raw = static_cast<uint16_t>((1u << 4) | (3u << 5) | (1u << 9) | (1u << 15));
+    Harness::MotorState run = Drivers::decodePowerStepStatus(raw);
+    EXPECT_TRUE(!run.outputsOff && run.moving && run.forward);
+    EXPECT_TRUE(run.phase == Harness::MotionPhase::CONSTANT);
+    EXPECT_TRUE(run.ocd() && run.stalled() && !run.uvlo() && !run.thermalSD());
+    EXPECT_TRUE(run.shutdownFault());
+    // Thermal: TH_STATUS 1 = warning, 2 = bridge shutdown; UVLO low = undervoltage
+    Harness::MotorState hot = Drivers::decodePowerStepStatus(static_cast<uint16_t>((0xE203u & ~(1u << 9)) | (2u << 11)));
+    EXPECT_TRUE(hot.uvlo() && hot.thermalWarn() && hot.thermalSD());
+    char names[48];
+    Harness::faultNames(hot.faults, names, sizeof names);
+    EXPECT_TRUE(strcmp(names, "UVLO TH_SD TH_WARN") == 0);
 }
 
 TEST(a_chip_that_reset_behind_our_back_is_initialised_again) {

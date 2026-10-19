@@ -60,8 +60,7 @@ private:
     char m_message[48] = {};
     char m_drawnMessage[48] = {};
     bool m_messageNew = false;
-    uint16_t m_drawnStatus = 0xFFFF;
-    bool m_drawnStall = false;
+    uint16_t m_drawnStatus = 0xFFFF;   ///< faults | readable<<8 as last drawn
 
     // Motion against burn-in
     Phase m_phase = Phase::SHOW;
@@ -80,7 +79,7 @@ private:
     void drawStatic(Services::ICanvas& lcd);
     void drawTitle(Services::ICanvas& lcd);
     void drawMiddle(Services::ICanvas& lcd);
-    void drawFaults(Services::ICanvas& lcd, uint16_t statusReg, bool stalled);
+    void drawFaults(Services::ICanvas& lcd, uint8_t faults, bool readable);
     void drawBands(Services::ICanvas& lcd);
     void drawGrid(Services::ICanvas& lcd);
 };

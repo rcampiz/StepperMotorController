@@ -121,7 +121,7 @@ void setupServices(uint8_t cmdQueued, uint8_t eventsQueued, size_t traceEntries)
 
     // Event queue: `eventsQueued` MOTION_DONE events waiting for the Comms task
     Services::motion.stepper.event.init(g_evtQueue);
-    Services::motion.stepper.event.enable(EVT_MASK_ALL, 0xFFFF);
+    Services::motion.stepper.event.enable(EVT_MASK_ALL, 0, 0xFFFF);   // no active faults
     for (uint8_t i = 0; i < eventsQueued; i++) {
         Services::motion.stepper.event.post(EventType::FAULT, 0xFFFF);
     }

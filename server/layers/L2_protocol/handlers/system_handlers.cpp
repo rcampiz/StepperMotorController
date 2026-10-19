@@ -10,6 +10,7 @@
 #include "F_platform/boundary/itask_stats.hpp"
 #include "F_platform/boundary/imemory_stats.hpp"
 #include "harness/pins/async_event.hpp"
+#include "harness/pins/motor_state.hpp"
 #include "harness/trace/harness_meter.hpp"
 
 namespace Protocol {
@@ -168,20 +169,19 @@ void CommandParser::fillStatusView(const TelemetrySnapshot &snap, StatusJsonView
   v.modeStr = controlModeToString(m_dispatcher.getControlMode());
   v.encStatusStr = encoderStatusToString(m_dispatcher.getEncoderStatus());
 
-  // Parse status register for direction and error flags
-  uint16_t sr = snap.motor.statusReg;
-  int direction = (sr & (1 << 4)) ? 1 : 0; // bit 4: 1=FWD
-  unsigned motStat = (sr >> 5) & 0x3;      // bits 5-6
-  bool cmdErr = (sr & (1 << 7)) != 0;      // bit 7
-  bool uvlo = !(sr & (1 << 9));            // bit 9 (active low)
-  // Bits 11-12: TH_STATUS 2-bit field
-  // 00=Normal, 01=Warning, 10=Bridge shutdown, 11=Device shutdown
-  uint8_t thStatus = (sr >> 11) & 0x3;
-  bool thermalWarn = (thStatus >= 1);
-  bool thermalSD = (thStatus >= 2);
-  bool ocd = !(sr & (1 << 13));    // bit 13 (active low)
-  bool stallA = !(sr & (1 << 14)); // bit 14 (active low)
-  bool stallB = !(sr & (1 << 15)); // bit 15 (active low)
+  // Direction and fault flags, decoded by the driver (status_reg stays as its opaque word)
+  const uint32_t sr = snap.motor.statusReg;
+  const uint8_t fl = snap.motor.faults;
+  int direction = snap.motor.forward ? 1 : 0;
+  unsigned motStat = snap.motor.phase;
+  bool cmdErr = (fl & Harness::DriverFault::COMMAND_ERROR) != 0u;
+  bool uvlo = (fl & Harness::DriverFault::UNDERVOLTAGE) != 0u;
+  bool thermalWarn = (fl & Harness::DriverFault::THERMAL_WARNING) != 0u;
+  bool thermalSD = (fl & Harness::DriverFault::THERMAL_SHUTDOWN) != 0u;
+  bool ocd = (fl & Harness::DriverFault::OVERCURRENT) != 0u;
+  // stall_a / stall_b kept for protocol 2 clients: both report the driver's stall flag
+  bool stallA = (fl & Harness::DriverFault::STALL) != 0u;
+  bool stallB = stallA;
 
   // Filter faults against ALARM_EN config — only report faults the user
   // has enabled. STATUS register always reflects raw hardware state, but
@@ -678,9 +678,7 @@ void CommandParser::cmdEventEnable(const ParsedCommand &cmd) {
   // Read current motor status for snapshot-on-enable
   Protocol::TelemetrySnapshot snap;
   m_dispatcher.getTelemetry(snap);
-  uint16_t currentStatus = snap.motor.statusReg;
-
-  m_dispatcher.enableEvents(mask, currentStatus);
+  m_dispatcher.enableEvents(mask, snap.motor.faults, static_cast<uint16_t>(snap.motor.statusReg & 0xFFFFu));
 
   if (m_format == ResponseFormat::JSON) {
     char dataBuf[32];

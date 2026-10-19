@@ -45,7 +45,7 @@ public:
     void tick() override;
 
     // ISafetyActions (SafetyService)
-    uint16_t getMotorStatusReg() override;
+    bool getMotorFaults(uint8_t& faults) override;
     bool isMotorInStandby() override;
     bool estopTiming(uint32_t& pinUs, uint32_t& hizUs) override;
     void clearCommsTimeout() override;

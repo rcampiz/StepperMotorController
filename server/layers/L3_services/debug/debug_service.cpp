@@ -6,6 +6,7 @@
 #include "L3_services/debug/debug_service.hpp"
 #include <stdio.h>
 #include <string.h>
+#include "harness/pins/motor_state.hpp"
 
 namespace Services {
 
@@ -120,14 +121,15 @@ void DebugService::cmdMotorDebug(Harness::IResponseSink& out)
     Harness::MotorDebugParams info;
     m_motorCtrl->getDebugInfo(info);
 
-    const char *hiZ = ((info.status & 0x0001) != 0) ? "HiZ" : "Active";
-    const char *busy = ((info.status & 0x0002) != 0) ? "Idle" : "BUSY";
-    bool cmdErr = (info.status & 0x0080) != 0;
-    bool uvlo = (info.status & 0x0200) == 0;
-    uint8_t thStatus = (info.status >> 11) & 0x3;
-    bool ocd = (info.status & 0x2000) == 0;
-    bool stepLossA = (info.status & 0x4000) == 0;
-    bool stepLossB = (info.status & 0x8000) == 0;
+    // Flags decoded by the driver; STATUS is printed raw for the bring-up record
+    const char *hiZ = info.outputsOff ? "HiZ" : "Active";
+    const char *busy = info.moving ? "BUSY" : "Idle";
+    const bool cmdErr = (info.faults & Harness::DriverFault::COMMAND_ERROR) != 0u;
+    const bool uvlo = (info.faults & Harness::DriverFault::UNDERVOLTAGE) != 0u;
+    const uint8_t thStatus = (info.faults & Harness::DriverFault::THERMAL_SHUTDOWN) != 0u ? 2u
+                           : ((info.faults & Harness::DriverFault::THERMAL_WARNING) != 0u ? 1u : 0u);
+    const bool ocd = (info.faults & Harness::DriverFault::OVERCURRENT) != 0u;
+    const bool stall = (info.faults & Harness::DriverFault::STALL) != 0u;
 
     char buf[256];
     snprintf(buf, sizeof(buf),
@@ -138,8 +140,8 @@ void DebugService::cmdMotorDebug(Harness::IResponseSink& out)
              (unsigned)info.status, hiZ, busy, cmdErr ? " CMDERR" : "",
              uvlo ? " UVLO" : "",
              thStatus >= 2 ? " TH_SD" : (thStatus >= 1 ? " TH_WARN" : ""),
-             ocd ? " OCD" : "", stepLossA ? " STALL_A" : "",
-             stepLossB ? " STALL_B" : "", (unsigned)info.kvalHold,
+             ocd ? " OCD" : "", stall ? " STALL" : "",
+             "", (unsigned)info.kvalHold,
              (unsigned)info.kvalRun, (unsigned)info.kvalAcc,
              (unsigned)info.kvalDec, (unsigned)info.accel, (unsigned)info.decel,
              (unsigned)info.maxSpeed, (long)info.absPos, (unsigned)info.adcOut,

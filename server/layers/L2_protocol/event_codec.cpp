@@ -8,18 +8,18 @@
 #include "harness/trace/interface_trace.hpp"
 #include "L2_protocol/command_parser_internal.hpp"
 #include <stdio.h>
+#include "harness/pins/motor_state.hpp"
 
 // Shared helpers (eventTypeToString etc.) moved to
 // F_platform/types/async_event_types.cpp
 
 namespace Protocol::EventCodec {
 
-void faultDetail(uint16_t statusReg, char* buf, size_t bufSize) {
-    // Active-low fault bits: OCD (bit13), UVLO (bit9), TH_SD (bits 11-12 == 2 or 3)
-    bool ocd  = !(statusReg & (1 << 13));
-    bool uvlo = !(statusReg & (1 << 9));
-    uint8_t th = (statusReg >> 11) & 0x03;
-    bool thsd = (th >= 2);
+void faultDetail(uint8_t faults, char* buf, size_t bufSize) {
+    // The driver's decoded fault bits (no chip bit layout here)
+    bool ocd  = (faults & Harness::DriverFault::OVERCURRENT) != 0u;
+    bool uvlo = (faults & Harness::DriverFault::UNDERVOLTAGE) != 0u;
+    bool thsd = (faults & Harness::DriverFault::THERMAL_SHUTDOWN) != 0u;
 
     int count = (ocd ? 1 : 0) + (uvlo ? 1 : 0) + (thsd ? 1 : 0);
     if (count > 1) {
@@ -35,20 +35,9 @@ void faultDetail(uint16_t statusReg, char* buf, size_t bufSize) {
     }
 }
 
-void stallDetail(uint16_t statusReg, char* buf, size_t bufSize) {
-    // Active-low stall bits: STALL_A (bit14), STALL_B (bit15)
-    bool stallA = !(statusReg & (1 << 14));
-    bool stallB = !(statusReg & (1 << 15));
-
-    if (stallA && stallB) {
-        snprintf(buf, bufSize, "AB");
-    } else if (stallA) {
-        snprintf(buf, bufSize, "A");
-    } else if (stallB) {
-        snprintf(buf, bufSize, "B");
-    } else {
-        snprintf(buf, bufSize, "cleared");
-    }
+void stallDetail(uint8_t faults, char* buf, size_t bufSize) {
+    // Chip-neutral: a stall, or not (which bridge saw it is the chip's own detail, in status)
+    snprintf(buf, bufSize, "%s", (faults & Harness::DriverFault::STALL) != 0u ? "STALL" : "cleared");
 }
 
 void formatAscii(Transport::ITransport& transport, const AsyncEvent& evt, uint32_t seq) {
@@ -62,14 +51,14 @@ void formatAscii(Transport::ITransport& transport, const AsyncEvent& evt, uint32
     switch (evt.type) {
         case EventType::FAULT:
         case EventType::FAULT_CLEAR:
-            faultDetail(evt.statusReg, detail, sizeof(detail));
+            faultDetail(evt.faults, detail, sizeof(detail));
             snprintf(line, sizeof(line), "!%s status=0x%04X detail=%s",
                      typeName, evt.statusReg, detail);
             break;
 
         case EventType::STALL:
         case EventType::STALL_CLEAR:
-            stallDetail(evt.statusReg, detail, sizeof(detail));
+            stallDetail(evt.faults, detail, sizeof(detail));
             snprintf(line, sizeof(line), "!%s status=0x%04X detail=%s",
                      typeName, evt.statusReg, detail);
             break;
@@ -104,7 +93,7 @@ void formatJson(Transport::ITransport& transport, const AsyncEvent& evt, uint32_
     switch (evt.type) {
         case EventType::FAULT:
         case EventType::FAULT_CLEAR:
-            faultDetail(evt.statusReg, detail, sizeof(detail));
+            faultDetail(evt.faults, detail, sizeof(detail));
             snprintf(buf, sizeof(buf),
                 "{\"kind\":\"event\",\"type\":\"%s\",\"seq\":%lu,\"ts_ms\":%lu,"
                 "\"data\":{\"status\":%u,\"detail\":\"%s\"}}",
@@ -117,7 +106,7 @@ void formatJson(Transport::ITransport& transport, const AsyncEvent& evt, uint32_
 
         case EventType::STALL:
         case EventType::STALL_CLEAR:
-            stallDetail(evt.statusReg, detail, sizeof(detail));
+            stallDetail(evt.faults, detail, sizeof(detail));
             snprintf(buf, sizeof(buf),
                 "{\"kind\":\"event\",\"type\":\"%s\",\"seq\":%lu,\"ts_ms\":%lu,"
                 "\"data\":{\"status\":%u,\"detail\":\"%s\"}}",

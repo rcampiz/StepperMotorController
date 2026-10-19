@@ -6,6 +6,7 @@
  */
 
 #include "L3_services/motion/motor_event_service/motor_event_service.hpp"
+#include "harness/pins/motor_state.hpp"
 
 namespace Services {
 
@@ -20,7 +21,7 @@ void MotorEventManager::init(Platform::IQueue<AsyncEvent, 8>& queue) {
     m_lostInfo = 0;
 }
 
-void MotorEventManager::enable(uint8_t mask, uint16_t currentStatusReg) {
+void MotorEventManager::enable(uint8_t mask, uint8_t currentFaults, uint16_t currentStatusReg) {
     m_enableMask = mask & EVT_MASK_ALL;
 
     if (m_enableMask == 0) {
@@ -28,19 +29,11 @@ void MotorEventManager::enable(uint8_t mask, uint16_t currentStatusReg) {
     }
 
     // Snapshot-on-enable: emit synthetic events for any currently active conditions
-    bool hasFault = !(currentStatusReg & (1 << 13))   // OCD
-                 || !(currentStatusReg & (1 << 9))     // UVLO
-                 || ((currentStatusReg >> 11) & 0x03) >= 2;  // TH_SD
-
-    if (hasFault) {
-        post(EventType::FAULT, currentStatusReg);
+    if ((currentFaults & Harness::DriverFault::SHUTDOWN) != 0u) {
+        post(EventType::FAULT, currentStatusReg, currentFaults);
     }
-
-    bool hasStall = !(currentStatusReg & (1 << 14))    // STALL_A
-                 || !(currentStatusReg & (1 << 15));    // STALL_B
-
-    if (hasStall) {
-        post(EventType::STALL, currentStatusReg);
+    if ((currentFaults & Harness::DriverFault::STALL) != 0u) {
+        post(EventType::STALL, currentStatusReg, currentFaults);
     }
 }
 
@@ -64,7 +57,7 @@ MotorEventStats MotorEventManager::getStats() const {
     return s;
 }
 
-bool MotorEventManager::post(EventType type, uint16_t statusReg) {
+bool MotorEventManager::post(EventType type, uint16_t statusReg, uint8_t faults) {
     if (m_queue == nullptr) {
         return false;
     }
@@ -88,6 +81,7 @@ bool MotorEventManager::post(EventType type, uint16_t statusReg) {
     AsyncEvent evt;
     evt.type = type;
     evt.statusReg = statusReg;
+    evt.faults = faults;
 
     if (m_queue->send(evt, 0)) {
         m_sentCount++;

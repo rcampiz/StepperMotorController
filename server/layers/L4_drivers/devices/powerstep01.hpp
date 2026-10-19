@@ -9,6 +9,7 @@
 #ifndef POWERSTEP01_HPP
 #define POWERSTEP01_HPP
 
+#include "L4_drivers/devices/powerstep01_status.hpp"
 #include "harness/defs/harness_l4_l5.hpp"
 #include "L4_drivers/boundary/imotor_driver.hpp"
 
@@ -138,7 +139,6 @@ public:
     }
 
     Drivers::MotorStatus getStatus() override {
-        Drivers::MotorStatus s;
         m_spi.lock();
         m_spi.setMode(Board::SPIMode::Mode3);
         m_spi.setPrescaler(Board::SPIPrescaler::Div32);
@@ -147,8 +147,7 @@ public:
         uint8_t hi = transferByte(0x00);
         uint8_t lo = transferByte(0x00);
         m_spi.unlock();
-        s.raw = (hi << 8) | lo;
-        return s;
+        return decodePowerStepStatus(static_cast<uint16_t>((hi << 8) | lo));   // the bit layout stays in L4
     }
 
     // IMotorDriver overrides (uint8_t register address)

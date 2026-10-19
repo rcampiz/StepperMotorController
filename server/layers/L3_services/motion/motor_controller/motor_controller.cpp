@@ -300,7 +300,7 @@ void MotorController::periodicUpdate()
     uint32_t rawSpeed = m_driver->getParam(MotorReg::SPEED);
     {
         auto& writer = Services::g_telemetryStore;
-        writer.writeMotorStatus(status.raw);
+        writer.writeMotorStatus(status);
         writer.writeMotorParam(MotorReg::ABS_POS, rawPos);
         writer.writeMotorParam(MotorReg::SPEED, rawSpeed);
     }
@@ -409,13 +409,13 @@ void MotorController::periodicUpdate()
 
         // Post supervisor events
         if (act.faultEvent) {
-            motion.stepper.event.post(EventType::FOLLOW_FAULT, status.raw);
+            motion.stepper.event.post(EventType::FOLLOW_FAULT, static_cast<uint16_t>(status.raw & 0xFFFFu));
         }
         if (act.recoveryEvent) {
-            motion.stepper.event.post(EventType::FOLLOW_RECOVERY, status.raw);
+            motion.stepper.event.post(EventType::FOLLOW_RECOVERY, static_cast<uint16_t>(status.raw & 0xFFFFu));
         }
         if (act.recoveredEvent) {
-            motion.stepper.event.post(EventType::FOLLOW_RECOVERED, status.raw);
+            motion.stepper.event.post(EventType::FOLLOW_RECOVERED, static_cast<uint16_t>(status.raw & 0xFFFFu));
         }
 
         // Build control telemetry
@@ -444,37 +444,36 @@ void MotorController::periodicUpdate()
     }
 
     // ── Edge detection for async events ──
-    bool curFault  = status.ocd() || status.uvlo() || status.thermalSD();
-    bool prevFault = (m_prevStatusReg & (1 << 13)) == 0
-                  || (m_prevStatusReg & (1 << 9)) == 0
-                  || ((m_prevStatusReg >> 11) & 0x03) >= 2;
+    // Fault and stall edges on the driver's decoded fault mask (no chip bit layout here)
+    const uint16_t raw16 = static_cast<uint16_t>(status.raw & 0xFFFFu);
+    bool curFault  = status.shutdownFault();
+    bool prevFault = (m_prevFaults & Harness::DriverFault::SHUTDOWN) != 0u;
 
-    bool curStall  = status.stallA() || status.stallB();
-    bool prevStall = (m_prevStatusReg & (1 << 14)) == 0
-                  || (m_prevStatusReg & (1 << 15)) == 0;
+    bool curStall  = status.stalled();
+    bool prevStall = (m_prevFaults & Harness::DriverFault::STALL) != 0u;
 
     bool curBusy = status.busy();
 
     // Assertion edges
     if (!prevFault && curFault) {
-        motion.stepper.event.post(EventType::FAULT, status.raw);
+        motion.stepper.event.post(EventType::FAULT, raw16, status.faults);
     }
     if (!prevStall && curStall) {
-        motion.stepper.event.post(EventType::STALL, status.raw);
+        motion.stepper.event.post(EventType::STALL, raw16, status.faults);
     }
 
     // Deassertion edges
     if (prevFault && !curFault) {
-        motion.stepper.event.post(EventType::FAULT_CLEAR, status.raw);
+        motion.stepper.event.post(EventType::FAULT_CLEAR, raw16, status.faults);
     }
     if (prevStall && !curStall) {
-        motion.stepper.event.post(EventType::STALL_CLEAR, status.raw);
+        motion.stepper.event.post(EventType::STALL_CLEAR, raw16, status.faults);
     }
 
     // Motion complete: busy → idle
     if (m_prevBusy && !curBusy) {
         restoreSpeedIfOverridden();
-        motion.stepper.event.post(EventType::MOTION_DONE, status.raw);
+        motion.stepper.event.post(EventType::MOTION_DONE, raw16);
 
         // Transition supervisor to HOLDING only for finite moves
         if (!m_continuousRunActive) {
@@ -490,7 +489,7 @@ void MotorController::periodicUpdate()
         }
     }
 
-    m_prevStatusReg = status.raw;
+    m_prevFaults = status.faults;
 
     // Idle release (config idleReleaseMs): the coils are let go after the motor has sat
     // stopped and energised for that long. The chip re-energises on the next Run/Move/GoTo
@@ -657,7 +656,11 @@ void MotorController::reinit()
 
 void MotorController::getDebugInfo(MotorDebugParams& info)
 {
-    info.status = m_driver->getStatus().raw;
+    const MotorStatus st = m_driver->getStatus();
+    info.status = static_cast<uint16_t>(st.raw & 0xFFFFu);
+    info.faults = st.faults;
+    info.outputsOff = st.outputsOff;
+    info.moving = st.moving;
     info.kvalHold = static_cast<uint8_t>(m_driver->getParam(MotorReg::KVAL_HOLD));
     info.kvalRun = static_cast<uint8_t>(m_driver->getParam(MotorReg::KVAL_RUN));
     info.kvalAcc = static_cast<uint8_t>(m_driver->getParam(MotorReg::KVAL_ACC));
@@ -726,7 +729,7 @@ void MotorController::publishStandbySnapshot()
     // the truth: outputs in Hi-Z, not busy, speed 0 (the idle Hi-Z STATUS word of the chip),
     // position as last read.
     auto& writer = Services::g_telemetryStore;
-    writer.writeMotorStatus(0xE203);
+    writer.writeMotorStatus(Harness::MotorState::standby());   // outputs off, not readable
     writer.writeMotorParam(MotorReg::SPEED, 0);
 }
 
