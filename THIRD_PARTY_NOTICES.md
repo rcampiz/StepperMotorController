@@ -13,14 +13,18 @@ products as long as its notice is kept.
 | SEGGER SystemView (target side) | `server/external/X_middlewares/SEGGER/SystemView` | same SEGGER licence, in each file's header |
 | CMSIS Cortex-M4 core header, reduced | `server/external/X_vendor/CMSIS/core_cm4.h` | derived from Arm CMSIS 5 `core_cm4.h`, Apache-2.0 |
 | STM32F401xE device header, reduced | `server/external/X_vendor/CMSIS/stm32f401xe.h` | derived from STMicroelectronics STM32CubeF4 `stm32f401xe.h`, Apache-2.0 |
-| LCD bitmap fonts | `server/layers/L4_drivers/devices/font_8x12.hpp`, `font_12x16.hpp` | see below |
+| LCD bitmap fonts 8x12, 12x16 | `server/layers/L4_drivers/devices/font_8x12.hpp`, `font_12x16.hpp` | SIL Open Font License 1.1, see below |
+| LCD 5x7 font | `FONT_5X7` in `server/layers/L4_drivers/devices/lcd_st7789.hpp` | the classic 5x7 dot-matrix character set published in many open projects (e.g. Adafruit-GFX `glcdfont.c`, BSD) |
 
 The two CMSIS headers are hand-reduced subsets (register and bit definitions only) of the
 originals; the Apache License 2.0 text is at https://www.apache.org/licenses/LICENSE-2.0.
 
-**LCD fonts:** `scripts/lcd/gen_fonts.py` renders the two glyph tables from a TrueType font.
-The tables in the repository were rendered from Microsoft Consolas, which is licensed with
-Windows and not for redistribution; they are to be regenerated from an openly licensed font.
+**LCD fonts:** `scripts/lcd/gen_fonts.py` renders the two glyph tables from Cascadia Mono
+(Regular 12 px, Bold 17 px), Copyright (c) 2019 - Present, Microsoft Corporation, with
+Reserved Font Name Cascadia Code. The font files and the licence are in `scripts/lcd/fonts/`
+(`OFL.txt`); the generated tables are a bitmap derivative and stay under the SIL Open Font
+License 1.1, which allows bundling them in any software, commercial included. (Before
+2026-10-19 the tables were rendered from Consolas, which is not licensed for redistribution.)
 
 ## Python client (`client/`), installed separately, not vendored
 
