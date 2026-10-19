@@ -3,7 +3,8 @@
  * @brief H_L4_L5 — the ONLY header through which L4 Drivers and L5 Board see each other.
  *
  * Single definitions, all owned by L5 (server/layers/L5_board/boundary):
- *   Board::ISPIBus, IGPIO, ITimerCounter, IEncoderSampler, ITearingSync, IInternalFlash.
+ *   Board::ISPIBus, IGPIO, ITimerCounter, IEncoderSampler, ITearingSync, IInternalFlash,
+ *   IStepPulseTimer.
  * L4 drivers take these types directly; there are no consumer-port duplicates or adapters.
  *
  * Because one device needs several pins, the harness is a set of per-device pin bundles
@@ -18,6 +19,9 @@
  *   IEncoderSampler: control in task context; its DMA ring is written by hardware (async).
  *   ITearingSync : task context; bounded busy-wait for the EXTI0 flag (ISR at NVIC 4, no RTOS).
  *   IInternalFlash: task or pre-scheduler; blocks for the flash operation.
+ *   IStepPulseTimer: start() in task context, stop() from any context; the pulse handler
+ *                  (L4's ramp) runs in the timer interrupt. For STEP/DIR drivers; only the
+ *                  virtual Nucleo provides one so far (driver boundary step 5).
  *   registerExti : pre-scheduler; the callback runs in ISR context at NVIC priority 5.
  *
  * Buffer ownership: SPIManager owns the bus objects; the DMA ring is owned by L5 and only
@@ -33,6 +37,7 @@
 #include "L5_board/boundary/itearing_sync.hpp"
 #include "L5_board/boundary/iinternal_flash.hpp"
 #include "L5_board/boundary/iboard_debug.hpp"
+#include "L5_board/boundary/istep_pulse_timer.hpp"
 
 namespace Harness {
 
@@ -112,8 +117,9 @@ constexpr SignalDesc L4L5_SIGNALS[] = {
     { "Board::IInternalFlash",                       Provider::Lower, Flow::Down, Timing::Sync,      ctx(Ctx::Task | Ctx::PreScheduler),            "blocks for erase/program" },
     { "Board::IBoardDebug",                          Provider::Lower, Flow::Down, Timing::Sync,      ctx(Ctx::Task),                           "register-level bring-up commands; text via IResponseSink" },
     { "registerExti (index pulse)",                  Provider::Lower, Flow::Up,   Timing::AsyncFlag, ctx(Ctx::ISR),                                 "callback table in harness; runs at NVIC 5 (RTOS-safe)" },
+    { "Board::IStepPulseTimer (STEP/DIR drivers)",   Provider::Lower, Flow::Down, Timing::AsyncFlag, ctx(Ctx::Task | Ctx::ISR),                     "L4's pulse handler runs in the timer ISR (integer only); no board timer yet, virtual Nucleo only" },
 };
-constexpr HarnessDesc L4L5_DESC = { "L4_L5", "Drivers", "Board", L4L5_SIGNALS, 8 };
+constexpr HarnessDesc L4L5_DESC = { "L4_L5", "Drivers", "Board", L4L5_SIGNALS, 9 };
 
 /// Build once (idempotent): calls the L5 init contracts, applies the SPI trace taps.
 /// Requires the SPI manager and clocks to be initialised (System::initPlatform).

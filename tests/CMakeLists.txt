@@ -50,6 +50,8 @@ smc_add_test(test_telemetry_store test_telemetry_store.cpp
 # --- Step 3: H_L4_L5 â€” L4 drivers run on fake Board:: pins.
 smc_add_test(test_powerstep01 test_powerstep01.cpp)
 smc_add_test(test_lcd_vsync   test_lcd_vsync.cpp)
+# Driver boundary step 5: the second driver (generic STEP/DIR) on fake pins + a pulse timer.
+smc_add_test(test_stepdir_driver test_stepdir_driver.cpp)
 
 # --- Step 4a: H_L3_L4 â€” L3 config manager persists through a fake Drivers::IConfigStore.
 smc_add_test(test_motor_config test_motor_config.cpp

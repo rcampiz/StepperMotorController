@@ -251,7 +251,7 @@
     {
       "id": "L4",
       "name": "Drivers",
-      "responsibility": "Device drivers over Board pin bundles: powerSTEP01, ST7789, NOR flash, joystick, quadrature encoder (+ index ISR), config store, debug access.",
+      "responsibility": "Device drivers over Board pin bundles: powerSTEP01, generic STEP/DIR (software ramps over a step pulse timer; virtual Nucleo only so far), ST7789, NOR flash, joystick, quadrature encoder (+ index ISR), config store, debug access.",
       "files": [
         "server/layers/L4_drivers/boundary/icanvas.hpp",
         "server/layers/L4_drivers/boundary/iconfig_store.hpp",
@@ -276,6 +276,8 @@
         "server/layers/L4_drivers/devices/powerstep01_status.hpp",
         "server/layers/L4_drivers/devices/powerstep01_units.hpp",
         "server/layers/L4_drivers/devices/sn74hc595.hpp",
+        "server/layers/L4_drivers/devices/step_ramp.hpp",
+        "server/layers/L4_drivers/devices/stepdir_driver.hpp",
         "server/layers/L4_drivers/init/config_store_init.cpp",
         "server/layers/L4_drivers/init/debug_access_init.cpp",
         "server/layers/L4_drivers/init/display_driver_init.cpp",
@@ -297,6 +299,7 @@
         "server/layers/L5_board/boundary/igpio.hpp",
         "server/layers/L5_board/boundary/iinternal_flash.hpp",
         "server/layers/L5_board/boundary/ispi_bus.hpp",
+        "server/layers/L5_board/boundary/istep_pulse_timer.hpp",
         "server/layers/L5_board/boundary/itearing_sync.hpp",
         "server/layers/L5_board/boundary/itimer_counter.hpp",
         "server/layers/L5_board/debug/board_debug.cpp",
@@ -555,7 +558,7 @@
         "HARNESS": 11,
         "L2": 3,
         "L3": 17,
-        "L4": 1,
+        "L4": 2,
         "L5": 1,
         "PLATFORM": 7,
         "TASKS": 12
@@ -648,7 +651,8 @@
         "Board::ITearingSync (EXTI0)",
         "Board::IInternalFlash",
         "Board::IBoardDebug",
-        "registerExti (index pulse)"
+        "registerExti (index pulse)",
+        "Board::IStepPulseTimer (STEP/DIR drivers)"
       ],
       "status": "implemented",
       "defined_in": "server/harness/defs/harness_l4_l5.hpp",
@@ -983,6 +987,16 @@
       "name": "registerExti (index pulse)",
       "data": "callback table in harness; runs at NVIC 5 (RTOS-safe)",
       "direction": "up",
+      "sync": "async",
+      "is_violation": false
+    },
+    {
+      "from": "Drivers",
+      "to": "Board",
+      "via": "harness",
+      "name": "Board::IStepPulseTimer (STEP/DIR drivers)",
+      "data": "L4's pulse handler runs in the timer ISR (integer only); no board timer yet, virtual Nucleo only",
+      "direction": "down",
       "sync": "async",
       "is_violation": false
     },
