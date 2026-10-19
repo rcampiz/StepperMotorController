@@ -25,6 +25,12 @@ Cutting a release: move the Unreleased notes under a new heading, bump `VERSION`
 - Client: typed builders for the new commands, `smc_core.driver` (one physical code path for
   protocol 2 and 3 boards), views for `DRV:CAPS?` / `DRV:CFG:PHYS?`, `smc driver caps|show`;
   the fake board speaks protocol 3 (or 2 with `protocol=2`).
+- Driver boundary step 5, the proof of swap: a second L4 motor driver for a generic STEP/DIR
+  chip (DRV8825-class: MODE pins, nENABLE, nFAULT, current from VREF) with software ramps and
+  position count over a new `Board::IStepPulseTimer` (H_L4_L5). The virtual Nucleo runs it with
+  `--driver stepdir` (`sim/vnucleo_fleet.py --driver stepdir`); the client's virtual-Nucleo
+  tests run every scenario on both drivers. No L3 or L2 change; the firmware still builds the
+  powerSTEP01 driver only. Findings in docs/design/DRIVER_BOUNDARY.md ("Step 5 as built").
 
 ### Deprecated
 - Protocol 2 chip-unit commands, kept one release (marked in docs/PROTOCOL.md and
@@ -45,6 +51,12 @@ Cutting a release: move the Unreleased notes under a new heading, bump `VERSION`
   ramps and step mode. Protocol 2 commands unchanged (the chip-unit ones are aliases the
   driver translates). The LCD Driver page shows physical values; OCD reads as the VDS
   threshold with its estimated current. The chip-reset watch now runs from boot.
+
+### Fixed
+- Client scenarios no longer assume a powerSTEP01: step_mode_readback and step_mode_chip ask
+  only for resolutions the driver takes (a finer one must be refused), drive_mode_chip checks
+  that a missing drive mode is refused, position_capture compares with the RUN speed when the
+  driver has no step-sync output (it read `pulses_per_full_step` 0 as 8).
 
 ## [0.5.0] - 2026-10-19
 

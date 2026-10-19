@@ -1,8 +1,9 @@
 # Design: a swappable motor driver (H_L3_L4 in physical units)
 
-Status: **approved 2026-10-19, in progress**: steps 1-4 done (state, motion units, settings,
-protocol 3 and the client; see "Step 3 as built" and "Step 4 as built"); step 5 (a second driver)
-is next.
+Status: **approved 2026-10-19; steps 1-5 done** (state, motion units, settings, protocol 3 and
+the client, and the proof: a second, unrelated driver on the virtual Nucleo with no L3/L2
+change; see "Step 3 as built", "Step 4 as built" and "Step 5 as built"). Open: the findings
+at the end of step 5 that need an L2/L3 or harness-pins change.
 
 Decisions (owner, 2026-10-19): the next chip is unknown, so nothing may assume one: the
 boundary is capability-driven (`DriverCaps`), and every chip-specific fact lives in its L4
@@ -167,3 +168,94 @@ Raw register access stays only on the bring-up path (`IDebugAccess`, `DBG:*`), n
   codes still load). GUI driver, step-mode and protection panels take their ranges from
   `DRV:CAPS?` (a refusal = protocol 2 fallback); the fake board speaks protocol 3 or 2.
 - **Not changed:** the LCD Driver page (it already edits physical settings in L3).
+
+## Step 5 as built (2026-10-19)
+
+The proof of swap: a second driver with nothing in common with the powerSTEP01 runs the same
+L2/L3, the same task bodies and the same client scenarios. **No line of L3 or L2 changed**:
+
+```
+$ git diff master -- server/layers/L3_services server/layers/L2_protocol
+$                                    (empty)
+```
+
+- **The driver** (`L4_drivers/devices/stepdir_driver.hpp`, `Drivers::StepDirDriver`): a generic
+  STEP/DIR chip, its pin-level facts the TI DRV8825's (MODE2..0 = log2 of the microsteps, 1/32
+  at most; nENABLE; nFAULT for overcurrent or thermal shutdown, undistinguished; current set by
+  the VREF pot; a fixed ~3 A overcurrent trip). No registers, no status word, no motion engine,
+  no position: the MCU makes every STEP pulse and counts them. Chip facts live only there.
+- **The ramps** (`L4_drivers/devices/step_ramp.hpp`, `Drivers::StepRamp`): D. Austin's
+  per-pulse recurrence (AVR446), integers only in the pulse interrupt, set up in task context
+  in physical units; RUN (reversals decelerate through a standstill), positioning that lands
+  exactly (and overshoots and comes back only when a new target is too close to stop for),
+  soft stop, the speed ceiling, the Q8 period fraction dithered so a cruise speed is exact on
+  average. A resolution change waits for a standstill (`NEEDS_OUTPUTS_OFF` while pulses run;
+  with the bridges on but stopped the pins change directly: the indexer keeps its angle) and
+  rescales the position count so it stays the same shaft angle.
+- **New L5 signal** (`L5_board/boundary/istep_pulse_timer.hpp`, `Board::IStepPulseTimer`, a row
+  in H_L4_L5): a timer that puts out STEP pulses and calls L4's handler from its interrupt.
+  Nothing on the board implements it yet; the virtual Nucleo does. This is a harness *defs*
+  change (a new kind of hardware below L4), not a leak upward; `harness/pins/` is unchanged.
+- **Caps** (`DRV:CAPS?` on the virtual Nucleo): `current_mode` and `voltage_mode` false (no
+  software drive levels), `max_microsteps_current` 32, `max_microsteps_voltage` 0,
+  `stall_detect` false, `standby_pin` true (nENABLE: the out-of-band E-STOP drops the bridges in
+  one GPIO write and stops the timer), `hardware_positioning` false, `sync_pulses_per_full_step`
+  0, `faults_reported` overcurrent + thermal shutdown (with nFAULT wired), `faults_alarmable`
+  none, overcurrent 3..3 A, speed limit 1562.5 full steps/s (the timer's 50 kHz at 1/32),
+  ceiling grid 1/64 full step/s, acceleration 1..60000 full steps/s^2. `quantize()` reports the
+  fixed values for what the chip has no input for (currents and duties 0, overcurrent 3 A,
+  stall 0, alarms = what nFAULT raises); the protocol refuses setting them (`DRV:CFG:CURRENT`
+  INVALID_STATE "no current mode", `OVERCURRENT 50` / `STALL_TH` / `USTEP 64` OUT_OF_RANGE,
+  `DRV:CFG:DRIVE VOLTAGE` refused). No protocol 2 chip units, no reset watch.
+- **Virtual Nucleo** (`vnucleo --driver stepdir`; `sim/vnucleo_fleet.py --driver stepdir`;
+  `client/tests/vnucleo.boards(driver=...)`): the firmware's real `StepDirDriver` on fake pins,
+  a fake pulse timer (pulses at simulated instants; entering the driver's critical section runs
+  the ones that fell due, as the interrupt would have) and a fake DRV8825-class chip whose
+  shaft the fake encoder reads. Unlike the powerSTEP01 fake (a stand-in for the L4 driver), only
+  hardware is fake here, so the encoder checks the driver. The default stays `powerstep`.
+- **Scenarios on both drivers** (`client/tests/test_vnucleo.py`, parametrised): bringup,
+  step_mode_readback, estop_latency, heartbeat_loss, sysid, motion_scale, telemetry_load,
+  step_mode_chip, drive_mode_chip, position_capture pass on both; also the move/encoder, event
+  sequence, compact telemetry and watchdog tests. resonance_sweep passes on both (run by hand).
+  Adapted by caps, not by chip name: step_mode_readback checks that a resolution finer than the
+  driver's finest (1/128 on a 1/32 chip) is *refused*; step_mode_chip picks a mode the driver
+  takes; drive_mode_chip checks that a switch to a missing mode is refused; position_capture
+  compares the encoder with the RUN speed when there is no step-sync output.
+- **Host tests** (`tests/test_stepdir_driver.cpp`, a test-driven pulse timer): caps, quantize
+  (idempotent), mode pins and read-back, ramp time and exact cruise, exact landing of moves both
+  ways, reversal through a standstill, overshoot-and-return, soft stop / soft Hi-Z, E-STOP
+  (standby from an interrupt: no further pulse, bridges off, count kept), resolution change
+  while moving refused then applied with the position rescaled, nFAULT, ceiling round trip.
+
+### Findings (what the second driver showed)
+
+1. **Client scenarios assumed the powerSTEP01** (fixed in the client, through `DriverAccess` /
+   caps): drive_mode_chip assumed two drive modes; step_mode_readback and step_mode_chip assumed
+   1/128 can be asked for (restoring the firmware's default request, 1/128, was refused on a
+   1/32 driver); position_capture read `pulses_per_full_step` 0 as 8 (`or 8`). New helpers in
+   `smc_core.driver`: `finest_microsteps`, `requestable_microsteps`, `switchable_drive_modes`.
+2. **`DriverCaps` cannot say "current mode with a hardware-set reference".** A STEP/DIR chip is a
+   chopper (current) drive whose reference is a pot. It reports `currentControl` false and
+   `maxMicrostepsCurrent` 32, which contradicts the field's own comment (0 = no such mode), and
+   `hasMode(CURRENT)` is false although the settings in force say CURRENT; `DRV:CFG:CURRENT`
+   answers "the driver has no current mode". Works, but reads oddly. A chip-neutral fix (e.g. a
+   `currentSettable` flag, or the fixed current as a range of one value) needs a harness-pins and
+   an L2 (`DRV:CAPS?` key) change: **not made, for the owner to decide.**
+3. **Protocol 2 aliases are silently ignored on a driver without chip units.** `DRV:CFG:KVAL`,
+   `TVAL`, `OCD`, `STALL`, `MOTION`, `PRED`, `DECAY` answer OK and change nothing
+   (`ConfigDispatch::editLegacy` returns quietly; L2 replies "... set"), although step 3 above
+   says the aliases "report an error". Fixing it needs L3 (return a status) and L2 (send it):
+   **not made**; the aliases are deprecated and go with protocol 2. The test pins that they
+   change nothing, not that they answer OK.
+4. **L3's default asks 1/128** ("the finest; the driver caps it"). Harmless (`quantize` caps it),
+   but `DRV:CFG:USTEP 128` is refused on a 1/32 driver, so the default cannot be set again by
+   the host; the client restores with `requestable_microsteps` (same resolution in force).
+5. **`syncPulsesPerFullStep` is a constant.** A STEP/DIR board could count its own STEP line
+   (pulses per full step = the microsteps in force), which a constant cannot say; reported as 0.
+6. **H_L4_L5 grew a signal** (`IStepPulseTimer`), as expected for a chip whose motion engine is
+   the MCU; L3/L2 and the harness pins did not change.
+
+Not done: an STM32 implementation of `IStepPulseTimer` (TIM2/TIM5 PWM + update interrupt) and a
+board build with the STEP/DIR driver (the firmware still builds the powerSTEP01 only, images
+unchanged); the per-pulse interrupt's cost on the M4; the GUI's fleet panel still starts
+powerSTEP01 boards only; the virtual Nucleo's `--motion-log` is the powerSTEP01 fake's.
