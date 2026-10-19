@@ -209,3 +209,58 @@ def unwrap16(values: List[int]) -> List[int]:
         out.append(acc)
         prev = v
     return out
+
+
+# DIAG:MEM? lines (system_handlers.cpp cmdMem): "<region> <used-key>=<b> total=<b>" and
+# "task <name> stack=<words> hwm=<words>" (a task name may contain spaces)
+_MEM_REGION = re.compile(r"^(flash|ram|stack_pool|msp)\s+(?:used|static)=(\d+)\s+total=(\d+)\s*$")
+_MEM_TASK = re.compile(r"^task\s+(.+?)\s+stack=(\d+)\s+hwm=(\d+)\s*$")
+STACK_WORD_BYTES = 4
+
+# Headroom bands shared by the LCD page and the GUI: below 70 % fine, to 90 % tight, beyond full
+MEM_TIGHT_PCT = 70.0
+MEM_FULL_PCT = 90.0
+
+
+def mem_level(pct: float) -> str:
+    """'ok' below 70 %, 'tight' to 90 %, 'full' beyond (the LCD Memory page's colours, on the
+    percentage rounded the way the LCD prints it)."""
+    p = int(pct + 0.5)
+    return "full" if p > MEM_FULL_PCT else "tight" if p >= MEM_TIGHT_PCT else "ok"
+
+
+def _region(used: int, total: int) -> Dict[str, Any]:
+    pct = 100.0 * used / total if total else 0.0
+    return {"used": used, "total": total, "free": max(total - used, 0), "pct": pct, "level": mem_level(pct)}
+
+
+def memory(resp_or_text) -> Dict[str, Any]:
+    """DIAG:MEM? -> {flash, ram, stack_pool, msp: {used, total, free, pct, level} (bytes),
+    split: {stacks, globals, free} (bytes of RAM), tasks: [{name, stack_words, hwm_words,
+    size, used, free, pct, level}] biggest stack first, text}. Parts the board did not send
+    are absent (msp on a board without a main-stack reserve; tasks without task stats)."""
+    text = _text(resp_or_text)
+    out: Dict[str, Any] = {"text": text}
+    tasks: List[Dict[str, Any]] = []
+    for line in text.split("\n"):
+        line = line.strip()
+        m = _MEM_REGION.match(line)
+        if m:
+            out[m.group(1)] = _region(int(m.group(2)), int(m.group(3)))
+            continue
+        m = _MEM_TASK.match(line)
+        if m:
+            words, hwm = int(m.group(2)), int(m.group(3))
+            size, free = words * STACK_WORD_BYTES, hwm * STACK_WORD_BYTES
+            used = max(size - free, 0)
+            pct = 100.0 * used / size if size else 0.0
+            tasks.append({"name": m.group(1), "stack_words": words, "hwm_words": hwm, "size": size,
+                          "used": used, "free": free, "pct": pct, "level": mem_level(pct)})
+    if "flash" in out or "ram" in out or tasks:
+        tasks.sort(key=lambda t: (-t["size"], t["name"]))
+        out["tasks"] = tasks
+    if "ram" in out:
+        ram = out["ram"]
+        stacks = min(out.get("stack_pool", {}).get("total", 0), ram["used"])
+        out["split"] = {"stacks": stacks, "globals": ram["used"] - stacks, "free": ram["free"]}
+    return out

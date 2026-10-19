@@ -263,6 +263,7 @@ usage error. "Handler" is the firmware function, for cross-reference.
 | `DIAG:PING` | 0 | — | ASCII: `OK <plain lines>`; JSON `PING` keys: `rx_tick`, `seq`, `state`, `tx_tick` | — | `cmdPing` (system_handlers.cpp) |
 | `DIAG:STAT?` | 0 | — | ASCII: `OK <plain lines>` | — | `cmdGetStatus` (system_handlers.cpp) |
 | `DIAG:TASKS?` | 0 | — | ASCII: `<lines> then OK <n>`; JSON `TASKS` keys: `count`, `lines` | `Task statistics unavailable` | `cmdTasks` (system_handlers.cpp) |
+| `DIAG:MEM?` | 0 | — | ASCII: `<lines> then OK <n>`; JSON `MEM` keys: `count`, `lines` | `Memory statistics unavailable` | `cmdMem` (system_handlers.cpp) |
 | `DIAG:HARNESS?` | 0 | — | ASCII: `<lines> then OK <n>`; JSON `HARNESS` keys: `count`, `lines` | — | `cmdHarness` (system_handlers.cpp) |
 
 ### CTRL

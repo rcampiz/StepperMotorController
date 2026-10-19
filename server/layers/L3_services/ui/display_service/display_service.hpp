@@ -21,6 +21,7 @@
 #include "L3_services/ui/menu_screen/menu_screen.hpp"
 #include "L3_services/ui/screens/boot_color_screen.hpp"
 #include "L3_services/ui/screens/device_info_screen.hpp"
+#include "L3_services/ui/screens/memory_screen.hpp"
 #include "L3_services/ui/screens/encoder_screen.hpp"
 #include "L3_services/ui/screens/motion_screen.hpp"
 #include "L3_services/ui/screens/config_screen.hpp"
@@ -101,6 +102,7 @@ private:
     UI::MenuScreen       m_mainMenu;
     UI::BootColorScreen  m_bootScreen;
     UI::DeviceInfoScreen m_deviceInfoScreen;
+    UI::MemoryScreen     m_memoryScreen;
     UI::EncoderScreen    m_encoderScreen;
     UI::MotionScreen     m_motionScreen;
     UI::ConfigScreen     m_configScreen;

@@ -8,6 +8,7 @@
 #include "harness/pins/protocol_version.hpp"
 #include "F_platform/boundary/boot_id.hpp"
 #include "F_platform/boundary/itask_stats.hpp"
+#include "F_platform/boundary/imemory_stats.hpp"
 #include "harness/pins/async_event.hpp"
 #include "harness/trace/harness_meter.hpp"
 
@@ -390,6 +391,49 @@ void CommandParser::cmdTasks() {
   snprintf(line, sizeof(line), "free_heap_bytes=%lu",
            static_cast<unsigned long>(stats->getFreeHeapBytes()));
   m_sink.writeLine(line);
+  m_sink.end();
+}
+
+// DIAG:MEM? — the LCD Memory page over serial, bytes unless noted:
+//   flash used=<b> total=<b>          code + constants + .data image, of the FLASH region
+//   ram static=<b> total=<b>          .data + .bss (the stack pool included), of the RAM region
+//   stack_pool used=<b> total=<b>     the task stack pool: handed to tasks, of the whole pool
+//   msp used=<b> total=<b>            main stack (boot + interrupts) peak, of its reserve
+//   task <name> stack=<words> hwm=<words>   one per task: size and the least ever left free
+void CommandParser::cmdMem() {
+  Platform::IMemoryStats* mem = Platform::memoryStatsProvider();
+  Platform::MemoryStats m = {};
+  if (mem == nullptr || !mem->getMemoryStats(m)) {
+    respondErr("Memory statistics unavailable");
+    return;
+  }
+  m_sink.begin(m_format == ResponseFormat::JSON, "MEM");
+  char line[64];
+  snprintf(line, sizeof(line), "flash used=%lu total=%lu", static_cast<unsigned long>(m.flashUsed),
+           static_cast<unsigned long>(m.flashTotal));
+  m_sink.writeLine(line);
+  snprintf(line, sizeof(line), "ram static=%lu total=%lu", static_cast<unsigned long>(m.ramStatic),
+           static_cast<unsigned long>(m.ramTotal));
+  m_sink.writeLine(line);
+  snprintf(line, sizeof(line), "stack_pool used=%lu total=%lu", static_cast<unsigned long>(m.stackPoolUsed),
+           static_cast<unsigned long>(m.stackPoolTotal));
+  m_sink.writeLine(line);
+  if (m.mainStackTotal != 0) {
+    snprintf(line, sizeof(line), "msp used=%lu total=%lu", static_cast<unsigned long>(m.mainStackUsed),
+             static_cast<unsigned long>(m.mainStackTotal));
+    m_sink.writeLine(line);
+  }
+  Platform::ITaskStats* stats = Platform::taskStatsProvider();
+  if (stats != nullptr) {
+    Platform::TaskStatsSnapshot snap;
+    stats->getSnapshot(snap);
+    for (uint8_t i = 0; i < snap.count && i < Platform::TaskStatsSnapshot::MAX_TASKS; ++i) {
+      const Platform::TaskStat& t = snap.tasks[i];
+      snprintf(line, sizeof(line), "task %.15s stack=%u hwm=%u", t.name, static_cast<unsigned>(t.stackWords),
+               static_cast<unsigned>(t.stackHWM));
+      m_sink.writeLine(line);
+    }
+  }
   m_sink.end();
 }
 

@@ -31,7 +31,7 @@ LAYERS = [
     ("L4", "Drivers", "server/layers/L4_drivers", "Device drivers over Board pin bundles: powerSTEP01, ST7789, NOR flash, joystick, quadrature encoder (+ index ISR), config store, debug access."),
     ("L5", "Board", "server/layers/L5_board", "Register/peripheral access: clocks, GPIO, SPI1/SPI2, USART2 + RTT byte channels, TIM4, TIM3+DMA sampler, EXTI, TE sync, internal flash, bring-up commands."),
     ("TASKS", "Task sheet (Scheduler::)", "server/foundation/F_platform/tasks", "Four RTOS task loops that only wait, then call one L3 entry point; owns priorities, periods, stack sizes, task handles and the task-init contracts the composition root calls."),
-    ("PLATFORM", "Platform (power net)", "server/foundation/F_platform", "RTOS-neutral primitives any sheet may use: clock, microsecond clock, locks, queues, scheduler, task stats, critical section, task notifier; FreeRTOS implementations, startup."),
+    ("PLATFORM", "Platform (power net)", "server/foundation/F_platform", "RTOS-neutral primitives any sheet may use: clock, microsecond clock, locks, queues, scheduler, task stats, memory stats, critical section, task notifier; FreeRTOS implementations, startup."),
     ("HARNESS", "Harness", "server/harness", "Harness definitions (defs/), connect() functions (the only place taps are applied), shared POD pins, traced taps, interface trace."),
     ("SYSTEM", "Composition root", "server", "main.cpp + system_init.cpp: phase sequencing, Platform resources, RTOS task creation over the L3 services."),
 ]
@@ -104,7 +104,7 @@ def includers_of(prefix):
 def global_nets():
     return [
         {"id": "PLATFORM", "name": "Platform power net", "path": "server/foundation/F_platform/boundary",
-         "rule": "rule 4: RTOS-neutral primitives (clock, us clock, locks, queues, scheduler, task stats, critical section, notifier) usable by any sheet without a harness",
+         "rule": "rule 4: RTOS-neutral primitives (clock, us clock, locks, queues, scheduler, task stats, memory stats, critical section, notifier) usable by any sheet without a harness",
          "direct_includers": includers_of("F_platform/boundary/")},
         {"id": "TRACE", "name": "Interface trace net", "path": "server/harness/trace",
          "rule": "second global net: ITRACE()/ITrace::log and the trace sink may be included by any sheet; compiled to no-ops unless ENABLE_INTERFACE_TRACE (firmware-debug); sink = L3 trace ring via Trace::initTraceSink",

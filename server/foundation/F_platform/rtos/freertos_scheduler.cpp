@@ -22,10 +22,20 @@ static StaticTask_t s_tcbs[FreeRTOSScheduler::MAX_TASKS];
 static StackType_t  s_stackPool[FreeRTOSScheduler::STACK_POOL_WORDS];
 static uint32_t     s_tasksCreated = 0;
 static uint32_t     s_poolUsed = 0;
+static const void*  s_handles[FreeRTOSScheduler::MAX_TASKS];      // created task -> its stack size
+static uint32_t     s_stackWords[FreeRTOSScheduler::MAX_TASKS];
 
 uint32_t FreeRTOSScheduler::stackPoolFreeWords()
 {
     return STACK_POOL_WORDS - s_poolUsed;
+}
+
+uint32_t FreeRTOSScheduler::stackWordsOf(const void* handle)
+{
+    for (uint32_t i = 0; i < s_tasksCreated; i++) {
+        if (s_handles[i] == handle) return s_stackWords[i];
+    }
+    return 0;
 }
 
 Platform::TaskHandle FreeRTOSScheduler::createTask(const Platform::TaskDescriptor& desc)
@@ -51,6 +61,8 @@ Platform::TaskHandle FreeRTOSScheduler::createTask(const Platform::TaskDescripto
         return nullptr;
     }
     s_poolUsed += desc.stackSizeWords;
+    s_handles[s_tasksCreated] = handle;
+    s_stackWords[s_tasksCreated] = desc.stackSizeWords;
     s_tasksCreated++;
     return static_cast<Platform::TaskHandle>(handle);
 }

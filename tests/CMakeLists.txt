@@ -114,6 +114,15 @@ smc_add_test(test_harness_meter test_harness_meter.cpp)
 smc_add_test(test_seq_snapshot test_seq_snapshot.cpp
     ${SERVER}/layers/L4_drivers/devices/encoder.cpp)
 
+# --- LCD Memory page (flash/RAM gauges, RAM split, stack peaks) on fake memory and task stats.
+smc_add_test(test_screen_memory test_screen_memory.cpp
+    ${SERVER}/layers/L3_services/ui/screens/memory_screen.cpp
+    ${SERVER}/layers/L3_services/ui/menu_screen/menu_screen.cpp
+    ${SERVER}/layers/L3_services/ui/screen_manager/screen_manager.cpp
+    ${SERVER}/layers/L3_services/ui/chrome/chrome.cpp
+    ${SERVER}/harness/pins/itask_stats.cpp)
+target_include_directories(test_screen_memory PRIVATE ${SERVER}/layers/L3_services)
+
 # --- LCD Dispatcher screen over the real CommsService, CommandQueue and motion event stats.
 smc_add_test(test_screen_dispatcher test_screen_dispatcher.cpp
     ${SERVER}/layers/L3_services/ui/screens/dispatcher_screen.cpp

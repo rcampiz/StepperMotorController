@@ -17,11 +17,11 @@ Enforced by `scripts/arch/check_includes.py --strict` and `scripts/arch/check_ha
 
 - **L1 Transport** â€” Byte-stream ingress/egress to the host (VCP UART / RTT); owns ITransport and the IByteChannel contract that L5 implements. (7 files)
 - **L2 Protocol** â€” SCPI parsing, validation, aliases, all host-facing formatting (responses, events, telemetry, joystick, banner); routes to the 13 L3 dispatchers. (21 files)
-- **L3 Services** â€” All business logic and safety, host-testable, no RTOS loops: Motor/Comms/Encoder/Display/Debug services, controllers, dispatchers, telemetry store, UI, trace. (186 files)
+- **L3 Services** â€” All business logic and safety, host-testable, no RTOS loops: Motor/Comms/Encoder/Display/Debug services, controllers, dispatchers, telemetry store, UI, trace. (188 files)
 - **L4 Drivers** â€” Device drivers over Board pin bundles: powerSTEP01, ST7789, NOR flash, joystick, quadrature encoder (+ index ISR), config store, debug access. (24 files)
 - **L5 Board** â€” Register/peripheral access: clocks, GPIO, SPI1/SPI2, USART2 + RTT byte channels, TIM4, TIM3+DMA sampler, EXTI, TE sync, internal flash, bring-up commands. (35 files)
 - **TASKS Task sheet (Scheduler::)** â€” Four RTOS task loops that only wait, then call one L3 entry point; owns priorities, periods, stack sizes, task handles and the task-init contracts the composition root calls. (16 files)
-- **PLATFORM Platform (power net)** â€” RTOS-neutral primitives any sheet may use: clock, microsecond clock, locks, queues, scheduler, task stats, critical section, task notifier; FreeRTOS implementations, startup. (51 files)
+- **PLATFORM Platform (power net)** â€” RTOS-neutral primitives any sheet may use: clock, microsecond clock, locks, queues, scheduler, task stats, memory stats, critical section, task notifier; FreeRTOS implementations, startup. (54 files)
 - **HARNESS Harness** â€” Harness definitions (defs/), connect() functions (the only place taps are applied), shared POD pins, traced taps, interface trace. (63 files)
 - **SYSTEM Composition root** â€” main.cpp + system_init.cpp: phase sequencing, Platform resources, RTOS task creation over the L3 services. (3 files)
 
@@ -29,7 +29,7 @@ Enforced by `scripts/arch/check_includes.py --strict` and `scripts/arch/check_ha
 
 Two header sets are wired like power rails: any sheet may include them directly, no harness row describes them.
 
-- **PLATFORM Platform power net** (`server/foundation/F_platform/boundary`) â€” rule 4: RTOS-neutral primitives (clock, us clock, locks, queues, scheduler, task stats, critical section, notifier) usable by any sheet without a harness. Direct includers: HARNESS 11, L2 3, L3 16, L4 1, L5 1, PLATFORM 6, TASKS 12.
+- **PLATFORM Platform power net** (`server/foundation/F_platform/boundary`) â€” rule 4: RTOS-neutral primitives (clock, us clock, locks, queues, scheduler, task stats, memory stats, critical section, notifier) usable by any sheet without a harness. Direct includers: HARNESS 11, L2 3, L3 17, L4 1, L5 1, PLATFORM 7, TASKS 12.
 - **TRACE Interface trace net** (`server/harness/trace`) â€” second global net: ITRACE()/ITrace::log and the trace sink may be included by any sheet; compiled to no-ops unless ENABLE_INTERFACE_TRACE (firmware-debug); sink = L3 trace ring via Trace::initTraceSink. Direct includers: HARNESS 8, L2 3, L3 8, SYSTEM 1, TASKS 4.
 
 ## Harnesses

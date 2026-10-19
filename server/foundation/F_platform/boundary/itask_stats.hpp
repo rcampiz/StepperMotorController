@@ -25,6 +25,7 @@ struct TaskStat {
     uint8_t  state;       ///< 0=Running, 1=Ready, 2=Blocked, 3=Suspended, 4=Deleted
     uint16_t stackHWM;    ///< Stack high-water mark (words remaining)
     uint8_t  cpuPercent;  ///< CPU usage 0-100 (delta-based between snapshots)
+    uint16_t stackWords;  ///< Stack size (words); 0 = unknown
 };
 
 /// Aggregate task statistics

@@ -69,6 +69,7 @@ COMMANDS: Dict[str, CommandSpec] = {
     'DIAG:PING': CommandSpec('DIAG:PING', 'cmdPing', 0, '', 'PING', False, False, False),
     'DIAG:STAT?': CommandSpec('DIAG:STAT?', 'cmdGetStatus', 0, '', '', False, False, False),
     'DIAG:TASKS?': CommandSpec('DIAG:TASKS?', 'cmdTasks', 0, '', 'TASKS', True, False, False),
+    'DIAG:MEM?': CommandSpec('DIAG:MEM?', 'cmdMem', 0, '', 'MEM', True, False, False),
     'DIAG:HARNESS?': CommandSpec('DIAG:HARNESS?', 'cmdHarness', 0, '', 'HARNESS', True, False, False),
     'CTRL:ENC:DBG?': CommandSpec('CTRL:ENC:DBG?', 'ENC_DEBUG', 0, '', 'ENC_DEBUG', True, False, False),
     'CTRL:MODE': CommandSpec('CTRL:MODE', 'cmdSetMode', 1, 'CTRL:MODE OPEN_LOOP|MONITOR|PID', '', False, False, False),

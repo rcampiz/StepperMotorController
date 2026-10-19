@@ -28,6 +28,18 @@ static uint8_t mapState(eTaskState s)
     }
 }
 
+// A task's stack size in words: what the scheduler gave it, else (the idle task) from the
+// TCB's stack bounds (configRECORD_STACK_HIGH_ADDRESS). FreeRTOS aligns the top down to 8
+// bytes, so the span can come out one word short: rounded up to an even count.
+static uint32_t stackWordsOf(const TaskStatus_t& s)
+{
+    const uint32_t known = Platform::FreeRTOSScheduler::stackWordsOf(s.xHandle);
+    if (known != 0) return known;
+    if (s.pxEndOfStack == nullptr || s.pxStackBase == nullptr || s.pxEndOfStack < s.pxStackBase) return 0;
+    const uint32_t span = static_cast<uint32_t>(s.pxEndOfStack - s.pxStackBase) + 1u;
+    return (span + 1u) & ~1u;
+}
+
 namespace Platform {
 
 void FreeRTOSTaskStats::getSnapshot(Platform::TaskStatsSnapshot& out)
@@ -54,6 +66,7 @@ void FreeRTOSTaskStats::getSnapshot(Platform::TaskStatsSnapshot& out)
         ts.priority = static_cast<uint8_t>(status[i].uxCurrentPriority);
         ts.state = mapState(status[i].eCurrentState);
         ts.stackHWM = static_cast<uint16_t>(status[i].usStackHighWaterMark);
+        ts.stackWords = static_cast<uint16_t>(stackWordsOf(status[i]));
 
         // Delta-based CPU%
         ts.cpuPercent = 0;

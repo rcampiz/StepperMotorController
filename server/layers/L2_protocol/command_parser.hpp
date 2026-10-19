@@ -304,6 +304,7 @@ private:
   void cmdGetTick();
   void cmdGetStatus();
   void cmdTasks();
+  void cmdMem();
   void cmdHarness();
   void cmdClearFault();
   void cmdForceClearFault();

@@ -342,6 +342,7 @@ void CommandParser::dispatchDiag(const char *suffix, const ParsedCommand &cmd) {
   static const CmdEntry t1[] = {{"PING", &CommandParser::cmdPing}};
   static const CmdEntry0 t0[] = {{"STAT?", &CommandParser::cmdGetStatus},
                                  {"TASKS?", &CommandParser::cmdTasks},
+                                 {"MEM?", &CommandParser::cmdMem},
                                  {"HARNESS?", &CommandParser::cmdHarness}};
   if (dispatch1(suffix, t1, NCMD(t1), cmd))
     return;

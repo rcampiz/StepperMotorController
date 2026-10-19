@@ -13,6 +13,7 @@
 
 // Platform / hardware
 #include "F_platform/hw/microsecond_timer_tim5.hpp"
+#include "F_platform/rtos/board_memory_stats.hpp"
 #include "F_platform/tasks/motor_task.hpp"
 #include "F_platform/tasks/comms_task.hpp"
 #include "F_platform/tasks/motor_task_init.hpp"
@@ -62,6 +63,8 @@ static void logOk(const char *name) {
 
 // Phase 1: Hardware — clocks, debug UART, microsecond clock, trace sink
 void initHardware() {
+  // First, on the main stack: paint its free part so its peak (boot + interrupts) is measured
+  Platform::setMemoryStatsProvider(&Platform::initMemoryStats());
   // Composition root may see every sheet: call the L5 / Platform init contracts directly
   Harness::initClockBoard();
   Platform::initDebugOutput();

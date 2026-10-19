@@ -54,6 +54,7 @@ bool DisplayService::init(Drivers::ICanvas& lcd,
     m_mainMenu.addItem("Dispatcher");
     m_mainMenu.addItem("Architecture");
     m_mainMenu.addItem("Device Info");
+    m_mainMenu.addItem("Memory");
     m_mainMenu.addItem("Colour test");
     m_mainMenu.addItem("Screen Care");
     m_mainMenu.setSelectionCallback(&DisplayService::onMainMenuSelect);
@@ -154,8 +155,9 @@ bool DisplayService::onMainMenuSelect(uint8_t index)
         case 7:  d.m_screenManager.push(&d.m_dispatcherScreen); break;
         case 8:  d.m_screenManager.push(&d.m_archScreen); break;
         case 9:  d.m_screenManager.push(&d.m_deviceInfoScreen); break;
-        case 10: d.m_screenManager.push(&d.m_bootScreen); break;
-        case 11: d.m_screenManager.push(&d.m_careScreen); break;
+        case 10: d.m_screenManager.push(&d.m_memoryScreen); break;
+        case 11: d.m_screenManager.push(&d.m_bootScreen); break;
+        case 12: d.m_screenManager.push(&d.m_careScreen); break;
         default: break;
     }
     return true;   // stay in menu (it remains on the stack under the new screen)

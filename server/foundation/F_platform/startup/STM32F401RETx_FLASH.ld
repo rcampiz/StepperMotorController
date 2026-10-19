@@ -27,6 +27,12 @@ MEMORY
 }
 
 /* Define output sections */
+/* The regions as symbols, for the memory statistics (F_platform/rtos/board_memory_stats.cpp) */
+_flash_origin = ORIGIN(FLASH);
+_flash_length = LENGTH(FLASH);
+_ram_origin   = ORIGIN(RAM);
+_ram_length   = LENGTH(RAM);
+
 SECTIONS
 {
   /* The startup code goes first into FLASH */

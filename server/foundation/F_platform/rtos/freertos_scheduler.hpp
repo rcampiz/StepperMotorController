@@ -20,6 +20,8 @@ public:
     static constexpr uint32_t MAX_TASKS = 6;
     /// Words of the pool not yet handed to a task (diagnostics).
     static uint32_t stackPoolFreeWords();
+    /// Stack size (words) of a task this scheduler created; 0 for any other (the idle task).
+    static uint32_t stackWordsOf(const void* handle);
 
     Platform::TaskHandle createTask(const Platform::TaskDescriptor& desc) override;
     [[noreturn]] void start() override;

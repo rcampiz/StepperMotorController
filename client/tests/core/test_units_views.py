@@ -95,3 +95,35 @@ def test_sysid_views_both_formats():
     a = V.sysid_data(Response(True, "CTRL:SYSID:DATA?", {"lines": [
         "SYSID_DATA 40 2 120", "0,100,98,-1", "5,100,99,0"]}))
     assert (a.offset, a.total, a.samples) == (j.offset, j.total, j.samples)
+
+
+# DIAG:MEM? exactly as system_handlers.cpp cmdMem prints it (a task name with a space included)
+MEM = [
+    "flash used=288252 total=524288",
+    "ram static=82892 total=98304",
+    "stack_pool used=15872 total=16384",
+    "msp used=612 total=1024",
+    "task Motor stack=1024 hwm=412",
+    "task IDLE stack=128 hwm=94",
+    "task Tmr Svc stack=256 hwm=10",
+    "task Comms stack=2048 hwm=1310",
+]
+
+
+def test_memory_view_both_formats():
+    for resp in (_json_lines("MEM", MEM), "\n".join(MEM)):
+        m = V.memory(resp)
+        assert m["flash"]["used"] == 288252 and m["flash"]["free"] == 524288 - 288252
+        assert round(m["flash"]["pct"]) == 55 and m["flash"]["level"] == "ok"
+        assert m["ram"]["used"] == 82892 and m["ram"]["level"] == "tight"          # 84 %
+        assert m["stack_pool"] == {"used": 15872, "total": 16384, "free": 512,
+                                   "pct": 100.0 * 15872 / 16384, "level": "full"}
+        assert m["msp"]["used"] == 612 and m["msp"]["level"] == "ok"
+        assert m["split"] == {"stacks": 16384, "globals": 82892 - 16384, "free": 98304 - 82892}
+        # biggest stack first; bytes from words; the low-headroom task flagged
+        assert [t["name"] for t in m["tasks"]] == ["Comms", "Motor", "Tmr Svc", "IDLE"]
+        svc = m["tasks"][2]
+        assert (svc["size"], svc["used"], svc["free"]) == (1024, 984, 40) and svc["level"] == "full"
+    assert V.mem_level(69.4) == "ok" and V.mem_level(69.6) == "tight" and V.mem_level(90.4) == "tight"
+    assert V.mem_level(90.6) == "full"
+    assert "flash" not in V.memory("ERROR Memory statistics unavailable")

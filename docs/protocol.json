@@ -1392,6 +1392,33 @@
       "persists": false
     },
     {
+      "name": "DIAG:MEM?",
+      "prefix": "DIAG",
+      "handler": "cmdMem",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<lines> then OK <n>"
+      ],
+      "json": [
+        {
+          "command": "MEM",
+          "keys": [
+            "count",
+            "lines"
+          ]
+        }
+      ],
+      "errors": [
+        "Memory statistics unavailable"
+      ],
+      "note": "",
+      "multiline": true,
+      "binary": false,
+      "persists": false
+    },
+    {
       "name": "DIAG:HARNESS?",
       "prefix": "DIAG",
       "handler": "cmdHarness",

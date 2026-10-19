@@ -62,6 +62,11 @@ class FakeBoard:
                            "holt_enabled": False, "holt_alpha": 51, "holt_beta": 13}
         self.sysid_sine = None                     # (base_sps, amp_sps, f_hz, dur_ms) of the last SINE
         self.idle_release_ms = 0
+        # DIAG:MEM? as the release build reports it: bytes per region, then (words) per task
+        self.mem = {"flash": (288252, 512 * 1024), "ram": (82892, 96 * 1024),
+                    "stack_pool": (3968 * 4, 4096 * 4), "msp": (612, 1024)}
+        self.mem_tasks = [("Motor", 1024, 412), ("Comms", 2048, 1310), ("Display", 640, 150),
+                          ("Encoder", 256, 96), ("IDLE", 128, 94)]
         self._cap_frozen = False
         self.events_on = False
         self.seq = 0
@@ -315,6 +320,12 @@ class FakeBoard:
         else:
             self._reply("STATUS %s 0 0 OPEN_LOOP READY %d %d" % (self.state, self.position,
                                                                  self.speed))
+
+    def _c_DIAG_MEM_Q(self, name, args):
+        lines = ["%s %s=%d total=%d" % (k, "static" if k == "ram" else "used", u, t)
+                 for k, (u, t) in self.mem.items()]
+        lines += ["task %s stack=%d hwm=%d" % t for t in self.mem_tasks]
+        self._lines("MEM", lines)
 
     def _c_DIAG_PING(self, name, args):
         self._ok("PING", data={"seq": int(args[0]) if args else 0, "rx_tick": 0, "tx_tick": 0,

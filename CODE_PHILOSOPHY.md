@@ -349,7 +349,7 @@ non-adjacent edge the checker accepts.
 ### Rule 4: Platform is a power net
 
 `F_platform/boundary` primitives (`IClock`, `IMicrosecondClock`, `ILock`, `IQueue`,
-`IScheduler`, `ITaskNotifier`, `ICriticalSection`, task stats) may be used by **any** sheet
+`IScheduler`, `ITaskNotifier`, `ICriticalSection`, task stats, memory stats) may be used by **any** sheet
 without a harness, like VCC on a schematic. Consequence: L3 contains **no RTOS loops** and
 builds natively for host tests (`tests/`).
 
