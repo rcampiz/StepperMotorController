@@ -203,6 +203,30 @@ TEST(apply_config_is_a_motor_task_job_that_writes_step_mode_in_hiz_or_via_the_sa
     Services::motion.stepper.config.setStepMode(original);
 }
 
+TEST(a_chip_that_reset_behind_our_back_is_initialised_again) {
+    // Bench 2026-10-19: the motor supply dropped, the powerSTEP01 came back with every
+    // register at its default (gate drive 4 mA, overcurrent shutdown on) and MOT:EN tripped
+    // OCD. GATECFG1 is written only by init: when it changes, init runs again.
+    Rig r;
+    auto& ctrl = Services::motion.stepper.controller;
+    r.drv.params[Drivers::MotorReg::GATECFG1] = 0xC3;      // what init leaves on the real chip
+    ctrl.reinit();
+    const int initsBefore = r.drv.inits;
+    r.drv.params[Drivers::MotorReg::GATECFG1] = 0xC3;
+    // one bad read is not a reset
+    r.drv.params[Drivers::MotorReg::GATECFG1] = 0x00;
+    r.clock.now += 600; r.motorTaskPass();
+    r.drv.params[Drivers::MotorReg::GATECFG1] = 0xC3;
+    r.clock.now += 600; r.motorTaskPass();
+    EXPECT_EQ(r.drv.inits, initsBefore);
+    // two in a row is: the chip is initialised again (and the config re-applied)
+    r.drv.params[Drivers::MotorReg::GATECFG1] = 0x00;
+    r.clock.now += 600; r.motorTaskPass();
+    r.clock.now += 600; r.motorTaskPass();
+    EXPECT_EQ(r.drv.inits, initsBefore + 1);
+    EXPECT_TRUE(ctrl.chipResetsRepaired() >= 1u);
+}
+
 TEST(current_mode_writes_tval_and_the_cm_vm_bit_through_the_hiz_path) {
     Rig r;
     bool ok = false;

@@ -63,6 +63,7 @@ namespace MotorReg {
     constexpr uint8_t FS_SPD     = 0x15;
     constexpr uint8_t STEP_MODE  = 0x16;
     constexpr uint8_t ALARM_EN   = 0x17;
+    constexpr uint8_t GATECFG1   = 0x18;   // gate drive: written only by init, 0 after a chip reset
     constexpr uint8_t CONFIG     = 0x1A;
 } // namespace MotorReg
 

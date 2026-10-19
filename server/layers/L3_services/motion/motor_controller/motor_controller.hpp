@@ -73,6 +73,8 @@ public:
      * builds motor + control telemetry, detects fault/stall edges.
      */
     void periodicUpdate() override;
+    /// Chip resets seen (supply drop) and repaired by re-initialising, since boot
+    uint32_t chipResetsRepaired() const { return m_chipResets; }
 
     // ── Config application ──
 
@@ -117,6 +119,15 @@ private:
     bool m_speedOverrideActive = false;
     uint32_t m_stoppedSinceMs = 0;     ///< tick when the motor was last seen stopped and energised (0: not)
     bool     m_stoppedSeen = false;
+
+    // Chip-reset watch: the powerSTEP01 can reset behind the firmware's back (its supply
+    // dropped). GATECFG1 is written only by init; when it stops reading what init left,
+    // twice in a row, the chip is initialised again.
+    static constexpr uint32_t RESET_CHECK_MS = 500;
+    uint16_t m_initSignature = 0;      ///< GATECFG1 as init left it (0: no check, e.g. fakes)
+    uint32_t m_resetCheckMs = 0;
+    uint8_t  m_resetMismatches = 0;
+    uint32_t m_chipResets = 0;         ///< chip resets seen and repaired since boot
 
     // Direction/mode tracking
     bool m_lastRunForward = true;

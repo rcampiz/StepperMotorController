@@ -269,6 +269,30 @@ void MotorController::periodicUpdate()
 {
     Trace::setCurrentServiceId(Trace::SVC_MOTION);
 
+    // The powerSTEP01 can reset behind the firmware's back: its supply dropped (an E-stop
+    // that cuts motor power, a loose VS lead) and every register is back at its default,
+    // the gate drive (4 mA, too weak for the IHM03A1 MOSFETs) and OC_SD (overcurrent
+    // shutdown on) with it, so the next enable trips OCD and falls back to Hi-Z (bench
+    // 2026-10-19: MOT:EN did nothing, STATUS showed OCD). GATECFG1 is written only by init:
+    // when it reads something else twice in a row (~1 s), initialise the chip again.
+    if (m_clock != nullptr && m_initSignature != 0) {
+        const uint32_t now = m_clock->getTickMs();
+        if (now - m_resetCheckMs >= RESET_CHECK_MS) {
+            m_resetCheckMs = now;
+            if (static_cast<uint16_t>(m_driver->getParam(MotorReg::GATECFG1)) != m_initSignature) {
+                if (++m_resetMismatches >= 2) {
+                    m_chipResets++;
+                    m_continuousRunActive = false;
+                    motion.control.supervisor.goIdle();
+                    motion.control.trim.reset();
+                    reinit();
+                }
+            } else {
+                m_resetMismatches = 0;
+            }
+        }
+    }
+
     // Read motor status and position/speed, and publish them. The service owns
     // the telemetry write; the harness tap (if any) is a pure observer.
     MotorStatus status = m_driver->getStatus();
@@ -621,6 +645,9 @@ bool MotorController::setStepModeSafe(uint8_t mode,
 void MotorController::reinit()
 {
     m_driver->init();
+    // What init leaves in GATECFG1 is the signature of an initialised chip (see periodicUpdate)
+    m_initSignature = static_cast<uint16_t>(m_driver->getParam(MotorReg::GATECFG1));
+    m_resetMismatches = 0;
     applyConfig();
 }
 
