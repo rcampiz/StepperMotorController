@@ -5,6 +5,7 @@
 
 #include "ui/screens/saver_screen.hpp"
 #include "ui/theme.hpp"
+#include "ui/display_scratch.hpp"
 #include "harness/defs/harness_l3_l4.hpp"
 #include "harness/pins/protocol_version.hpp"
 #include <string.h>
@@ -221,6 +222,7 @@ constexpr uint16_t STAR     = rgb(255, 255, 255);
 constexpr uint16_t STAR_DIM = rgb(150, 130, 210);
 constexpr int16_t W = 240;
 constexpr int16_t H = 320;
+static_assert(W * 2 == ScratchRow::BYTES, "a saver row is one panel row");
 constexpr float GRID_K = 150.0f;      // floor row = horizon + K / depth
 constexpr float GRID_STEP = 26.0f;    // vertical lines' spacing on the bottom row
 constexpr int16_t MIN_LINE_ROW = 18;  // above this the horizontal lines would be < 2 px apart
@@ -567,18 +569,21 @@ uint16_t SaverScreen::synthUpper(int16_t x, int16_t y) const
 
 void SaverScreen::synthFullPaint(Services::ICanvas& lcd)
 {
-    static uint8_t row[W * 2];
     lcd.waitForVSync();
-    lcd.streamBitmapStart(0, 0, W, static_cast<uint16_t>(m_horizon + 1));
-    for (int16_t y = 0; y <= m_horizon; y++) {
-        for (int16_t x = 0; x < W; x++) {
-            const uint16_t c = synthUpper(x, y);
-            row[x * 2] = static_cast<uint8_t>(c >> 8);
-            row[x * 2 + 1] = static_cast<uint8_t>(c & 0xFF);
+    {
+        ScratchRow lease;                   // the Display task's shared row; given back before synthFloor
+        uint8_t* const row = lease.data();
+        lcd.streamBitmapStart(0, 0, W, static_cast<uint16_t>(m_horizon + 1));
+        for (int16_t y = 0; y <= m_horizon; y++) {
+            for (int16_t x = 0; x < W; x++) {
+                const uint16_t c = synthUpper(x, y);
+                row[x * 2] = static_cast<uint8_t>(c >> 8);
+                row[x * 2 + 1] = static_cast<uint8_t>(c & 0xFF);
+            }
+            lcd.streamBitmapData(row, ScratchRow::BYTES);
         }
-        lcd.streamBitmapData(row, sizeof row);
+        lcd.streamBitmapEnd();
     }
-    lcd.streamBitmapEnd();
     for (uint8_t i = 0; i < STAR_COUNT; i++) {
         lcd.drawPixel(m_starX[i], m_starY[i], (i % 3) ? STAR_DIM : STAR);
     }
@@ -588,7 +593,8 @@ void SaverScreen::synthFullPaint(Services::ICanvas& lcd)
 void SaverScreen::synthFloor(Services::ICanvas& lcd)
 {
     const Palette& P = PALETTES[m_palette];
-    static uint8_t row[W * 2];
+    ScratchRow lease;                       // the Display task's shared row
+    uint8_t* const row = lease.data();
     const int16_t rows = static_cast<int16_t>(H - m_horizon - 1);
     lcd.streamBitmapStart(0, static_cast<uint16_t>(m_horizon + 1), W, static_cast<uint16_t>(rows));
     for (int16_t r = 1; r <= rows; r++) {
@@ -617,14 +623,15 @@ void SaverScreen::synthFloor(Services::ICanvas& lcd)
                 }
             }
         }
-        lcd.streamBitmapData(row, sizeof row);
+        lcd.streamBitmapData(row, ScratchRow::BYTES);
     }
     lcd.streamBitmapEnd();
 }
 
 void SaverScreen::synthSunBox(Services::ICanvas& lcd)
 {
-    static uint8_t row[W * 2];
+    ScratchRow lease;                       // the Display task's shared row
+    uint8_t* const row = lease.data();
     const int16_t sunCY = static_cast<int16_t>(m_horizon - m_sunR / 2);
     int16_t y0 = static_cast<int16_t>(sunCY - m_sunR / 5);              // the banded part only
     int16_t x0 = static_cast<int16_t>(m_sunX - m_sunR);
@@ -654,7 +661,8 @@ void SaverScreen::synthTitle(Services::ICanvas& lcd, uint16_t t)
     // small angle and bobbed, composited row by row from the mask (inverse-rotating each
     // pixel into it). At alpha 0 it is just the scene, stars put back.
     buildTitleMask();
-    static uint8_t row[W * 2];
+    ScratchRow lease;                       // the Display task's shared row
+    uint8_t* const row = lease.data();
     const int16_t x0 = m_titleX, y0 = m_titleY;
     const int16_t w = static_cast<int16_t>(2 * BOX_HW), rows = static_cast<int16_t>(2 * BOX_HH);
     const int a = m_titleAlpha;

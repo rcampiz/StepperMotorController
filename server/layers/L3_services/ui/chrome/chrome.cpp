@@ -5,6 +5,7 @@
 
 #include "ui/chrome/chrome.hpp"
 #include "ui/theme.hpp"
+#include "ui/display_scratch.hpp"
 #include <string.h>
 #include <stdio.h>
 
@@ -92,7 +93,8 @@ void composeSelection(Services::ICanvas& lcd)
         return glyphInk(lcd, sel.label, labelLen, static_cast<int16_t>(gx - (MED_H - 1 - gy) / 4), gy);
     };
 
-    static uint8_t row[WIDTH * 2];
+    ScratchRow lease;                       // the Display task's shared row
+    uint8_t* const row = lease.data();
     lcd.streamBitmapStart(sel.x, sel.y, sel.w, sel.h);
     for (uint16_t r = 0; r < sel.h; r++) {
         const int16_t gy = static_cast<int16_t>(r - PAD_Y);

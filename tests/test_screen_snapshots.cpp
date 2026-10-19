@@ -26,6 +26,7 @@
 #include "L3_services/ui/screen_manager/screen_manager.hpp"
 #include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include "L3_services/ui/theme.hpp"
+#include "L3_services/ui/display_scratch.hpp"
 #include "F_platform/boundary/iclock.hpp"
 #include "F_platform/boundary/ilock.hpp"
 #include <sys/stat.h>
@@ -545,5 +546,10 @@ TEST(graph_screen_draws_a_trace_from_telemetry) {
     rig.frame();
     rig.key(UI::JoyDirection::LEFT);
     EXPECT_EQ(rig.mgr.depth(), 1);
+}
+
+// Last in the file: every screen above has drawn through the shared row by now
+TEST(the_shared_scratch_row_was_never_taken_twice_at_once) {
+    EXPECT_EQ(UI::ScratchRow::collisions(), 0u);
 }
 

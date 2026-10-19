@@ -192,6 +192,7 @@
         "server/layers/L3_services/safety/safety_dispatch/safety_dispatch.hpp",
         "server/layers/L3_services/safety/safety_service/safety_service.cpp",
         "server/layers/L3_services/safety/safety_service/safety_service.hpp",
+        "server/layers/L3_services/ui/display_scratch.hpp",
         "server/layers/L3_services/ui/screen.hpp",
         "server/layers/L3_services/ui/screen_care.hpp",
         "server/layers/L3_services/ui/theme.hpp",

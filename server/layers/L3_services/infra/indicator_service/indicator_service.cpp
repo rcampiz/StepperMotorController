@@ -7,6 +7,7 @@
 #include "harness/defs/harness_l3_l4.hpp"
 #include "graphics/trig_lut/trig_lut.hpp"
 #include "graphics/primitives/primitives.hpp"
+#include "ui/display_scratch.hpp"
 #include <stdio.h>
 #include <string.h>
 
@@ -224,7 +225,9 @@ void IndicatorService::buildChevrons(int8_t dir) {
 
 // ------------------------------------------------------------------------------------------
 void IndicatorService::renderFrame(bool rings, bool arrow, bool ringsShown, bool arrowShown) {
-    static uint8_t buf[Services::Canvas::WIDTH * 2];
+    static_assert(Services::Canvas::WIDTH * 2 <= UI::ScratchRow::BYTES, "a span fits the shared row");
+    UI::ScratchRow lease;                   // the Display task's shared row (tick runs there)
+    uint8_t* const buf = lease.data();
     auto put = [&](int x0, int x1, uint16_t y) {
         if (x1 < x0) return;
         m_lcd->streamBitmapStart(static_cast<uint16_t>(x0), y, static_cast<uint16_t>(x1 - x0 + 1), 1);

@@ -8,6 +8,7 @@
 #include "ui/screens/estop_screen.hpp"
 #include "ui/chrome/chrome.hpp"
 #include "ui/theme.hpp"
+#include "ui/display_scratch.hpp"
 #include "harness/defs/harness_l3_l4.hpp"
 #include "L3_services/infra/telemetry_store/telemetry_store.hpp"
 #include <stdio.h>
@@ -160,7 +161,8 @@ void EstopScreen::drawTitle(Services::ICanvas& lcd)
 {
     const char* word = m_fault ? "FAULT" : "E-STOP";
     buildMask(word);
-    static uint8_t row[Theme::WIDTH * 2];
+    ScratchRow lease;                       // the Display task's shared row
+    uint8_t* const row = lease.data();
     const int16_t w = static_cast<int16_t>(2 * BOX_HW), rows = static_cast<int16_t>(2 * BOX_HH);
     const int16_t x0 = static_cast<int16_t>(Theme::WIDTH / 2 - BOX_HW + m_offX);
     const int16_t y0 = static_cast<int16_t>(TITLE_Y - 6 + m_offY);
@@ -231,7 +233,8 @@ uint16_t EstopScreen::ink(uint16_t c) const
 void EstopScreen::drawBands(Services::ICanvas& lcd)
 {
     // Diagonal neon-yellow / page stripes, 12 px wide, crawling one pixel per frame
-    static uint8_t row[Theme::WIDTH * 2];
+    ScratchRow lease;                       // the Display task's shared row
+    uint8_t* const row = lease.data();
     for (int band = 0; band < 2; band++) {
         const uint16_t y0 = band == 0 ? 0 : static_cast<uint16_t>(Theme::HEIGHT - BAND_H);
         lcd.streamBitmapStart(0, y0, Theme::WIDTH, BAND_H);
@@ -242,7 +245,7 @@ void EstopScreen::drawBands(Services::ICanvas& lcd)
                 row[x * 2] = static_cast<uint8_t>(c >> 8);
                 row[x * 2 + 1] = static_cast<uint8_t>(c & 0xFF);
             }
-            lcd.streamBitmapData(row, sizeof row);
+            lcd.streamBitmapData(row, ScratchRow::BYTES);
         }
         lcd.streamBitmapEnd();
     }
@@ -252,7 +255,8 @@ void EstopScreen::drawGrid(Services::ICanvas& lcd)
 {
     // A grid like the saver's floor, scrolling toward the viewer; as a ceiling it is the same
     // grid upside down (its horizon along the bottom edge)
-    static uint8_t row[Theme::WIDTH * 2];
+    ScratchRow lease;                       // the Display task's shared row
+    uint8_t* const row = lease.data();
     constexpr float K = 60.0f;
     const uint16_t lineColour = PALETTES[m_pal].grid;
     const uint16_t y0 = m_gridTop ? GRID_CEIL_Y : GRID_FLOOR_Y;
@@ -283,7 +287,7 @@ void EstopScreen::drawGrid(Services::ICanvas& lcd)
                 }
             }
         }
-        lcd.streamBitmapData(row, sizeof row);
+        lcd.streamBitmapData(row, ScratchRow::BYTES);
     }
     lcd.streamBitmapEnd();
 }
