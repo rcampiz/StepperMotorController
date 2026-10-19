@@ -26,6 +26,16 @@ public:
     virtual uint32_t getMicrostepsPerRev() = 0;
     virtual uint16_t getFullStepsPerRev() = 0;
 
+    // The driver's settings in physical units (protocol 3: DRV:CFG:CURRENT/DUTY/USTEP/...)
+    /// As asked for and stored (the microsteps asked for, the levels as given)
+    virtual Harness::DriverSettings driverSettings() = 0;
+    /// What the driver puts in force for them (its quantize(): its grid, the resolution capped
+    /// for the drive mode); what DRV:CFG:APPLY writes and the LCD shows
+    virtual Harness::DriverSettings driverSettingsInForce() = 0;
+    /// Replace the stored settings (RAM; DRV:CFG:APPLY puts them in force, SAVE keeps them).
+    /// OutOfRange when a changed value is outside the caps (Harness::*WithinCaps).
+    virtual Harness::ServiceStatus configSetDriverSettings(const Harness::DriverSettings& s) = 0;
+
     // Flash persistence
     /// Ok, StoreFull (journal full while the motor moves: stop and save again) or FlashError.
     virtual Harness::ServiceStatus configSaveToFlash() = 0;

@@ -10,6 +10,7 @@ namespace Protocol {
 // DRV:STEP_MODE <0-7> — microstep mode change (log2 of the microsteps per full step; the
 // driver releases its outputs for the write if it needs to, and caps the resolution)
 void CommandParser::cmdDrvStepMode(const ParsedCommand &cmd) {
+  // @deprecated DRV:USTEP (protocol 3; kept one release)
   const unsigned maxMode = Harness::microstepsLog2(m_dispatcher.driverCaps().maxMicrostepsAny());
   if (cmd.argCount < 1) {
     respondErr("Usage: DRV:STEP_MODE <0-7>");   // protocol 2's step-mode range (log2 microsteps)
@@ -74,6 +75,7 @@ void CommandParser::cmdDrvStepMode(const ParsedCommand &cmd) {
 
 // DRV:STEP_MODE? — the resolution in force, read back by the driver (capped for the drive mode)
 void CommandParser::cmdDrvStepModeQuery() {
+  // @deprecated DRV:USTEP? (protocol 3; kept one release)
   Harness::MotorDebugParams info = {};
   m_dispatcher.motorGetDebugInfo(info, Harness::DriverDiagView::NONE);
   const uint8_t mode = Harness::microstepsLog2(info.microsteps != 0 ? info.microsteps : 1);

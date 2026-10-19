@@ -36,7 +36,8 @@ constexpr uint32_t telemetryPeriodFloorMs(uint32_t baud, size_t lineBytes = STAT
 /// the powerSTEP01 SPEED register values when the firmware worked in chip units: 2^-28 step
 /// per 250 ns tick, i.e. floor(fsps x 2^20 / 15625) (67.108864 per full step/s). L3 now
 /// works in full steps/s; this is the one place that converts back, for wire compatibility
-/// only (driver boundary step 4 sends steps/s and removes it). Exact for whole steps/s
+/// only. Protocol 3 sends base_fsps / trim_fsps / final_fsps beside them; the old three are
+/// deprecated and go with the protocol 2 aliases. Exact for whole steps/s
 /// (fsps x 2^20 is exact in float); truncates toward zero; saturates to the int32 range.
 inline int32_t protocol2SpeedUnits(float fsps) {
     if (fsps < 0.0f) {
@@ -46,6 +47,15 @@ inline int32_t protocol2SpeedUnits(float fsps) {
     if (!(fsps > 0.0f)) return 0;                       // 0 or NaN
     if (fsps >= 32000000.0f) return INT32_MAX;          // 2^31 x 15625 / 2^20
     return static_cast<int32_t>(static_cast<uint64_t>(fsps * 1048576.0f) / 15625u);
+}
+
+/// Telemetry speeds in full steps/s, bounded for formatting (+-99999.9: far beyond any driver;
+/// keeps the worst-case status line inside STATUS_JSON_BUF with its margin)
+inline double clampSpeedFsps(float fsps) {
+    if (!(fsps == fsps)) return 0.0;
+    if (fsps > 99999.9f) return 99999.9;
+    if (fsps < -99999.9f) return -99999.9;
+    return static_cast<double>(fsps);
 }
 
 /// base_spd, trim_spd, final_spd in protocol 2 units; trim is final - base, so they add up

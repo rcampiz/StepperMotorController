@@ -1,5 +1,5 @@
 {
-  "protocol_version": 2,
+  "protocol_version": 3,
   "generated_by": "scripts/arch/gen_protocol.py",
   "limits": {
     "line_max_chars": 127,
@@ -187,6 +187,8 @@
     "uvlo",
     "stall_a",
     "stall_b",
+    "faults",
+    "driver_raw",
     "encoder",
     "count",
     "velocity",
@@ -210,6 +212,8 @@
     "base_spd",
     "trim_spd",
     "final_spd",
+    "base_fsps",
+    "final_fsps",
     "trim_frozen",
     "vel_quality",
     "heartbeat",
@@ -427,7 +431,8 @@
       "note": "top-level (no prefix)",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "FMT",
@@ -455,7 +460,8 @@
       "note": "top-level (no prefix)",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "FMT?",
@@ -479,7 +485,8 @@
       "note": "top-level (no prefix)",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "MOT:MOVE",
@@ -503,7 +510,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "MOT:GOTO",
@@ -525,7 +533,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "MOT:RUN",
@@ -548,7 +557,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "MOT:STOP",
@@ -565,7 +575,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "MOT:HOME",
@@ -584,7 +595,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "MOT:CFG:ACCEL",
@@ -605,7 +617,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "MOT:CFG:DECEL",
@@ -626,7 +639,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "MOT:CFG:MAXSPD",
@@ -647,7 +661,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "MOT:EN",
@@ -664,7 +679,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "MOT:DIS",
@@ -681,7 +697,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "MOT:ZERO",
@@ -698,7 +715,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:FAULT:CLEAR",
@@ -715,7 +733,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:FAULT:FORCE",
@@ -732,7 +751,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:FAULT:STAT?",
@@ -749,7 +769,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:HB",
@@ -776,7 +797,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:ECHO",
@@ -793,7 +815,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:HB:TIMEOUT",
@@ -817,11 +840,14 @@
           ]
         }
       ],
-      "errors": [],
+      "errors": [
+        "Watchdog can be disarmed only with the motor in Hi-Z (MOT:DIS); widen it instead"
+      ],
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:TLM:RATE",
@@ -850,7 +876,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:TLM:FMT",
@@ -880,7 +907,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:BAUD",
@@ -908,7 +936,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:EVT:EN",
@@ -927,7 +956,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:DELAY",
@@ -955,7 +985,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:ESTOP",
@@ -982,7 +1013,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:TICK?",
@@ -1006,7 +1038,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:ECHO?",
@@ -1028,7 +1061,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:HB:STAT?",
@@ -1056,7 +1090,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:TLM:RATE?",
@@ -1081,7 +1116,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:TLM:FMT?",
@@ -1106,7 +1142,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:VER?",
@@ -1131,7 +1168,8 @@
       "note": "",
       "multiline": true,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:HELP?",
@@ -1156,7 +1194,8 @@
       "note": "",
       "multiline": true,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:EVT:DIS",
@@ -1173,7 +1212,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:EVT:STAT?",
@@ -1190,7 +1230,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:ZERO",
@@ -1207,7 +1248,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYST:DELAY?",
@@ -1231,7 +1273,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYNC:QUEUE",
@@ -1257,7 +1300,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYNC:START:AT",
@@ -1276,7 +1320,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYNC:ARM",
@@ -1293,7 +1338,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYNC:START",
@@ -1310,7 +1356,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "SYNC:CLEAR",
@@ -1327,7 +1374,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DIAG:PING",
@@ -1354,7 +1402,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DIAG:STAT?",
@@ -1371,7 +1420,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DIAG:TASKS?",
@@ -1398,7 +1448,8 @@
       "note": "",
       "multiline": true,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DIAG:MEM?",
@@ -1425,7 +1476,8 @@
       "note": "",
       "multiline": true,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DIAG:HARNESS?",
@@ -1450,7 +1502,8 @@
       "note": "",
       "multiline": true,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:ENC:DBG?",
@@ -1476,7 +1529,8 @@
       "note": "special case in dispatcher",
       "multiline": true,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:MODE",
@@ -1495,7 +1549,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:ENC:FILT",
@@ -1519,14 +1574,15 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:ENC:FILT?",
       "prefix": "CTRL",
       "handler": "cmdEncFilter",
       "file": "encoder_handlers.cpp",
-      "min_args": 1,
+      "min_args": 0,
       "usage": [],
       "ascii_ok": [
         "NONE",
@@ -1540,10 +1596,11 @@
         "SMA window must be 2-32",
         "Unknown filter type or alpha out of range (0-255)"
       ],
-      "note": "",
+      "note": "query of CTRL:ENC:FILT",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:FOLLOW:THRESH",
@@ -1562,7 +1619,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:TRIM:GAINS",
@@ -1589,7 +1647,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:TRIM:LIMITS",
@@ -1616,7 +1675,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:TRIM:MAXPCT",
@@ -1644,7 +1704,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:SYSID:STEP",
@@ -1666,7 +1727,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:SYSID:RAMP",
@@ -1688,7 +1750,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:SYSID:SINE",
@@ -1711,7 +1774,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:SYSID:TRAPEZOID",
@@ -1733,7 +1797,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:SYSID:RECT",
@@ -1755,7 +1820,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:SYSID:DATA?",
@@ -1786,7 +1852,8 @@
       "note": "",
       "multiline": true,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:CAP:DATA?",
@@ -1808,11 +1875,14 @@
           ]
         }
       ],
-      "errors": [],
+      "errors": [
+        "No frozen capture at that offset (CTRL:CAP:FREEZE first)"
+      ],
       "note": "",
       "multiline": true,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:MODE?",
@@ -1829,7 +1899,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:ENC:STAT?",
@@ -1846,7 +1917,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:ENC?",
@@ -1877,7 +1949,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:ENC:ZERO",
@@ -1894,7 +1967,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:FOLLOW?",
@@ -1926,7 +2000,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:FOLLOW:THRESH?",
@@ -1955,7 +2030,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:FOLLOW:SAVE",
@@ -1972,7 +2048,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": true
+      "persists": true,
+      "deprecated": ""
     },
     {
       "name": "CTRL:FOLLOW:CLEAR",
@@ -1991,7 +2068,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:TRIM?",
@@ -2008,7 +2086,9 @@
           "command": "CTRL:TRIM?",
           "keys": [
             "active",
+            "base_fsps",
             "base_spd",
+            "final_fsps",
             "final_spd",
             "frozen",
             "i_limit",
@@ -2016,6 +2096,7 @@
             "kp",
             "max_pct",
             "out_limit",
+            "trim_fsps",
             "trim_spd",
             "vel_quality"
           ]
@@ -2025,7 +2106,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:TRIM:RESET",
@@ -2042,7 +2124,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:TRIM:SAVE",
@@ -2059,7 +2142,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": true
+      "persists": true,
+      "deprecated": ""
     },
     {
       "name": "CTRL:SYSID:STATUS?",
@@ -2084,7 +2168,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:SYSID:ABORT",
@@ -2101,7 +2186,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:CAP:FREEZE",
@@ -2124,11 +2210,14 @@
           ]
         }
       ],
-      "errors": [],
+      "errors": [
+        "No encoder sampler to capture"
+      ],
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:CAP:RESUME",
@@ -2145,7 +2234,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DEV:ID",
@@ -2166,7 +2256,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": true
+      "persists": true,
+      "deprecated": ""
     },
     {
       "name": "DEV:ROLE",
@@ -2185,7 +2276,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": true
+      "persists": true,
+      "deprecated": ""
     },
     {
       "name": "DEV:ID?",
@@ -2202,7 +2294,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DEV:ROLE?",
@@ -2225,7 +2318,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "UI:DISP:CLEAR",
@@ -2244,7 +2338,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "UI:DISP:TEXT",
@@ -2265,7 +2360,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "UI:DISP:RECT",
@@ -2286,7 +2382,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "UI:DISP:LINE",
@@ -2307,7 +2404,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "UI:DISP:BITMAP",
@@ -2333,7 +2431,8 @@
       "note": "",
       "multiline": false,
       "binary": true,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "UI:DISP:BITMAP:B64",
@@ -2355,7 +2454,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "UI:DISP:BITMAP:RLE",
@@ -2382,7 +2482,8 @@
       "note": "",
       "multiline": false,
       "binary": true,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "UI:DISP:INDICATOR",
@@ -2407,7 +2508,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "UI:LCD:REG",
@@ -2429,7 +2531,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "UI:FLASH:UPLOAD",
@@ -2453,7 +2556,8 @@
       "note": "",
       "multiline": false,
       "binary": true,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "UI:FLASH:SHOW",
@@ -2475,7 +2579,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "UI:FLASH:UPLOAD:RLE",
@@ -2502,7 +2607,8 @@
       "note": "",
       "multiline": false,
       "binary": true,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "UI:FLASH:DUMP",
@@ -2537,7 +2643,8 @@
       "note": "",
       "multiline": true,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "UI:FLASH:INFO",
@@ -2556,7 +2663,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "UI:FLASH:ERASE_ALL",
@@ -2576,7 +2684,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "UI:FLASH:TEST",
@@ -2593,7 +2702,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "UI:MODE",
@@ -2610,7 +2720,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "UI:MODE?",
@@ -2625,7 +2736,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DBG:MOTOR",
@@ -2651,7 +2763,8 @@
       "note": "special case in dispatcher",
       "multiline": true,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DBG:UNLOCK",
@@ -2668,7 +2781,8 @@
       "note": "special case in dispatcher",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DBG:LOCK",
@@ -2685,7 +2799,8 @@
       "note": "special case in dispatcher",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DBG:TRACE:DUMP",
@@ -2711,7 +2826,8 @@
       "note": "",
       "multiline": true,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DBG:TRACE:RESET",
@@ -2728,7 +2844,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DRV:REINIT",
@@ -2745,7 +2862,8 @@
       "note": "special case in dispatcher",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DRV:CFG:KVAL",
@@ -2765,7 +2883,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": "DRV:CFG:DUTY"
     },
     {
       "name": "DRV:CFG:DRIVE",
@@ -2779,12 +2898,14 @@
       "ascii_ok": [],
       "json": [],
       "errors": [
-        "Drive mode must be VOLTAGE or CURRENT"
+        "Drive mode must be VOLTAGE or CURRENT",
+        "The driver has no such drive mode (DRV:CAPS?)"
       ],
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DRV:CFG:TVAL",
@@ -2803,7 +2924,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": "DRV:CFG:CURRENT"
     },
     {
       "name": "DRV:CFG:PRED",
@@ -2819,12 +2941,14 @@
       ],
       "json": [],
       "errors": [
-        "PRED must be ON or OFF"
+        "PRED must be ON or OFF",
+        "tsw_us must be 4..128 (4 us steps)"
       ],
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": "no replacement, chip tuning"
     },
     {
       "name": "DRV:CFG:DECAY",
@@ -2843,7 +2967,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": "no replacement, chip tuning"
     },
     {
       "name": "DRV:CFG:IDLE",
@@ -2858,11 +2983,14 @@
         "<formatted text>"
       ],
       "json": [],
-      "errors": [],
+      "errors": [
+        "idle release is 0..60000 ms"
+      ],
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DRV:CFG:OCD",
@@ -2884,7 +3012,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": "DRV:CFG:OVERCURRENT"
     },
     {
       "name": "DRV:CFG:STALL",
@@ -2906,7 +3035,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": "DRV:CFG:STALL_TH"
     },
     {
       "name": "DRV:CFG:FAULT",
@@ -2930,7 +3060,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": "DRV:CFG:ALARMS for the flags (FAULT ACTION stays)"
     },
     {
       "name": "DRV:CFG:MOTION",
@@ -2952,7 +3083,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": "DRV:CFG:ACCEL, DRV:CFG:DECEL, DRV:CFG:MAXSPD"
     },
     {
       "name": "DRV:CFG:STEPMODE",
@@ -2974,7 +3106,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": "DRV:CFG:USTEP"
     },
     {
       "name": "DRV:STEP_MODE",
@@ -3006,7 +3139,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": "DRV:USTEP"
     },
     {
       "name": "DRV:FULL_STEPS",
@@ -3035,7 +3169,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DRV:ENC_PPR",
@@ -3063,7 +3198,591 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:CURRENT",
+      "prefix": "DRV",
+      "handler": "cmdDrvCurrent",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 4,
+      "usage": [
+        "DRV:CFG:CURRENT <hold_A> <run_A> <acc_A> <dec_A>"
+      ],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:CFG:CURRENT",
+          "keys": [
+            "acc_a",
+            "dec_a",
+            "drive_mode",
+            "hold_a",
+            "run_a"
+          ]
+        }
+      ],
+      "errors": [
+        "current must be <caps>-<caps> A",
+        "the driver has no current mode"
+      ],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:CURRENT?",
+      "prefix": "DRV",
+      "handler": "cmdDrvCurrent",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 0,
+      "usage": [
+        "DRV:CFG:CURRENT <hold_A> <run_A> <acc_A> <dec_A>"
+      ],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:CFG:CURRENT?",
+          "keys": [
+            "acc_a",
+            "dec_a",
+            "drive_mode",
+            "hold_a",
+            "run_a"
+          ]
+        }
+      ],
+      "errors": [
+        "current must be <caps>-<caps> A",
+        "the driver has no current mode"
+      ],
+      "note": "query of DRV:CFG:CURRENT",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:DUTY",
+      "prefix": "DRV",
+      "handler": "cmdDrvDuty",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 4,
+      "usage": [
+        "DRV:CFG:DUTY <hold> <run> <acc> <dec> (0..1)"
+      ],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:CFG:DUTY",
+          "keys": [
+            "acc_duty",
+            "dec_duty",
+            "drive_mode",
+            "hold_duty",
+            "run_duty"
+          ]
+        }
+      ],
+      "errors": [
+        "duty must be <caps>-<caps>",
+        "the driver has no voltage mode"
+      ],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:DUTY?",
+      "prefix": "DRV",
+      "handler": "cmdDrvDuty",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 0,
+      "usage": [
+        "DRV:CFG:DUTY <hold> <run> <acc> <dec> (0..1)"
+      ],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:CFG:DUTY?",
+          "keys": [
+            "acc_duty",
+            "dec_duty",
+            "drive_mode",
+            "hold_duty",
+            "run_duty"
+          ]
+        }
+      ],
+      "errors": [
+        "duty must be <caps>-<caps>",
+        "the driver has no voltage mode"
+      ],
+      "note": "query of DRV:CFG:DUTY",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:USTEP",
+      "prefix": "DRV",
+      "handler": "cmdDrvUstepConfig",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "DRV:CFG:USTEP <microsteps 1|2|4|...>"
+      ],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:CFG:USTEP",
+          "keys": [
+            "drive_mode",
+            "microsteps",
+            "microsteps_asked"
+          ]
+        }
+      ],
+      "errors": [
+        "microsteps (a power of two) must be <caps>-<caps>"
+      ],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:USTEP?",
+      "prefix": "DRV",
+      "handler": "cmdDrvUstepConfig",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 0,
+      "usage": [
+        "DRV:CFG:USTEP <microsteps 1|2|4|...>"
+      ],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:CFG:USTEP?",
+          "keys": [
+            "drive_mode",
+            "microsteps",
+            "microsteps_asked"
+          ]
+        }
+      ],
+      "errors": [
+        "microsteps (a power of two) must be <caps>-<caps>"
+      ],
+      "note": "query of DRV:CFG:USTEP",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:ACCEL",
+      "prefix": "DRV",
+      "handler": "cmdDrvAccel",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "DRV:CFG:ACCEL <full_steps/s^2>"
+      ],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:CFG:ACCEL",
+          "keys": [
+            "accel_fsps2"
+          ]
+        }
+      ],
+      "errors": [
+        "accel must be <caps>-<caps> full steps/s^2"
+      ],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:ACCEL?",
+      "prefix": "DRV",
+      "handler": "cmdDrvAccel",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 0,
+      "usage": [
+        "DRV:CFG:ACCEL <full_steps/s^2>"
+      ],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:CFG:ACCEL?",
+          "keys": [
+            "accel_fsps2"
+          ]
+        }
+      ],
+      "errors": [
+        "accel must be <caps>-<caps> full steps/s^2"
+      ],
+      "note": "query of DRV:CFG:ACCEL",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:DECEL",
+      "prefix": "DRV",
+      "handler": "cmdDrvDecel",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "DRV:CFG:DECEL <full_steps/s^2>"
+      ],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:CFG:DECEL",
+          "keys": [
+            "decel_fsps2"
+          ]
+        }
+      ],
+      "errors": [
+        "decel must be <caps>-<caps> full steps/s^2"
+      ],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:DECEL?",
+      "prefix": "DRV",
+      "handler": "cmdDrvDecel",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 0,
+      "usage": [
+        "DRV:CFG:DECEL <full_steps/s^2>"
+      ],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:CFG:DECEL?",
+          "keys": [
+            "decel_fsps2"
+          ]
+        }
+      ],
+      "errors": [
+        "decel must be <caps>-<caps> full steps/s^2"
+      ],
+      "note": "query of DRV:CFG:DECEL",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:MAXSPD",
+      "prefix": "DRV",
+      "handler": "cmdDrvMaxSpeed",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "DRV:CFG:MAXSPD <full_steps/s>"
+      ],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:CFG:MAXSPD",
+          "keys": [
+            "max_speed_fsps"
+          ]
+        }
+      ],
+      "errors": [
+        "max speed must be <caps>-<caps> full steps/s"
+      ],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:MAXSPD?",
+      "prefix": "DRV",
+      "handler": "cmdDrvMaxSpeed",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 0,
+      "usage": [
+        "DRV:CFG:MAXSPD <full_steps/s>"
+      ],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:CFG:MAXSPD?",
+          "keys": [
+            "max_speed_fsps"
+          ]
+        }
+      ],
+      "errors": [
+        "max speed must be <caps>-<caps> full steps/s"
+      ],
+      "note": "query of DRV:CFG:MAXSPD",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:OVERCURRENT",
+      "prefix": "DRV",
+      "handler": "cmdDrvOvercurrent",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "DRV:CFG:OVERCURRENT <amps>"
+      ],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:CFG:OVERCURRENT",
+          "keys": [
+            "overcurrent_a",
+            "overcurrent_v"
+          ]
+        }
+      ],
+      "errors": [
+        "overcurrent must be <caps>-<caps> A"
+      ],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:OVERCURRENT?",
+      "prefix": "DRV",
+      "handler": "cmdDrvOvercurrent",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 0,
+      "usage": [
+        "DRV:CFG:OVERCURRENT <amps>"
+      ],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:CFG:OVERCURRENT?",
+          "keys": [
+            "overcurrent_a",
+            "overcurrent_v"
+          ]
+        }
+      ],
+      "errors": [
+        "overcurrent must be <caps>-<caps> A"
+      ],
+      "note": "query of DRV:CFG:OVERCURRENT",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:STALL_TH",
+      "prefix": "DRV",
+      "handler": "cmdDrvStallThreshold",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "DRV:CFG:STALL_TH <0..1>"
+      ],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:CFG:STALL_TH",
+          "keys": [
+            "stall_threshold"
+          ]
+        }
+      ],
+      "errors": [
+        "stall threshold must be <caps>-<caps>",
+        "the driver has no stall detection"
+      ],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:STALL_TH?",
+      "prefix": "DRV",
+      "handler": "cmdDrvStallThreshold",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 0,
+      "usage": [
+        "DRV:CFG:STALL_TH <0..1>"
+      ],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:CFG:STALL_TH?",
+          "keys": [
+            "stall_threshold"
+          ]
+        }
+      ],
+      "errors": [
+        "stall threshold must be <caps>-<caps>",
+        "the driver has no stall detection"
+      ],
+      "note": "query of DRV:CFG:STALL_TH",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:ALARMS",
+      "prefix": "DRV",
+      "handler": "cmdDrvAlarms",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "DRV:CFG:ALARMS <fault> [fault...] | NONE | ALL"
+      ],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:CFG:ALARMS",
+          "keys": [
+            "alarms"
+          ]
+        }
+      ],
+      "errors": [
+        "unknown or not alarmable fault (DRV:CAPS? faults_alarmable)"
+      ],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:ALARMS?",
+      "prefix": "DRV",
+      "handler": "cmdDrvAlarms",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 0,
+      "usage": [
+        "DRV:CFG:ALARMS <fault> [fault...] | NONE | ALL"
+      ],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:CFG:ALARMS?",
+          "keys": [
+            "alarms"
+          ]
+        }
+      ],
+      "errors": [
+        "unknown or not alarmable fault (DRV:CAPS? faults_alarmable)"
+      ],
+      "note": "query of DRV:CFG:ALARMS",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:USTEP",
+      "prefix": "DRV",
+      "handler": "cmdDrvUstep",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "DRV:USTEP <microsteps 1|2|4|...>"
+      ],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:USTEP",
+          "keys": [
+            "microsteps",
+            "microsteps_asked",
+            "microsteps_per_rev"
+          ]
+        }
+      ],
+      "errors": [
+        "Motor must be idle to change the resolution",
+        "microsteps (a power of two) must be <caps>-<caps>",
+        "the driver did not take the resolution"
+      ],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DRV:CFG?",
@@ -3088,7 +3807,8 @@
       "note": "",
       "multiline": true,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": "DRV:CFG:PHYS?"
     },
     {
       "name": "DRV:CFG:SAVE",
@@ -3105,7 +3825,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": true
+      "persists": true,
+      "deprecated": ""
     },
     {
       "name": "DRV:CFG:LOAD",
@@ -3124,7 +3845,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DRV:CFG:RESET",
@@ -3143,7 +3865,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": true
+      "persists": true,
+      "deprecated": ""
     },
     {
       "name": "DRV:CFG:APPLY",
@@ -3165,7 +3888,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": true
+      "persists": true,
+      "deprecated": ""
     },
     {
       "name": "DRV:STEP_MODE?",
@@ -3192,7 +3916,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": "DRV:USTEP?"
     },
     {
       "name": "DRV:FULL_STEPS?",
@@ -3217,7 +3942,8 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "DRV:ENC_PPR?",
@@ -3241,7 +3967,133 @@
       "note": "",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CAPS?",
+      "prefix": "DRV",
+      "handler": "cmdDrvCaps",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<lines> then OK <n>"
+      ],
+      "json": [
+        {
+          "command": "DRV:CAPS?",
+          "keys": [
+            "accel_max_fsps2",
+            "accel_min_fsps2",
+            "accel_step_fsps2",
+            "current_mode",
+            "current_step_a",
+            "duty_step",
+            "fault_bits",
+            "faults_alarmable",
+            "faults_reported",
+            "hardware_positioning",
+            "max_current_a",
+            "max_microsteps_current",
+            "max_microsteps_voltage",
+            "max_position_usteps",
+            "max_speed_fsps",
+            "max_speed_limit_fsps",
+            "min_position_usteps",
+            "overcurrent_max_a",
+            "overcurrent_min_a",
+            "overcurrent_ohms",
+            "overcurrent_sense",
+            "overcurrent_step_a",
+            "speed_limit_step_fsps",
+            "stall_detect",
+            "stall_step",
+            "standby_pin",
+            "sync_pulses_per_full_step",
+            "voltage_mode"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": "",
+      "multiline": true,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:PHYS?",
+      "prefix": "DRV",
+      "handler": "cmdDrvPhysShow",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<lines> then OK <n>"
+      ],
+      "json": [
+        {
+          "command": "DRV:CFG:PHYS?",
+          "keys": [
+            "acc_a",
+            "acc_duty",
+            "accel_fsps2",
+            "alarms",
+            "dec_a",
+            "dec_duty",
+            "decel_fsps2",
+            "drive_mode",
+            "fault_action",
+            "full_steps_per_rev",
+            "hold_a",
+            "hold_duty",
+            "idle_release_ms",
+            "max_speed_fsps",
+            "microsteps",
+            "microsteps_asked",
+            "overcurrent_a",
+            "overcurrent_v",
+            "run_a",
+            "run_duty",
+            "source",
+            "stall_threshold"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": "",
+      "multiline": true,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:USTEP?",
+      "prefix": "DRV",
+      "handler": "cmdDrvUstepQuery",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<HEAD> key=value ..."
+      ],
+      "json": [
+        {
+          "command": "DRV:USTEP?",
+          "keys": [
+            "drive_mode",
+            "microsteps",
+            "microsteps_per_rev"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:ENC:FILT:WINDOW",
@@ -3261,7 +4113,8 @@
       "note": "sub-command",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:ENC:FILT:EMA",
@@ -3281,7 +4134,8 @@
       "note": "sub-command",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:ENC:FILT:SMA",
@@ -3301,7 +4155,8 @@
       "note": "sub-command",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:ENC:FILT:PADE",
@@ -3322,7 +4177,8 @@
       "note": "sub-command",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:ENC:FILT:BIQUAD",
@@ -3342,7 +4198,8 @@
       "note": "sub-command",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:ENC:FILT:NOTCH",
@@ -3363,7 +4220,8 @@
       "note": "sub-command",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:ENC:FILT:HOLT",
@@ -3384,7 +4242,8 @@
       "note": "sub-command",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:ENC:FILT:RATE",
@@ -3404,7 +4263,8 @@
       "note": "sub-command",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     },
     {
       "name": "CTRL:ENC:FILT:SAVE",
@@ -3421,7 +4281,8 @@
       "note": "sub-command",
       "multiline": false,
       "binary": false,
-      "persists": true
+      "persists": true,
+      "deprecated": ""
     },
     {
       "name": "CTRL:ENC:FILT:RESET",
@@ -3440,7 +4301,8 @@
       "note": "sub-command",
       "multiline": false,
       "binary": false,
-      "persists": false
+      "persists": false,
+      "deprecated": ""
     }
   ],
   "oob_estop_byte": 24

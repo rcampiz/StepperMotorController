@@ -140,6 +140,8 @@ public:
   void respondErr(const char *code, const char *msg);   ///< explicit code (F6)
   /// ERROR with a range taken from the driver's caps: fmt holds one or two %ld
   void respondRange(const char *fmt, long a, long b = 0);
+  /// OUT_OF_RANGE "<what> must be <lo>-<hi> <unit>", the range from the driver's caps
+  void respondOutOfRange(const char *what, double lo, double hi, const char *unit);
 
   /**
    * @brief Send multi-line data response
@@ -429,6 +431,24 @@ private:
   void cmdMotorConfigMotion(const ParsedCommand &cmd);
   void cmdMotorConfigStepMode(const ParsedCommand &cmd);
   void cmdMotorConfigApply();
+
+  // Protocol 3: the driver's capabilities and its settings in physical units
+  // (handlers/driver_settings_handlers.cpp). A setter's "<name>?" twin is the query.
+  void cmdDrvCaps();                                  // DRV:CAPS?
+  void cmdDrvPhysShow();                              // DRV:CFG:PHYS?
+  void cmdDrvCurrent(const ParsedCommand &cmd);       // DRV:CFG:CURRENT[?]
+  void cmdDrvDuty(const ParsedCommand &cmd);          // DRV:CFG:DUTY[?]
+  void cmdDrvUstepConfig(const ParsedCommand &cmd);   // DRV:CFG:USTEP[?]
+  void cmdDrvAccel(const ParsedCommand &cmd);         // DRV:CFG:ACCEL[?]
+  void cmdDrvDecel(const ParsedCommand &cmd);         // DRV:CFG:DECEL[?]
+  void cmdDrvMaxSpeed(const ParsedCommand &cmd);      // DRV:CFG:MAXSPD[?]
+  void cmdDrvOvercurrent(const ParsedCommand &cmd);   // DRV:CFG:OVERCURRENT[?]
+  void cmdDrvStallThreshold(const ParsedCommand &cmd);// DRV:CFG:STALL_TH[?]
+  void cmdDrvAlarms(const ParsedCommand &cmd);        // DRV:CFG:ALARMS[?]
+  void cmdDrvUstep(const ParsedCommand &cmd);         // DRV:USTEP: now, Hi-Z safe
+  void cmdDrvUstepQuery();                            // DRV:USTEP?: read back from the driver
+  /// The settings reply of a physical setter or its query (one OK line / one JSON object)
+  void replyDriverSettings(const char *what, bool changed);
 
   // Event command handlers (see docs/PROTOCOL_EVENTS_V1.md)
   void cmdEventEnable(const ParsedCommand &cmd);

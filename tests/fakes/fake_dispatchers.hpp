@@ -34,6 +34,9 @@ struct FakeMotorConfigDispatcher : Services::IMotorConfigDispatcher {
     Harness::DriverCaps driverCaps()  override { calls.push_back("driverCaps"); return Harness::DriverCaps{}; }
     uint32_t getMicrostepsPerRev()  override { calls.push_back("getMicrostepsPerRev"); return uint32_t{}; }
     uint16_t getFullStepsPerRev()  override { calls.push_back("getFullStepsPerRev"); return uint16_t{}; }
+    Harness::DriverSettings driverSettings()  override { calls.push_back("driverSettings"); return Harness::DriverSettings{}; }
+    Harness::DriverSettings driverSettingsInForce()  override { calls.push_back("driverSettingsInForce"); return Harness::DriverSettings{}; }
+    Harness::ServiceStatus configSetDriverSettings(const Harness::DriverSettings& s)  override { calls.push_back("configSetDriverSettings"); return Harness::ServiceStatus{}; }
     Harness::ServiceStatus configSaveToFlash()  override { calls.push_back("configSaveToFlash"); return Harness::ServiceStatus{}; }
     bool configLoadFromFlash()  override { calls.push_back("configLoadFromFlash"); return bool{}; }
     bool configFactoryReset()  override { calls.push_back("configFactoryReset"); return bool{}; }

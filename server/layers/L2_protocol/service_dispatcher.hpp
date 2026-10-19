@@ -36,6 +36,9 @@ public:
     Harness::DriverCaps driverCaps() override;
     uint32_t getMicrostepsPerRev() override;
     uint16_t getFullStepsPerRev() override;
+    Harness::DriverSettings driverSettings() override;
+    Harness::DriverSettings driverSettingsInForce() override;
+    Harness::ServiceStatus configSetDriverSettings(const Harness::DriverSettings& s) override;
     Harness::ServiceStatus configSaveToFlash() override;
     bool configLoadFromFlash() override;
     bool configFactoryReset() override;

@@ -9,7 +9,8 @@
  *    CMake passes in as SMC_FW_VERSION (cmake/smc_version.cmake). The client package carries
  *    the same number. Bumped when a release is cut (CHANGELOG.md).
  *  - PROTOCOL_VERSION: the wire protocol, independent of the release; it changes only when
- *    the protocol does. docs/PROTOCOL.md is generated against it; clients refuse an unknown value.
+ *    the protocol does. docs/PROTOCOL.md is generated against it; a client refuses a value it
+ *    does not know (the Python client takes 2 and 3, docs/PROTOCOL.md section 7).
  *  - buildId(): which tree was compiled, regenerated on every build (see build_id.cpp).
  */
 #pragma once
@@ -21,7 +22,7 @@
 
 namespace Harness {
 
-constexpr uint8_t     PROTOCOL_VERSION = 2;          // protocol pass of 2026-10-06; docs/PROTOCOL.md section 7
+constexpr uint8_t     PROTOCOL_VERSION = 3;          // 3: driver in physical units (2026-10-19); docs/PROTOCOL.md section 7
 constexpr const char* FW_VERSION       = SMC_FW_VERSION;
 constexpr const char* IDN_VENDOR       = "SMC";
 constexpr const char* IDN_MODEL        = "NUCLEO-F401RE-IHM03A1";

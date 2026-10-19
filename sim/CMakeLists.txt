@@ -31,6 +31,7 @@ set(FIRMWARE_SOURCES
     ${L2}/command_parser.cpp
     ${L2}/service_dispatcher.cpp
     ${L2}/event_codec.cpp
+    ${L2}/kv_reply.cpp
     ${L2_HANDLERS}
     ${L3}/comms/comms_service/comms_service.cpp
     ${L3}/comms/system_dispatch/system_dispatch.cpp

@@ -532,8 +532,9 @@ void CommandParser::dispatchDebug(const char *suffix,
   respondErr("UNKNOWN_CMD", "Unknown DBG command");
 }
 
-// DRV:* — Low-level driver config (KVAL, OCD, stall, step mode, encoder PPR,
-// flash persist)
+// DRV:* — the motor driver: capabilities, settings in physical units (protocol 3), the
+// protocol 2 chip-unit aliases (KVAL, TVAL, OCD, stall, step mode; deprecated), encoder PPR,
+// flash persist
 void CommandParser::dispatchDriver(const char *suffix,
                                    const ParsedCommand &cmd) {
   // DRV:REINIT — re-initialize powerSTEP01 and reapply saved config
@@ -557,6 +558,26 @@ void CommandParser::dispatchDriver(const char *suffix,
       {"STEP_MODE", &CommandParser::cmdDrvStepMode},
       {"FULL_STEPS", &CommandParser::cmdDrvFullSteps},
       {"ENC_PPR", &CommandParser::cmdDrvEncoderPPR},
+      // Protocol 3: physical units; "<name>?" is the query of the same handler
+      {"CFG:CURRENT", &CommandParser::cmdDrvCurrent},
+      {"CFG:CURRENT?", &CommandParser::cmdDrvCurrent},
+      {"CFG:DUTY", &CommandParser::cmdDrvDuty},
+      {"CFG:DUTY?", &CommandParser::cmdDrvDuty},
+      {"CFG:USTEP", &CommandParser::cmdDrvUstepConfig},
+      {"CFG:USTEP?", &CommandParser::cmdDrvUstepConfig},
+      {"CFG:ACCEL", &CommandParser::cmdDrvAccel},
+      {"CFG:ACCEL?", &CommandParser::cmdDrvAccel},
+      {"CFG:DECEL", &CommandParser::cmdDrvDecel},
+      {"CFG:DECEL?", &CommandParser::cmdDrvDecel},
+      {"CFG:MAXSPD", &CommandParser::cmdDrvMaxSpeed},
+      {"CFG:MAXSPD?", &CommandParser::cmdDrvMaxSpeed},
+      {"CFG:OVERCURRENT", &CommandParser::cmdDrvOvercurrent},
+      {"CFG:OVERCURRENT?", &CommandParser::cmdDrvOvercurrent},
+      {"CFG:STALL_TH", &CommandParser::cmdDrvStallThreshold},
+      {"CFG:STALL_TH?", &CommandParser::cmdDrvStallThreshold},
+      {"CFG:ALARMS", &CommandParser::cmdDrvAlarms},
+      {"CFG:ALARMS?", &CommandParser::cmdDrvAlarms},
+      {"USTEP", &CommandParser::cmdDrvUstep},
   };
   static const CmdEntry0 t0[] = {
       {"CFG?", &CommandParser::cmdMotorConfigShow},
@@ -567,6 +588,9 @@ void CommandParser::dispatchDriver(const char *suffix,
       {"STEP_MODE?", &CommandParser::cmdDrvStepModeQuery},
       {"FULL_STEPS?", &CommandParser::cmdDrvFullStepsQuery},
       {"ENC_PPR?", &CommandParser::cmdDrvEncoderPPRQuery},
+      {"CAPS?", &CommandParser::cmdDrvCaps},
+      {"CFG:PHYS?", &CommandParser::cmdDrvPhysShow},
+      {"USTEP?", &CommandParser::cmdDrvUstepQuery},
   };
   if (dispatch1(suffix, t1, NCMD(t1), cmd))
     return;

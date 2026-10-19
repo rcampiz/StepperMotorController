@@ -140,4 +140,50 @@ inline uint8_t microstepsLog2(uint16_t microsteps)
     return k;
 }
 
+// --- What a host may ask for (driver boundary step 4): the protocol's ranges and L3's check ---
+// A value within half a resolution step of a range end is accepted (the driver rounds it onto
+// its grid, quantize() says where). NaN is never within a range.
+
+inline bool withinRange(float v, float lo, float hi, float step)
+{
+    const float slack = (step > 0.0f) ? step * 0.5f : 0.0f;
+    return v >= lo - slack && v <= hi + slack;
+}
+
+/// Current reference, amps (current mode): 0..maxCurrentA
+inline bool currentWithinCaps(const DriverCaps& c, float a)
+{
+    return c.currentControl && withinRange(a, 0.0f, c.maxCurrentA, c.currentStepA);
+}
+/// Drive duty (voltage mode): 0..1
+inline bool dutyWithinCaps(const DriverCaps& c, float d)
+{
+    return c.voltageControl && withinRange(d, 0.0f, 1.0f, 0.0f);
+}
+/// Profile acceleration / deceleration, full steps/s^2
+inline bool accelWithinCaps(const DriverCaps& c, float a)
+{
+    return a > 0.0f && withinRange(a, c.accelMinFsps2, c.accelMaxFsps2, c.accelStepFsps2);
+}
+/// Profile speed ceiling, full steps/s (one resolution step up to maxSpeedLimitFsps)
+inline bool speedLimitWithinCaps(const DriverCaps& c, float f)
+{
+    return f > 0.0f && withinRange(f, c.speedLimitStepFsps, c.maxSpeedLimitFsps, c.speedLimitStepFsps);
+}
+/// Overcurrent threshold, amps (an estimate when overcurrentOhms > 0)
+inline bool overcurrentWithinCaps(const DriverCaps& c, float a)
+{
+    return withinRange(a, c.overcurrentMinA, c.overcurrentMaxA, c.overcurrentStepA);
+}
+/// Stall threshold on the driver's 0..1 scale (drivers with stall detection)
+inline bool stallWithinCaps(const DriverCaps& c, float x)
+{
+    return c.stallDetect && withinRange(x, 0.0f, 1.0f, 0.0f);
+}
+/// Microsteps asked for: a power of two from 1 to the finest resolution of any drive mode
+inline bool microstepsWithinCaps(const DriverCaps& c, uint32_t n)
+{
+    return n >= 1u && n <= c.maxMicrostepsAny() && (n & (n - 1u)) == 0u;
+}
+
 } // namespace Harness

@@ -753,3 +753,235 @@ TEST(position_capture_freezes_pages_the_rings_and_resumes) {
     out = r.run("CTRL:CAP:FREEZE", "");
     EXPECT_TRUE(out.find("INVALID_STATE") != std::string::npos);
 }
+
+// --- Protocol 3 (driver boundary step 4): DRV:CAPS? and the settings in physical units ---------
+#include "L2_protocol/kv_reply.hpp"
+
+TEST(real_numbers_are_formatted_without_printf_floats) {
+    char b[24];
+    Protocol::formatReal(b, sizeof(b), 0.078);        EXPECT_STREQ(b, "0.078");
+    Protocol::formatReal(b, sizeof(b), 9.906);        EXPECT_STREQ(b, "9.906");
+    Protocol::formatReal(b, sizeof(b), 0.00390625);   EXPECT_STREQ(b, "0.00390625");
+    Protocol::formatReal(b, sizeof(b), 5005.888);     EXPECT_STREQ(b, "5005.89");
+    Protocol::formatReal(b, sizeof(b), 572.9166667);  EXPECT_STREQ(b, "572.917");
+    Protocol::formatReal(b, sizeof(b), 15609.741);    EXPECT_STREQ(b, "15609.7");
+    Protocol::formatReal(b, sizeof(b), 2097151.0);    EXPECT_STREQ(b, "2097151");
+    Protocol::formatReal(b, sizeof(b), 0.0);          EXPECT_STREQ(b, "0");
+    Protocol::formatReal(b, sizeof(b), -12.5);        EXPECT_STREQ(b, "-12.5");
+    Protocol::formatReal(b, sizeof(b), 1.56f);        EXPECT_STREQ(b, "1.56");
+    Protocol::formatFixed(b, sizeof(b), 1012.46, 1);  EXPECT_STREQ(b, "1012.5");
+    Protocol::formatFixed(b, sizeof(b), -0.04, 1);    EXPECT_STREQ(b, "0.0");
+    Protocol::formatFixed(b, sizeof(b), -99999.9, 1); EXPECT_STREQ(b, "-99999.9");
+}
+
+TEST(caps_ranges_accept_half_a_step_and_refuse_the_rest) {
+    const Harness::DriverCaps& c = Drivers::PowerStepSettings::caps();
+    EXPECT_TRUE(Harness::currentWithinCaps(c, 0.0f));
+    EXPECT_TRUE(Harness::currentWithinCaps(c, 9.906f + 0.03f));     // rounds onto the top code
+    EXPECT_FALSE(Harness::currentWithinCaps(c, 10.0f));
+    EXPECT_FALSE(Harness::currentWithinCaps(c, -0.1f));
+    EXPECT_FALSE(Harness::accelWithinCaps(c, 0.0f));
+    EXPECT_TRUE(Harness::accelWithinCaps(c, 10.0f));                  // within half a step of the minimum
+    EXPECT_FALSE(Harness::accelWithinCaps(c, 70000.0f));
+    EXPECT_TRUE(Harness::microstepsWithinCaps(c, 128));
+    EXPECT_FALSE(Harness::microstepsWithinCaps(c, 256));
+    EXPECT_FALSE(Harness::microstepsWithinCaps(c, 12));
+    EXPECT_FALSE(Harness::overcurrentWithinCaps(c, 10.0f));          // below one OCD step (~26 A)
+    EXPECT_TRUE(Harness::stallWithinCaps(c, 1.0f));
+    volatile float zero = 0.0f;
+    const float nan = zero / zero;
+    EXPECT_FALSE(Harness::dutyWithinCaps(c, nan));
+}
+
+namespace {
+/// A board with a powerSTEP01: the settings stored physical, quantised by the driver's own
+/// engine; the protocol 2 aliases go through its translation, as L3 does
+struct PhysicalConfig : FakeL3::FakeMotorConfigDispatcher {
+    Harness::DriverSettings s{};
+    PhysicalConfig() {
+        Drivers::LegacyDriverUnits u{};                 // the bench board's saved config (V4)
+        u.kval[0] = u.kval[1] = u.kval[2] = u.kval[3] = 0x29;
+        u.tval[0] = 0x04; u.tval[1] = 0x11; u.tval[2] = 0x14; u.tval[3] = 0x14;
+        u.driveMode = 1; u.stepMode = 7; u.ocdTh = 21; u.stallTh = 0;
+        u.acc = 344; u.dec = 344; u.maxSpeed = 87; u.minSpeed = 0; u.fsSpd = 0x3FF;
+        u.predEn = 1; u.tsw = 0xFF; u.alarms = 0x0F;
+        Drivers::PowerStepSettings::fromLegacy(u, s);
+    }
+    Harness::DriverCaps driverCaps() override { return Drivers::PowerStepSettings::caps(); }
+    Harness::DriverSettings driverSettings() override { return s; }
+    Harness::DriverSettings driverSettingsInForce() override { return Drivers::PowerStepSettings::quantize(s); }
+    Harness::ServiceStatus configSetDriverSettings(const Harness::DriverSettings& x) override { s = x; return Harness::ServiceStatus::Ok; }
+    uint16_t getFullStepsPerRev() override { return 200; }
+    template <class F> void legacy(F f) {
+        Drivers::LegacyDriverUnits u{};
+        Drivers::PowerStepSettings::toLegacy(s, u);
+        f(u);
+        Drivers::PowerStepSettings::fromLegacy(u, s);
+    }
+    void configSetTval(uint8_t h, uint8_t r, uint8_t a, uint8_t d) override {
+        legacy([&](Drivers::LegacyDriverUnits& u) { u.tval[0] = h; u.tval[1] = r; u.tval[2] = a; u.tval[3] = d; });
+    }
+    void configSetOcdThreshold(uint8_t t) override { legacy([&](Drivers::LegacyDriverUnits& u) { u.ocdTh = t; }); }
+    void configSetMotionParams(uint16_t a, uint16_t d, uint16_t m) override {
+        legacy([&](Drivers::LegacyDriverUnits& u) { u.acc = a; u.dec = d; u.maxSpeed = m; });
+    }
+    void configSetStepMode(uint8_t m) override { s.microsteps = static_cast<uint16_t>(1u << m); }
+    MotorConfigSnapshot getMotorConfig() override {
+        MotorConfigSnapshot c{};
+        Drivers::LegacyDriverUnits u{};
+        Drivers::PowerStepSettings::toLegacy(s, u);
+        c.kvalHold = u.kval[0]; c.kvalRun = u.kval[1]; c.kvalAcc = u.kval[2]; c.kvalDec = u.kval[3];
+        c.tvalHold = u.tval[0]; c.tvalRun = u.tval[1]; c.tvalAcc = u.tval[2]; c.tvalDec = u.tval[3];
+        c.driveMode = u.driveMode; c.ocdThreshold = u.ocdTh; c.stallThreshold = u.stallTh;
+        c.acceleration = u.acc; c.deceleration = u.dec; c.maxSpeed = u.maxSpeed;
+        c.stepMode = Harness::microstepsLog2(s.microsteps);
+        c.idleReleaseMs = 3000; c.faultAction = 1; c.valid = true;
+        return c;
+    }
+};
+
+struct PhysicalRig {
+    FakeTransport transport;
+    Protocol::ServiceDispatcher dispatcher;
+    FakeL3::Bundle l3;
+    PhysicalConfig config;
+    HiZSystem system;
+    Harness::L3Dispatchers dispatchers{l3.motion, config, l3.safety, l3.queue, l3.controlMode,
+                                       l3.supervisorTrim, l3.encoder, l3.motorDriver, l3.display,
+                                       l3.flash, system, l3.trace, l3.debug};
+    Protocol::CommandParser parser{transport, dispatcher};
+    Protocol::ICommandProcessor& proc = parser;
+    PhysicalRig() { dispatcher.bind(dispatchers); system.hiZ = true; }
+    std::string run(const std::string& line) {
+        transport.out.clear();
+        transport.in = line + "\n";
+        proc.process();
+        return transport.out;
+    }
+    bool has(const std::string& line, const std::string& want) {
+        const std::string out = run(line);
+        const bool ok = out.find(want) != std::string::npos;
+        if (!ok) fprintf(stderr, "    %s -> %s", line.c_str(), out.c_str());
+        return ok;
+    }
+};
+} // namespace
+
+TEST(drv_caps_lists_the_powerstep01_capabilities_in_both_formats) {
+    PhysicalRig r;
+    std::string out = r.run("DRV:CAPS?");
+    EXPECT_TRUE(out.find("\r\nvoltage_mode=1\r\ncurrent_mode=1\r\nmax_microsteps_voltage=128\r\n"
+                         "max_microsteps_current=16\r\n") != std::string::npos);
+    EXPECT_TRUE(out.find("fault_bits=overcurrent,undervoltage,thermal_shutdown,thermal_warning,stall,command_error\r\n") != std::string::npos);
+    EXPECT_TRUE(out.find("max_current_a=9.906\r\ncurrent_step_a=0.078\r\nduty_step=0.00390625\r\n") != std::string::npos);
+    EXPECT_TRUE(out.find("overcurrent_sense=voltage\r\novercurrent_ohms=0.0012\r\n") != std::string::npos);
+    EXPECT_TRUE(out.find("overcurrent_step_a=26.0417\r\n") != std::string::npos);
+    EXPECT_TRUE(out.find("max_speed_fsps=15625\r\nmax_speed_limit_fsps=15609.7\r\n") != std::string::npos);
+    EXPECT_TRUE(out.find("accel_step_fsps2=14.552\r\n") != std::string::npos);
+    EXPECT_TRUE(out.find("max_position_usteps=2097151\r\nOK 28\r\n") != std::string::npos);
+    r.run("FMT JSON");
+    out = r.run("DRV:CAPS?");
+    EXPECT_TRUE(out.rfind("{\"status\":\"ok\",\"command\":\"DRV:CAPS?\",\"data\":{\"voltage_mode\":true,", 0) == 0);
+    EXPECT_TRUE(out.find("\"faults_alarmable\":[\"overcurrent\",\"undervoltage\",\"thermal_shutdown\","
+                         "\"thermal_warning\",\"stall\",\"command_error\"]") != std::string::npos);
+    EXPECT_TRUE(out.find("\"overcurrent_sense\":\"voltage\"") != std::string::npos);
+    EXPECT_TRUE(out.find("\"max_position_usteps\":2097151}}\r\n") != std::string::npos);
+}
+
+TEST(the_bench_boards_settings_read_back_in_physical_units) {
+    // TVAL 04/11/14/14, current mode, 1/128 asked (1/16 in force), ACC/DEC 344, MAX_SPEED 87,
+    // OCD_TH 21 (0.6875 V, ~573 A), idle release 3 s
+    PhysicalRig r;
+    EXPECT_TRUE(r.has("DRV:CFG:CURRENT?", "OK CURRENT hold_a=0.312 run_a=1.326 acc_a=1.56 dec_a=1.56 drive_mode=current\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:USTEP?", "OK USTEP microsteps_asked=128 microsteps=16 drive_mode=current\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:ACCEL?", "OK ACCEL accel_fsps2=5005.89\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:DECEL?", "OK DECEL decel_fsps2=5005.89\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:MAXSPD?", "OK MAXSPD max_speed_fsps=1327.51\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:OVERCURRENT?", "OK OVERCURRENT overcurrent_a=572.917 overcurrent_v=0.6875\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:ALARMS?", "OK ALARMS alarms=overcurrent,undervoltage,thermal_shutdown,thermal_warning\r\n"));
+    const std::string out = r.run("DRV:CFG:PHYS?");
+    EXPECT_TRUE(out.find("\r\nsource=flash\r\ndrive_mode=current\r\nmicrosteps_asked=128\r\nmicrosteps=16\r\n"
+                         "hold_a=0.312\r\nrun_a=1.326\r\nacc_a=1.56\r\ndec_a=1.56\r\n") != std::string::npos);
+    EXPECT_TRUE(out.find("hold_duty=0.160156\r\n") != std::string::npos);    // KVAL 0x29 / 256
+    EXPECT_TRUE(out.find("accel_fsps2=5005.89\r\ndecel_fsps2=5005.89\r\nmax_speed_fsps=1327.51\r\n"
+                         "overcurrent_a=572.917\r\novercurrent_v=0.6875\r\nstall_threshold=0\r\n") != std::string::npos);
+    EXPECT_TRUE(out.find("fault_action=HardHiZ\r\nidle_release_ms=3000\r\nfull_steps_per_rev=200\r\nOK 22\r\n") != std::string::npos);
+
+}
+
+TEST(physical_setters_reply_the_quantised_value_and_change_the_legacy_view) {
+    PhysicalRig r;
+    // 0.3 / 1.3 / 1.6 A are not on the 78 mA grid: 4, 17 and 21 codes
+    EXPECT_TRUE(r.has("DRV:CFG:CURRENT 0.3 1.3 1.6 1.6",
+                      "OK CURRENT hold_a=0.312 run_a=1.326 acc_a=1.638 dec_a=1.638 drive_mode=current "
+                      "(not saved; DRV:CFG:APPLY puts it in force)\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG?", "TVAL: HOLD=04 RUN=11 ACC=15 DEC=15"));
+    EXPECT_TRUE(r.has("DRV:CFG:ACCEL 1000", "OK ACCEL accel_fsps2=989.536 (not saved"));   // code 68
+    EXPECT_TRUE(r.has("DRV:CFG?", "ACC=68 DEC=344 MAXSPD=87"));
+    EXPECT_TRUE(r.has("DRV:CFG:DECEL 5005.89", "decel_fsps2=5005.89"));                    // round trip: 344
+    EXPECT_TRUE(r.has("DRV:CFG:MAXSPD 1000", "OK MAXSPD max_speed_fsps=991.821"));          // code 65
+    EXPECT_TRUE(r.has("DRV:CFG:OVERCURRENT 100", "OK OVERCURRENT overcurrent_a=104.167 overcurrent_v=0.125"));
+    EXPECT_TRUE(r.has("DRV:CFG?", "OCD_TH=03"));
+    EXPECT_TRUE(r.has("DRV:CFG:STALL_TH 0.5", "OK STALL_TH stall_threshold=0.516129"));    // code 16 / 31
+    EXPECT_TRUE(r.has("DRV:CFG:USTEP 32", "OK USTEP microsteps_asked=32 microsteps=16 drive_mode=current (not saved"));
+    EXPECT_TRUE(r.has("DRV:CFG:DUTY 0.5 0.5 0.6 0.6", "OK DUTY hold_duty=0.5 run_duty=0.5 acc_duty=0.601563 dec_duty=0.601563 drive_mode=current"));
+    EXPECT_TRUE(r.has("DRV:CFG:ALARMS overcurrent STALL", "OK ALARMS alarms=overcurrent,stall (not saved"));
+    EXPECT_TRUE(r.has("DRV:CFG:ALARMS NONE", "OK ALARMS alarms=NONE"));
+    r.run("FMT JSON");
+    EXPECT_TRUE(r.has("DRV:CFG:CURRENT?", "{\"status\":\"ok\",\"command\":\"DRV:CFG:CURRENT?\",\"data\":"
+                                          "{\"hold_a\":0.312,\"run_a\":1.326,\"acc_a\":1.638,\"dec_a\":1.638,"
+                                          "\"drive_mode\":\"current\"}}\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:ALARMS stall", "\"data\":{\"alarms\":[\"stall\"]}}"));
+}
+
+TEST(physical_setters_take_their_ranges_from_the_caps) {
+    PhysicalRig r;
+    EXPECT_TRUE(r.has("DRV:CFG:CURRENT 0.3 1.3 10.5 1", "ERROR OUT_OF_RANGE current must be 0-9.906 A\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:CURRENT 0.3 1.3 abc 1", "ERROR USAGE Usage: DRV:CFG:CURRENT"));
+    EXPECT_TRUE(r.has("DRV:CFG:CURRENT 0.3 1.3", "ERROR USAGE"));
+    EXPECT_TRUE(r.has("DRV:CFG:DUTY 0.5 0.5 1.2 0.5", "ERROR OUT_OF_RANGE duty must be 0-1\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:USTEP 256", "ERROR OUT_OF_RANGE microsteps (a power of two) must be 1-128\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:USTEP 12", "ERROR OUT_OF_RANGE"));
+    EXPECT_TRUE(r.has("DRV:CFG:ACCEL 1", "ERROR OUT_OF_RANGE accel must be 14.552-59590.4 full steps/s^2\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:MAXSPD 20000", "ERROR OUT_OF_RANGE max speed must be 15.2588-15609.7 full steps/s\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:OVERCURRENT 5", "ERROR OUT_OF_RANGE overcurrent must be 26.0417-833.333 A\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:STALL_TH 1.5", "ERROR OUT_OF_RANGE stall threshold must be 0-1\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:ALARMS overheat", "ERROR INVALID_PARAM"));
+    // nothing above was stored
+    EXPECT_TRUE(r.has("DRV:CFG:CURRENT?", "hold_a=0.312 run_a=1.326 acc_a=1.56 dec_a=1.56"));
+    EXPECT_TRUE(r.has("DRV:CFG:USTEP?", "microsteps_asked=128"));
+}
+
+TEST(protocol_2_aliases_answer_as_before_and_land_in_the_physical_settings) {
+    PhysicalRig r;
+    EXPECT_TRUE(r.has("DRV:CFG:TVAL 04 11 14 14", "OK TVAL set: H=04 R=11 A=14 D=14 (not saved)\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:CURRENT?", "hold_a=0.312 run_a=1.326 acc_a=1.56 dec_a=1.56"));
+    EXPECT_TRUE(r.has("DRV:CFG:OCD 21", "OK OCD threshold set: 21 (not saved)\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:OVERCURRENT?", "overcurrent_a=572.917 overcurrent_v=0.6875"));
+    EXPECT_TRUE(r.has("DRV:CFG:MOTION 344 344 87", "OK Motion params set: ACC=344 DEC=344 MAX=87 (not saved)\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:MAXSPD?", "max_speed_fsps=1327.51"));
+    EXPECT_TRUE(r.has("DRV:CFG:STEPMODE 128", "OK Step mode set: 7 (1/128 microstep, not saved)\r\n"));
+    EXPECT_TRUE(r.has("DRV:CFG:USTEP?", "microsteps_asked=128 microsteps=16"));
+    EXPECT_TRUE(r.has("DRV:CFG?", "TVAL: HOLD=04 RUN=11 ACC=14 DEC=14\r\nCM:"));
+    // the deprecated ones say so in SYST:HELP?
+    EXPECT_TRUE(r.has("SYST:HELP?", "DRV:CFG:TVAL <hold> <run> <acc> <dec> (hex 00-7F, 78 mA per unit)  [deprecated: DRV:CFG:CURRENT]"));
+    EXPECT_TRUE(r.has("SYST:HELP?", "\r\nDRV:CAPS?\r\n"));
+}
+
+TEST(status_json_carries_driver_faults_raw_word_and_physical_trim_speeds) {
+    Protocol::TelemetrySnapshot snap{};
+    snap.motor.faults = Harness::DriverFault::OVERCURRENT | Harness::DriverFault::STALL;
+    snap.motor.statusReg = 0x7E03;
+    Protocol::StatusJsonView v;
+    v.statusReg = snap.motor.statusReg;     // fillStatusView copies it
+    snap.control.baseSpeedFsps = 1000.0f;
+    snap.control.finalSpeedFsps = 1012.46f;
+    char buf[Protocol::STATUS_JSON_BUF];
+    const int n = Protocol::renderStatusJson(buf, sizeof(buf), snap, v);
+    EXPECT_TRUE(n > 0 && n < static_cast<int>(sizeof(buf)));
+    const std::string js(buf);
+    EXPECT_TRUE(js.find("\"status_reg\":\"7E03\"") != std::string::npos);     // protocol 2, kept
+    EXPECT_TRUE(js.find("\"faults\":17,\"driver_raw\":32259}") != std::string::npos);
+    EXPECT_TRUE(js.find("\"base_spd\":67108,") != std::string::npos);         // protocol 2, kept
+    EXPECT_TRUE(js.find("\"base_fsps\":1000.0,\"final_fsps\":1012.5,") != std::string::npos);
+}

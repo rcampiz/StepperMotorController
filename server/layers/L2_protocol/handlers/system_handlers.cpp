@@ -5,6 +5,7 @@
 
 #include "L2_protocol/command_parser_internal.hpp"
 #include "L2_protocol/status_json.hpp"
+#include "L2_protocol/kv_reply.hpp"
 #include "harness/pins/protocol_version.hpp"
 #include "F_platform/boundary/boot_id.hpp"
 #include "F_platform/boundary/itask_stats.hpp"
@@ -81,6 +82,12 @@ int renderStatusJson(char* buf, size_t bufSize,
   char encCountStr[24];
   i64toa(snap.encoder.count, encCountStr, sizeof(encCountStr));
   const Protocol2TrimSpeeds spd = protocol2TrimSpeeds(snap.control);   // protocol 2 wire unit
+  // Protocol 3: base and final speed in full steps/s (one decimal; trim = final - base, as
+  // CTRL:TRIM? gives it; base_spd/trim_spd/final_spd are deprecated), the driver's chip-neutral
+  // fault bits and its opaque status word
+  char baseFs[12], finalFs[12];
+  formatFixed(baseFs, sizeof(baseFs), clampSpeedFsps(snap.control.baseSpeedFsps), 1);
+  formatFixed(finalFs, sizeof(finalFs), clampSpeedFsps(snap.control.finalSpeedFsps), 1);
   return snprintf(
       buf, bufSize,
         "%s"
@@ -88,7 +95,8 @@ int renderStatusJson(char* buf, size_t bufSize,
         "\"motor\":{\"position\":%ld,\"speed\":%lu,\"busy\":%s,\"hi_z\":%s,"
         "\"direction\":%d,\"mot_status\":%u,\"status_reg\":\"%04X\","
         "\"cmd_err\":%s,\"ocd\":%s,\"thermal_sd\":%s,"
-        "\"thermal_warn\":%s,\"uvlo\":%s,\"stall_a\":%s,\"stall_b\":%s},"
+        "\"thermal_warn\":%s,\"uvlo\":%s,\"stall_a\":%s,\"stall_b\":%s,"
+        "\"faults\":%u,\"driver_raw\":%lu},"
         "\"encoder\":{\"count\":%s,\"velocity\":%ld,\"index_seen\":%s,"
         "\"revolutions\":%ld,\"index_period_us\":%lu,\"vel_quality\":%u},"
         "\"control\":{\"following_error\":%ld,\"setpoint\":%ld,"
@@ -96,6 +104,7 @@ int renderStatusJson(char* buf, size_t bufSize,
         "\"trim_out\":%d,\"p\":%d,\"i\":%d,\"d\":%d,"
         "\"sup_state\":%u,\"tier\":%u,\"vel_error\":%ld,\"retries\":%u,"
         "\"base_spd\":%ld,\"trim_spd\":%ld,\"final_spd\":%ld,"
+        "\"base_fsps\":%s,\"final_fsps\":%s,"
         "\"trim_frozen\":%u,\"vel_quality\":%u},"
         "\"heartbeat\":{\"enabled\":%s,\"timeout_ms\":%lu,"
         "\"remaining_ms\":%lu,\"timed_out\":%s},"
@@ -111,7 +120,9 @@ int renderStatusJson(char* buf, size_t bufSize,
         v.cmdErr ? "true" : "false", v.ocd ? "true" : "false",
         v.thermalSD ? "true" : "false", v.thermalWarn ? "true" : "false",
         v.uvlo ? "true" : "false", v.stallA ? "true" : "false",
-        v.stallB ? "true" : "false", encCountStr,
+        v.stallB ? "true" : "false",
+        static_cast<unsigned>(snap.motor.faults & 0x3Fu), static_cast<unsigned long>(snap.motor.statusReg),
+        encCountStr,
         static_cast<long>(snap.encoder.velocity),
         snap.encoder.indexSeen ? "true" : "false",
         static_cast<long>(snap.encoder.revolutions),
@@ -129,7 +140,7 @@ int renderStatusJson(char* buf, size_t bufSize,
         static_cast<unsigned>(snap.control.currentTier),
         static_cast<long>(snap.control.velError),
         static_cast<unsigned>(snap.control.retryCount),
-        spd.base, spd.trim, spd.final_,
+        spd.base, spd.trim, spd.final_, baseFs, finalFs,
         static_cast<unsigned>(snap.control.trimFrozen),
         static_cast<unsigned>(snap.control.velQuality),
         v.hbEnabled ? "true" : "false", static_cast<unsigned long>(v.hbTimeoutMs),

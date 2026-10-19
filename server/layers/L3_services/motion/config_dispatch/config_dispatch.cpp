@@ -42,6 +42,52 @@ uint16_t ConfigDispatch::getFullStepsPerRev() {
     return motion.stepper.config.getFullStepsPerRev();
 }
 
+// --- Physical settings (protocol 3) ---
+
+Harness::DriverSettings ConfigDispatch::driverSettings() {
+    return motion.stepper.config.getDriverSettings();
+}
+
+Harness::DriverSettings ConfigDispatch::driverSettingsInForce() {
+    return motion.stepper.config.getEffectiveSettings();
+}
+
+namespace {
+/// Every value the edit changed is one the driver can take (unchanged ones are not judged:
+/// a migrated or default field the caps would refuse does not block an unrelated edit)
+bool editWithinCaps(const Harness::DriverCaps& c, const Harness::DriverSettings& o,
+                    const Harness::DriverSettings& s)
+{
+    using namespace Harness;
+    if (s.mode != o.mode && !c.hasMode(s.mode)) return false;
+    if (s.microsteps != o.microsteps && !microstepsWithinCaps(c, s.microsteps)) return false;
+    const float oc[4] = { o.currentA.hold, o.currentA.run, o.currentA.acc, o.currentA.dec };
+    const float sc[4] = { s.currentA.hold, s.currentA.run, s.currentA.acc, s.currentA.dec };
+    const float od[4] = { o.duty.hold, o.duty.run, o.duty.acc, o.duty.dec };
+    const float sd[4] = { s.duty.hold, s.duty.run, s.duty.acc, s.duty.dec };
+    for (unsigned i = 0; i < 4; ++i) {
+        if (sc[i] != oc[i] && !currentWithinCaps(c, sc[i])) return false;
+        if (sd[i] != od[i] && !dutyWithinCaps(c, sd[i])) return false;
+    }
+    if (s.accelFsps2 != o.accelFsps2 && !accelWithinCaps(c, s.accelFsps2)) return false;
+    if (s.decelFsps2 != o.decelFsps2 && !accelWithinCaps(c, s.decelFsps2)) return false;
+    if (s.maxSpeedFsps != o.maxSpeedFsps && !speedLimitWithinCaps(c, s.maxSpeedFsps)) return false;
+    if (s.overcurrentA != o.overcurrentA && !overcurrentWithinCaps(c, s.overcurrentA)) return false;
+    if (s.stallThreshold01 != o.stallThreshold01 && !stallWithinCaps(c, s.stallThreshold01)) return false;
+    if ((s.faultAlarms & ~c.faultsAlarmable) != 0u && s.faultAlarms != o.faultAlarms) return false;
+    return true;
+}
+} // namespace
+
+Harness::ServiceStatus ConfigDispatch::configSetDriverSettings(const Harness::DriverSettings& s) {
+    auto& sc = motion.stepper.config;
+    if (!editWithinCaps(sc.caps(), sc.getDriverSettings(), s)) {
+        return Harness::ServiceStatus::OutOfRange;
+    }
+    sc.setDriverSettings(s);
+    return Harness::ServiceStatus::Ok;
+}
+
 Harness::ServiceStatus ConfigDispatch::configSaveToFlash() {
     if (motion.configStore.saveToFlash()) {
         return Harness::ServiceStatus::Ok;

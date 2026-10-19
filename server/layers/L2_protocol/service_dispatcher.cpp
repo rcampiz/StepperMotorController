@@ -67,6 +67,18 @@ uint16_t ServiceDispatcher::getFullStepsPerRev() {
     return m_config->getFullStepsPerRev();
 }
 
+Harness::DriverSettings ServiceDispatcher::driverSettings() {
+    return m_config->driverSettings();
+}
+
+Harness::DriverSettings ServiceDispatcher::driverSettingsInForce() {
+    return m_config->driverSettingsInForce();
+}
+
+Harness::ServiceStatus ServiceDispatcher::configSetDriverSettings(const Harness::DriverSettings& s) {
+    return m_config->configSetDriverSettings(s);
+}
+
 Harness::ServiceStatus ServiceDispatcher::configSaveToFlash() {
     return m_config->configSaveToFlash();
 }

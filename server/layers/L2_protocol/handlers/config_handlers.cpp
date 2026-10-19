@@ -2,11 +2,13 @@
  * @file config_handlers.cpp
  * @brief CommandParser motor config command handlers (DRV:CFG namespace)
  *
- * Protocol 2 still speaks powerSTEP01 chip units here (KVAL/TVAL codes, OCD/STALL codes,
- * raw ACC/DEC/MAX_SPEED, DRV:CFG? register-shaped lines). They are aliases kept one release
- * (docs/design/DRIVER_BOUNDARY.md): L3 asks the motor driver to translate them to and from
- * its physical settings (IMotorDriver::toLegacyUnits / fromLegacyUnits), so the chip's
- * knowledge stays in L4. The ranges checked below are those aliases' own wire contract.
+ * The protocol 2 commands here speak powerSTEP01 chip units (KVAL/TVAL codes, OCD/STALL codes,
+ * raw ACC/DEC/MAX_SPEED, DRV:CFG? register-shaped lines). Protocol 3 replaces them with the
+ * physical commands of driver_settings_handlers.cpp; they stay one release as deprecated
+ * aliases (each body's "@deprecated" names its replacement; the protocol generator puts it in
+ * docs/PROTOCOL.md and SYST:HELP?). L3 asks the motor driver to translate them to and from its
+ * physical settings (IMotorDriver::toLegacyUnits / fromLegacyUnits), so the chip's knowledge
+ * stays in L4. The ranges checked below are those aliases' own wire contract.
  */
 
 #include "L2_protocol/command_parser_internal.hpp"
@@ -62,6 +64,7 @@ void CommandParser::cmdMaxSpdPhysical(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdMotorConfigShow() {
+  // @deprecated DRV:CFG:PHYS? (protocol 3; kept one release)
   m_sink.begin(m_format == ResponseFormat::JSON, "MCONFIG");   // F12: 11 lines + terminator
   auto cfg = m_dispatcher.getMotorConfig();
   char buf[512];
@@ -120,6 +123,7 @@ void CommandParser::cmdMotorConfigReset() {
 }
 
 void CommandParser::cmdMotorConfigKval(const ParsedCommand &cmd) {
+  // @deprecated DRV:CFG:DUTY (protocol 3; kept one release)
   // Usage: DRV:CFG:KVAL <hold> <run> <acc> <dec>
   if (cmd.argCount < 4) {
     respondErr("Usage: DRV:CFG:KVAL <hold> <run> <acc> <dec> (hex 00-FF)");
@@ -156,6 +160,10 @@ void CommandParser::cmdMotorConfigDrive(const ParsedCommand &cmd) {
     respondErr("Drive mode must be VOLTAGE or CURRENT");
     return;
   }
+  if (!m_dispatcher.driverCaps().hasMode(mode ? Harness::DriveMode::CURRENT : Harness::DriveMode::VOLTAGE)) {
+    respondErr("The driver has no such drive mode (DRV:CAPS?)");
+    return;
+  }
   m_dispatcher.configSetDriveMode(mode);
   respondOk(mode ? "Drive mode CURRENT (TVAL) set (not saved; APPLY with the motor idle)"
                  : "Drive mode VOLTAGE (KVAL) set (not saved; APPLY with the motor idle)");
@@ -163,6 +171,7 @@ void CommandParser::cmdMotorConfigDrive(const ParsedCommand &cmd) {
 
 // DRV:CFG:TVAL <hold> <run> <acc> <dec> - current-mode references, hex 00-7F (78 mA/LSB)
 void CommandParser::cmdMotorConfigTval(const ParsedCommand &cmd) {
+  // @deprecated DRV:CFG:CURRENT (protocol 3; kept one release)
   if (cmd.argCount < 4) {
     respondErr("Usage: DRV:CFG:TVAL <hold> <run> <acc> <dec> (hex 00-7F, 78 mA per unit)");
     return;
@@ -181,6 +190,7 @@ void CommandParser::cmdMotorConfigTval(const ParsedCommand &cmd) {
 // switching period (4..128 us in 4 us steps; omitted = chip default 48 us). CONFIG bits:
 // applied by DRV:CFG:APPLY through the Hi-Z path.
 void CommandParser::cmdMotorConfigPred(const ParsedCommand &cmd) {
+  // @deprecated no replacement, chip tuning (protocol 3; kept one release)
   if (cmd.argCount < 1) {
     respondErr("Usage: DRV:CFG:PRED <ON|OFF> [tsw_us 4-128]");
     return;
@@ -216,6 +226,7 @@ void CommandParser::cmdMotorConfigPred(const ParsedCommand &cmd) {
 // (T_FAST [7:4] fast step, [3:0] fast decay, (v+1) x 2 us; TON_MIN/TOFF_MIN (v+1) x 0.5 us;
 // 00 = chip default). Written by DRV:CFG:APPLY with the motor stopped.
 void CommandParser::cmdMotorConfigDecay(const ParsedCommand &cmd) {
+  // @deprecated no replacement, chip tuning (protocol 3; kept one release)
   if (cmd.argCount < 3) {
     respondErr("Usage: DRV:CFG:DECAY <t_fast> <ton_min> <toff_min> (hex, 00 = chip default)");
     return;
@@ -254,6 +265,7 @@ void CommandParser::cmdMotorConfigIdle(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdMotorConfigOcd(const ParsedCommand &cmd) {
+  // @deprecated DRV:CFG:OVERCURRENT (protocol 3; kept one release)
   // Usage: DRV:CFG:OCD <threshold>
   if (cmd.argCount < 1) {
     respondErr("Usage: DRV:CFG:OCD <threshold> (0-31, ~375mA/step)");
@@ -274,6 +286,7 @@ void CommandParser::cmdMotorConfigOcd(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdMotorConfigStall(const ParsedCommand &cmd) {
+  // @deprecated DRV:CFG:STALL_TH (protocol 3; kept one release)
   // Usage: DRV:CFG:STALL <threshold>
   // powerSTEP01 STALL_TH is 5-bit (0-31), NOT 7-bit like L6470
   if (cmd.argCount < 1) {
@@ -295,6 +308,7 @@ void CommandParser::cmdMotorConfigStall(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdMotorConfigFault(const ParsedCommand &cmd) {
+  // @deprecated DRV:CFG:ALARMS for the flags (FAULT ACTION stays) (protocol 3; kept one release)
   // Usage: DRV:CFG:FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd>
   //        MCONFIG_FAULT ACTION <0|1|2>
   if (cmd.argCount < 1) {
@@ -347,6 +361,7 @@ void CommandParser::cmdMotorConfigFault(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdMotorConfigMotion(const ParsedCommand &cmd) {
+  // @deprecated DRV:CFG:ACCEL, DRV:CFG:DECEL, DRV:CFG:MAXSPD (protocol 3; kept one release)
   // Usage: DRV:CFG:MOTION <acc> <dec> <maxspd>
   if (cmd.argCount < 3) {
     respondErr("Usage: DRV:CFG:MOTION <acc> <dec> <maxspd>");
@@ -377,6 +392,7 @@ void CommandParser::cmdMotorConfigMotion(const ParsedCommand &cmd) {
 }
 
 void CommandParser::cmdMotorConfigStepMode(const ParsedCommand &cmd) {
+  // @deprecated DRV:CFG:USTEP (protocol 3; kept one release)
   // Usage: DRV:CFG:STEPMODE <mode>
   // mode: 0=full, 1=half, 2=1/4, ... up to the driver's finest resolution (powerSTEP01: 7=1/128)
   // Also accepts microstep counts 8, 16, ... up to that resolution

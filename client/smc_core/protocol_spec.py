@@ -7,7 +7,7 @@ arch-check target and the client tests fail when this file is stale.
 from dataclasses import dataclass
 from typing import Dict, Tuple
 
-PROTOCOL_VERSION = 2
+PROTOCOL_VERSION = 3
 OOB_ESTOP_BYTE = 0x18
 
 
@@ -21,6 +21,7 @@ class CommandSpec:
     multiline: bool       # reply is lines + OK <n> (ASCII) / one envelope with `lines` (JSON)
     binary: bool          # OK READY <n> handshake, then raw bytes
     persists: bool = False  # writes flash: the motor config sector erase blocks the MCU ~1-2 s
+    deprecated: str = ''    # protocol 2 alias kept one release: what replaces it
 
 
 COMMANDS: Dict[str, CommandSpec] = {
@@ -74,7 +75,7 @@ COMMANDS: Dict[str, CommandSpec] = {
     'CTRL:ENC:DBG?': CommandSpec('CTRL:ENC:DBG?', 'ENC_DEBUG', 0, '', 'ENC_DEBUG', True, False, False),
     'CTRL:MODE': CommandSpec('CTRL:MODE', 'cmdSetMode', 1, 'CTRL:MODE OPEN_LOOP|MONITOR|PID', '', False, False, False),
     'CTRL:ENC:FILT': CommandSpec('CTRL:ENC:FILT', 'cmdEncFilter', 1, '', '', False, False, False),
-    'CTRL:ENC:FILT?': CommandSpec('CTRL:ENC:FILT?', 'cmdEncFilter', 1, '', '', False, False, False),
+    'CTRL:ENC:FILT?': CommandSpec('CTRL:ENC:FILT?', 'cmdEncFilter', 0, '', '', False, False, False),
     'CTRL:FOLLOW:THRESH': CommandSpec('CTRL:FOLLOW:THRESH', 'cmdFollowThreshSet', 6, 'CTRL:FOLLOW:THRESH <E_MOVE> <T_MOVE> <E_HOLD> <T_HOLD>', '', False, False, False),
     'CTRL:TRIM:GAINS': CommandSpec('CTRL:TRIM:GAINS', 'cmdTrimSetGains', 2, 'CTRL:TRIM:GAINS <kp> <ki>', 'CTRL:TRIM:GAINS', False, False, False),
     'CTRL:TRIM:LIMITS': CommandSpec('CTRL:TRIM:LIMITS', 'cmdTrimSetLimits', 2, 'CTRL:TRIM:LIMITS <output_limit> <integral_limit>', 'CTRL:TRIM:LIMITS', False, False, False),
@@ -129,28 +130,50 @@ COMMANDS: Dict[str, CommandSpec] = {
     'DBG:TRACE:DUMP': CommandSpec('DBG:TRACE:DUMP', 'cmdTraceDump', 0, '', 'TRACE_DUMP', True, False, False),
     'DBG:TRACE:RESET': CommandSpec('DBG:TRACE:RESET', 'cmdTraceReset', 0, '', '', False, False, False),
     'DRV:REINIT': CommandSpec('DRV:REINIT', 'inline', 0, '', '', False, False, False),
-    'DRV:CFG:KVAL': CommandSpec('DRV:CFG:KVAL', 'cmdMotorConfigKval', 4, 'DRV:CFG:KVAL <hold> <run> <acc> <dec> (hex 00-FF)', '', False, False, False),
+    'DRV:CFG:KVAL': CommandSpec('DRV:CFG:KVAL', 'cmdMotorConfigKval', 4, 'DRV:CFG:KVAL <hold> <run> <acc> <dec> (hex 00-FF)', '', False, False, False, deprecated='DRV:CFG:DUTY'),
     'DRV:CFG:DRIVE': CommandSpec('DRV:CFG:DRIVE', 'cmdMotorConfigDrive', 1, 'DRV:CFG:DRIVE <VOLTAGE|CURRENT>', '', False, False, False),
-    'DRV:CFG:TVAL': CommandSpec('DRV:CFG:TVAL', 'cmdMotorConfigTval', 4, 'DRV:CFG:TVAL <hold> <run> <acc> <dec> (hex 00-7F, 78 mA per unit)', '', False, False, False),
-    'DRV:CFG:PRED': CommandSpec('DRV:CFG:PRED', 'cmdMotorConfigPred', 1, 'DRV:CFG:PRED <ON|OFF> [tsw_us 4-128]', '', False, False, False),
-    'DRV:CFG:DECAY': CommandSpec('DRV:CFG:DECAY', 'cmdMotorConfigDecay', 3, 'DRV:CFG:DECAY <t_fast> <ton_min> <toff_min> (hex, 00 = chip default)', '', False, False, False),
+    'DRV:CFG:TVAL': CommandSpec('DRV:CFG:TVAL', 'cmdMotorConfigTval', 4, 'DRV:CFG:TVAL <hold> <run> <acc> <dec> (hex 00-7F, 78 mA per unit)', '', False, False, False, deprecated='DRV:CFG:CURRENT'),
+    'DRV:CFG:PRED': CommandSpec('DRV:CFG:PRED', 'cmdMotorConfigPred', 1, 'DRV:CFG:PRED <ON|OFF> [tsw_us 4-128]', '', False, False, False, deprecated='no replacement, chip tuning'),
+    'DRV:CFG:DECAY': CommandSpec('DRV:CFG:DECAY', 'cmdMotorConfigDecay', 3, 'DRV:CFG:DECAY <t_fast> <ton_min> <toff_min> (hex, 00 = chip default)', '', False, False, False, deprecated='no replacement, chip tuning'),
     'DRV:CFG:IDLE': CommandSpec('DRV:CFG:IDLE', 'cmdMotorConfigIdle', 1, 'DRV:CFG:IDLE <ms 0-60000> (0 = hold for ever)', '', False, False, False),
-    'DRV:CFG:OCD': CommandSpec('DRV:CFG:OCD', 'cmdMotorConfigOcd', 1, 'DRV:CFG:OCD <threshold> (0-31, ~375mA/step)', '', False, False, False),
-    'DRV:CFG:STALL': CommandSpec('DRV:CFG:STALL', 'cmdMotorConfigStall', 1, 'DRV:CFG:STALL <threshold> (0-31, ~31.25mV/step BEMF)', '', False, False, False),
-    'DRV:CFG:FAULT': CommandSpec('DRV:CFG:FAULT', 'cmdMotorConfigFault', 1, 'DRV:CFG:FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd>', '', False, False, False),
-    'DRV:CFG:MOTION': CommandSpec('DRV:CFG:MOTION', 'cmdMotorConfigMotion', 3, 'DRV:CFG:MOTION <acc> <dec> <maxspd>', '', False, False, False),
-    'DRV:CFG:STEPMODE': CommandSpec('DRV:CFG:STEPMODE', 'cmdMotorConfigStepMode', 1, 'DRV:CFG:STEPMODE <mode> (0-7 or 1/2/4/8/16/32/64/128)', '', False, False, False),
-    'DRV:STEP_MODE': CommandSpec('DRV:STEP_MODE', 'cmdDrvStepMode', 1, 'DRV:STEP_MODE <0-7>', 'DRV:STEP_MODE', False, False, False),
+    'DRV:CFG:OCD': CommandSpec('DRV:CFG:OCD', 'cmdMotorConfigOcd', 1, 'DRV:CFG:OCD <threshold> (0-31, ~375mA/step)', '', False, False, False, deprecated='DRV:CFG:OVERCURRENT'),
+    'DRV:CFG:STALL': CommandSpec('DRV:CFG:STALL', 'cmdMotorConfigStall', 1, 'DRV:CFG:STALL <threshold> (0-31, ~31.25mV/step BEMF)', '', False, False, False, deprecated='DRV:CFG:STALL_TH'),
+    'DRV:CFG:FAULT': CommandSpec('DRV:CFG:FAULT', 'cmdMotorConfigFault', 1, 'DRV:CFG:FAULT <ocd> <th_sd> <th_w> <uvlo> <stall_a> <stall_b> <cmd>', '', False, False, False, deprecated='DRV:CFG:ALARMS for the flags (FAULT ACTION stays)'),
+    'DRV:CFG:MOTION': CommandSpec('DRV:CFG:MOTION', 'cmdMotorConfigMotion', 3, 'DRV:CFG:MOTION <acc> <dec> <maxspd>', '', False, False, False, deprecated='DRV:CFG:ACCEL, DRV:CFG:DECEL, DRV:CFG:MAXSPD'),
+    'DRV:CFG:STEPMODE': CommandSpec('DRV:CFG:STEPMODE', 'cmdMotorConfigStepMode', 1, 'DRV:CFG:STEPMODE <mode> (0-7 or 1/2/4/8/16/32/64/128)', '', False, False, False, deprecated='DRV:CFG:USTEP'),
+    'DRV:STEP_MODE': CommandSpec('DRV:STEP_MODE', 'cmdDrvStepMode', 1, 'DRV:STEP_MODE <0-7>', 'DRV:STEP_MODE', False, False, False, deprecated='DRV:USTEP'),
     'DRV:FULL_STEPS': CommandSpec('DRV:FULL_STEPS', 'cmdDrvFullSteps', 1, 'DRV:FULL_STEPS <steps_per_rev>', 'DRV:FULL_STEPS', False, False, False),
     'DRV:ENC_PPR': CommandSpec('DRV:ENC_PPR', 'cmdDrvEncoderPPR', 1, 'DRV:ENC_PPR <pulses_per_rev>', 'DRV:ENC_PPR', False, False, False),
-    'DRV:CFG?': CommandSpec('DRV:CFG?', 'cmdMotorConfigShow', 0, '', 'MCONFIG', True, False, False),
+    'DRV:CFG:CURRENT': CommandSpec('DRV:CFG:CURRENT', 'cmdDrvCurrent', 4, 'DRV:CFG:CURRENT <hold_A> <run_A> <acc_A> <dec_A>', 'DRV:CFG:CURRENT', False, False, False),
+    'DRV:CFG:CURRENT?': CommandSpec('DRV:CFG:CURRENT?', 'cmdDrvCurrent', 0, 'DRV:CFG:CURRENT <hold_A> <run_A> <acc_A> <dec_A>', 'DRV:CFG:CURRENT?', False, False, False),
+    'DRV:CFG:DUTY': CommandSpec('DRV:CFG:DUTY', 'cmdDrvDuty', 4, 'DRV:CFG:DUTY <hold> <run> <acc> <dec> (0..1)', 'DRV:CFG:DUTY', False, False, False),
+    'DRV:CFG:DUTY?': CommandSpec('DRV:CFG:DUTY?', 'cmdDrvDuty', 0, 'DRV:CFG:DUTY <hold> <run> <acc> <dec> (0..1)', 'DRV:CFG:DUTY?', False, False, False),
+    'DRV:CFG:USTEP': CommandSpec('DRV:CFG:USTEP', 'cmdDrvUstepConfig', 1, 'DRV:CFG:USTEP <microsteps 1|2|4|...>', 'DRV:CFG:USTEP', False, False, False),
+    'DRV:CFG:USTEP?': CommandSpec('DRV:CFG:USTEP?', 'cmdDrvUstepConfig', 0, 'DRV:CFG:USTEP <microsteps 1|2|4|...>', 'DRV:CFG:USTEP?', False, False, False),
+    'DRV:CFG:ACCEL': CommandSpec('DRV:CFG:ACCEL', 'cmdDrvAccel', 1, 'DRV:CFG:ACCEL <full_steps/s^2>', 'DRV:CFG:ACCEL', False, False, False),
+    'DRV:CFG:ACCEL?': CommandSpec('DRV:CFG:ACCEL?', 'cmdDrvAccel', 0, 'DRV:CFG:ACCEL <full_steps/s^2>', 'DRV:CFG:ACCEL?', False, False, False),
+    'DRV:CFG:DECEL': CommandSpec('DRV:CFG:DECEL', 'cmdDrvDecel', 1, 'DRV:CFG:DECEL <full_steps/s^2>', 'DRV:CFG:DECEL', False, False, False),
+    'DRV:CFG:DECEL?': CommandSpec('DRV:CFG:DECEL?', 'cmdDrvDecel', 0, 'DRV:CFG:DECEL <full_steps/s^2>', 'DRV:CFG:DECEL?', False, False, False),
+    'DRV:CFG:MAXSPD': CommandSpec('DRV:CFG:MAXSPD', 'cmdDrvMaxSpeed', 1, 'DRV:CFG:MAXSPD <full_steps/s>', 'DRV:CFG:MAXSPD', False, False, False),
+    'DRV:CFG:MAXSPD?': CommandSpec('DRV:CFG:MAXSPD?', 'cmdDrvMaxSpeed', 0, 'DRV:CFG:MAXSPD <full_steps/s>', 'DRV:CFG:MAXSPD?', False, False, False),
+    'DRV:CFG:OVERCURRENT': CommandSpec('DRV:CFG:OVERCURRENT', 'cmdDrvOvercurrent', 1, 'DRV:CFG:OVERCURRENT <amps>', 'DRV:CFG:OVERCURRENT', False, False, False),
+    'DRV:CFG:OVERCURRENT?': CommandSpec('DRV:CFG:OVERCURRENT?', 'cmdDrvOvercurrent', 0, 'DRV:CFG:OVERCURRENT <amps>', 'DRV:CFG:OVERCURRENT?', False, False, False),
+    'DRV:CFG:STALL_TH': CommandSpec('DRV:CFG:STALL_TH', 'cmdDrvStallThreshold', 1, 'DRV:CFG:STALL_TH <0..1>', 'DRV:CFG:STALL_TH', False, False, False),
+    'DRV:CFG:STALL_TH?': CommandSpec('DRV:CFG:STALL_TH?', 'cmdDrvStallThreshold', 0, 'DRV:CFG:STALL_TH <0..1>', 'DRV:CFG:STALL_TH?', False, False, False),
+    'DRV:CFG:ALARMS': CommandSpec('DRV:CFG:ALARMS', 'cmdDrvAlarms', 1, 'DRV:CFG:ALARMS <fault> [fault...] | NONE | ALL', 'DRV:CFG:ALARMS', False, False, False),
+    'DRV:CFG:ALARMS?': CommandSpec('DRV:CFG:ALARMS?', 'cmdDrvAlarms', 0, 'DRV:CFG:ALARMS <fault> [fault...] | NONE | ALL', 'DRV:CFG:ALARMS?', False, False, False),
+    'DRV:USTEP': CommandSpec('DRV:USTEP', 'cmdDrvUstep', 1, 'DRV:USTEP <microsteps 1|2|4|...>', 'DRV:USTEP', False, False, False),
+    'DRV:CFG?': CommandSpec('DRV:CFG?', 'cmdMotorConfigShow', 0, '', 'MCONFIG', True, False, False, deprecated='DRV:CFG:PHYS?'),
     'DRV:CFG:SAVE': CommandSpec('DRV:CFG:SAVE', 'cmdMotorConfigSave', 0, '', '', False, False, True),
     'DRV:CFG:LOAD': CommandSpec('DRV:CFG:LOAD', 'cmdMotorConfigLoad', 0, '', '', False, False, False),
     'DRV:CFG:RESET': CommandSpec('DRV:CFG:RESET', 'cmdMotorConfigReset', 0, '', '', False, False, True),
     'DRV:CFG:APPLY': CommandSpec('DRV:CFG:APPLY', 'cmdMotorConfigApply', 0, '', '', False, False, True),
-    'DRV:STEP_MODE?': CommandSpec('DRV:STEP_MODE?', 'cmdDrvStepModeQuery', 0, '', 'DRV:STEP_MODE?', False, False, False),
+    'DRV:STEP_MODE?': CommandSpec('DRV:STEP_MODE?', 'cmdDrvStepModeQuery', 0, '', 'DRV:STEP_MODE?', False, False, False, deprecated='DRV:USTEP?'),
     'DRV:FULL_STEPS?': CommandSpec('DRV:FULL_STEPS?', 'cmdDrvFullStepsQuery', 0, '', 'DRV:FULL_STEPS?', False, False, False),
     'DRV:ENC_PPR?': CommandSpec('DRV:ENC_PPR?', 'cmdDrvEncoderPPRQuery', 0, '', 'DRV:ENC_PPR?', False, False, False),
+    'DRV:CAPS?': CommandSpec('DRV:CAPS?', 'cmdDrvCaps', 0, '', 'DRV:CAPS?', True, False, False),
+    'DRV:CFG:PHYS?': CommandSpec('DRV:CFG:PHYS?', 'cmdDrvPhysShow', 0, '', 'DRV:CFG:PHYS?', True, False, False),
+    'DRV:USTEP?': CommandSpec('DRV:USTEP?', 'cmdDrvUstepQuery', 0, '', 'DRV:USTEP?', False, False, False),
     'CTRL:ENC:FILT:WINDOW': CommandSpec('CTRL:ENC:FILT:WINDOW', 'cmdEncFilterSub', 1, '', '', False, False, False),
     'CTRL:ENC:FILT:EMA': CommandSpec('CTRL:ENC:FILT:EMA', 'cmdEncFilterSub', 1, '', '', False, False, False),
     'CTRL:ENC:FILT:SMA': CommandSpec('CTRL:ENC:FILT:SMA', 'cmdEncFilterSub', 1, '', '', False, False, False),
@@ -192,13 +215,13 @@ STATUS_JSON_KEYS: Tuple[str, ...] = (
     'state', 'tick', 'queue_depth', 'motor', 'position', 'speed',
     'busy', 'hi_z', 'direction', 'mot_status', 'status_reg', 'cmd_err',
     'ocd', 'thermal_sd', 'thermal_warn', 'uvlo', 'stall_a', 'stall_b',
-    'encoder', 'count', 'velocity', 'index_seen', 'revolutions', 'index_period_us',
-    'vel_quality', 'control', 'following_error', 'setpoint', 'mode', 'tracking',
-    'trim_out', 'p', 'i', 'd', 'sup_state', 'tier',
-    'vel_error', 'retries', 'base_spd', 'trim_spd', 'final_spd', 'trim_frozen',
-    'vel_quality', 'heartbeat', 'enabled', 'timeout_ms', 'remaining_ms', 'timed_out',
-    'system', 'uptime_ticks', 'free_heap', 'rx_overflows', 'rx_overflow_lines', 'mode',
-    'encoder_status', 'error',
+    'faults', 'driver_raw', 'encoder', 'count', 'velocity', 'index_seen',
+    'revolutions', 'index_period_us', 'vel_quality', 'control', 'following_error', 'setpoint',
+    'mode', 'tracking', 'trim_out', 'p', 'i', 'd',
+    'sup_state', 'tier', 'vel_error', 'retries', 'base_spd', 'trim_spd',
+    'final_spd', 'base_fsps', 'final_fsps', 'trim_frozen', 'vel_quality', 'heartbeat',
+    'enabled', 'timeout_ms', 'remaining_ms', 'timed_out', 'system', 'uptime_ticks',
+    'free_heap', 'rx_overflows', 'rx_overflow_lines', 'mode', 'encoder_status', 'error',
 )
 LIMITS: Dict[str, int] = {
     'line_max_chars': 127,

@@ -64,6 +64,7 @@ smc_add_test(test_command_parser test_command_parser.cpp
     ${SERVER}/layers/L2_protocol/command_parser.cpp
     ${SERVER}/layers/L2_protocol/service_dispatcher.cpp
     ${SERVER}/layers/L2_protocol/event_codec.cpp
+    ${SERVER}/layers/L2_protocol/kv_reply.cpp
     ${L2_HANDLER_SOURCES}
     ${SERVER}/harness/pins/async_event.cpp
     ${SERVER}/harness/pins/itask_stats.cpp

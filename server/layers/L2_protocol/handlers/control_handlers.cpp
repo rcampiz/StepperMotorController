@@ -5,6 +5,7 @@
 
 #include "L2_protocol/command_parser_internal.hpp"
 #include "L2_protocol/status_json.hpp"
+#include "L2_protocol/kv_reply.hpp"
 
 namespace Protocol {
 
@@ -176,19 +177,24 @@ void CommandParser::cmdTrimQuery() {
   const Protocol2TrimSpeeds spd = protocol2TrimSpeeds(snap.control);   // protocol 2 wire unit
 
   if (m_format == ResponseFormat::JSON) {
-    char json[256];
+    char baseFs[16], trimFs[16], finalFs[16];                         // protocol 3: full steps/s
+    formatFixed(baseFs, sizeof(baseFs), clampSpeedFsps(snap.control.baseSpeedFsps), 1);
+    formatFixed(trimFs, sizeof(trimFs), clampSpeedFsps(snap.control.trimSpeedFsps), 1);
+    formatFixed(finalFs, sizeof(finalFs), clampSpeedFsps(snap.control.finalSpeedFsps), 1);
+    char json[352];
     snprintf(json, sizeof(json),
              "{\"kp\":\"%d.%02d\",\"ki\":\"%d.%02d\","
              "\"out_limit\":%u,\"i_limit\":%u,\"max_pct\":%u,"
              "\"active\":%s,\"frozen\":%s,"
              "\"base_spd\":%ld,\"trim_spd\":%ld,\"final_spd\":%ld,"
+             "\"base_fsps\":%s,\"trim_fsps\":%s,\"final_fsps\":%s,"
              "\"vel_quality\":%u}",
              tc.kp100 / 100, (tc.kp100 < 0 ? -tc.kp100 : tc.kp100) % 100,
              tc.ki100 / 100, (tc.ki100 < 0 ? -tc.ki100 : tc.ki100) % 100,
              (unsigned)tc.outputLimit, (unsigned)tc.integralLimit,
              (unsigned)maxPct, active ? "true" : "false",
              frozen ? "true" : "false",
-             spd.base, spd.trim, spd.final_,
+             spd.base, spd.trim, spd.final_, baseFs, trimFs, finalFs,
              static_cast<unsigned>(snap.control.velQuality));
     respondJsonOk("CTRL:TRIM?", json);
   } else {
