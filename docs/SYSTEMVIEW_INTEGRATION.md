@@ -287,7 +287,8 @@ This is done in `SEGGER_SYSVIEW_Conf()`.
 ### High CPU overhead
 
 - Reduce event frequency
-- Increase RTT buffer size
+- Increase RTT buffer size (`SEGGER_SYSVIEW_RTT_BUFFER_SIZE` in `SEGGER_SYSVIEW_Conf.h`, 1 KB
+  since 2026-10-19 to save RAM; overflow events in a recording mean it is too small)
 - Use higher SWD speed
 
 ## References

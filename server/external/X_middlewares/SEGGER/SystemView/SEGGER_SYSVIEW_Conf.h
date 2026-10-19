@@ -96,10 +96,16 @@ Additional information:
 // Default (0) causes SystemView to share channel 0 and skip buffer setup.
 #define SEGGER_SYSVIEW_RTT_CHANNEL      1
 
-// 4 KB trace buffer — default 1024 fills instantly when no viewer is connected.
-// NO_BLOCK_SKIP mode drops events once full, but a larger buffer reduces
-// the chance of ring-buffer pointer corruption under heavy trace load.
-#define SEGGER_SYSVIEW_RTT_BUFFER_SIZE  4096
+// The SystemView up buffer (_UpBuffer, RTT channel 1): SEGGER's default, 1 KB (was 4 KB,
+// RAM reclaim 2026-10-19). It only matters while a J-Link SystemView host is recording:
+// with no viewer it fills and NO_BLOCK_SKIP drops whole packets (a write never splits or
+// blocks, whatever the size), so a bigger buffer only buys a longer burst before the host
+// drains it. Nothing else writes channel 1: the RTT host transport (Board::RttChannel(0)),
+// the interface trace (interface_trace.cpp) and the terminal use channel 0
+// (_acUpBuffer, BUFFER_SIZE_UP = 1 KB, unchanged). The start-of-recording burst (system
+// description, task list, ~6 tasks) is a few hundred bytes. If a recording shows overflow
+// events, raise this back.
+#define SEGGER_SYSVIEW_RTT_BUFFER_SIZE  1024
 
 
 #endif  // SEGGER_SYSVIEW_CONF_H
