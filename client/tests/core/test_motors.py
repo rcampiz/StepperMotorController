@@ -24,7 +24,7 @@ def test_profile_requests_are_the_drive_config_commands_in_order():
     p = motors.load_profile("23HS22-2804-ME1K")
     lines = [r.line for r in p.requests()]
     assert lines[0] == "DRV:CFG:DRIVE CURRENT"
-    assert lines[1] == "DRV:CFG:TVAL 05 16 1A 1A"            # 0.39 / 1.72 / 2.03 / 2.03 A at 78 mA per unit
+    assert lines[1] == "DRV:CFG:TVAL 04 11 14 14"            # 0.31 / 1.33 / 1.56 / 1.56 A at 78 mA per unit
     assert "DRV:CFG:PRED ON 48" in lines
     assert "DRV:CFG:STEPMODE 3" in lines and "DRV:CFG:IDLE 3000" in lines
     assert lines[-1] == "DRV:CFG:APPLY"

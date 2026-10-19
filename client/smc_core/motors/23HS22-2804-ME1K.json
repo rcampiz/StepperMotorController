@@ -7,7 +7,7 @@
   "full_steps_per_rev": 200,
   "encoder_cpr": 4000,
   "drive_mode": "current",
-  "tval_a": {"hold": 0.39, "run": 1.72, "acc": 2.03, "dec": 2.03},
+  "tval_a": {"hold": 0.31, "run": 1.33, "acc": 1.56, "dec": 1.56},
   "pred": true,
   "tsw_us": 48,
   "step_mode": 3,

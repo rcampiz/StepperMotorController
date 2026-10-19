@@ -27,7 +27,7 @@ public:
     const char* centerHint() const override { return "EDIT"; }
 
 private:
-    static constexpr uint8_t NUM_FIELDS = 9;
+    static constexpr uint8_t NUM_FIELDS = 10;
     static constexpr uint8_t FIELD_STEP_MODE = 0;
     static constexpr uint8_t FIELD_KVAL_HOLD = 1;
     static constexpr uint8_t FIELD_KVAL_RUN = 2;
@@ -36,7 +36,8 @@ private:
     static constexpr uint8_t FIELD_ACC = 5;
     static constexpr uint8_t FIELD_DEC = 6;
     static constexpr uint8_t FIELD_MAXSPD = 7;
-    static constexpr uint8_t FIELD_SAVE = 8;
+    static constexpr uint8_t FIELD_IDLE = 8;     ///< coils to Hi-Z after sitting stopped: off / 1-10 s
+    static constexpr uint8_t FIELD_SAVE = 9;
 
     uint8_t m_selectedField = 0;
     bool m_editing = false;
@@ -48,6 +49,7 @@ private:
 
     void renderField(Services::ICanvas& lcd, uint8_t field);
     void adjustField(uint8_t field, int8_t delta);
+    void applyToChip();   ///< the edited setting to the powerSTEP01 now
     void markRow(uint8_t field) { m_rowsDirty = static_cast<uint16_t>(m_rowsDirty | (1u << field)); }
 };
 
