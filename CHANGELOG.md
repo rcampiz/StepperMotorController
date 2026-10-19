@@ -27,7 +27,10 @@ Cutting a release: move the Unreleased notes under a new heading, bump `VERSION`
   panel sleep after 15 min of saver.
 - LCD E-STOP: double-tap CENTER stops and is reported upstream; an E-STOP page with
   hold-to-clear.
-- Harness meter: always-on crossing counters for every harness signal.
+- Harness meter: always-on crossing counters for every harness signal (`DIAG:HARNESS?`), shown
+  live on the LCD Architecture screen (HARNESS view; the matrix shows tasks x harnesses).
+- Memory page on the LCD and in the GUI (Diagnostics > Memory): flash, static RAM, the RAM
+  split and every stack's peak (`DIAG:MEM?`).
 - Motor: powerSTEP01 current mode (TVAL) with predictive current control as the default,
   current-regulation settings, ADC_OUT supply sense, gate driver programmed for the IHM03A1,
   idle release of the coils.
