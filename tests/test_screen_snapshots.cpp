@@ -440,6 +440,36 @@ TEST(motion_jog_is_sized_in_revolutions_at_the_microstep_setting) {
     EXPECT_EQ(UI::MotionScreen::milliRevToMicrosteps(3 * 125, 3200), 1200);
 }
 
+// Every page with setting rows explains the selected row under its key hint (Chrome::HelpArea):
+// texts from a const table, two lines at most, repainted only when the selection changes.
+// The Driver Config and Motion pages' help is in test_screen_config.cpp (it links the motion
+// services those pages read).
+TEST(setting_pages_explain_the_selected_row) {
+    for (uint8_t f = 0; f < 16; f++) {
+        EXPECT_TRUE(UI::Chrome::helpFits(UI::ScreenCareScreen::helpText(f)));
+    }
+    EXPECT_TRUE(UI::Chrome::helpFits(UI::DeviceInfoScreen::helpText()));
+    EXPECT_FALSE(UI::Chrome::helpFits("far too long for the help area: two lines of thirty-eight characters each, no more"));
+    EXPECT_TRUE(initStore());
+
+    // Screen Care: the help under the hint, the explanation block below it, all above the footer
+    {
+        Rig rig;
+        UI::MenuScreen root("Main Menu");
+        UI::ScreenCareSettings care;
+        UI::ScreenCareScreen screen(&care, &countRecovery);
+        rig.start(&root);
+        rig.mgr.push(&screen);
+        rig.key(UI::JoyDirection::DOWN);
+        rig.key(UI::JoyDirection::DOWN);
+        rig.frame();
+        rig.dump("screen_care_help_style");                         // "Synthwave, hotline or blank."
+        constexpr uint16_t HELP_Y = UI::Theme::CONTENT_Y + 4 + 5 * UI::Chrome::ROW_H + 4 + UI::Chrome::HELP_LINE_H;
+        EXPECT_TRUE(rig.panel.countColor(UI::Theme::DIM, 0, HELP_Y, 240, UI::Chrome::HELP_LINE_H) > 50);
+        rig.key(UI::JoyDirection::LEFT);
+    }
+}
+
 TEST(motion_indicator_shows_heading_speed_and_turn_magnitudes) {
     Rig rig;
     Services::IndicatorService ind;

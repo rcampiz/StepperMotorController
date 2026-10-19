@@ -251,8 +251,16 @@ void fieldRow(Services::ICanvas& lcd, uint16_t y, const char* label, const char*
               RowState state, uint16_t valueColor, bool labelToo)
 {
     constexpr uint16_t X = MARGIN, W = WIDTH - 2 * MARGIN, H = ROW_H - 2;
-    constexpr uint16_t LABEL_W = 112;                       // 13 chars + pad
-    constexpr uint16_t VALUE_X = X + LABEL_W, VALUE_W = W - LABEL_W;
+    // The label column is 112 px ("> " + 11 characters + pad); a longer label (up to 14
+    // characters, e.g. "Idle release", "Save to flash") widens it into the value's side,
+    // and the value keeps what is left (a 9-character value still fits next to 14)
+    constexpr size_t LABEL_SHORT = 11, LABEL_MAX = 14;
+    size_t labelLen = (label != nullptr) ? strlen(label) : 0;
+    if (labelLen > LABEL_MAX) labelLen = LABEL_MAX;
+    const uint16_t LABEL_W = (labelLen <= LABEL_SHORT) ? 112
+                                                       : static_cast<uint16_t>(4 + (2 + labelLen) * MED_W + 4);
+    const uint16_t VALUE_X = static_cast<uint16_t>(X + LABEL_W), VALUE_W = static_cast<uint16_t>(W - LABEL_W);
+    const size_t valueMax = static_cast<size_t>((VALUE_W - 6) / MED_W);    // 13 next to a short label
     uint16_t bg, fgLabel, fgValue;
     switch (state) {
         case RowState::SELECTED: bg = MAGENTA; fgLabel = TEXT; fgValue = TEXT; break;
@@ -265,15 +273,13 @@ void fieldRow(Services::ICanvas& lcd, uint16_t y, const char* label, const char*
     if (state == RowState::SELECTED || state == RowState::EDITING) {
         const bool editing = state == RowState::EDITING;
         char lab[20];
-        size_t n = strlen(label);
-        if (n > 11) n = 11;
         lab[0] = '>'; lab[1] = ' ';
-        memcpy(lab + 2, label, n);
-        lab[2 + n] = '\0';
+        memcpy(lab + 2, label, labelLen);
+        lab[2 + labelLen] = '\0';
         char vbuf[16];
         if (editing) snprintf(vbuf, sizeof vbuf, "<%s>", value != nullptr ? value : "");
         else         snprintf(vbuf, sizeof vbuf, "%s", value != nullptr ? value : "");
-        if (strlen(vbuf) > 13) vbuf[13] = '\0';
+        if (strlen(vbuf) > valueMax) vbuf[valueMax] = '\0';
         selectRow(lcd, X, y, W, H, lab, vbuf, editing);
         if (labelToo) {
             lcd.fillRect(X, static_cast<uint16_t>(y + H), W, 1, GRID);
@@ -287,10 +293,8 @@ void fieldRow(Services::ICanvas& lcd, uint16_t y, const char* label, const char*
     if (labelToo) {
         text[0] = (state == RowState::SELECTED || state == RowState::EDITING) ? '>' : ' ';
         text[1] = ' ';
-        size_t n = strlen(label);
-        if (n > 11) n = 11;
-        memcpy(text + 2, label, n);
-        text[2 + n] = '\0';
+        memcpy(text + 2, label, labelLen);
+        text[2 + labelLen] = '\0';
         textBox(lcd, X, y, LABEL_W, H, 4, 2, text, fgLabel, bg);
         lcd.fillRect(X, static_cast<uint16_t>(y + H), W, 1, GRID);
         lcd.fillRect(X, static_cast<uint16_t>(y + H + 1), W, 1, BG);
@@ -300,7 +304,7 @@ void fieldRow(Services::ICanvas& lcd, uint16_t y, const char* label, const char*
     if (state == RowState::EDITING) snprintf(vbuf, sizeof vbuf, "<%s>", value);
     else                            snprintf(vbuf, sizeof vbuf, "%s", value);
     size_t vn = strlen(vbuf);
-    if (vn > 13) vn = 13;
+    if (vn > valueMax) vn = valueMax;
     vbuf[vn] = '\0';
     auto tw = static_cast<uint16_t>(vn * MED_W);
     textBox(lcd, VALUE_X, y, VALUE_W, H, static_cast<uint16_t>(VALUE_W - tw - 6), 2, vbuf, fgValue, bg);
@@ -309,6 +313,54 @@ void fieldRow(Services::ICanvas& lcd, uint16_t y, const char* label, const char*
 void hintLine(Services::ICanvas& lcd, uint16_t y, const char* text, uint16_t color)
 {
     lcd.blitTextLine(MARGIN, y, static_cast<uint16_t>(WIDTH - 2 * MARGIN), SMALL_H, text, color, BG);
+}
+
+namespace {
+
+static_assert(HELP_COLS == (WIDTH - 2 * MARGIN) / SMALL_W, "a help line is the content width");
+
+/// The next help line from p: up to HELP_COLS characters, ended by a '\n' (the text's own
+/// break) or else at the last space that fits (a word longer than a line is cut). Returns
+/// where the rest starts.
+const char* nextHelpLine(const char* p, char* out)
+{
+    while (*p == ' ') p++;
+    size_t n = 0;
+    while (p[n] != '\0' && p[n] != '\n' && n <= HELP_COLS) n++;
+    if (n > HELP_COLS) {
+        size_t cut = HELP_COLS;
+        while (cut > 0 && p[cut] != ' ') cut--;
+        n = (cut > 0) ? cut : HELP_COLS;
+    }
+    memcpy(out, p, n);
+    out[n] = '\0';
+    p += n;
+    if (*p == '\n') p++;
+    return p;
+}
+
+} // namespace
+
+bool helpFits(const char* text)
+{
+    if (text == nullptr) return true;
+    char line[HELP_COLS + 1];
+    for (uint16_t i = 0; i < HELP_LINES; i++) text = nextHelpLine(text, line);
+    while (*text == ' ') text++;
+    return *text == '\0';
+}
+
+void HelpArea::show(Services::ICanvas& lcd, uint16_t y, const char* text)
+{
+    if (m_valid && text == m_shown) return;
+    m_shown = text;
+    m_valid = true;
+    const char* p = (text != nullptr) ? text : "";
+    char line[HELP_COLS + 1];
+    for (uint16_t i = 0; i < HELP_LINES; i++) {
+        p = nextHelpLine(p, line);
+        hintLine(lcd, static_cast<uint16_t>(y + i * HELP_LINE_H), line, DIM);
+    }
 }
 
 void fillAround(Services::ICanvas& lcd, uint16_t x, uint16_t y, uint16_t w, uint16_t h,

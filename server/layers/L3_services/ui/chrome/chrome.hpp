@@ -80,5 +80,32 @@ void hintLine(Services::ICanvas& lcd, uint16_t y, const char* text, uint16_t col
 void textBox(Services::ICanvas& lcd, uint16_t x, uint16_t y, uint16_t w, uint16_t h,
              uint16_t padX, uint16_t padY, const char* text, uint16_t fg, uint16_t bg);
 
+/// Per-row help: what the selected setting does, in plain words. Every page with setting
+/// rows shows it the same way, in the same place: right under the page's key-hint line, up
+/// to HELP_LINES dim small-font lines of HELP_COLS characters (wrapped at spaces, or at a
+/// '\n' in the text), the
+/// last one HELP_LINE_H apart. The texts live in a const table in each screen (flash).
+constexpr uint16_t HELP_COLS = 38;                 ///< (WIDTH - 2 * MARGIN) / SMALL_W
+constexpr uint16_t HELP_LINES = 2;
+constexpr uint16_t HELP_LINE_H = 10;
+constexpr uint16_t HELP_H = HELP_LINES * HELP_LINE_H;   ///< the area, with the gap under it
+
+/// True when `text` wraps into the help area (the tests check every page's table)
+bool helpFits(const char* text);
+
+/// The help area of one page, at y (the line under the key hint): show() paints only when
+/// the text changes (a new selection, or a row whose meaning changed), so a page calls it
+/// every render; invalidate() after a full repaint. Every line is painted whole, so a
+/// shorter text clears a longer one.
+class HelpArea {
+public:
+    void show(Services::ICanvas& lcd, uint16_t y, const char* text);
+    void invalidate() { m_valid = false; }
+
+private:
+    const char* m_shown = nullptr;   ///< the text on the panel (a pointer into a const table)
+    bool m_valid = false;
+};
+
 } // namespace Chrome
 } // namespace UI

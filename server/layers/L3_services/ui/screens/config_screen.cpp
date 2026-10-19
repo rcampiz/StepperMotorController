@@ -13,10 +13,40 @@
 
 namespace UI {
 
+// Layout: the rows, the key-hint line under the last one, the row help, the deck
+static constexpr uint8_t  ROW_COUNT = 10;
 static constexpr uint16_t FIELDS_Y = Theme::CONTENT_Y + 4;
-static constexpr uint16_t HINT_Y   = FIELDS_Y + 9 * Chrome::ROW_H + 4;
+static constexpr uint16_t HINT_Y   = FIELDS_Y + ROW_COUNT * Chrome::ROW_H + 4;
+static constexpr uint16_t HELP_Y   = HINT_Y + Chrome::HELP_LINE_H;
+static constexpr uint16_t DECK_Y   = HELP_Y + Chrome::HELP_H + 4;
+static_assert(DECK_Y + 12 < Theme::CONTENT_BOTTOM, "the rows, hint and help fit above the footer");
 
 static uint16_t fieldY(uint8_t i) { return static_cast<uint16_t>(FIELDS_Y + i * Chrome::ROW_H); }
+
+// What each row does, in plain words, in row order (Chrome::HelpArea: two lines of 38
+// characters, wrapped at spaces or at a '\n'). The second text, when there is one, is the
+// row's meaning in voltage mode. No '~': the small font draws it as an arrow.
+struct RowHelp { const char* text; const char* voltageMode; };
+static constexpr RowHelp HELP[ROW_COUNT] = {
+    {"Microsteps per full step.\nCurrent mode runs 1/16 at most.", nullptr},
+    {"Coil current when stopped (amps).", "Drive duty when stopped (voltage mode)."},
+    {"Coil current while moving (amps).", "Drive duty while moving (voltage mode)."},
+    {"Overcurrent flag: switch voltage limit (amps: estimate). Not motor current.", nullptr},
+    {"Stall detection sensitivity.", nullptr},
+    {"Ramp-up rate (full steps/s^2).", nullptr},
+    {"Ramp-down rate (full steps/s^2).", nullptr},
+    {"Speed ceiling for moves (full steps/s).", nullptr},
+    {"Coils off after the motor sits idle this long.", nullptr},
+    {"Keep these settings after power off.", nullptr},
+};
+
+const char* ConfigScreen::helpText(uint8_t field, bool currentMode)
+{
+    static_assert(NUM_FIELDS == ROW_COUNT, "the layout and the help table count every row");
+    if (field >= ROW_COUNT) return "";
+    const RowHelp& h = HELP[field];
+    return (!currentMode && h.voltageMode != nullptr) ? h.voltageMode : h.text;
+}
 
 void ConfigScreen::onActivate()
 {
@@ -130,7 +160,8 @@ void ConfigScreen::render(Services::ICanvas& lcd)
     if (m_full) {
         m_full = false;
         m_rowsDirty = 0xFFFF;
-        Chrome::drawDeck(lcd, HINT_Y + 14, Theme::CONTENT_BOTTOM);
+        m_help.invalidate();
+        Chrome::drawDeck(lcd, DECK_Y, Theme::CONTENT_BOTTOM);
     }
     for (uint8_t i = 0; i < NUM_FIELDS; i++) {
         if (m_rowsDirty & (1u << i)) renderField(lcd, i);
@@ -141,6 +172,8 @@ void ConfigScreen::render(Services::ICanvas& lcd)
         Chrome::hintLine(lcd, HINT_Y, m_editing ? "LEFT/RIGHT adjust   CENTER done"
                                                 : "Changes apply now; Save keeps them", Theme::DIM);
     }
+    // Paints only when the selection (or the drive mode a row means) changed
+    m_help.show(lcd, HELP_Y, helpText(m_selectedField, Services::motion.stepper.config.isCurrentMode()));
 }
 
 void ConfigScreen::adjustField(uint8_t field, int8_t delta)

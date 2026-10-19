@@ -11,12 +11,16 @@
 #define CONFIG_SCREEN_HPP
 
 #include "ui/screen.hpp"
+#include "ui/chrome/chrome.hpp"
 #include <stdint.h>
 
 namespace UI {
 
 class ConfigScreen : public IScreen {
 public:
+    /// The help text of a row (const, in flash; "" past the last row); currentMode picks
+    /// the hold/run meaning
+    static const char* helpText(uint8_t field, bool currentMode);
     ScreenType getType() const override { return ScreenType::MENU; }
     void render(Services::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
@@ -47,6 +51,7 @@ private:
     bool m_hintDirty = true;
     uint16_t m_rowsDirty = 0;
     bool m_saved = false;      // "saved" shown on the Save row until the next change
+    Chrome::HelpArea m_help;   // the selected row's help, under the key hint
 
     void renderField(Services::ICanvas& lcd, uint8_t field);
     void adjustField(uint8_t field, int8_t delta);

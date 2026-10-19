@@ -9,6 +9,7 @@
 
 #include "ui/screen.hpp"
 #include "ui/screen_care.hpp"
+#include "ui/chrome/chrome.hpp"
 #include <stdint.h>
 
 namespace UI {
@@ -18,6 +19,8 @@ public:
     using RunRecovery = void (*)();
 
     ScreenCareScreen(ScreenCareSettings* settings, RunRecovery run) : m_settings(settings), m_run(run) {}
+    /// The help text of a row (const, in flash; "" past the last row)
+    static const char* helpText(uint8_t field);
     ScreenType getType() const override { return ScreenType::MENU; }
     void render(Services::ICanvas& lcd) override;
     InputResult handleInput(JoyDirection dir, bool pressed) override;
@@ -44,6 +47,7 @@ private:
     bool m_full = true;
     bool m_hintDirty = true;
     uint16_t m_rowsDirty = 0;
+    Chrome::HelpArea m_help;         // the selected row's help, under the key hint
 
     void renderField(Services::ICanvas& lcd, uint8_t field);
     void adjust(int8_t delta);

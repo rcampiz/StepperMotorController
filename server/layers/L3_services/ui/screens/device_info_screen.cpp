@@ -18,6 +18,12 @@ namespace UI {
 static constexpr uint16_t ROWS_Y = Theme::CONTENT_Y + 4;
 static constexpr uint16_t ROW_WHEEL = 1, ROW_UPTIME = 4, ROW_HEAP = 5, ROW_CPU = 6;
 static constexpr uint16_t HINT_Y = ROWS_Y + 7 * Chrome::ROW_H + 6;
+static constexpr uint16_t HELP_Y = HINT_Y + Chrome::HELP_LINE_H;     // the row help, under the key hint
+static constexpr uint16_t DECK_Y = HELP_Y + Chrome::HELP_H + 4;
+static_assert(DECK_Y + 12 < Theme::CONTENT_BOTTOM, "the rows, hint and help fit above the footer");
+/// The one selectable row's help (const, in flash)
+static constexpr const char* HELP_WHEEL = "Which wheel this board drives on the\nrobot: FL, FR, RL or RR.";
+const char* DeviceInfoScreen::helpText() { return HELP_WHEEL; }
 static constexpr uint8_t ROLE_COUNT = 5;          // NONE, FL, FR, RL, RR
 static constexpr const char* HINT_IDLE = "CENTER: change the wheel";
 static constexpr const char* HINT_EDIT = "LEFT/RIGHT choose  CENTER save";
@@ -63,7 +69,8 @@ void DeviceInfoScreen::render(Services::ICanvas& lcd)
         Chrome::fieldRow(lcd, rowY(ROW_UPTIME), "Uptime", "", Chrome::RowState::NORMAL);
         Chrome::fieldRow(lcd, rowY(ROW_HEAP), "Free heap", "", Chrome::RowState::NORMAL);
         Chrome::fieldRow(lcd, rowY(ROW_CPU), "CPU load", "", Chrome::RowState::NORMAL);
-        Chrome::drawDeck(lcd, static_cast<uint16_t>(HINT_Y + 14), Theme::CONTENT_BOTTOM);
+        Chrome::drawDeck(lcd, DECK_Y, Theme::CONTENT_BOTTOM);
+        m_help.invalidate();
         m_wheelDirty = true;
         m_hintDirty = true;
     }
@@ -76,6 +83,7 @@ void DeviceInfoScreen::render(Services::ICanvas& lcd)
         m_hintDirty = false;
         Chrome::hintLine(lcd, HINT_Y, m_hint, Theme::DIM);
     }
+    m_help.show(lcd, HELP_Y, HELP_WHEEL);                 // the Wheel is always the selection
 
     uint32_t secs = telem.system.uptimeTicks / 1000;
     uint32_t mins = secs / 60; secs %= 60;

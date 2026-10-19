@@ -9,6 +9,7 @@
 #define DEVICE_INFO_SCREEN_HPP
 
 #include "ui/screen.hpp"
+#include "ui/chrome/chrome.hpp"
 #include <stdint.h>
 
 namespace UI {
@@ -24,6 +25,8 @@ public:
     bool usesChrome() const override { return true; }
     const char* title() const override { return "Device Info"; }
     const char* centerHint() const override { return m_editing ? "SAVE" : "EDIT"; }
+    /// The help text of the one selectable row, the Wheel (const, in flash)
+    static const char* helpText();
 
 private:
     bool m_needsRedraw = true;
@@ -36,6 +39,7 @@ private:
     char m_uptime[16] = {};
     char m_heap[16] = {};
     char m_cpu[16] = {};
+    Chrome::HelpArea m_help;         // the Wheel row's help, under the key hint
 
     void setHint(const char* text);
 };

@@ -13,11 +13,15 @@
 #include "fakes/powerstep_model.hpp"
 #include "L4_drivers/devices/lcd_st7789.hpp"
 #include "L3_services/ui/screens/config_screen.hpp"
+#include "L3_services/ui/screens/motion_screen.hpp"
 #include "L3_services/ui/screen_manager/screen_manager.hpp"
 #include "L3_services/ui/theme.hpp"
 #include "L3_services/ui/chrome/chrome.hpp"
 #include "L3_services/motion/motion.hpp"
 #include "L3_services/infra/trace/trace.hpp"
+#include "L3_services/infra/telemetry_store/telemetry_store.hpp"
+#include "F_platform/boundary/iclock.hpp"
+#include "F_platform/boundary/ilock.hpp"
 #include <cstring>
 #include <vector>
 #include <sys/stat.h>
@@ -32,11 +36,24 @@ namespace Trace {
 size_t getTotal() { return 0; }
 size_t getCount() { return 0; }
 bool getEntry(size_t, Entry&) { return false; }
+// The motion service (behind the Motion page) traces its calls: nothing to record here
+void record(Dir, const char*, uint32_t) {}
+ServiceScope::ServiceScope(uint8_t) {}
+ServiceScope::~ServiceScope() {}
 }
 
 using namespace fakes;
 
 namespace {
+
+// The Motion page reads the telemetry store: a host one, no locking needed
+struct NullLock : Platform::ILock {
+    void acquire() override {}
+    void release() override {}
+};
+NullLock g_lock;
+Platform::NullClock g_clock;
+bool initStore() { static bool done = Services::g_telemetryStore.init(g_lock, g_clock); return done; }
 
 struct RamStore : Drivers::IConfigStore {
     std::vector<uint8_t> blob = std::vector<uint8_t>(4096, 0xFF);
@@ -101,6 +118,8 @@ uint32_t outsideBand(const PanelSim& p, uint16_t color)
 
 constexpr uint16_t FIELDS_Y = UI::Theme::CONTENT_Y + 4;
 uint16_t rowY(uint8_t i) { return static_cast<uint16_t>(FIELDS_Y + i * UI::Chrome::ROW_H); }
+constexpr uint16_t HINT_Y = FIELDS_Y + 10 * UI::Chrome::ROW_H + 4;         // under the 10th row
+constexpr uint16_t HELP_Y = HINT_Y + UI::Chrome::HELP_LINE_H;
 
 } // namespace
 
@@ -124,6 +143,56 @@ TEST(config_screen_shows_the_bench_settings_in_physical_units) {
     const Harness::DriverSettings eff = Services::motion.stepper.config.getEffectiveSettings();
     EXPECT_EQ(eff.microsteps, 16u);                                   // "1/16": the driver's cap
     EXPECT_TRUE(eff.currentA.run > 1.32f && eff.currentA.run < 1.33f);
+
+    // Layout: all ten rows show; the key hint and the help sit below the last (Save to flash)
+    // and above the deck. The label column widens for the long labels: "Idle release" and
+    // "Save to flash" show whole (their last letters lie past the 112 px column)
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::TEXT, UI::Theme::MARGIN, rowY(9), 112, UI::Chrome::ROW_H) > 100);
+    EXPECT_EQ(rig.panel.countColor(UI::Theme::DIM, 0, rowY(9), 240, UI::Chrome::ROW_H), 0u);   // no hint over it
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::TEXT, UI::Theme::MARGIN + 112, rowY(8), 10, UI::Chrome::ROW_H) > 0);
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::TEXT, UI::Theme::MARGIN + 112, rowY(9), 18, UI::Chrome::ROW_H) > 0);
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::DIM, 0, HINT_Y, 240, 8) > 50);           // the key hint
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::DIM, 0, HELP_Y, 240, UI::Chrome::HELP_H) > 50);   // row 0's help
+}
+
+TEST(config_screen_explains_the_selected_row) {
+    // Every row's help fits the two help lines, in either drive mode
+    for (uint8_t f = 0; f < 16; ++f) {
+        EXPECT_TRUE(UI::Chrome::helpFits(UI::ConfigScreen::helpText(f, true)));
+        EXPECT_TRUE(UI::Chrome::helpFits(UI::ConfigScreen::helpText(f, false)));
+    }
+    EXPECT_TRUE(std::strcmp(UI::ConfigScreen::helpText(1, true), UI::ConfigScreen::helpText(1, false)) != 0);
+    loadBenchConfig();
+    Rig rig;
+    UI::ConfigScreen screen;
+    rig.start(&screen);
+    rig.frame();
+    auto helpInk = [&]() { return rig.panel.countColor(UI::Theme::DIM, 0, HELP_Y, 240, UI::Chrome::HELP_H); };
+    const uint32_t stepInk = helpInk();
+    for (int i = 0; i < 3; ++i) rig.key(UI::JoyDirection::DOWN);       // OCD
+    rig.frame();
+    rig.dump("config_help_ocd");
+    const uint32_t ocdInk = helpInk();
+    EXPECT_TRUE(ocdInk > 100 && ocdInk != stepInk);                    // two lines of it
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::DIM, 0, HELP_Y + UI::Chrome::HELP_LINE_H, 240, 8) > 30);
+    // Same selection: not painted again (a pixel planted in it survives); editing keeps it
+    // and shows the key hint on its own line
+    rig.panel.frame[HELP_Y + 2][100] = 0xFFFF;
+    rig.frame();
+    rig.key(UI::JoyDirection::RIGHT);                                  // edit OCD
+    rig.frame();
+    rig.dump("config_help_ocd_edit");
+    EXPECT_EQ(rig.panel.px(100, HELP_Y + 2), 0xFFFF);
+    EXPECT_TRUE(rig.panel.countColor(UI::Theme::DIM, 0, HINT_Y, 240, 8) > 50);           // "LEFT/RIGHT adjust ..."
+    rig.key(UI::JoyDirection::CENTER);
+    // Down to the last row: the help follows the selection
+    for (int i = 0; i < 6; ++i) rig.key(UI::JoyDirection::DOWN);
+    rig.frame();
+    rig.dump("config_help_save");
+    EXPECT_TRUE(rig.panel.px(100, HELP_Y + 2) != 0xFFFF);
+    // The help never reaches the deck or the footer
+    EXPECT_EQ(rig.panel.countColor(UI::Theme::DIM, 0, HELP_Y + UI::Chrome::HELP_H, 240,
+                                   static_cast<uint16_t>(UI::Theme::CONTENT_BOTTOM - HELP_Y - UI::Chrome::HELP_H)), 0u);
 }
 
 TEST(config_screen_edits_move_by_the_drivers_own_steps) {
@@ -175,4 +244,44 @@ TEST(config_screen_in_voltage_mode_shows_duty) {
     rig.dump("config_voltage");
     EXPECT_EQ(Services::motion.stepper.config.getEffectiveMicrosteps(), 128u);
     EXPECT_TRUE(rig.panel.countColor(UI::Theme::CYAN, 120, rowY(1), 110, UI::Chrome::ROW_H) > 20);
+}
+
+// The Motion page explains its selected row the same way (Chrome::HelpArea), under its key
+// hint below the eight rows, repainted only when the selection changes
+TEST(motion_screen_explains_the_selected_row) {
+    for (uint8_t f = 0; f < 16; ++f) {
+        EXPECT_TRUE(UI::Chrome::helpFits(UI::MotionScreen::helpText(f, true)));
+        EXPECT_TRUE(UI::Chrome::helpFits(UI::MotionScreen::helpText(f, false)));
+    }
+    EXPECT_TRUE(std::strcmp(UI::MotionScreen::helpText(7, true), UI::MotionScreen::helpText(7, false)) != 0);
+    EXPECT_TRUE(initStore());
+    loadBenchConfig();
+    Rig rig;
+    UI::MotionScreen motion;
+    rig.start(&motion);
+    rig.frame();
+    constexpr uint16_t ROWS_END = UI::Theme::CONTENT_Y + 40 + 8 * UI::Chrome::ROW_H;
+    constexpr uint16_t MOTION_HELP_Y = ROWS_END + 4 + UI::Chrome::HELP_LINE_H;
+    auto helpInk = [&]() { return rig.panel.countColor(UI::Theme::DIM, 0, MOTION_HELP_Y, 240, UI::Chrome::HELP_H); };
+    const uint32_t speedInk = helpInk();
+    EXPECT_TRUE(speedInk > 50);                                       // "Run and jog speed (RPM)."
+    for (int i = 0; i < 3; ++i) rig.key(UI::JoyDirection::DOWN);
+    rig.frame();
+    rig.dump("motion_help_jog");                                      // "Distance per jog (revolutions)."
+    const uint32_t jogInk = helpInk();
+    EXPECT_TRUE(jogInk > 50 && jogInk != speedInk);
+    // Same selection: not painted again (a pixel planted in it survives)
+    rig.panel.frame[MOTION_HELP_Y + 2][120] = 0xFFFF;
+    rig.frame();
+    rig.frame();
+    EXPECT_EQ(rig.panel.px(120, MOTION_HELP_Y + 2), 0xFFFF);
+    // A new selection repaints it
+    for (int i = 0; i < 4; ++i) rig.key(UI::JoyDirection::DOWN);      // Enable / Release
+    rig.frame();
+    rig.dump("motion_help_enable");
+    EXPECT_TRUE(rig.panel.px(120, MOTION_HELP_Y + 2) != 0xFFFF);
+    // ... and it stays clear of the rows and the deck
+    EXPECT_EQ(rig.panel.countColor(UI::Theme::DIM, 0, ROWS_END, 240, 4), 0u);
+    EXPECT_EQ(rig.panel.countColor(UI::Theme::DIM, 0, MOTION_HELP_Y + UI::Chrome::HELP_H, 240,
+                                   static_cast<uint16_t>(UI::Theme::CONTENT_BOTTOM - MOTION_HELP_Y - UI::Chrome::HELP_H)), 0u);
 }

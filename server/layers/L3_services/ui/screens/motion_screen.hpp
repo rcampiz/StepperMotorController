@@ -10,6 +10,7 @@
 #define MOTION_SCREEN_HPP
 
 #include "ui/screen.hpp"
+#include "ui/chrome/chrome.hpp"
 #include <stdint.h>
 #include <stddef.h>
 #include <stdio.h>
@@ -27,6 +28,9 @@ public:
     bool usesChrome() const override { return true; }
     const char* title() const override { return "Motion"; }
     const char* centerHint() const override { return "DO/EDIT"; }
+    /// The help text of a row (const, in flash; "" past the last row); hiZ picks the
+    /// Enable / Release meaning of the last row
+    static const char* helpText(uint8_t field, bool hiZ);
 
 private:
     static constexpr uint8_t NUM_FIELDS = 8;
@@ -45,6 +49,7 @@ private:
     bool m_full = true;
     uint16_t m_rowsDirty = 0;        // bit per field
     bool m_hintDirty = true;
+    Chrome::HelpArea m_help;         // the selected row's help, under the key hint
 
     // Live status cache, so a cell is repainted only when its text changes
     char m_posText[24] = {};

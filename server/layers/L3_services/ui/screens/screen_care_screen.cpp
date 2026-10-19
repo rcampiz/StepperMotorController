@@ -13,7 +13,25 @@ namespace UI {
 
 static constexpr uint16_t FIELDS_Y = Theme::CONTENT_Y + 4;
 static constexpr uint16_t HINT_Y   = FIELDS_Y + 5 * Chrome::ROW_H + 4;
-static constexpr uint16_t TEXT_Y   = HINT_Y + 16;
+static constexpr uint16_t HELP_Y   = HINT_Y + Chrome::HELP_LINE_H;   // the row help, under the key hint
+static constexpr uint16_t TEXT_Y   = HELP_Y + Chrome::HELP_H + 6;
+static constexpr uint16_t TEXT_BOX_H = 118;
+static_assert(TEXT_Y - 4 + TEXT_BOX_H <= Theme::CONTENT_BOTTOM, "the explanation fits above the footer");
+
+// What each row does, in plain words, in row order (Chrome::HelpArea)
+static constexpr const char* const HELP[] = {
+    "Quiet time before the screen saver.",
+    "Saver time before the panel goes black.",
+    "Synthwave, hotline or blank.",
+    "Length of the anti-ghosting run.",
+    "Start the anti-ghosting run now.",
+};
+
+const char* ScreenCareScreen::helpText(uint8_t field)
+{
+    static_assert(sizeof HELP / sizeof HELP[0] == NUM_FIELDS, "one help text per row");
+    return field < NUM_FIELDS ? HELP[field] : "";
+}
 
 static uint16_t fieldY(uint8_t i) { return static_cast<uint16_t>(FIELDS_Y + i * Chrome::ROW_H); }
 
@@ -86,6 +104,7 @@ void ScreenCareScreen::render(Services::ICanvas& lcd)
     if (m_full) {
         m_full = false;
         m_rowsDirty = 0xFFFF;
+        m_help.invalidate();
         static const char* const LINES[] = {
             "IPS panel: a still image left for",
             "hours leaves a ghost of itself.",
@@ -104,7 +123,7 @@ void ScreenCareScreen::render(Services::ICanvas& lcd)
                              LINES[i], Theme::DIM, Theme::BG);
         }
         Chrome::drawCorners(lcd, Theme::MARGIN, static_cast<uint16_t>(TEXT_Y - 4),
-                            static_cast<uint16_t>(Theme::WIDTH - 2 * Theme::MARGIN), 118, 8, Theme::GRID_MAJ);
+                            static_cast<uint16_t>(Theme::WIDTH - 2 * Theme::MARGIN), TEXT_BOX_H, 8, Theme::GRID_MAJ);
     }
     for (uint8_t i = 0; i < NUM_FIELDS; i++) {
         if (m_rowsDirty & (1u << i)) renderField(lcd, i);
@@ -114,6 +133,7 @@ void ScreenCareScreen::render(Services::ICanvas& lcd)
         m_hintDirty = false;
         Chrome::hintLine(lcd, HINT_Y, m_editing ? "LEFT/RIGHT adjust   CENTER done" : "", Theme::DIM);
     }
+    m_help.show(lcd, HELP_Y, helpText(m_selectedField));   // paints only when the selection changed
 }
 
 void ScreenCareScreen::adjust(int8_t delta)

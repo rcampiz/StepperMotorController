@@ -20,6 +20,23 @@ namespace UI {
 static constexpr uint16_t STATUS_Y  = Theme::CONTENT_Y + 2;
 static constexpr uint16_t FIELDS_Y  = Theme::CONTENT_Y + 40;
 static constexpr uint16_t HINT_Y    = FIELDS_Y + 8 * Chrome::ROW_H + 4;
+static constexpr uint16_t HELP_Y    = HINT_Y + Chrome::HELP_LINE_H;      // the row help, under the key hint
+static constexpr uint16_t DECK_Y    = HELP_Y + Chrome::HELP_H + 4;
+static_assert(DECK_Y + 12 < Theme::CONTENT_BOTTOM, "the rows, hint and help fit above the footer");
+
+// What each row does, in plain words, in row order (Chrome::HelpArea). The second text, when
+// there is one, is for the row's other face: Enable (coils off) / Release (coils on).
+struct RowHelp { const char* text; const char* other; };
+static constexpr RowHelp HELP[] = {
+    {"Run and jog speed (RPM).", nullptr},
+    {"Turn continuously until STOP.", nullptr},
+    {"Turn continuously until STOP.", nullptr},
+    {"Distance per jog (revolutions).", nullptr},
+    {"Turn by the jog size, then stop.", nullptr},
+    {"Turn by the jog size, then stop.", nullptr},
+    {"Decelerate to a stop.", nullptr},
+    {"Energise the coils (hold position).", "Coils off: shaft turns freely."},
+};
 
 static uint16_t fieldY(uint8_t i) { return static_cast<uint16_t>(FIELDS_Y + i * Chrome::ROW_H); }
 
@@ -28,6 +45,14 @@ uint32_t MotionScreen::rpmToFullStepsPerSec(uint16_t rpm) const
     // The same conversion as MOT:RUN <rpm> RPM: full steps per revolution / 60
     const uint32_t full = Services::motion.stepper.config.getFullStepsPerRev();
     return (static_cast<uint32_t>(rpm) * full + 30u) / 60u;
+}
+
+const char* MotionScreen::helpText(uint8_t field, bool hiZ)
+{
+    static_assert(sizeof HELP / sizeof HELP[0] == NUM_FIELDS, "one help text per row");
+    if (field >= NUM_FIELDS) return "";
+    const RowHelp& h = HELP[field];
+    return (!hiZ && h.other != nullptr) ? h.other : h.text;     // coils on: the row is Release
 }
 
 void MotionScreen::onActivate()
@@ -121,7 +146,8 @@ void MotionScreen::render(Services::ICanvas& lcd)
         m_full = false;
         renderStatus(lcd, true);
         m_rowsDirty = 0xFFFF;
-        Chrome::drawDeck(lcd, HINT_Y + 14, Theme::CONTENT_BOTTOM);
+        m_help.invalidate();
+        Chrome::drawDeck(lcd, DECK_Y, Theme::CONTENT_BOTTOM);
     } else {
         renderStatus(lcd, false);
     }
@@ -133,6 +159,7 @@ void MotionScreen::render(Services::ICanvas& lcd)
         m_hintDirty = false;
         Chrome::hintLine(lcd, HINT_Y, m_editing ? "UP/DOWN or L/R adjust  CENTER done" : "", Theme::DIM);
     }
+    m_help.show(lcd, HELP_Y, helpText(m_selectedField, hiZ));   // paints only when it changed
 }
 
 void MotionScreen::adjust(int8_t delta)

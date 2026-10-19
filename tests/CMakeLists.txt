@@ -207,8 +207,11 @@ smc_add_test(test_speed_controllers test_speed_controllers.cpp
 
 # --- Driver boundary step 3: the LCD Driver Config screen in physical units over the real config
 #     manager (the bench board's V4 blob, migrated by the powerSTEP01 translation), into the panel sim.
+#     The Motion page's row help too (it reads the same motion services).
 smc_add_test(test_screen_config test_screen_config.cpp
     ${SERVER}/layers/L3_services/ui/screens/config_screen.cpp
+    ${SERVER}/layers/L3_services/ui/screens/motion_screen.cpp
+    ${SERVER}/layers/L3_services/motion/motion_service/motion_service.cpp
     ${SERVER}/layers/L3_services/ui/screen_manager/screen_manager.cpp
     ${SERVER}/layers/L3_services/ui/chrome/chrome.cpp
     ${SERVER}/layers/L3_services/infra/tick_timer/tick_timer.cpp
