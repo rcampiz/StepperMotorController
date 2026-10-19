@@ -2,26 +2,35 @@
  * @file trace.cpp
  * @brief Trace ring buffer implementation
  *
- * Uses PRIMASK interrupt masking for ISR-safe constant-time writes.
- * Ring buffer overwrites oldest entries when full.
+ * A writer claims its slot with one atomic add on the running total, then fills it: tasks,
+ * ISRs and, on a dual-core MCU, both cores record without masking interrupts or taking a
+ * lock (it used PRIMASK, which a second core ignores). A reader may see a slot that is
+ * being written: diagnostics only, as before. Ring buffer overwrites oldest entries when full.
  * No RTOS dependency.
  */
 
 #include "L3_services/infra/trace/trace.hpp"
-#include "harness/pins/interrupt_guard.hpp"
 #include "L3_services/infra/tick_timer/tick_timer.hpp"
+#include <atomic>
 #include <string.h>
 
 namespace Trace {
 
+static_assert((RING_SIZE & (RING_SIZE - 1)) == 0,
+              "RING_SIZE must be a power of two: slot = total % RING_SIZE across the 32-bit wrap");
+
 static Entry s_ring[RING_SIZE];
-static size_t s_head = 0;      // Next write position
-static size_t s_total = 0;     // Total entries ever written
+static std::atomic<uint32_t> s_total{0};   // Total entries ever written; the next slot is total % RING_SIZE
+
+/// The next slot, claimed (distinct for concurrent writers)
+static Entry& claim()
+{
+    const uint32_t n = s_total.fetch_add(1u, std::memory_order_relaxed);
+    return s_ring[n % RING_SIZE];
+}
 
 void record(Dir d, const char* tag, uint32_t arg0) {
-    InterruptGuard guard;
-
-    Entry &e = s_ring[s_head];
+    Entry &e = claim();
     e.tick = Services::TickTimer_GetTick();
     e.tag = tag;
     e.arg0 = arg0;
@@ -31,16 +40,11 @@ void record(Dir d, const char* tag, uint32_t arg0) {
     e.taskId = Harness::getTraceTaskId();
     e.method = nullptr;
     e.detail[0] = '\0';
-
-    s_head = (s_head + 1) % RING_SIZE;
-    s_total++;
 }
 
 void recordIface(uint16_t boundary, const char* label, const char* method,
                  uint32_t arg0, const char* detail) {
-    InterruptGuard guard;
-
-    Entry &e = s_ring[s_head];
+    Entry &e = claim();
     e.tick = Services::TickTimer_GetTick();
     e.tag = label;
     e.arg0 = arg0;
@@ -56,33 +60,29 @@ void recordIface(uint16_t boundary, const char* label, const char* method,
     } else {
         e.detail[0] = '\0';
     }
-
-    s_head = (s_head + 1) % RING_SIZE;
-    s_total++;
 }
 
 size_t getCount() {
-    return (s_total < RING_SIZE) ? s_total : RING_SIZE;
+    const uint32_t total = s_total.load(std::memory_order_relaxed);
+    return (total < RING_SIZE) ? total : RING_SIZE;
 }
 
 size_t getTotal() {
-    return s_total;
+    return s_total.load(std::memory_order_relaxed);
 }
 
 bool getEntry(size_t index, Entry &out) {
-    size_t count = getCount();
+    const uint32_t total = s_total.load(std::memory_order_relaxed);
+    const size_t count = (total < RING_SIZE) ? total : RING_SIZE;
     if (index >= count) return false;
 
-    size_t start = (s_total <= RING_SIZE) ? 0 : s_head;
-    size_t actual = (start + index) % RING_SIZE;
-    out = s_ring[actual];
+    const size_t start = (total <= RING_SIZE) ? 0 : (total % RING_SIZE);   // oldest entry
+    out = s_ring[(start + index) % RING_SIZE];
     return true;
 }
 
 void reset() {
-    InterruptGuard guard;
-    s_head = 0;
-    s_total = 0;
+    s_total.store(0u, std::memory_order_relaxed);
 }
 
 void setCurrentTaskId(uint8_t id) {
