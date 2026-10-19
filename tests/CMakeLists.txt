@@ -176,3 +176,13 @@ smc_add_test(test_screen_trace test_screen_trace.cpp
     ${SERVER}/layers/L3_services/ui/chrome/chrome.cpp
     stubs/trace_screen_stub.cpp)
 target_include_directories(test_screen_trace PRIVATE ${SERVER}/layers/L3_services)
+
+# --- LCD Architecture screen: the harness meter views (HARNESS, MATRIX) fed straight from
+#     Harness::Meter on a fake microsecond clock, through the real L4 driver into the panel sim.
+smc_add_test(test_screen_archmeter test_screen_archmeter.cpp
+    ${SERVER}/layers/L3_services/ui/screens/arch_screen.cpp
+    ${SERVER}/layers/L3_services/ui/menu_screen/menu_screen.cpp
+    ${SERVER}/layers/L3_services/ui/screen_manager/screen_manager.cpp
+    ${SERVER}/layers/L3_services/ui/chrome/chrome.cpp
+    stubs/trace_stub.cpp)
+target_include_directories(test_screen_archmeter PRIVATE ${SERVER}/layers/L3_services)

@@ -2,8 +2,11 @@
  * @file arch_screen.cpp
  * @brief Architecture visualization screen implementation
  *
- * Three modes: DIAGRAM (static layer overview), MATRIX (live heatmap),
- * FLOW (SCPI command lifecycle through layers).
+ * Five modes: DIAGRAM (static layer overview), MATRIX (harnesses x tasks heatmap from the
+ * harness meter), FLOW (SCPI command lifecycle through layers), TASKS (one task's layers),
+ * HARNESS (every metered harness signal live: calls/s, bytes/s, busy %, crossing task).
+ * FLOW and TASKS read the trace ring (debug builds); MATRIX and HARNESS read the harness
+ * meter (harness/trace/harness_meter.hpp, every build), sampled every SAMPLE_US.
  */
 
 #include "ui/screens/arch_screen.hpp"
@@ -81,12 +84,48 @@ static uint8_t boundaryToLayer(uint16_t boundary) {
     return 2;  // Default to L3 for entries with boundary=0
 }
 
-// Map taskId (1-5) to column index (0-4), -1 for unknown
-static int8_t taskToCol(uint8_t taskId) {
-    for (uint8_t i = 0; i < NUM_TASKS; i++) {
-        if (TASK_IDS[i] == taskId) return static_cast<int8_t>(i);
+// --- harness meter views ------------------------------------------------------------------
+// Harness colours: the upper layer's colour, the task sheet in the platform's yellow
+static constexpr uint16_t HARNESS_COLORS[ArchScreen::HARNESSES] = {
+    YELLOW, CYAN, GREEN, ORANGE, MAGENTA, Theme::VIOLET
+};
+// Matrix row labels, one per harness (H_TASKS_L3, H_L1_L2 .. H_L4_L5, X_L5_L1)
+static constexpr const char* HARNESS_SHORT[ArchScreen::HARNESSES] = {
+    "T>L3", "L1L2", "L2L3", "L3L4", "L4L5", "L5L1"
+};
+// Task slots (Harness::TaskId): letter and lane colour, as on the Task Monitor
+static constexpr char TASK_LETTER[Harness::Meter::TASK_SLOTS] = { '?', 'M', 'E', 'C', 'D', 'T' };
+static constexpr uint16_t TASK_COLOR[Harness::Meter::TASK_SLOTS] = {
+    DIM, RED, CYAN, GREEN, YELLOW, Theme::VIOLET
+};
+static constexpr uint8_t TASK_NONE = 0xFE;     // RowDrawn::task: nobody crossed
+static constexpr uint8_t NOT_DRAWN = 0xFF;
+static constexpr uint32_t CELL_NOT_DRAWN = 0xFFFFFFFFu;
+
+// Which harness each meter net belongs to: the nets are grouped by harness, in order, so
+// the index steps whenever Meter::info(net).harness changes
+static uint8_t harnessOf(uint8_t net) {
+    uint8_t h = 0;
+    for (uint8_t n = 1; n <= net && n < Harness::Meter::NET_COUNT; n++) {
+        if (strcmp(Harness::Meter::info(n).harness, Harness::Meter::info(n - 1).harness) != 0) h++;
     }
-    return -1;
+    return (h < ArchScreen::HARNESSES) ? h : static_cast<uint8_t>(ArchScreen::HARNESSES - 1);
+}
+
+// A rate in at most 4 characters: 999, 9.9k, 999k, 9.9M, 999M
+static void formatRate(char* out, size_t size, uint32_t v) {
+    if (v < 1000u) {
+        snprintf(out, size, "%u", static_cast<unsigned>(v));
+    } else if (v < 10000u) {
+        snprintf(out, size, "%u.%uk", static_cast<unsigned>(v / 1000u), static_cast<unsigned>((v / 100u) % 10u));
+    } else if (v < 1000000u) {
+        snprintf(out, size, "%uk", static_cast<unsigned>(v / 1000u));
+    } else if (v < 10000000u) {
+        snprintf(out, size, "%u.%uM", static_cast<unsigned>(v / 1000000u),
+                 static_cast<unsigned>((v / 100000u) % 10u));
+    } else {
+        snprintf(out, size, "%uM", static_cast<unsigned>(v / 1000000u));
+    }
 }
 
 void ArchScreen::onActivate()
@@ -96,7 +135,6 @@ void ArchScreen::onActivate()
     m_mode = Mode::DIAGRAM;
     m_paused = false;
     m_lastTotal = 0;
-    memset(m_cellCounts, 0, sizeof(m_cellCounts));
 }
 
 void ArchScreen::switchMode(Mode m)
@@ -104,6 +142,57 @@ void ArchScreen::switchMode(Mode m)
     m_mode = m;
     m_titleDrawn = false;
     m_needsRedraw = true;
+    if (m == Mode::MATRIX || m == Mode::HARNESS) sampleMeter(true);   // rates start from here
+}
+
+bool ArchScreen::meterDue() const
+{
+    return static_cast<uint32_t>(Harness::Meter::nowUs() - m_sampleUs) >= SAMPLE_US;
+}
+
+void ArchScreen::sampleMeter(bool baselineOnly)
+{
+    const uint32_t now = Harness::Meter::nowUs();
+    const uint32_t elapsed = now - m_sampleUs;
+    const bool rates = !baselineOnly && elapsed != 0u;
+    if (rates) memset(m_taskRate, 0, sizeof m_taskRate);
+
+    for (uint8_t n = 0; n < NETS; n++) {
+        Harness::Meter::Counters c;
+        Harness::Meter::read(n, c);
+        if (rates) {
+            const Harness::Meter::Counters& p = m_prev[n];
+            NetRate& r = m_rate[n];
+            // Counters only grow and wrap at 32 bits: unsigned deltas
+            const uint64_t dCalls = static_cast<uint32_t>(c.calls - p.calls);
+            const uint64_t dBytes = static_cast<uint32_t>(c.bytes - p.bytes);
+            const uint64_t dBusy = static_cast<uint32_t>(c.busyUs - p.busyUs);
+            uint64_t v = dCalls * 1000000u / elapsed;
+            r.calls = (v > 0xFFFFFFFFu) ? 0xFFFFFFFFu : static_cast<uint32_t>(v);
+            v = dBytes * 1000000u / elapsed;
+            r.bytes = (v > 0xFFFFFFFFu) ? 0xFFFFFFFFu : static_cast<uint32_t>(v);
+            v = dBusy * 1000u / elapsed;
+            r.busyPm = (v > 9999u) ? 9999u : static_cast<uint16_t>(v);
+            // The task that crossed most, and whether anyone else did
+            uint32_t best = 0, others = 0;
+            r.task = TASK_NONE;
+            const uint8_t h = harnessOf(n);
+            for (uint8_t t = 0; t < Harness::Meter::TASK_SLOTS; t++) {
+                const uint32_t d = c.byTask[t] - p.byTask[t];
+                if (d > best) { others += best; best = d; r.task = t; }
+                else          { others += d; }
+                if (t >= 1 && t <= MATRIX_TASKS) {
+                    v = static_cast<uint64_t>(d) * 1000000u / elapsed;
+                    m_taskRate[h][t - 1] += (v > 0x0FFFFFFFu) ? 0x0FFFFFFFu : static_cast<uint32_t>(v);
+                }
+            }
+            r.mixed = (best != 0u && others != 0u);
+        }
+        m_prev[n] = c;
+    }
+    m_sampleUs = now;
+    if (rates) m_haveRates = true;
+    if (baselineOnly) m_haveRates = false;
 }
 
 void ArchScreen::render(Services::ICanvas& lcd)
@@ -113,6 +202,14 @@ void ArchScreen::render(Services::ICanvas& lcd)
                      static_cast<uint16_t>(Theme::CONTENT_BOTTOM - Theme::CONTENT_Y + 1), BG);
         m_titleDrawn = true;
         for (uint8_t i = 0; i < NUM_LAYERS; i++) m_layerDrawn[i] = 0xFFFF;
+        for (uint8_t n = 0; n < NETS; n++) {
+            m_rowDrawn[n].calls[0] = m_rowDrawn[n].bytes[0] = m_rowDrawn[n].busy[0] = '\x01';
+            m_rowDrawn[n].bar = NOT_DRAWN;
+            m_rowDrawn[n].task = NOT_DRAWN;
+        }
+        for (uint8_t h = 0; h < HARNESSES; h++) {
+            for (uint8_t t = 0; t < MATRIX_TASKS; t++) m_cellDrawn[h][t] = CELL_NOT_DRAWN;
+        }
     }
 
     switch (m_mode) {
@@ -120,6 +217,7 @@ void ArchScreen::render(Services::ICanvas& lcd)
         case Mode::MATRIX:  renderMatrix(lcd);  break;
         case Mode::FLOW:    renderFlow(lcd);    break;
         case Mode::TASKS:   renderTasks(lcd);   break;
+        case Mode::HARNESS: renderHarness(lcd); break;
     }
     m_needsRedraw = false;
 }
@@ -166,7 +264,7 @@ void ArchScreen::renderDiagram(Services::ICanvas& lcd)
                 lcd.fillRect(MARGIN, static_cast<uint16_t>(ay + 1), LINE_W, 1, DIM);   // orthogonal rule
             }
         }
-        Chrome::hintLine(lcd, HINT_Y, "RIGHT next view: matrix, flow, tasks", DIM);
+        Chrome::hintLine(lcd, HINT_Y, "RIGHT: matrix, flow, tasks, harness", DIM);
     }
 
     // Live counts: throttled like the other modes
@@ -204,137 +302,237 @@ void ArchScreen::renderDiagram(Services::ICanvas& lcd)
 }
 
 // =============================================================================
-// MATRIX mode — live layers x tasks heatmap
+// MATRIX mode — live harnesses x tasks heatmap (harness meter)
 // =============================================================================
 
 void ArchScreen::renderMatrix(Services::ICanvas& lcd)
 {
-    size_t total = Trace::getTotal();
-    size_t count = Trace::getCount();
-    bool newData = (total != m_lastTotal);
-    if (newData) m_lastTotal = total;
-
-    if (!m_needsRedraw && !newData) return;
-    if (!m_needsRedraw && m_paused) return;
-
-    // Throttle live updates
-    if (!m_needsRedraw && newData && !m_paused) {
-        static uint8_t frameSkip = 0;
-        if (++frameSkip < 4) return;
-        frameSkip = 0;
-    }
+    const bool sampled = !m_paused && meterDue();
+    if (sampled) sampleMeter(false);
+    if (!m_needsRedraw && !sampled) return;
 
     uint16_t y = TOP;
     char buf[40];
-
-    // Title
-    if (m_paused) {
-        snprintf(buf, sizeof(buf), "PAUSED  %u entries", (unsigned)count);
-        lcd.blitTextLine(MARGIN, y, LINE_W, 8, buf, PAUSE_COLOR, BG);
-    } else {
-        snprintf(buf, sizeof(buf), "Layers x Tasks  %uent", (unsigned)count);
-        lcd.blitTextLine(MARGIN, y, LINE_W, 8, buf, CYAN, BG);
-    }
-    y += TITLE_H;
-    lcd.drawHLine(MARGIN, y, LINE_W, CYAN);
-    y += 4;
-
-    // Scan trace entries to build count matrix
-    memset(m_cellCounts, 0, sizeof(m_cellCounts));
-    Trace::Entry entry;
-    for (size_t i = 0; i < count; i++) {
-        if (!Trace::getEntry(i, entry)) continue;
-        int8_t col = taskToCol(entry.taskId);
-        if (col < 0) continue;
-        uint8_t row = boundaryToLayer(entry.boundary);
-        if (row < NUM_LAYERS) {
-            if (m_cellCounts[row][col] < 255) {
-                m_cellCounts[row][col]++;
-            }
-        }
-    }
 
     // Layout constants
     static constexpr uint16_t LABEL_W = 30;   // Row label width
     static constexpr uint16_t CELL_W = 38;    // Cell width
     static constexpr uint16_t CELL_H = 28;    // Cell height
     static constexpr uint16_t HDR_H = 12;     // Column header height
-    uint16_t gridX = MARGIN + LABEL_W + 2;
+    static constexpr uint16_t GRID_X = MARGIN + LABEL_W + 2;
+    static constexpr uint16_t GRID_Y = TOP + TITLE_H + 4 + HDR_H;
 
-    // Column headers
-    for (uint8_t c = 0; c < NUM_TASKS; c++) {
-        uint16_t cx = gridX + c * CELL_W;
-        lcd.blitTextLine(cx, y, CELL_W, HDR_H, TASK_COLS[c], WHITE, BG);
-    }
-    y += HDR_H;
-
-    // Grid rows
-    for (uint8_t r = 0; r < NUM_LAYERS; r++) {
-        uint16_t color = LAYER_COLORS[r];
-
-        // Row label
-        const char* shortLabel;
-        switch (r) {
-            case 0: shortLabel = "L1"; break;
-            case 1: shortLabel = "L2"; break;
-            case 2: shortLabel = "L3"; break;
-            case 3: shortLabel = "L4"; break;
-            case 4: shortLabel = "L5"; break;
-            default: shortLabel = "F"; break;
+    if (m_needsRedraw) {
+        // Title
+        if (m_paused) {
+            lcd.blitTextLine(MARGIN, y, LINE_W, 8, "PAUSED  harness x task", PAUSE_COLOR, BG);
+        } else {
+            lcd.blitTextLine(MARGIN, y, LINE_W, 8, "Harness x Tasks  calls/s", CYAN, BG);
         }
-        lcd.blitTextLine(MARGIN, y, LABEL_W, CELL_H, shortLabel, color, BG);
+        y += TITLE_H;
+        lcd.drawHLine(MARGIN, y, LINE_W, CYAN);
+        y += 4;
 
-        // Cells
+        // Column headers
         for (uint8_t c = 0; c < NUM_TASKS; c++) {
-            uint16_t cx = gridX + c * CELL_W;
-            uint8_t cnt = m_cellCounts[r][c];
+            auto cx = static_cast<uint16_t>(GRID_X + c * CELL_W);
+            lcd.blitTextLine(cx, y, CELL_W, HDR_H, TASK_COLS[c], TASK_COLOR[TASK_IDS[c]], BG);
+        }
+        // Row labels: one per harness, in its colour
+        for (uint8_t r = 0; r < HARNESSES; r++) {
+            lcd.blitTextLine(MARGIN, static_cast<uint16_t>(GRID_Y + r * CELL_H + 8), LABEL_W, 8,
+                             HARNESS_SHORT[r], HARNESS_COLORS[r], BG);   // on the counts' line
+        }
 
-            if (cnt == 0) {
+        // Legend
+        y = static_cast<uint16_t>(GRID_Y + HARNESSES * CELL_H + 4);
+        lcd.drawHLine(MARGIN, y, LINE_W, DIM);
+        y += 4;
+        lcd.blitTextLine(MARGIN, y, LINE_W, 8, " crossings/s by the task", DIM, BG);
+        y += LINE_H;
+        lcd.blitTextLine(MARGIN, y, LINE_W, 8, " bright>=100  dim<10  . none", DIM, BG);
+
+        Chrome::hintLine(lcd, HINT_Y, m_paused ? "PAUSED   CENTER resume   RIGHT next"
+                                               : "CENTER pause   RIGHT next view", m_paused ? PAUSE_COLOR : DIM);
+    }
+
+    // Cells: repainted only when the rate they show changed
+    for (uint8_t r = 0; r < HARNESSES; r++) {
+        const uint16_t color = HARNESS_COLORS[r];
+        auto cy = static_cast<uint16_t>(GRID_Y + r * CELL_H);
+        for (uint8_t c = 0; c < NUM_TASKS; c++) {
+            const uint32_t rate = m_haveRates ? m_taskRate[r][c] : 0u;
+            if (rate == m_cellDrawn[r][c]) continue;
+            m_cellDrawn[r][c] = rate;
+            auto cx = static_cast<uint16_t>(GRID_X + c * CELL_W);
+
+            if (rate == 0) {
                 // Empty cell: dark outline
-                lcd.fillRect(cx + 1, y + 1, CELL_W - 2, CELL_H - 2, BG);
-                lcd.drawRect(cx, y, CELL_W, CELL_H, DIM);
-                lcd.blitTextLine(cx + 2, y + 8, CELL_W - 4, 8, ".", DIM, BG);
+                lcd.fillRect(cx + 1, cy + 1, CELL_W - 2, CELL_H - 2, BG);
+                lcd.drawRect(cx, cy, CELL_W, CELL_H, DIM);
+                lcd.blitTextLine(cx + 2, cy + 8, CELL_W - 4, 8, ".", DIM, BG);
+                continue;
+            }
+            // Filled cell: brightness by rate
+            uint16_t fillColor;
+            uint16_t textColor = BG;
+            if (rate >= 100) {
+                fillColor = color;                // Full brightness
+            } else if (rate >= 10) {
+                fillColor = dimColor(color);      // Medium: 25%, then half way to white
+                uint16_t rr = (fillColor >> 11) & 0x1F;
+                uint16_t gg = (fillColor >> 5)  & 0x3F;
+                uint16_t bb =  fillColor        & 0x1F;
+                rr = rr + (0x1F - rr) / 2;
+                gg = gg + (0x3F - gg) / 2;
+                bb = bb + (0x1F - bb) / 2;
+                fillColor = static_cast<uint16_t>((rr << 11) | (gg << 5) | bb);
             } else {
-                // Filled cell: brightness by count
-                uint16_t fillColor;
-                if (cnt >= 10) {
-                    fillColor = color;                // Full brightness
-                } else if (cnt >= 3) {
-                    fillColor = dimColor(color);      // Medium (25%)
-                    // Brighten slightly: add 50% of remaining
-                    uint16_t rr = (fillColor >> 11) & 0x1F;
-                    uint16_t gg = (fillColor >> 5)  & 0x3F;
-                    uint16_t bb =  fillColor        & 0x1F;
-                    rr = rr + (0x1F - rr) / 2;
-                    gg = gg + (0x3F - gg) / 2;
-                    bb = bb + (0x1F - bb) / 2;
-                    fillColor = (rr << 11) | (gg << 5) | bb;
-                } else {
-                    fillColor = dimColor(color);      // Dim (25%)
-                }
+                fillColor = dimColor(color);      // Dim (25%): the count in the harness colour
+                textColor = color;
+            }
+            lcd.fillRect(cx + 1, cy + 1, CELL_W - 2, CELL_H - 2, fillColor);
+            lcd.drawRect(cx, cy, CELL_W, CELL_H, color);
+            formatRate(buf, sizeof buf, rate);
+            lcd.blitTextLine(cx + 2, cy + 8, CELL_W - 4, 8, buf, textColor, fillColor);
+        }
+    }
+}
 
-                lcd.fillRect(cx + 1, y + 1, CELL_W - 2, CELL_H - 2, fillColor);
-                lcd.drawRect(cx, y, CELL_W, CELL_H, color);
+// =============================================================================
+// HARNESS mode — every metered harness signal, live
+// =============================================================================
 
-                // Count label
-                snprintf(buf, sizeof(buf), "%u", (unsigned)cnt);
-                lcd.blitTextLine(cx + 2, y + 8, CELL_W - 4, 8, buf, BG, fillColor);
+void ArchScreen::renderHarness(Services::ICanvas& lcd)
+{
+    // Columns: harness tick, signal, calls/s, bytes/s, busy %, busy bar, crossing task
+    static constexpr uint16_t ROW_H = 11;
+    static constexpr uint16_t HEAD_Y = TOP;
+    static constexpr uint16_t ROWS_Y = TOP + 13;
+    static constexpr uint16_t TICK_X = MARGIN, TICK_W = 2;
+    static constexpr uint16_t NAME_X = MARGIN + 6, NAME_W = 60;
+    static constexpr uint16_t CALLS_X = 72, CALLS_W = 30;
+    static constexpr uint16_t BYTES_X = 104, BYTES_W = 30;
+    static constexpr uint16_t BUSY_X = 140, BUSY_W = 24;
+    static constexpr uint16_t BAR_X = 168, BAR_W = 42, BAR_DY = 3, BAR_H = 5;
+    static constexpr uint16_t TASK_X = 216, TASK_W = 12;
+    static constexpr uint16_t TEXT_DY = 2;   // small font inside an 11 px row
+
+    const bool sampled = !m_paused && meterDue();
+    if (sampled) sampleMeter(false);
+    if (!m_needsRedraw && !sampled) return;
+
+    char buf[8];
+
+    if (m_needsRedraw) {
+        // Column heads: the view's name where the signal names go
+        lcd.blitTextLine(MARGIN, HEAD_Y, static_cast<uint16_t>(CALLS_X - MARGIN), 8,
+                         m_paused ? "PAUSED" : "HARNESS", m_paused ? PAUSE_COLOR : CYAN, BG);
+        lcd.blitTextLine(CALLS_X, HEAD_Y, CALLS_W, 8, "  N/s", DIM, BG);
+        lcd.blitTextLine(BYTES_X, HEAD_Y, BYTES_W, 8, "  B/s", DIM, BG);
+        lcd.blitTextLine(BUSY_X, HEAD_Y, BUSY_W, 8, "busy", DIM, BG);
+        lcd.blitTextLine(BAR_X, HEAD_Y, BAR_W, 8, " 0.5s", DIM, BG);
+        lcd.blitTextLine(TASK_X, HEAD_Y, TASK_W, 8, "T", DIM, BG);
+        lcd.drawHLine(MARGIN, static_cast<uint16_t>(HEAD_Y + 10), LINE_W, Theme::GRID_MAJ);
+
+        // Harness heads and signal names
+        uint16_t y = ROWS_Y;
+        for (uint8_t n = 0; n < NETS; n++) {
+            const Harness::Meter::NetInfo& info = Harness::Meter::info(n);
+            const uint8_t h = harnessOf(n);
+            const uint16_t color = HARNESS_COLORS[h];
+            if (n == 0 || h != harnessOf(static_cast<uint8_t>(n - 1))) {
+                const auto len = static_cast<uint16_t>(strlen(info.harness));
+                const auto textW = static_cast<uint16_t>(len * Theme::SMALL_W);
+                lcd.blitTextLine(MARGIN, static_cast<uint16_t>(y + TEXT_DY), textW, 8, info.harness, color, BG);
+                const auto ruleX = static_cast<uint16_t>(MARGIN + textW + 4);
+                lcd.drawHLine(ruleX, static_cast<uint16_t>(y + TEXT_DY + 3),
+                              static_cast<uint16_t>(MARGIN + LINE_W - ruleX), dimColor(color));
+                y += ROW_H;
+            }
+            lcd.fillRect(TICK_X, static_cast<uint16_t>(y + 1), TICK_W, static_cast<uint16_t>(ROW_H - 2), color);
+            lcd.blitTextLine(NAME_X, static_cast<uint16_t>(y + TEXT_DY), NAME_W, 8, info.signal, WHITE, BG);
+            y += ROW_H;
+        }
+
+        Chrome::hintLine(lcd, HINT_Y, m_paused ? "PAUSED   CENTER resume   RIGHT next"
+                                               : "CENTER pause   RIGHT next view", m_paused ? PAUSE_COLOR : DIM);
+    }
+
+    // Live cells: each repainted only when its text (or bar length) changed
+    uint16_t y = ROWS_Y;
+    for (uint8_t n = 0; n < NETS; n++) {
+        const uint8_t h = harnessOf(n);
+        if (n == 0 || h != harnessOf(static_cast<uint8_t>(n - 1))) y += ROW_H;   // harness head
+        const auto ty = static_cast<uint16_t>(y + TEXT_DY);
+        const NetRate& r = m_rate[n];
+        RowDrawn& d = m_rowDrawn[n];
+        const bool live = m_haveRates;
+
+        // calls/s
+        char val[8];
+        if (live && r.calls != 0u) formatRate(val, sizeof val, r.calls); else snprintf(val, sizeof val, "-");
+        snprintf(buf, sizeof buf, "%5s", val);
+        if (strcmp(buf, d.calls) != 0) {
+            memcpy(d.calls, buf, sizeof d.calls);
+            lcd.blitTextLine(CALLS_X, ty, CALLS_W, 8, buf, (live && r.calls != 0u) ? WHITE : DIM, BG);
+        }
+        // bytes/s
+        if (live && r.bytes != 0u) formatRate(val, sizeof val, r.bytes); else snprintf(val, sizeof val, "-");
+        snprintf(buf, sizeof buf, "%5s", val);
+        if (strcmp(buf, d.bytes) != 0) {
+            memcpy(d.bytes, buf, sizeof d.bytes);
+            lcd.blitTextLine(BYTES_X, ty, BYTES_W, 8, buf, (live && r.bytes != 0u) ? Theme::VIOLET : DIM, BG);
+        }
+        // busy %: one decimal under 10 %
+        const uint16_t pm = live ? r.busyPm : 0u;
+        if (pm == 0u) {
+            snprintf(val, sizeof val, "-");
+        } else if (pm < 100u) {
+            snprintf(val, sizeof val, "%u.%u%%", static_cast<unsigned>(pm / 10u), static_cast<unsigned>(pm % 10u));
+        } else {
+            snprintf(val, sizeof val, "%u%%", static_cast<unsigned>((pm > 9990u ? 9990u : pm) / 10u));
+        }
+        snprintf(buf, sizeof buf, "%4s", val);
+        if (strcmp(buf, d.busy) != 0) {
+            memcpy(d.busy, buf, sizeof d.busy);
+            const uint16_t busyColor = (pm == 0u) ? DIM : (pm >= 900u) ? RED : (pm >= 500u) ? ORANGE : CYAN;
+            lcd.blitTextLine(BUSY_X, ty, BUSY_W, 8, buf, busyColor, BG);
+        }
+        // busy bar, in the harness colour on a dark track
+        auto w = static_cast<uint16_t>((pm >= 1000u ? 1000u : pm) * BAR_W / 1000u);
+        if (pm != 0u && w == 0u) w = 1;
+        if (w != d.bar) {
+            const auto by = static_cast<uint16_t>(y + BAR_DY);
+            if (d.bar == NOT_DRAWN) {
+                if (w > 0u) lcd.fillRect(BAR_X, by, w, BAR_H, HARNESS_COLORS[h]);
+                if (w < BAR_W) lcd.fillRect(static_cast<uint16_t>(BAR_X + w), by,
+                                            static_cast<uint16_t>(BAR_W - w), BAR_H, Theme::PANEL);
+            } else if (w > d.bar) {
+                lcd.fillRect(static_cast<uint16_t>(BAR_X + d.bar), by, static_cast<uint16_t>(w - d.bar), BAR_H,
+                             HARNESS_COLORS[h]);
+            } else {
+                lcd.fillRect(static_cast<uint16_t>(BAR_X + w), by, static_cast<uint16_t>(d.bar - w), BAR_H,
+                             Theme::PANEL);
+            }
+            d.bar = static_cast<uint8_t>(w);
+        }
+        // the task that crossed most: its letter in its lane colour, '+' when others did too
+        const uint8_t task = (live && r.task < Harness::Meter::TASK_SLOTS)
+                                 ? static_cast<uint8_t>(r.task | (r.mixed ? 0x80u : 0u)) : TASK_NONE;
+        if (task != d.task) {
+            d.task = task;
+            if (task == TASK_NONE) {
+                lcd.blitTextLine(TASK_X, ty, TASK_W, 8, "", DIM, BG);
+            } else {
+                const uint8_t slot = static_cast<uint8_t>(task & 0x7Fu);
+                const char text[3] = { TASK_LETTER[slot], (task & 0x80u) ? '+' : ' ', '\0' };
+                const uint16_t colors[2] = { TASK_COLOR[slot], DIM };
+                lcd.blitTextLineColored(TASK_X, ty, TASK_W, 8, text, colors, BG);
             }
         }
-        y += CELL_H;
+        y += ROW_H;
     }
-
-    y += 4;
-
-    // Legend
-    lcd.drawHLine(MARGIN, y, LINE_W, DIM);
-    y += 4;
-    lcd.blitTextLine(MARGIN, y, LINE_W, 8,
-                     " bright>10  dim 1-9  . none", DIM, BG);
-    y += LINE_H;
-
-    Chrome::hintLine(lcd, HINT_Y, m_paused ? "PAUSED   CENTER resume   RIGHT next view"
-                                           : "CENTER pause   RIGHT next view", m_paused ? PAUSE_COLOR : DIM);
 }
 
 // =============================================================================
@@ -609,7 +807,7 @@ void ArchScreen::renderFlow(Services::ICanvas& lcd)
                          "FreeRTOSMutex impl", dimColor(YELLOW), BG);
     }
 
-    Chrome::hintLine(lcd, HINT_Y, m_paused ? "PAUSED   CENTER resume   RIGHT next view"
+    Chrome::hintLine(lcd, HINT_Y, m_paused ? "PAUSED   CENTER resume   RIGHT next"
                                            : "CENTER pause   RIGHT next view", m_paused ? PAUSE_COLOR : DIM);
 }
 
@@ -626,6 +824,7 @@ InputResult ArchScreen::handleInput(JoyDirection dir, bool pressed)
         case Mode::MATRIX:  return handleMatrixInput(dir);
         case Mode::FLOW:    return handleFlowInput(dir);
         case Mode::TASKS:   return handleTasksInput(dir);
+        case Mode::HARNESS: return handleHarnessInput(dir);
     }
     return InputResult::HANDLED;
 }
@@ -645,9 +844,20 @@ InputResult ArchScreen::handleMatrixInput(JoyDirection dir)
     switch (dir) {
         case JoyDirection::LEFT:   return InputResult::EXIT_SCREEN;
         case JoyDirection::RIGHT:  switchMode(Mode::FLOW); return InputResult::HANDLED;
-        case JoyDirection::CENTER: m_paused = !m_paused; m_needsRedraw = true; return InputResult::HANDLED;
+        case JoyDirection::CENTER:
+            m_paused = !m_paused;
+            m_needsRedraw = true;
+            if (!m_paused) sampleMeter(true);   // the next rates leave the pause out
+            return InputResult::HANDLED;
         default:                   return InputResult::HANDLED;
     }
+}
+
+InputResult ArchScreen::handleHarnessInput(JoyDirection dir)
+{
+    // Same keys as the matrix; RIGHT wraps to the diagram
+    if (dir == JoyDirection::RIGHT) { switchMode(Mode::DIAGRAM); return InputResult::HANDLED; }
+    return handleMatrixInput(dir);
 }
 
 InputResult ArchScreen::handleFlowInput(JoyDirection dir)
@@ -878,7 +1088,7 @@ InputResult ArchScreen::handleTasksInput(JoyDirection dir)
 {
     switch (dir) {
         case JoyDirection::LEFT:   return InputResult::EXIT_SCREEN;
-        case JoyDirection::RIGHT:  switchMode(Mode::DIAGRAM); return InputResult::HANDLED;
+        case JoyDirection::RIGHT:  switchMode(Mode::HARNESS); return InputResult::HANDLED;
         case JoyDirection::UP:
             m_selectedTask = (m_selectedTask == 0) ? (NUM_TASKS - 1) : (m_selectedTask - 1);
             m_needsRedraw = true;
