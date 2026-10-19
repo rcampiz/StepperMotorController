@@ -12,6 +12,7 @@
 #include <ctype.h>
 #include <stdio.h>
 #include <string.h>
+#include "harness/trace/harness_meter.hpp"
 
 namespace Protocol {
 
@@ -165,6 +166,7 @@ ParsedCommand CommandParser::parse(const char *line) {
 // inline. Anything else falls through to debug commands.
 
 void CommandParser::dispatch(const ParsedCommand &cmd) {
+  Harness::Meter::Scope crossing(Harness::Meter::L2_L3_COMMANDS);   // H_L2_L3, one host command
   m_dispatcher.traceRecordEntry("CMD:RX");
   ITRACE(Harness::ITrace::L2_L3_DISPATCH, "[L2>L3]", "dispatch", cmd.cmd);
   strncpy(m_currentCmd, cmd.cmd,
@@ -339,7 +341,8 @@ void CommandParser::dispatchSync(const char *suffix, const ParsedCommand &cmd) {
 void CommandParser::dispatchDiag(const char *suffix, const ParsedCommand &cmd) {
   static const CmdEntry t1[] = {{"PING", &CommandParser::cmdPing}};
   static const CmdEntry0 t0[] = {{"STAT?", &CommandParser::cmdGetStatus},
-                                 {"TASKS?", &CommandParser::cmdTasks}};
+                                 {"TASKS?", &CommandParser::cmdTasks},
+                                 {"HARNESS?", &CommandParser::cmdHarness}};
   if (dispatch1(suffix, t1, NCMD(t1), cmd))
     return;
   if (dispatch0(suffix, t0, NCMD(t0)))

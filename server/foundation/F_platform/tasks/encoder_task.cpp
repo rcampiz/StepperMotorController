@@ -7,6 +7,7 @@
 #include "harness/defs/harness_tasks_l3.hpp"
 #include "F_platform/boundary/iclock.hpp"
 #include "harness/pins/itrace_context.hpp"
+#include "harness/trace/harness_meter.hpp"
 
 namespace Scheduler {
 
@@ -32,7 +33,10 @@ void vEncoderTask(void* pvParameters)
         Harness::setTraceTaskId(Harness::TASK_ENCODER);
         Harness::setTraceServiceId(Harness::SVC_ENCODER);
 
-        s_service->sample();
+        {
+            Harness::Meter::Scope crossing(Harness::Meter::TASKS_ENCODER);   // H_TASKS_L3
+            s_service->sample();
+        }
 
         s_clock->sleepUntilMs(lastWakeMs, ENCODER_SAMPLE_PERIOD_MS);
     }

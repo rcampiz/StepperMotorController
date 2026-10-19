@@ -7,6 +7,7 @@
 #include "harness/defs/harness_tasks_l3.hpp"
 #include "F_platform/boundary/iclock.hpp"
 #include "harness/pins/itrace_context.hpp"
+#include "harness/trace/harness_meter.hpp"
 
 namespace Scheduler {
 
@@ -34,7 +35,10 @@ void vDisplayTask(void* pvParameters)
         Harness::setTraceTaskId(Harness::TASK_DISPLAY);
         Harness::setTraceServiceId(Harness::SVC_UI);
 
-        s_service->tick();
+        {
+            Harness::Meter::Scope crossing(Harness::Meter::TASKS_DISPLAY);   // H_TASKS_L3
+            s_service->tick();
+        }
 
         // A long tick (a flash save, a full repaint, a bounded wait on the Motor task) must
         // not be followed by the missed periods fired back to back: vTaskDelayUntil catches

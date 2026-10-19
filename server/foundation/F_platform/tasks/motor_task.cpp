@@ -7,6 +7,7 @@
 #include "harness/defs/harness_tasks_l3.hpp"
 #include "F_platform/boundary/iclock.hpp"
 #include "harness/pins/itrace_context.hpp"
+#include "harness/trace/harness_meter.hpp"
 
 namespace Scheduler {
 
@@ -43,7 +44,10 @@ void vMotorTask(void* pvParameters)
         Harness::setTraceServiceId(Harness::SVC_MOTION);
 
         if (s_cmdQueue->receive(cmd, MOTOR_STATUS_PERIOD_MS)) {
-            s_service->onCommand(cmd);
+            {
+                Harness::Meter::Scope crossing(Harness::Meter::TASKS_MOTOR);   // H_TASKS_L3
+                s_service->onCommand(cmd);
+            }
             if (cmd.type == MotorCmdType::GetStatus) {
                 lastStatusUpdate = 0;   // force an immediate status poll
             }
@@ -52,6 +56,7 @@ void vMotorTask(void* pvParameters)
         uint32_t now = s_clock->getTickMs();
         if ((now - lastStatusUpdate) >= MOTOR_STATUS_PERIOD_MS) {
             lastStatusUpdate = now;
+            Harness::Meter::Scope crossing(Harness::Meter::TASKS_MOTOR);       // H_TASKS_L3
             s_service->periodicUpdate();
         }
     }

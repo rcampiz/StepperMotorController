@@ -104,6 +104,9 @@ smc_add_test(test_motor_service test_motor_service.cpp
     ${SERVER}/harness/pins/async_event.cpp
     stubs/trace_stub.cpp)
 
+# --- The harness meter (always-on crossing counters) and its metered taps.
+smc_add_test(test_harness_meter test_harness_meter.cpp)
+
 # --- Phase 3 step 1: index snapshot is never torn (seqlock in L4 Encoder).
 smc_add_test(test_seq_snapshot test_seq_snapshot.cpp
     ${SERVER}/layers/L4_drivers/devices/encoder.cpp)

@@ -22,6 +22,8 @@ public:
     void getSnapshot(Platform::TaskStatsSnapshot& out) override;
     uint8_t getCurrentTaskIndex() override;
     uint32_t getFreeHeapBytes() override;
+    bool setCurrentTaskTag(uint8_t tag) override;
+    uint8_t getCurrentTaskTag() override;
 
 private:
     static constexpr uint8_t MAX_TASKS = Platform::TaskStatsSnapshot::MAX_TASKS;

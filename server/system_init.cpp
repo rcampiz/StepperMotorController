@@ -37,6 +37,8 @@
 #include "L3_services/motion/encoder_service_init.hpp"
 #include "L3_services/motion/motor_service_init.hpp"
 #include "L3_services/motion/system_service_init.hpp"
+#include "harness/pins/itrace_context.hpp"
+#include "harness/trace/harness_meter.hpp"
 
 namespace System {
 
@@ -68,6 +70,8 @@ void initHardware() {
   Platform::IMicrosecondClock &usClock = Platform::initMicrosecondClockTIM5();
   Services::TickTimer_Init(usClock);
   Harness::setMicrosecondClock(&usClock);
+  // The harness meter attributes each crossing to the task the task sheet last named
+  Harness::Meter::setTaskSource(&Harness::getTraceTaskId);
   logOk("TickTimer");
   Trace::initTraceSink();
 }

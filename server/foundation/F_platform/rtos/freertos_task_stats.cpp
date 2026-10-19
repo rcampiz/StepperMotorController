@@ -13,6 +13,7 @@
 #include "X_middlewares/Third_Party/FreeRTOS-Kernel/include/task.h"
 
 #include <string.h>
+#include <stdint.h>
 
 // Map FreeRTOS eTaskState to our platform-neutral state enum
 static uint8_t mapState(eTaskState s)
@@ -102,6 +103,24 @@ uint8_t FreeRTOSTaskStats::getCurrentTaskIndex()
     }
 
     return 0xFF;
+}
+
+// The per-task tag rides FreeRTOS's application task tag (configUSE_APPLICATION_TASK_TAG):
+// stored in each task's TCB, so a preempting task cannot overwrite another's.
+bool FreeRTOSTaskStats::setCurrentTaskTag(uint8_t tag)
+{
+    if (xTaskGetSchedulerState() == taskSCHEDULER_NOT_STARTED || xPortIsInsideInterrupt()) return false;
+    vTaskSetApplicationTaskTag(nullptr, reinterpret_cast<TaskHookFunction_t>(static_cast<uintptr_t>(tag) + 1u));
+    return true;
+}
+
+uint8_t FreeRTOSTaskStats::getCurrentTaskTag()
+{
+    if (xTaskGetSchedulerState() == taskSCHEDULER_NOT_STARTED) return 0xFF;
+    TaskHookFunction_t raw = xPortIsInsideInterrupt() ? xTaskGetApplicationTaskTagFromISR(nullptr)
+                                                      : xTaskGetApplicationTaskTag(nullptr);
+    const auto v = reinterpret_cast<uintptr_t>(raw);
+    return (v == 0u || v > 256u) ? 0xFF : static_cast<uint8_t>(v - 1u);   // 0: never set
 }
 
 uint32_t FreeRTOSTaskStats::getFreeHeapBytes()

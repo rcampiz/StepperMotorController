@@ -455,11 +455,13 @@
         "server/harness/pins/ui_types.hpp",
         "server/harness/pins/velocity_quality.hpp",
         "server/harness/taps/apply_taps.hpp",
+        "server/harness/taps/metered_taps.hpp",
         "server/harness/taps/traced_encoder.hpp",
         "server/harness/taps/traced_lock.hpp",
         "server/harness/taps/traced_motor_driver.hpp",
         "server/harness/taps/traced_spi_bus.hpp",
         "server/harness/taps/traced_transport.hpp",
+        "server/harness/trace/harness_meter.hpp",
         "server/harness/trace/interface_trace.cpp",
         "server/harness/trace/interface_trace.hpp"
       ]
@@ -534,7 +536,7 @@
       "path": "server/foundation/F_platform/boundary",
       "rule": "rule 4: RTOS-neutral primitives (clock, us clock, locks, queues, scheduler, task stats, critical section, notifier) usable by any sheet without a harness",
       "direct_includers": {
-        "HARNESS": 9,
+        "HARNESS": 11,
         "L2": 3,
         "L3": 16,
         "L4": 1,
@@ -549,9 +551,11 @@
       "path": "server/harness/trace",
       "rule": "second global net: ITRACE()/ITrace::log and the trace sink may be included by any sheet; compiled to no-ops unless ENABLE_INTERFACE_TRACE (firmware-debug); sink = L3 trace ring via Trace::initTraceSink",
       "direct_includers": {
-        "HARNESS": 6,
-        "L2": 2,
-        "L3": 7
+        "HARNESS": 8,
+        "L2": 3,
+        "L3": 7,
+        "SYSTEM": 1,
+        "TASKS": 4
       }
     }
   ],

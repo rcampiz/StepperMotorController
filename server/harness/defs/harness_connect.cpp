@@ -39,17 +39,22 @@ const L4L5Harness& connectL4L5()
         s_connected = true;
 
         if (initMotorBoard(s_motor) && s_motor.spi != nullptr) {
-            s_motor.spi = &applyTap<TracedSPIBus, 0>(*s_motor.spi);
+            s_motor.spi = &applyTap<TracedSPIBus, 0>(
+                applyMeter<MeteredSPIBus, 0>(*s_motor.spi, Meter::L4_L5_SPI1_MOTOR));
             s_h.motor = &s_motor;
         }
         if (initLCDBoard(s_lcd) && s_lcd.spi != nullptr) {
-            s_lcd.spi = &applyTap<TracedSPIBus, 1>(*s_lcd.spi);
+            s_lcd.spi = &applyTap<TracedSPIBus, 1>(
+                applyMeter<MeteredSPIBus, 1>(*s_lcd.spi, Meter::L4_L5_SPI1_LCD));
             s_h.lcd = &s_lcd;
         }
         if (initJoystickBoard(s_joystick)) {
             s_h.joystick = &s_joystick;
         }
         if (initFlashBoard(s_flash)) {
+            if (s_flash.spi != nullptr) {
+                s_flash.spi = &applyMeter<MeteredSPIBus, 2>(*s_flash.spi, Meter::L4_L5_SPI2_FLASH);
+            }
             s_h.flash = &s_flash;
         }
         if (initEncoderBoard(s_encoder)) {
@@ -79,22 +84,22 @@ const L3L4Harness& connectL3L4(Platform::IClock& clock)
         // Motor driver (mandatory). The trace tap is applied here, once.
         Drivers::IMotorDriver* motor = nullptr;
         if (Drivers::initMotorDriver(motor) && motor != nullptr) {
-            s_h.motor = &applyTap<TracedMotorDriver>(*motor);
+            s_h.motor = &applyTap<TracedMotorDriver>(applyMeter<MeteredMotorDriver>(*motor));
         }
 
         // Display devices (LCD mandatory for the display subsystem; others optional)
         Drivers::DisplayDriverHandle* display = nullptr;
         if (Drivers::initDisplayDrivers(display) && display != nullptr) {
-            s_h.canvas   = display->lcd;
+            s_h.canvas   = (display->lcd != nullptr) ? &applyMeter<MeteredCanvas>(*display->lcd) : nullptr;
             s_h.joystick = display->joystick;
-            s_h.flash    = display->norFlash;
+            s_h.flash    = (display->norFlash != nullptr) ? &applyMeter<MeteredFlash>(*display->norFlash) : nullptr;
         }
 
         // Encoder (optional)
         Drivers::IEncoderHardware* encoder = nullptr;
         Platform::IMicrosecondClock* usClock = Harness::microsecondClock();
         if (usClock != nullptr && Drivers::initEncoderDrivers(clock, *usClock, 1000, encoder) && encoder != nullptr) {
-            s_h.encoderHw = &applyTap<TracedEncoder>(*encoder);
+            s_h.encoderHw = &applyTap<TracedEncoder>(applyMeter<MeteredEncoder>(*encoder));
         }
 
         // Raw debug access (optional)
@@ -121,7 +126,7 @@ namespace Harness {
 // ============================================================================
 const L1L2Harness& connectL1L2(Transport::ITransport& rawTransport)
 {
-    static L1L2Harness s_h{ applyTap<TracedTransport>(rawTransport) };
+    static L1L2Harness s_h{ applyTap<TracedTransport>(applyMeter<MeteredTransport>(rawTransport)) };
     return s_h;
 }
 
@@ -134,7 +139,7 @@ namespace Harness {
 // ============================================================================
 const L2L3Harness& connectL2L3(const L3Dispatchers& dispatchers, Protocol::ICommandProcessor& processor)
 {
-    static L2L3Harness s_h{ dispatchers, processor };
+    static L2L3Harness s_h{ dispatchers, applyMeter<MeteredCommandProcessor>(processor) };
     return s_h;
 }
 
@@ -153,7 +158,7 @@ const L5L1ByteHarness* connectL5L1Bytes(CommsChannel type)
         if (!initCommsBoard(s_hw, type) || s_hw.channel == nullptr) {
             return nullptr;
         }
-        static L5L1ByteHarness s_harness{ *s_hw.channel };
+        static L5L1ByteHarness s_harness{ applyMeter<MeteredByteChannel>(*s_hw.channel) };
         s_h = &s_harness;
     }
     return s_h;

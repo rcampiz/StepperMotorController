@@ -23,7 +23,17 @@ class TracedLock; class TracedSPIBus; class TracedMotorDriver; class TracedTrans
 }
 #endif
 
+#include "harness/taps/metered_taps.hpp"
+
 namespace Harness {
+
+/// Always-on meter tap (every build): counts the crossings of one harness signal into the
+/// harness meter. Apply it first, then applyTap (trace, debug builds) on top of it.
+template <typename Tap, int Slot = 0, typename Iface, typename... Args>
+Iface& applyMeter(Iface& raw, Args... args) {
+    static Tap s_tap(raw, args...);
+    return s_tap;
+}
 
 template <typename Tap, int Slot = 0, typename Iface>
 Iface& applyTap(Iface& raw) {

@@ -9,6 +9,7 @@
 #include "F_platform/boundary/boot_id.hpp"
 #include "F_platform/boundary/itask_stats.hpp"
 #include "harness/pins/async_event.hpp"
+#include "harness/trace/harness_meter.hpp"
 
 namespace Protocol {
 
@@ -388,6 +389,32 @@ void CommandParser::cmdTasks() {
   }
   snprintf(line, sizeof(line), "free_heap_bytes=%lu",
            static_cast<unsigned long>(stats->getFreeHeapBytes()));
+  m_sink.writeLine(line);
+  m_sink.end();
+}
+
+// DIAG:HARNESS? — the harness meter: one line per harness signal,
+// "<harness>.<signal> calls=<n> bytes=<n> busy_us=<n> tasks=M<n>,E<n>,C<n>,D<n>,T<n>,?<n>"
+// then "now_us=<t>". Counters only grow; take two readings and subtract for rates.
+void CommandParser::cmdHarness() {
+  m_sink.begin(m_format == ResponseFormat::JSON, "HARNESS");
+  static const char kTask[Harness::Meter::TASK_SLOTS] = {'?', 'M', 'E', 'C', 'D', 'T'};
+  char line[160];
+  for (uint8_t n = 0; n < Harness::Meter::NET_COUNT; ++n) {
+    Harness::Meter::Counters c;
+    Harness::Meter::read(n, c);
+    const Harness::Meter::NetInfo& info = Harness::Meter::info(n);
+    int len = snprintf(line, sizeof(line), "%s.%s calls=%lu bytes=%lu busy_us=%lu tasks=", info.harness,
+                       info.signal, static_cast<unsigned long>(c.calls), static_cast<unsigned long>(c.bytes),
+                       static_cast<unsigned long>(c.busyUs));
+    for (uint8_t t = 1; t <= Harness::Meter::TASK_SLOTS && len > 0 && len < static_cast<int>(sizeof(line)); ++t) {
+      const uint8_t slot = static_cast<uint8_t>(t % Harness::Meter::TASK_SLOTS);   // M E C D T, then ?
+      len += snprintf(line + len, sizeof(line) - static_cast<size_t>(len), "%s%c%lu", t > 1 ? "," : "",
+                      kTask[slot], static_cast<unsigned long>(c.byTask[slot]));
+    }
+    m_sink.writeLine(line);
+  }
+  snprintf(line, sizeof(line), "now_us=%lu", static_cast<unsigned long>(Harness::Meter::nowUs()));
   m_sink.writeLine(line);
   m_sink.end();
 }

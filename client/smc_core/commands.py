@@ -284,6 +284,9 @@ def status() -> Request: return request("DIAG:STAT?")
 @builds("DIAG:TASKS?")
 def tasks_query() -> Request: return request("DIAG:TASKS?")   # the LCD Task Monitor table over serial
 
+@builds("DIAG:HARNESS?")
+def harness_query() -> Request: return request("DIAG:HARNESS?")   # the harness meter: crossings per signal
+
 
 # ---------------------------------------------------------------------------
 # CTRL: control mode, encoder, supervisor, trim, system identification

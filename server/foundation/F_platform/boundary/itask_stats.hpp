@@ -57,6 +57,16 @@ public:
      * @return Available heap memory in bytes, or 0 if unknown
      */
     virtual uint32_t getFreeHeapBytes() { return 0; }
+
+    /**
+     * @brief A small tag kept per task by the scheduler (the trace task id). A plain global
+     *        cannot hold it: a preempting task overwrites it and the preempted one then reads
+     *        the wrong id (bench 2026-10-19: Motor-task crossings counted as Encoder/Display).
+     * @return false when the scheduler cannot keep one (callers fall back to a global)
+     */
+    virtual bool setCurrentTaskTag(uint8_t tag) { (void)tag; return false; }
+    /// The running task's tag (the interrupted task's from an ISR); 0xFF when unknown
+    virtual uint8_t getCurrentTaskTag() { return 0xFF; }
 };
 
 /// Null implementation for testing or when no scheduler is present

@@ -1392,6 +1392,31 @@
       "persists": false
     },
     {
+      "name": "DIAG:HARNESS?",
+      "prefix": "DIAG",
+      "handler": "cmdHarness",
+      "file": "system_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<lines> then OK <n>"
+      ],
+      "json": [
+        {
+          "command": "HARNESS",
+          "keys": [
+            "count",
+            "lines"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": "",
+      "multiline": true,
+      "binary": false,
+      "persists": false
+    },
+    {
       "name": "CTRL:ENC:DBG?",
       "prefix": "CTRL",
       "handler": "ENC_DEBUG",

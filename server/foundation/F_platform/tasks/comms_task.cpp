@@ -8,6 +8,7 @@
 #include "F_platform/boundary/iclock.hpp"
 #include "F_platform/boundary/itask_notifier.hpp"
 #include "harness/pins/itrace_context.hpp"
+#include "harness/trace/harness_meter.hpp"
 
 namespace Scheduler {
 
@@ -41,7 +42,10 @@ void vCommsTask(void* pvParameters)
         Harness::setTraceTaskId(Harness::TASK_COMMS);
         Harness::setTraceServiceId(Harness::SVC_COMMS);
 
-        s_service->tick();
+        {
+            Harness::Meter::Scope crossing(Harness::Meter::TASKS_COMMS);     // H_TASKS_L3
+            s_service->tick();
+        }
 
         // Wake early on USART2 RX (ITaskNotifier), otherwise poll every COMMS_POLL_PERIOD_MS
         if (s_rxWake != nullptr) {
