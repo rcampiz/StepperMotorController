@@ -135,7 +135,8 @@ class ControllerPanel(QGroupBox):
             self._bands_cb.toggled.connect(lambda on: setattr(self.stick, "avoid_bands", bool(on)))
             settings.addWidget(self._bands_cb, 3, 0, 1, 2)
         legend = QLabel(("L stick move   LT/RT turn   " if self.mode == "base" else "") +
-                        "B stop   Y enable   X %s   START e-stop" % ("re-arm" if self.mode == "base" else "clear fault"))
+                        "B stop   Y enable   X %s   START e-stop (hold 3 s: clear)" % (
+                            "re-arm" if self.mode == "base" else "clear fault"))
         legend.setStyleSheet("color: %s; font-size: 10px;" % theme.MUTED)
         settings.addWidget(legend, 4, 0, 1, 2)
         top.addLayout(settings, 1)

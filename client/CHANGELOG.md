@@ -43,6 +43,8 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
   motor passes (a diagonal or a move with a turn is scaled down as a whole). It follows the Base
   geometry (wheel size, motor-speed ceiling) live; the LCD's 100 % and the ramps follow it.
   Default 100 RPM, what full stick gave before.
+- Pad: START is the E-STOP (as before) and holding it 3 s clears it (the fleet re-arms the base;
+  the Drive tab clears the board's fault), like the LCD's 3 s CENTER hold.
 
 ### Changed
 - Protocol 3 boards are configured in physical units (protocol 2 boards still work): motor

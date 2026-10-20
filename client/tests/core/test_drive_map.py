@@ -217,3 +217,44 @@ def test_max_rpm_sets_full_stick_and_caps_every_motor():
     assert drv.base.max_vx == pytest.approx(2 * full.vx) and fleet.cap == 200
     assert fleet.lcd_full_scale.vx == pytest.approx(2 * full.vx)
     assert drv.slew.accel == pytest.approx(3 * 2 * full.vx)                     # full speed still in ~1/3 s
+
+
+def test_start_e_stops_and_holding_it_3_s_clears():
+    now = [0.0]
+    fleet = RecordingFleet()
+    actions = []
+    drv = BaseDriver(fleet, slew=None, clock=lambda: now[0])
+    drv.on_action = actions.append
+    start = GamepadState(buttons=frozenset({"START"}), packet=1)
+    drv.tick(start)
+    assert actions == ["estop"]                              # the press: E-STOP
+    for t in (1.0, 2.0, 2.9):
+        now[0] = t
+        drv.tick(start)
+    assert actions == ["estop"]                              # not yet
+    now[0] = 3.0
+    drv.tick(start)
+    assert actions == ["estop", "rearm"]                     # held 3 s: cleared
+    now[0] = 6.5
+    drv.tick(start)
+    assert actions == ["estop", "rearm"]                     # once per hold
+    now[0] = 7.0
+    drv.tick(GamepadState(packet=2))                         # released
+    now[0] = 7.1
+    drv.tick(start)
+    assert actions == ["estop", "rearm", "estop"]            # a new press E-STOPs again
+
+
+def test_the_single_motor_driver_clears_its_fault_after_a_3_s_start_hold():
+    now = [0.0]
+    sent = []
+    class Board:
+        def estop(self): sent.append("ESTOP")
+        def submit(self, req): sent.append(req.line)
+        def set_latest(self, key, req): pass
+    drv = SingleMotorDriver(Board(), clock=lambda: now[0])
+    start = GamepadState(buttons=frozenset({"START"}), packet=1)
+    drv.tick(start)
+    now[0] = 3.0
+    drv.tick(start)
+    assert sent == ["ESTOP", "SYST:FAULT:CLEAR"]

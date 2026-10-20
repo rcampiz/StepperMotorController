@@ -15,7 +15,8 @@ limited (quick, bounded speed-up and slow-down; B, START or a lost pad stop at o
 scales the four wheels together, so bands are not avoided there (four wheels cannot all dodge
 at once).
 
-Buttons: B = stop, Y = enable, START = E-STOP, X = re-arm (fleet) / clear fault (motor).
+Buttons: B = stop, Y = enable, START = E-STOP (held 3 s: clears it, as the LCD's CENTER hold
+does), X = re-arm (fleet) / clear fault (motor).
 """
 
 import math
@@ -28,6 +29,27 @@ from . import kinematics as K
 from .gamepad import GamepadState
 
 RESONANCE_BANDS_RPM: List[Tuple[float, float]] = [(55.0, 66.0), (105.0, 122.0)]
+CLEAR_HOLD_S = 3.0                   # START held this long clears the E-STOP (owner 2026-10-20)
+
+
+class StartHold:
+    """START held for CLEAR_HOLD_S: true once per hold (the press itself is the E-STOP)."""
+
+    def __init__(self, hold_s: float = CLEAR_HOLD_S):
+        self.hold_s = hold_s
+        self._down: Optional[float] = None
+        self._fired = False
+
+    def update(self, held: bool, now: float) -> bool:
+        if not held:
+            self._down = None
+            return False
+        if self._down is None:
+            self._down, self._fired = now, False
+        if not self._fired and now - self._down >= self.hold_s:
+            self._fired = True
+            return True
+        return False
 
 
 @dataclass
@@ -93,8 +115,11 @@ class MotorCommand:
 class SingleMotorDriver:
     """Turns pad states into MOT:RUN / MOT:STOP on one board. Call tick() every period."""
 
-    def __init__(self, board, stick: Optional[StickMap] = None, period_s: float = 0.05):
+    def __init__(self, board, stick: Optional[StickMap] = None, period_s: float = 0.05,
+                 clock: Callable[[], float] = time.monotonic):
         self.board = board
+        self._clock = clock
+        self._start_hold = StartHold()
         self.stick = stick or StickMap()
         self.period_s = period_s
         self.rpm = 0.0                       # what is being demanded now (after slew)
@@ -134,6 +159,8 @@ class SingleMotorDriver:
         self._buttons = state.buttons
         if "START" in pressed:
             self.board.estop()
+        if self._start_hold.update("START" in state.buttons, self._clock()):
+            self.board.submit(C.fault_clear())          # START held 3 s: clear the E-STOP
         if "B" in pressed:
             self._stop()
         if "Y" in pressed:
@@ -230,6 +257,7 @@ class BaseDriver:
         self.base = base or BaseMap()
         self.slew = slew                                # None: the twist follows the pad at once
         self._clock = clock
+        self._start_hold = StartHold()
         self._t: Optional[float] = None
         self._cur = K.Twist()
         if hasattr(fleet, "lcd_full_scale"):          # full stick / full trigger = 100 % on the LCDs
@@ -255,6 +283,9 @@ class BaseDriver:
         if "START" in pressed:
             self._cur = K.Twist()                       # after a re-arm the base starts from rest
             if self.on_action: self.on_action("estop")
+        if self._start_hold.update("START" in state.buttons, now) and self.on_action:
+            self._cur = K.Twist()
+            self.on_action("rearm")                     # START held 3 s: clear the E-STOP
         if "X" in pressed and self.on_action: self.on_action("rearm")
         if "Y" in pressed and self.on_action: self.on_action("enable")
         if "B" in pressed:
