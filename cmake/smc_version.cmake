@@ -12,7 +12,7 @@
 #                   the id changes, and only harness/pins/build_id.cpp includes it, so a new
 #                   commit recompiles one file and relinks; an unchanged tree rebuilds nothing.
 #
-# Cutting a release: CHANGELOG.md (bump VERSION and the client copies it names, commit, tag vX.Y.Z).
+# Releases and the per-commit patch number: docs/VERSIONING.md (scripts/release/release.py).
 # ---------------------------------------------------------------------------
 get_filename_component(SMC_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/.." ABSOLUTE)
 
@@ -22,6 +22,9 @@ if(NOT SMC_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.]+)?$")
     message(FATAL_ERROR "VERSION holds '${SMC_VERSION}', expected MAJOR.MINOR.PATCH[-prerelease]")
 endif()
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SMC_REPO_ROOT}/VERSION")
+# What counts as a firmware change for the patch number (git pathspecs; docs/VERSIONING.md and
+# scripts/release/release.py list the same)
+set(SMC_FW_PATHS "server,cmake,CMakeLists.txt,CMakePresets.json,VERSION")
 message(STATUS "SMC version:             ${SMC_VERSION}")
 
 function(smc_add_build_id target)
@@ -29,7 +32,8 @@ function(smc_add_build_id target)
     set(header "${gen_dir}/smc_build_id.h")
     string(REPLACE ";" "," dirty_paths "${ARGN}")
     add_custom_target(${target}_build_id
-        COMMAND ${CMAKE_COMMAND} "-DREPO=${SMC_REPO_ROOT}" "-DOUT=${header}"
+        COMMAND ${CMAKE_COMMAND} "-DREPO=${SMC_REPO_ROOT}" "-DOUT=${header}" "-DBASE=${SMC_VERSION}"
+                "-DCOUNT_PATHS=${SMC_FW_PATHS}"
                 "-DDIRTY_PATHS=${dirty_paths}" -P "${SMC_REPO_ROOT}/cmake/smc_build_id.cmake"
         BYPRODUCTS "${header}"
         COMMENT "Build id"

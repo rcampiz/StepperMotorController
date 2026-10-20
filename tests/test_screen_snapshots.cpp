@@ -302,7 +302,7 @@ TEST(saver_styles_animate_and_any_key_leaves) {
                rig.panel.countColor(c565(255, 30, 120));
     };
     EXPECT_TRUE(shadows() > 300);
-    // the release ("v" + Harness::FW_VERSION) under the name: its magenta shadow lies below the
+    // the version ("v" + Harness::fwVersion()) under the name: its magenta shadow lies below the
     // title's shadows and centred under them
     {
         const uint16_t titleInk[3] = {c565(40, 200, 255), c565(240, 0, 150), c565(255, 30, 120)};

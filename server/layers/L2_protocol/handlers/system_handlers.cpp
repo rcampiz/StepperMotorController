@@ -347,16 +347,16 @@ void CommandParser::cmdTelemetryRateQuery() {
 
 // *IDN? — SCPI identification: <vendor>,<model>,<serial>,<fw>,<proto> (F17)
 void CommandParser::cmdIdn() {
-  char buf[96];
+  char buf[128];   // the version carries the commit count and "+dirty" (docs/VERSIONING.md)
   if (m_format == ResponseFormat::JSON) {
     snprintf(buf, sizeof(buf),
              "{\"vendor\":\"%s\",\"model\":\"%s\",\"serial\":\"%s\",\"fw\":\"%s\",\"proto\":%u}",
              Harness::IDN_VENDOR, Harness::IDN_MODEL, Platform::deviceSerial(),
-             Harness::FW_VERSION, static_cast<unsigned>(Harness::PROTOCOL_VERSION));
+             Harness::fwVersion(), static_cast<unsigned>(Harness::PROTOCOL_VERSION));
     respondJsonOk("IDN", buf);
   } else {
     snprintf(buf, sizeof(buf), "%s,%s,%s,%s,%u", Harness::IDN_VENDOR, Harness::IDN_MODEL,
-             Platform::deviceSerial(), Harness::FW_VERSION,
+             Platform::deviceSerial(), Harness::fwVersion(),
              static_cast<unsigned>(Harness::PROTOCOL_VERSION));
     respondOk(buf);
   }
@@ -476,7 +476,7 @@ void CommandParser::cmdHarness() {
 void CommandParser::cmdVersion() {
   m_sink.begin(m_format == ResponseFormat::JSON, "VERSION");   // F12: 5 lines + terminator
   char line[80];
-  snprintf(line, sizeof(line), "Stepper Motor Controller v%s", Harness::FW_VERSION);
+  snprintf(line, sizeof(line), "Stepper Motor Controller v%s", Harness::fwVersion());
   m_sink.writeLine(line);
   snprintf(line, sizeof(line), "Build: %s (" __DATE__ " " __TIME__ ")", Harness::buildId());
   m_sink.writeLine(line);

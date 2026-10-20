@@ -264,7 +264,7 @@ constexpr int16_t TITLE_W = 10 * TITLE_ADV - CELL_W;    // the longest line, CON
 constexpr int16_t TITLE_H = 2 * TITLE_PITCH + TITLE_LINE_H;
 constexpr int16_t SLANT = (TITLE_LINE_H - 1) / 4;       // italic: tops lean right by up to 6 px
 constexpr int16_t SHADOW = 3;                           // shadow offset, right and down
-// The release under the name ("v0.5.0", Harness::FW_VERSION): the same 5x7 glyphs, smaller
+// The version under the name ("v0.6.3", Harness::fwVersion()): the same 5x7 glyphs, smaller
 // (2x3 cells), spaced by their ink, with the same lean, a shallower shadow and a neon rule
 // either side; white-to-cyan on a magenta shadow that holds still while the name flashes. It
 // is part of the title's mask, so it fades, rocks and bobs with the name in the same box and
@@ -351,12 +351,13 @@ void versionPixel(int16_t x, int16_t ly) {
     maskSet(static_cast<int16_t>(1 + x + lean), static_cast<int16_t>(1 + VER_TOP + ly), 3);
 }
 
-/// "v<FW_VERSION>" centred under the name, with a rule either side of it
+/// "v<fwVersion()>" centred under the name, with a rule either side of it
 void buildVersionLine() {
     char text[16];
     text[0] = 'v';
     size_t n = 1;
-    for (const char* p = Harness::FW_VERSION; *p != '\0' && n < sizeof text - 1; p++) text[n++] = *p;
+    // The number only: build metadata ("+dirty") would not fit the big glyphs; SYST:VER? says it
+    for (const char* p = Harness::fwVersion(); *p != '\0' && *p != '+' && n < sizeof text - 1; p++) text[n++] = *p;
     text[n] = '\0';
     // Width in cells: a blank cell between glyphs and an extra one either side of a point (it
     // is small, and leaning it would crowd the digits); what does not fit under the name is dropped

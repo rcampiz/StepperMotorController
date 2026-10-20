@@ -1,34 +1,51 @@
 """
-The client's release, and how it sits against a board's firmware release.
+The client's version (GUI, CLI, core), independent of the firmware's (docs/VERSIONING.md).
 
-VERSION at the repository root is the single source of the release number: the firmware
-reads it at build time (cmake/smc_version.cmake) and this package carries the same number
-here and in pyproject.toml; tests/core/test_version.py fails when the copies disagree.
+The release MAJOR.MINOR.0 is written here and in pyproject.toml (tests/core/test_version.py
+checks they agree); `scripts/release/release.py minor client` bumps both. The patch is counted,
+never written: the commits that touched client/ (its tests excepted) since the tag
+client-vMAJOR.MINOR.0, which full_version() gives for the checkout this package runs from.
 
-The wire protocol has its own number (protocol_spec.PROTOCOL_VERSION): a board on another
-protocol is refused. A board on another release that speaks the same protocol works; a
-different major or minor release is only worth a warning (features and defaults differ).
+Whether a client and a board work together is the protocol number's job
+(protocol_spec.PROTOCOL_VERSION, Board.SUPPORTED_PROTOCOLS), not the versions'.
 """
 
+import functools
 import re
+import subprocess
+from pathlib import Path
 from typing import Optional, Tuple
 
 __version__ = "0.5.0"
+
+TAG_PREFIX = "client-v"
+#: What counts as a client change (git pathspecs, from the repository root)
+PATHS = ("client", ":(exclude)client/tests")
 
 _RELEASE = re.compile(r"^\s*v?(\d+)\.(\d+)\.(\d+)")
 
 
 def parse_release(text: str) -> Optional[Tuple[int, int, int]]:
-    """(major, minor, patch) of "0.5.0", "v0.5.0", "0.5.0-sim"; None when it is not one."""
+    """(major, minor, patch) of "0.5.0", "v0.5.0", "0.5.3+dirty"; None when it is not one."""
     m = _RELEASE.match(text or "")
     return (int(m.group(1)), int(m.group(2)), int(m.group(3))) if m else None
 
 
-def release_mismatch(board_fw: str, client: str = __version__) -> Optional[str]:
-    """A one-line warning when the board's firmware release differs from this client's in
-    major or minor (a patch apart is fine); None when they match or either is unreadable."""
-    board, ours = parse_release(board_fw), parse_release(client)
-    if board is None or ours is None or board[:2] == ours[:2]:
-        return None
-    return (f"board firmware {board_fw} and client {client} are different releases; "
-            f"update whichever is older")
+@functools.lru_cache(maxsize=None)
+def full_version(base: str = __version__, repo: Optional[str] = None) -> str:
+    """MAJOR.MINOR.<client commits since client-vMAJOR.MINOR.0>[+dirty] for the checkout this
+    package runs from; `base` when there is no git, no checkout or no tag (an installed package)."""
+    rel = parse_release(base)
+    root = Path(repo) if repo else Path(__file__).resolve().parents[2]
+    if rel is None or not (root / ".git").exists():
+        return base
+    tag = f"{TAG_PREFIX}{rel[0]}.{rel[1]}.0"
+    try:
+        run = dict(cwd=root, capture_output=True, text=True, timeout=5)
+        count = subprocess.run(["git", "rev-list", "--count", f"{tag}..HEAD", "--", *PATHS], **run)
+        if count.returncode != 0 or not count.stdout.strip().isdigit():
+            return base
+        dirty = subprocess.run(["git", "diff", "--quiet", "HEAD", "--", *PATHS], **run)
+    except (OSError, subprocess.SubprocessError):
+        return base
+    return f"{rel[0]}.{rel[1]}.{count.stdout.strip()}" + ("+dirty" if dirty.returncode != 0 else "")

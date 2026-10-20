@@ -1,14 +1,17 @@
-# Changelog
+# Changelog: firmware
 
-All notable changes to the firmware and the client. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the release number follows
-[Semantic Versioning](https://semver.org/). `VERSION` holds the current release; the firmware
-(`Harness::FW_VERSION`, `*IDN?`, `!RESET fw=`, `SYST:VER?`, the LCD saver) and the client
-(`smc_core.__version__`, `smc --version`) both report it. The wire protocol has its own
-number (`PROTOCOL_VERSION`, docs/PROTOCOL.md) and changes only when the protocol does.
+The firmware (and the project as a whole): the STM32 firmware in `server/`, its build and the
+virtual Nucleo. The client (GUI, CLI, core) has its own version and changelog,
+`client/CHANGELOG.md`. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
+the version follows [Semantic Versioning](https://semver.org/) with the patch counted from git:
+the commits that touched the firmware since its release tag (`0.6.3` = three firmware commits
+after `fw-v0.6.0`). The firmware reports it in `*IDN?`, `!RESET fw=`, `SYST:VER?` and on the LCD
+saver. The wire protocol has its own number (`PROTOCOL_VERSION`, docs/PROTOCOL.md), which is
+what decides whether a client and a board work together.
 
-Cutting a release: move the Unreleased notes under a new heading, bump `VERSION`,
-`client/pyproject.toml` and `client/smc_core/version.py`, commit, then tag `vX.Y.Z`.
+Rules and tooling: docs/VERSIONING.md. Notes go under Unreleased as work lands;
+`scripts/release/release.py minor fw` (or `major fw`) stamps them, bumps `VERSION`, commits and
+tags.
 
 ## [Unreleased]
 
@@ -22,15 +25,22 @@ Cutting a release: move the Unreleased notes under a new heading, bump `VERSION`
   Values are rounded by the driver and the replies show what `DRV:CFG:APPLY` puts in force;
   ranges come from the driver (`ERROR OUT_OF_RANGE`). Telemetry: `motor.faults` (chip-neutral
   bits), `motor.driver_raw`, `control.base_fsps` / `final_fsps` (`CTRL:TRIM?` also `trim_fsps`).
-- Client: typed builders for the new commands, `smc_core.driver` (one physical code path for
-  protocol 2 and 3 boards), views for `DRV:CAPS?` / `DRV:CFG:PHYS?`, `smc driver caps|show`;
-  the fake board speaks protocol 3 (or 2 with `protocol=2`).
 - Driver boundary step 5, the proof of swap: a second L4 motor driver for a generic STEP/DIR
   chip (DRV8825-class: MODE pins, nENABLE, nFAULT, current from VREF) with software ramps and
   position count over a new `Board::IStepPulseTimer` (H_L4_L5). The virtual Nucleo runs it with
   `--driver stepdir` (`sim/vnucleo_fleet.py --driver stepdir`); the client's virtual-Nucleo
   tests run every scenario on both drivers. No L3 or L2 change; the firmware still builds the
   powerSTEP01 driver only. Findings in docs/design/DRIVER_BOUNDARY.md ("Step 5 as built").
+- Separate firmware and client versions (docs/VERSIONING.md): `VERSION` is the firmware's
+  release; the patch is the count of firmware commits since `fw-vX.Y.0`, computed at build time
+  (`Harness::fwVersion()`). `scripts/release/release.py`: `status`, `check` (a release is due
+  when the protocol version, the stored config format or the command set changed),
+  `minor|major fw|client` (bump, changelog, commit, tag) and `which fw|client <version>`.
+- Open source: MIT License, THIRD_PARTY_NOTICES.md. The LCD fonts are rendered from Cascadia
+  Mono (SIL OFL 1.1; files and licence in scripts/lcd/fonts), replacing Consolas, which is not
+  licensed for redistribution.
+- LCD: per-row help text on the Driver, Motion, Screen Care and Device Info pages; the Driver
+  page shows accel/decel in RPM/s and max speed in RPM (shaft, independent of microstepping).
 
 ### Deprecated
 - Protocol 2 chip-unit commands, kept one release (marked in docs/PROTOCOL.md and
@@ -39,11 +49,10 @@ Cutting a release: move the Unreleased notes under a new heading, bump `VERSION`
   `status_reg`, `stall_a` / `stall_b`, `base_spd` / `trim_spd` / `final_spd`.
 
 ### Changed
-- `PROTOCOL_VERSION` 3. The client accepts protocol 2 and 3 boards and uses the physical
-  commands when the board has them: motor profiles (amps, microsteps), the GUI's driver,
-  step-mode and protection panels (ranges and steps from `DRV:CAPS?`, currents in amps,
-  overcurrent in amps with the sensed volts, voltage-mode controls hidden when the driver has
-  none), scenarios and the CLI. `DRV:CFG:DRIVE` refuses a drive mode the driver lacks.
+- Defaults: motion currents 25 % lower (run 1.014 A, acc/dec 1.17 A; hold 0.312 A kept) and
+  the overcurrent guard at 78 A (OCD_TH 2), the lowest that stayed clean in every bench soak
+  (26 A flags on switching transients while running).
+- `PROTOCOL_VERSION` 3. `DRV:CFG:DRIVE` refuses a drive mode the driver lacks.
 - Driver boundary step 3: the motor driver's settings are physical (amps, duty, full steps/s^2,
   full steps/s, microsteps) and the driver advertises its capabilities; every powerSTEP01
   register, unit and quirk (Hi-Z-only writes, the current-mode 1/16 cap, the chip-reset watch)
@@ -51,18 +60,23 @@ Cutting a release: move the Unreleased notes under a new heading, bump `VERSION`
   ramps and step mode. Protocol 2 commands unchanged (the chip-unit ones are aliases the
   driver translates). The LCD Driver page shows physical values; OCD reads as the VDS
   threshold with its estimated current. The chip-reset watch now runs from boot.
+- RAM: static use 88.9 % -> 80.5 % of 96 KB (the Display renderers share one scratch row and
+  one title mask, Motor task stack 1024 -> 512 words, SystemView RTT buffer 4 -> 1 KB); main
+  stack reserve 1 -> 2 KB; Display task stack 640 -> 1024 words (measured peak 502). Task stack
+  sizes live in F_platform/tasks/task_stacks.hpp.
+- Portability (a later RP2350 or other MCU): the trace ring claims slots with one atomic add
+  instead of masking interrupts; the config journal's flash region comes from the board
+  (`IInternalFlash::configRegion()`), so L4 holds no flash addresses.
 
 ### Fixed
-- Client scenarios no longer assume a powerSTEP01: step_mode_readback and step_mode_chip ask
-  only for resolutions the driver takes (a finer one must be refused), drive_mode_chip checks
-  that a missing drive mode is refused, position_capture compares with the RUN speed when the
-  driver has no step-sync output (it read `pulses_per_full_step` 0 as 8).
 - On a driver without powerSTEP01 chip units, the protocol 2 aliases (`DRV:CFG:KVAL`, `TVAL`,
   `OCD`, `STALL`, `MOTION`, `PRED`, `DECAY`) are refused with `INVALID_STATE` naming the
   protocol 3 command; they answered "set" and changed nothing.
 - `DRV:CAPS?` gains `current_settable`: a driver whose current is set in hardware (a STEP/DIR
   chip's VREF pot) reports `current_mode=1 current_settable=0` instead of no current mode;
   `DRV:CFG:CURRENT` says the current is set in hardware, the LCD Driver page shows "hardware".
+- `*IDN?` and the `!RESET` line had 96-byte buffers that a long version string would truncate
+  into invalid JSON (now 128).
 
 ## [0.5.0] - 2026-10-19
 

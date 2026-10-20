@@ -13,9 +13,13 @@
 #ifndef SMC_BUILD_ID
 #define SMC_BUILD_ID "unknown"
 #endif
+#ifndef SMC_VERSION_FULL
+#define SMC_VERSION_FULL SMC_FW_VERSION     // no generated header (host tests): the release
+#endif
 
 namespace Harness {
 
 const char* buildId() { return SMC_BUILD_ID; }
+const char* fwVersion() { return SMC_VERSION_FULL; }
 
 } // namespace Harness

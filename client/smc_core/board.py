@@ -47,7 +47,6 @@ from .protocol_spec import COMMANDS, LIMITS, OOB_ESTOP_BYTE, PROTOCOL_VERSION
 # (the chip-unit commands; smc_core.driver translates). Any other is refused at session setup.
 SUPPORTED_PROTOCOLS = (2, PROTOCOL_VERSION)
 from .transport.base import ITransport, TransportError
-from .version import release_mismatch
 
 log = logging.getLogger("smc_core.board")
 
@@ -700,10 +699,6 @@ class Board:
         if self.identity is not None and self.identity.proto not in SUPPORTED_PROTOCOLS:
             self._emit("error", f"board speaks protocol {self.identity.proto}, "
                                 f"this client protocols {'/'.join(map(str, SUPPORTED_PROTOCOLS))}")
-        if self.identity is not None:
-            mismatch = release_mismatch(self.identity.fw)
-            if mismatch:
-                log.warning("%s: %s", self.name, mismatch)
         if self.config.clear_fault_on_connect:
             self._execute(C.fault_clear(), "setup")
         if self.config.events:

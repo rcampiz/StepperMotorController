@@ -174,6 +174,7 @@ smc_add_test(test_screen_snapshots test_screen_snapshots.cpp
     ${SERVER}/layers/L3_services/ui/screens/device_info_screen.cpp
     ${SERVER}/layers/L3_services/ui/screens/arch_screen.cpp
     ${SERVER}/layers/L3_services/ui/screens/saver_screen.cpp
+    ${SERVER}/harness/pins/build_id.cpp                      # the saver shows fwVersion()
     ${SERVER}/layers/L3_services/ui/screens/recovery_screen.cpp
     ${SERVER}/layers/L3_services/ui/screens/screen_care_screen.cpp
     ${SERVER}/layers/L3_services/ui/screens/estop_screen.cpp

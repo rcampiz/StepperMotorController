@@ -800,14 +800,14 @@ void CommandParser::emitEvent(const AsyncEvent &evt, uint32_t seq, uint32_t ts_m
 
 void CommandParser::emitBanner() {
   // F17: one machine-readable line first, so a client detects a (re)boot per board
-  char reset[96];
+  char reset[128];   // fw= and build= both carry "+dirty" on a working tree
   snprintf(reset, sizeof(reset), "!RESET boot=%08lX fw=%s proto=%u build=%s rst=%s",
-           static_cast<unsigned long>(Platform::bootId()), Harness::FW_VERSION,
+           static_cast<unsigned long>(Platform::bootId()), Harness::fwVersion(),
            static_cast<unsigned>(Harness::PROTOCOL_VERSION), Harness::buildId(),
            Platform::resetCause());
   m_transport.println(reset);
   char title[48];
-  snprintf(title, sizeof(title), "   Stepper Motor Controller v%s", Harness::FW_VERSION);
+  snprintf(title, sizeof(title), "   Stepper Motor Controller v%s", Harness::fwVersion());
   m_transport.println("");
   m_transport.println("========================================");
   m_transport.println(title);
