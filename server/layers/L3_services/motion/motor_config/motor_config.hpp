@@ -199,11 +199,12 @@ public:
     bool setFromLegacyUnits(const Drivers::LegacyDriverUnits& in);
 
     // Project defaults for the motor, StepperOnline 23HS22-2804-ME1K (NEMA 23, 2.8 A/phase,
-    // 0.9 ohm, 2.5 mH, 1000-line encoder): hold 0.31 A, run 1.33 A, acc/dec 1.56 A. Chosen for
-    // a battery robot (bench 2026-10-18, 12.5 V); 2026-10-19: 25 % under 0.39 / 1.72 / 2.03 A.
+    // 0.9 ohm, 2.5 mH, 1000-line encoder): hold 0.31 A, run 1.01 A, acc/dec 1.17 A. Chosen for
+    // a battery robot (bench 2026-10-18, 12.5 V); 2026-10-19: 25 % under 0.39 / 1.72 / 2.03 A;
+    // 2026-10-20: the motion currents another 25 % lower (were 1.326 / 1.56 A), hold kept.
     static constexpr float DEFAULT_HOLD_A = 0.312f;
-    static constexpr float DEFAULT_RUN_A  = 1.326f;
-    static constexpr float DEFAULT_ACC_A  = 1.56f;    // acc and dec
+    static constexpr float DEFAULT_RUN_A  = 1.014f;   // 13 x 78 mA
+    static constexpr float DEFAULT_ACC_A  = 1.17f;    // acc and dec, 15 x 78 mA
 
     bool    isCurrentMode() const { return m_config.driver.mode == Harness::DriveMode::CURRENT; }
     uint8_t getDriveMode() const { return isCurrentMode() ? 1 : 0; }

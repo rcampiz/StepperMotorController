@@ -69,12 +69,18 @@ TEST(empty_store_yields_defaults_and_invalid) {
     EXPECT_FALSE(cfg.isValid());
 }
 
-TEST(the_default_overcurrent_guard_is_the_bench_proven_ocd_th_3) {
-    // Bench 2026-10-19: OCD_TH 0..1 trip on switching transients while running, 3 is clean
+TEST(the_defaults_are_the_bench_proven_ocd_th_2_and_the_lower_motion_currents) {
+    // Bench 2026-10-20: OCD_TH 0 (26 A) flags on switching transients while running; 2 is the
+    // lowest clean in every soak. Motion currents 25 % under 1.326 / 1.56 A, hold kept.
     FakeConfigStore store;
     Services::MotorConfigManager cfg;
     (void)cfg.init(store);
-    EXPECT_EQ(Drivers::PowerStepSettings::ampsToOcd(cfg.getDriverSettings().overcurrentA), 3u);
+    const Harness::DriverSettings& d = cfg.getDriverSettings();
+    EXPECT_EQ(Drivers::PowerStepSettings::ampsToOcd(d.overcurrentA), 2u);
+    EXPECT_NEAR(d.currentA.hold, 0.312, 1e-6);
+    EXPECT_NEAR(d.currentA.run, 1.014, 1e-6);
+    EXPECT_NEAR(d.currentA.acc, 1.17, 1e-6);
+    EXPECT_NEAR(d.currentA.dec, 1.17, 1e-6);
 }
 
 TEST(save_then_reload_round_trips_through_the_store) {

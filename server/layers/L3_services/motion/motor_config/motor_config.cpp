@@ -119,8 +119,10 @@ void MotorConfigManager::applyDefaults() {
     d.maxSpeedFsps = 992.0f;
     // Short-circuit guard, not a current limit (the current reference limits the motor). Bench
     // 2026-10-19, IHM03A1: powerSTEP01 OCD_TH 0..1 trip on switching transients while running,
-    // 2 and up stay clear; 100 A lands on OCD_TH 3 (125 mV, ~104 A), clean through a soak
-    d.overcurrentA = 100.0f;
+    // 2 and up stay clear. 2026-10-20, with the lower motion currents (1.01 / 1.17 A): OCD_TH 0
+    // (26 A) still flags ~24 times a minute running; 1 and 2 soak clean (1 flagged once at the
+    // old currents). 78 A = OCD_TH 2 (94 mV), the lowest clean in every soak.
+    d.overcurrentA = 78.0f;
     d.stallThreshold01 = 0.0f;
     // Fault alarms: overcurrent, thermal shutdown, undervoltage; stall needs tuning first
     d.faultAlarms = Harness::DriverFault::OVERCURRENT | Harness::DriverFault::THERMAL_SHUTDOWN
