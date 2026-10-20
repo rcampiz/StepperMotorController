@@ -15,6 +15,8 @@ tags.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-20
+
 ### Added
 - Protocol 3 (driver boundary step 4): the host configures the motor driver in physical units
   and learns what it can do. `DRV:CAPS?` (modes and resolutions, current / duty / overcurrent /
