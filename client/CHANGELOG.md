@@ -50,6 +50,13 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
   protocol number decides compatibility (a board on an unknown protocol is refused).
 
 ### Fixed
+- The base crept with the pad untouched: the PowerA 1414135-02 rests up to 0.11 off centre
+  (and LT at 0.03), at the edge of the old 0.08 per-axis dead zone. The move stick now has a
+  round dead zone with hysteresis (starts past 0.20, stops inside 0.15; the triggers 0.12 /
+  0.08), rescaled so full deflection is still full; the single-motor dead zone is 0.20.
+- Smoother base driving that still answers at once: the twist is rate limited (full speed in
+  about 0.33 s, a release stops in about 0.17 s; B, START or a lost pad stop at once), the pad
+  is read at 50 Hz (was 20), and each wheel is sent a command only when its command changes.
 - Client scenarios no longer assume a powerSTEP01: step_mode_readback and step_mode_chip ask
   only for resolutions the driver takes (a finer one must be refused), drive_mode_chip checks
   that a missing drive mode is refused, position_capture compares with the RUN speed when the

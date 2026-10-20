@@ -9,12 +9,17 @@ so the motor never dwells where it shakes. The loop sends MOT:RUN <rpm> RPM each
 (coalesced on the board: only the newest is sent) and MOT:STOP when the stick is released
 or the pad goes away.
 
-Base (fleet): left stick = vx (up) and vy (left), right stick x = wz; the fleet scales the
-four wheels together, so bands are not avoided there (four wheels cannot all dodge at once).
+Base (fleet): the left stick moves the base (vx up, vy left) through a round dead zone with
+hysteresis, the triggers turn it (LT counter-clockwise, RT clockwise), and the twist is rate
+limited (quick, bounded speed-up and slow-down; B, START or a lost pad stop at once). The fleet
+scales the four wheels together, so bands are not avoided there (four wheels cannot all dodge
+at once).
 
 Buttons: B = stop, Y = enable, START = E-STOP, X = re-arm (fleet) / clear fault (motor).
 """
 
+import math
+import time
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Tuple
 
@@ -27,7 +32,8 @@ RESONANCE_BANDS_RPM: List[Tuple[float, float]] = [(55.0, 66.0), (105.0, 122.0)]
 
 @dataclass
 class StickMap:
-    dead_zone: float = 0.08          # stick fraction ignored around centre
+    dead_zone: float = 0.20          # stick fraction ignored around centre (the PowerA 1414135-02
+                                     # rests up to 0.11 off centre, bench 2026-10-20)
     expo: float = 0.5                # 0 = linear, 1 = cubic-ish; fine control near centre
     max_rpm: float = 250.0
     min_rpm: float = 3.0             # below this the motor is stopped, not crawled
@@ -137,31 +143,85 @@ class SingleMotorDriver:
 
 
 @dataclass
+class StickGate:
+    """A round dead zone with hysteresis for a stick (x, y) or a trigger (x alone): the input
+    must pass `enter` to start and come back inside `exit` to stop, so a pad that rests off
+    centre does not creep and one held at the edge does not chatter. Past the gate the output is
+    rescaled from the `exit` edge, so full deflection is still full."""
+    enter: float = 0.20
+    exit: float = 0.15
+    active: bool = False
+
+    def gate(self, x: float, y: float = 0.0) -> Tuple[float, float]:
+        r = math.hypot(x, y)
+        self.active = r > (self.exit if self.active else self.enter)
+        if not self.active or r <= 0.0:
+            return 0.0, 0.0
+        scale = min(1.0, (r - self.exit) / (1.0 - self.exit)) / r
+        return x * scale, y * scale
+
+
+@dataclass
+class TwistSlew:
+    """How fast the commanded twist may change: quick enough to feel immediate, bounded so a
+    flick or a release does not jerk the base. Slowing down (toward zero) is faster than
+    speeding up."""
+    accel: float = 1.5               # m/s^2 speeding up (0 -> 0.5 m/s in 0.33 s)
+    decel: float = 3.0               # m/s^2 slowing down (0.5 m/s -> 0 in 0.17 s)
+    alpha: float = 6.0               # rad/s^2 turning up (0 -> 2 rad/s in 0.33 s)
+    alpha_down: float = 12.0         # rad/s^2 turning down
+
+    @staticmethod
+    def _axis(cur: float, tgt: float, up: float, down: float, dt: float) -> float:
+        rate = up if (abs(tgt) > abs(cur) and tgt * cur >= 0.0) else down
+        step = rate * dt
+        return tgt if abs(tgt - cur) <= step else cur + math.copysign(step, tgt - cur)
+
+    def step(self, cur: K.Twist, tgt: K.Twist, dt: float) -> K.Twist:
+        dt = max(0.0, dt)
+        return K.Twist(vx=self._axis(cur.vx, tgt.vx, self.accel, self.decel, dt),
+                       vy=self._axis(cur.vy, tgt.vy, self.accel, self.decel, dt),
+                       wz=self._axis(cur.wz, tgt.wz, self.alpha, self.alpha_down, dt))
+
+
+@dataclass
 class BaseMap:
     max_vx: float = 0.5              # m/s at full stick
     max_vy: float = 0.5
     max_wz: float = 2.0              # rad/s at full trigger (or stick)
-    stick: StickMap = field(default_factory=lambda: StickMap(avoid_bands=False))
+    stick: StickMap = field(default_factory=lambda: StickMap(avoid_bands=False, dead_zone=0.0))   # expo only
+    left: StickGate = field(default_factory=StickGate)                                  # the move stick
+    triggers: Tuple[StickGate, StickGate] = field(default_factory=lambda: (StickGate(0.12, 0.08), StickGate(0.12, 0.08)))
+    right: StickGate = field(default_factory=StickGate)
     #: What turns the base: "triggers" (owner 2026-10-20: LT counter-clockwise, RT clockwise,
     #: proportional to the pull) or "right_stick" (stick right = clockwise)
     turn: str = "triggers"
 
     def twist(self, state: GamepadState) -> K.Twist:
         if self.turn == "right_stick":
-            wz = -self.stick.shape(state.rx) * self.max_wz             # stick right = turn clockwise = -wz
+            rx, _ = self.right.gate(state.rx)
+            wz = -self.stick.shape(rx) * self.max_wz                   # stick right = turn clockwise = -wz
         else:
-            wz = self.stick.shape(state.lt - state.rt) * self.max_wz   # LT = counter-clockwise = +wz
-        return K.Twist(vx=self.stick.shape(state.ly) * self.max_vx,
-                       vy=-self.stick.shape(state.lx) * self.max_vy,      # stick right = move right = -vy (left positive)
+            lt, _ = self.triggers[0].gate(state.lt)
+            rt, _ = self.triggers[1].gate(state.rt)
+            wz = self.stick.shape(lt - rt) * self.max_wz               # LT = counter-clockwise = +wz
+        lx, ly = self.left.gate(state.lx, state.ly)
+        return K.Twist(vx=self.stick.shape(ly) * self.max_vx,
+                       vy=-self.stick.shape(lx) * self.max_vy,          # stick right = move right = -vy (left positive)
                        wz=wz)
 
 
 class BaseDriver:
     """Turns pad states into fleet twists; buttons act on the whole base."""
 
-    def __init__(self, fleet, base: Optional[BaseMap] = None):
+    def __init__(self, fleet, base: Optional[BaseMap] = None, slew: Optional[TwistSlew] = TwistSlew(),
+                 clock: Callable[[], float] = time.monotonic):
         self.fleet = fleet
         self.base = base or BaseMap()
+        self.slew = slew                                # None: the twist follows the pad at once
+        self._clock = clock
+        self._t: Optional[float] = None
+        self._cur = K.Twist()
         if hasattr(fleet, "lcd_full_scale"):          # full stick / full trigger = 100 % on the LCDs
             fleet.lcd_full_scale = K.Twist(vx=self.base.max_vx, vy=self.base.max_vy, wz=self.base.max_wz)
         self.last: Optional[K.Twist] = None
@@ -169,24 +229,30 @@ class BaseDriver:
         self._was_connected = False
         self.on_action: Optional[Callable[[str], None]] = None      # "estop" / "rearm" / "enable" to run off-thread
 
-    def tick(self, state: Optional[GamepadState]) -> Optional[K.Twist]:
+    def tick(self, state: Optional[GamepadState], dt: Optional[float] = None) -> Optional[K.Twist]:
+        now = self._clock()
+        if dt is None:                                  # the real time since the last tick, bounded
+            dt = 0.05 if self._t is None else min(0.2, max(0.0, now - self._t))
+        self._t = now
         if state is None:
             if self._was_connected:
-                self.fleet.stop()
-                self.last = K.Twist()
+                self._halt()                            # pad gone: stop at once
             self._was_connected = False
             return self.last
         self._was_connected = True
         pressed = state.buttons - self._buttons
         self._buttons = state.buttons
-        if "START" in pressed and self.on_action: self.on_action("estop")
+        if "START" in pressed:
+            self._cur = K.Twist()                       # after a re-arm the base starts from rest
+            if self.on_action: self.on_action("estop")
         if "X" in pressed and self.on_action: self.on_action("rearm")
         if "Y" in pressed and self.on_action: self.on_action("enable")
         if "B" in pressed:
-            self.fleet.stop()
-            self.last = K.Twist()
+            self._halt()                                # B: stop at once, no ramp
             return self.last
-        t = self.base.twist(state)
+        target = self.base.twist(state)
+        t = self.slew.step(self._cur, target, dt) if self.slew is not None else target
+        self._cur = t
         if t == K.Twist():
             if self.last is None or self.last != t:
                 self.fleet.stop()
@@ -194,3 +260,8 @@ class BaseDriver:
             self.fleet.drive(t)
         self.last = t
         return t
+
+    def _halt(self) -> None:
+        self._cur = K.Twist()
+        self.fleet.stop()
+        self.last = K.Twist()

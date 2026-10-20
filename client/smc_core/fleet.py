@@ -100,6 +100,7 @@ class Fleet:
         self.lcd_full_scale = K.Twist(vx=0.5, vy=0.5, wz=2.0)   # 100 % on the indicator
         self._lcd_taken: set = set()                 # roles whose LCD is in REMOTE mode for us
         self._lcd_last = None
+        self._sent: Dict[str, str] = {}              # the last drive line per role: only changes go out
         self._listeners: Dict[str, List[Callable]] = {}
         for role, b in self.boards.items():
             b.subscribe("telemetry", lambda data, t, role=role: self._on_telemetry(role, data, t))
@@ -185,6 +186,7 @@ class Fleet:
     # --- safety ------------------------------------------------------------------------
     def estop(self, confirm_timeout: float = 2.0) -> FleetEstop:
         """Write the stop on every board, then confirm each. Callable from any thread."""
+        self._sent.clear()                          # after the re-arm every wheel hears its command again
         writes: Dict[str, float] = {}
         errors: Dict[str, str] = {}
         for role, b in self.boards.items():             # 1) every write first
@@ -218,6 +220,7 @@ class Fleet:
 
     def _on_reset(self, role: str, info) -> None:
         self._lcds_dropped([role])                  # it rebooted into LOCAL: retake its LCD
+        self._sent.pop(role, None)                  # and resend its command
         if self.boards[role].session_ready or self._opened:
             self._board_lost(role, f"board reset (boot {info.boot:08X})")
 
@@ -228,6 +231,7 @@ class Fleet:
     def rearm(self) -> Dict[str, Response]:
         """After a base stop: clear every latch (operator action)."""
         self._stopping = False
+        self._sent.clear()              # resend every wheel's command on the next move
         self._lcds_dropped()            # the E-STOP pages took the LCDs: the next move retakes them
         return {r: b.request(C.fault_clear()) for r, b in self.boards.items()}
 
@@ -239,16 +243,20 @@ class Fleet:
         for role in ROLES:
             sps, direction = cmds[role]
             req = C.mot_run(sps, direction) if sps > 0 else C.mot_stop()
-            self.boards[role].set_latest("drive", req)
+            if self._sent.get(role) != req.line:          # a wheel whose command did not change hears nothing
+                self.boards[role].set_latest("drive", req)
+                self._sent[role] = req.line
         self._show_motion(twist)
         return scale
 
     def stop(self) -> None:
-        for b in self.boards.values():
+        for role, b in self.boards.items():             # always sent: a stop is never skipped
             b.set_latest("drive", C.mot_stop())
+            self._sent[role] = C.mot_stop().line
         self._show_motion(K.Twist())
 
     def enable(self) -> Dict[str, Response]:
+        self._sent.clear()
         return self._all(C.mot_enable())
 
     def _all(self, req: C.Request) -> Dict[str, Response]:

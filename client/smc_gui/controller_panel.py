@@ -90,7 +90,7 @@ class ControllerPanel(QGroupBox):
         self.stick = StickMap()
         self._setup_ui()
         self._timer = QTimer(self)
-        self._timer.setInterval(50)
+        self._timer.setInterval(20)                 # 50 Hz: the pad is read every 20 ms; only changes are sent
         self._timer.timeout.connect(self._poll)
         self._timer.start()
         self._last_packet = -1

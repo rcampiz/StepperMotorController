@@ -3,7 +3,7 @@ import pytest
 
 from smc_core import kinematics as K
 from smc_core.board import Board, BoardConfig, Liveness
-from smc_core.drive_map import BaseDriver, BaseMap, SingleMotorDriver, StickMap
+from smc_core.drive_map import BaseDriver, BaseMap, SingleMotorDriver, StickGate, StickMap, TwistSlew
 from smc_core.gamepad import GamepadState, SoftwareGamepad
 from smc_core.sim import FakeBoard
 from smc_core.transport.memory import MemoryTransport
@@ -130,7 +130,11 @@ class RecordingFleet:
 def test_base_driver_maps_the_left_stick_and_the_triggers_to_a_twist_and_buttons_to_actions():
     fleet = RecordingFleet()
     actions = []
-    drv = BaseDriver(fleet, BaseMap(max_vx=1.0, max_vy=1.0, max_wz=2.0, stick=StickMap(expo=0.0, dead_zone=0.0)))
+    # the mapping and the buttons alone: no dead zone, no rate limit (tested below)
+    free = BaseMap(max_vx=1.0, max_vy=1.0, max_wz=2.0, stick=StickMap(expo=0.0, dead_zone=0.0),
+                   left=StickGate(0.0, 0.0), triggers=(StickGate(0.0, 0.0), StickGate(0.0, 0.0)),
+                   right=StickGate(0.0, 0.0))
+    drv = BaseDriver(fleet, free, slew=None)
     drv.on_action = actions.append
     # left stick: linear (up = forward, right = -vy); left trigger: counter-clockwise (+wz)
     t = drv.tick(GamepadState(ly=0.5, lx=0.5, lt=0.5, packet=1))
@@ -151,3 +155,40 @@ def test_base_driver_maps_the_left_stick_and_the_triggers_to_a_twist_and_buttons
     assert actions == ["estop", "rearm"]
     drv.tick(None)                                             # pad gone: stop
     assert fleet.stops == 2
+
+
+def test_a_pad_resting_off_centre_does_not_move_the_base_and_the_gate_has_hysteresis():
+    # the PowerA 1414135-02 at rest, bench 2026-10-20: left stick (0.077, 0.076), LT 0.03
+    fleet = RecordingFleet()
+    drv = BaseDriver(fleet, slew=None)
+    t = drv.tick(GamepadState(lx=0.077, ly=0.076, lt=0.03, packet=1))
+    assert t == K.Twist() and fleet.twists == []
+    g = StickGate(enter=0.20, exit=0.15)
+    assert g.gate(0.0, 0.18) == (0.0, 0.0)               # inside enter: still
+    x, y = g.gate(0.0, 0.25)                               # past enter: moving, rescaled from the exit edge
+    assert x == 0.0 and y == pytest.approx((0.25 - 0.15) / 0.85)
+    assert g.gate(0.0, 0.18)[1] > 0.0                      # back between exit and enter: still moving (no chatter)
+    assert g.gate(0.0, 0.14) == (0.0, 0.0)                 # inside exit: stopped
+    assert g.gate(0.0, 1.0)[1] == pytest.approx(1.0)       # full deflection is still full
+
+
+def test_the_twist_ramps_quickly_and_b_or_a_lost_pad_stop_at_once():
+    fleet = RecordingFleet()
+    base = BaseMap(stick=StickMap(expo=0.0, dead_zone=0.0))
+    drv = BaseDriver(fleet, base, slew=TwistSlew(accel=1.5, decel=3.0))
+    full = GamepadState(ly=1.0, packet=1)
+    t = drv.tick(full, dt=0.1)
+    assert t.vx == pytest.approx(0.15)                     # 1.5 m/s^2 for 0.1 s
+    for _ in range(3):
+        t = drv.tick(full, dt=0.1)
+    assert t.vx == pytest.approx(0.5)                      # full (0.5 m/s) after about a third of a second
+    t = drv.tick(GamepadState(packet=2), dt=0.1)           # released: slows at 3 m/s^2
+    assert t.vx == pytest.approx(0.2)
+    t = drv.tick(GamepadState(packet=3), dt=0.1)
+    assert t == K.Twist() and fleet.stops == 1             # stopped within 0.2 s
+    drv.tick(full, dt=0.1)
+    t = drv.tick(GamepadState(ly=1.0, buttons=frozenset({'B'}), packet=4), dt=0.1)
+    assert t == K.Twist() and fleet.stops == 2             # B: at once, no ramp
+    drv.tick(full, dt=0.1)
+    drv.tick(None, dt=0.1)
+    assert fleet.stops == 3                                # pad gone: at once
