@@ -30,8 +30,9 @@ public:
     /** @brief The screen was drawn by someone else: the next draw starts from a clear panel */
     virtual void invalidate() {}
 
-    /** @brief One animation step (Display task, remote mode); draw() only sets the target */
-    virtual void tick() {}
+    /** @brief One animation step (Display task, remote mode); draw() only sets the target.
+     *  nowMs: the clock, so the easing follows time, not the (variable) frame rate */
+    virtual void tick(uint32_t nowMs) { (void)nowMs; }
 };
 
 } // namespace Services

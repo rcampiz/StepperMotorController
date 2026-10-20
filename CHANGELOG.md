@@ -15,6 +15,13 @@ tags.
 
 ## [Unreleased]
 
+### Changed
+- The LCD motion indicator keeps up: it eases on the clock (the same speed at any frame rate;
+  it eased per frame and lagged at the ~5 frames/s a moving arrow got) and a repaint is one
+  window streamed ~20 rows per call (was a window per span, ~380 transfers a frame). Bench, debug
+  image: 148 ms -> 47 ms a frame, 4.9 -> 14.7 frames/s while the arrow moves. The lit rings and
+  chevrons no longer lag a frame behind.
+
 ## [0.6.0] - 2026-10-20
 
 ### Added

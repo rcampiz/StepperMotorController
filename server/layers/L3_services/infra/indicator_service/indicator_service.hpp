@@ -4,10 +4,11 @@
  *        rings, direction chevrons, a readout and the way-out hint.
  *
  * draw() only records the target (Comms task, returns at once). tick() runs on the Display
- * task at 20 Hz: it eases angle, speed and turn toward the target and repaints only what
- * changed, row by row from the top, starting on the panel's tearing edge so the write stays
- * ahead of the scan. Each row is a few spans (left ring band, arrow disc, right ring band);
- * the shapes' edges are worked out once per row and every pixel is a couple of compares.
+ * task: it eases angle, speed and turn toward the target on the clock (the same speed whatever
+ * the frame rate) and repaints only what changed, starting on the panel's tearing edge so the
+ * write stays ahead of the scan. A repaint is one window, the square around the arrow disc or
+ * around the ring zone, streamed row after row; the shapes' edges are worked out once per row
+ * and every pixel is a couple of compares.
  *
  * No RTOS headers. LCD injected at init time.
  */
@@ -30,8 +31,8 @@ public:
     /// New target (any task); the Display task animates toward it
     void draw(const Params& p) override;
 
-    /// One animation step and the repaint it needs (Display task, remote mode)
-    void tick() override;
+    /// One animation step and the repaint it needs (Display task, remote mode); nowMs: the clock
+    void tick(uint32_t nowMs) override;
 
     /// The screen was drawn by someone else: the next tick starts from a clear panel
     void invalidate() override;
@@ -74,6 +75,8 @@ private:
     static uint32_t pack(const Params& p);
 
     // Eased state
+    uint32_t m_lastTickMs = 0;
+    bool m_ticked = false;
     float m_angle = 0.0f;                    // degrees, clockwise from up
     float m_speed = 0.0f;                    // 0..100
     float m_turn = 0.0f;                     // 0..100

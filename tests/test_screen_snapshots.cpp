@@ -367,8 +367,13 @@ TEST(recovery_cycles_full_fields_and_pops_itself_when_done) {
     EXPECT_TRUE(rec.finished());
 }
 
+static uint32_t g_indNowMs = 0;                       // the indicator's clock in these tests
+static void indTick(Services::IndicatorService& ind, uint32_t stepMs = 50) {
+    g_indNowMs += stepMs;
+    ind.tick(g_indNowMs);
+}
 static void settle(Services::IndicatorService& ind, int ticks = 25) {
-    for (int i = 0; i < ticks; i++) ind.tick();
+    for (int i = 0; i < ticks; i++) indTick(ind);
 }
 
 TEST(the_selection_animates_on_time_not_on_frames) {
@@ -491,12 +496,13 @@ TEST(motion_indicator_shows_heading_speed_and_turn_magnitudes) {
     const uint32_t before = rig.panel.pixelsWritten;
     settle(ind, 5);
     EXPECT_EQ(rig.panel.pixelsWritten, before);
-    // a speed change repaints only the arrow disc, a little at a time
+    // a speed change repaints only the arrow's square (one window), a little at a time
     ind.draw({45, 1, true, 20, 40});
-    ind.tick();
+    indTick(ind);
     const uint32_t first = rig.panel.pixelsWritten - before;
     printf("  indicator: one easing step of the arrow %u px\n", first);
-    EXPECT_TRUE(first > 0 && first < 19000u);              // the arrow disc and the readout, not the rings
+    const uint32_t square = (2u * Services::IndicatorService::ARROW_R + 1) * (2u * Services::IndicatorService::ARROW_R + 1);
+    EXPECT_TRUE(first >= square && first < square + 2000u);   // the arrow's square and the readout, not the rings
     EXPECT_TRUE(ind.currentSpeed() > 20.0f && ind.currentSpeed() < 73.0f);  // eased, not jumped
     settle(ind);
     rig.dump("indicator_20");
@@ -598,6 +604,19 @@ TEST(the_saver_and_estop_titles_take_turns_in_one_buffer) {
     EXPECT_TRUE(saverFrame() == g_saverTitleRef);
     EXPECT_TRUE(estopFrame() == g_estopRef);
     EXPECT_TRUE(saverFrame() == g_saverTitleRef);
+    // The motion indicator builds its frames in the same buffer (remote mode, 2026-10-20): both
+    // pages still come back exactly after it
+    auto indicatorFrame = []() {
+        Rig rig;
+        Services::IndicatorService ind;
+        ind.init(&rig.lcd);
+        ind.draw({30, 1, true, 60, 50});
+        for (uint32_t t = 50; t <= 1250; t += 50) ind.tick(t);
+    };
+    indicatorFrame();
+    EXPECT_TRUE(saverFrame() == g_saverTitleRef);
+    indicatorFrame();
+    EXPECT_TRUE(estopFrame() == g_estopRef);
 }
 
 TEST(graph_screen_draws_a_trace_from_telemetry) {
@@ -631,3 +650,20 @@ TEST(the_shared_scratch_row_was_never_taken_twice_at_once) {
     EXPECT_EQ(UI::ScratchRow::collisions(), 0u);
 }
 
+TEST(the_indicator_eases_on_time_not_on_frames) {
+    // 2026-10-20: the Display task runs ~5 frames/s while the arrow moves; per-frame easing lagged.
+    // One 200 ms frame covers what four 50 ms frames do.
+    Rig a, b;
+    Services::IndicatorService fast, slow;
+    fast.init(&a.lcd);
+    slow.init(&b.lcd);
+    fast.draw({90, 0, true, 100, 0});
+    slow.draw({90, 0, true, 100, 0});
+    fast.tick(1000);
+    slow.tick(1000);
+    for (uint32_t t = 1050; t <= 1200; t += 50) fast.tick(t);
+    slow.tick(1200);
+    EXPECT_NEAR(slow.currentAngle(), fast.currentAngle(), 0.5);
+    EXPECT_NEAR(slow.currentSpeed(), fast.currentSpeed(), 0.5);
+    EXPECT_TRUE(slow.currentAngle() > 80.0f);               // 0.55^5 of the way left: nearly there
+}

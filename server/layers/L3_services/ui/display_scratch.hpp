@@ -69,7 +69,9 @@ public:
     /// each user static_asserts that its mask fits
     static constexpr size_t BYTES = 5876;
 
-    enum class Owner : uint8_t { NONE = 0, SAVER_TITLE, ESTOP_TITLE };
+    /// INDICATOR_ROWS: the motion indicator's frame, many rows per stream call (scratch: it
+    /// keeps nothing, and the title masks rebuild after it; remote mode only)
+    enum class Owner : uint8_t { NONE = 0, SAVER_TITLE, ESTOP_TITLE, INDICATOR_ROWS };
 
     /// Take the buffer for `who`. True when it still holds who's mask (nobody else claimed
     /// it since who last did); false when who must rebuild its mask before reading it.

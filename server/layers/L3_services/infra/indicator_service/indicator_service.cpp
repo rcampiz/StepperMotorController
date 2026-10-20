@@ -8,6 +8,7 @@
 #include "graphics/trig_lut/trig_lut.hpp"
 #include "graphics/primitives/primitives.hpp"
 #include "ui/display_scratch.hpp"
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -17,7 +18,10 @@ IndicatorService g_indicatorService;
 
 namespace {
 
-constexpr float EASE = 0.45f;                // share of the remaining distance per 50 ms tick
+constexpr float EASE = 0.45f;                // share of the remaining distance per 50 ms
+constexpr float EASE_PERIOD_MS = 50.0f;      // ...applied for the time that actually passed: the
+                                             // Display task runs ~5 frames/s while the arrow moves
+                                             // (bench 2026-10-20), and per-frame easing lagged
 
 // Arrow, unrotated, heading up (y grows downward), around the centre
 constexpr float HALF_LEN = 55.0f;
@@ -58,10 +62,10 @@ inline float wrapDiff(float d) {             // into (-180, 180]
     return d;
 }
 
-inline float ease(float cur, float target) {
+inline float ease(float cur, float target, float k) {
     float d = target - cur;
     if (d < 0.5f && d > -0.5f) return target;
-    return cur + d * EASE;
+    return cur + d * k;
 }
 
 struct Row {                                 // one row's spans for a shape set
@@ -97,9 +101,17 @@ void IndicatorService::invalidate() {
 }
 
 // ------------------------------------------------------------------------------------------
-void IndicatorService::tick() {
+void IndicatorService::tick(uint32_t nowMs) {
     const uint32_t t = m_target;
     if (m_lcd == nullptr || (t & (1u << 31)) == 0) return;      // nothing requested yet
+
+    // The share of the remaining distance covered: EASE per 50 ms, for the time since the last
+    // tick (bounded: a long gap simply arrives)
+    uint32_t dt = m_ticked ? nowMs - m_lastTickMs : static_cast<uint32_t>(EASE_PERIOD_MS);
+    m_lastTickMs = nowMs;
+    m_ticked = true;
+    if (dt > 500u) dt = 500u;
+    const float k = 1.0f - powf(1.0f - EASE, static_cast<float>(dt) / EASE_PERIOD_MS);
 
     const auto tAngle = static_cast<float>(t & 0x1FFu);
     const int8_t tDir = static_cast<int8_t>(((t >> 9) & 0x3u)) - 1;
@@ -109,11 +121,11 @@ void IndicatorService::tick() {
 
     // Ease toward the target; the angle the short way round
     float d = wrapDiff(tAngle - m_angle);
-    m_angle = (d < 0.5f && d > -0.5f) ? tAngle : m_angle + d * EASE;
+    m_angle = (d < 0.5f && d > -0.5f) ? tAngle : m_angle + d * k;
     if (m_angle >= 360.0f) m_angle -= 360.0f;
     if (m_angle < 0.0f) m_angle += 360.0f;
-    m_speed = ease(m_speed, tSpeed);
-    m_turn = ease(m_turn, tTurn);
+    m_speed = ease(m_speed, tSpeed, k);
+    m_turn = ease(m_turn, tTurn, k);
 
     if (!m_screenValid) {
         m_lcd->waitForVSync();
@@ -155,7 +167,7 @@ void IndicatorService::tick() {
     if (arrowDirty || ringsDirty) {
         if (arrowShown) buildArrow(static_cast<uint16_t>(angle1024), static_cast<float>(fillPx));
         if (ringsShown) { buildRings(widths); buildChevrons(chevDir); }
-        renderFrame(ringsDirty, arrowDirty, ringsShown, arrowShown);
+        // The state the frame draws (the lit rings and the chevrons were the previous frame's)
         m_arrowShown = arrowShown;
         m_arrowAngle = angle1024;
         m_arrowFill = fillPx;
@@ -163,6 +175,7 @@ void IndicatorService::tick() {
         memcpy(m_ringW, widths, sizeof m_ringW);
         memcpy(m_ringLit, lit, sizeof m_ringLit);
         m_chevDir = chevDir;
+        renderFrame(ringsDirty, arrowDirty, ringsShown, arrowShown);
     }
     renderReadout(arrowShown ? static_cast<int16_t>(m_speed + 0.5f) : -1,
                   tDir != 0 ? static_cast<int16_t>(m_turn + 0.5f) : -1, tDir);
@@ -225,88 +238,109 @@ void IndicatorService::buildChevrons(int8_t dir) {
 
 // ------------------------------------------------------------------------------------------
 void IndicatorService::renderFrame(bool rings, bool arrow, bool ringsShown, bool arrowShown) {
-    static_assert(Services::Canvas::WIDTH * 2 <= UI::ScratchRow::BYTES, "a span fits the shared row");
-    UI::ScratchRow lease;                   // the Display task's shared row (tick runs there)
-    uint8_t* const buf = lease.data();
-    auto put = [&](int x0, int x1, uint16_t y) {
-        if (x1 < x0) return;
-        m_lcd->streamBitmapStart(static_cast<uint16_t>(x0), y, static_cast<uint16_t>(x1 - x0 + 1), 1);
-        m_lcd->streamBitmapData(buf, static_cast<size_t>(x1 - x0 + 1) * 2);
-        m_lcd->streamBitmapEnd();
-    };
+    // One window per frame: the square around what changed (the arrow disc, or the whole ring
+    // zone) goes out as one stream, row after row. It was a window per span, ~380 small transfers
+    // a frame with their column/row setup each, ~148 ms a frame on the bench (2026-10-20). Every
+    // pixel of the square is worked out, the ring zone's included (the arrow square's corners
+    // reach it), so the stream rewrites what is already there.
+    (void)arrow;                                     // the arrow disc lies inside either square
+    // Many rows per stream call: the frame is built in the shared title-mask buffer (no screen
+    // with a title mask is up in remote mode; they rebuild after), ~20 arrow rows a call instead
+    // of one (each call costs its own lock and DMA set-up)
+    (void)UI::SharedTitleMask::claim(UI::SharedTitleMask::Owner::INDICATOR_ROWS);
+    uint8_t* const block = UI::SharedTitleMask::data();
+    uint8_t* buf = block;
     auto set = [&](int i, uint16_t colour) {
         buf[i * 2] = static_cast<uint8_t>(colour >> 8);
         buf[i * 2 + 1] = static_cast<uint8_t>(colour & 0xFF);
     };
 
-    const int top = CY - (rings ? ZONE_OUT : ARROW_R);
-    const int bottom = CY + (rings ? ZONE_OUT : ARROW_R);
+    const int half = rings ? ZONE_OUT : ARROW_R;
+    const int x0 = CX - half, x1 = CX + half;
+    const int top = CY - half, bottom = CY + half;
+    const int w = x1 - x0 + 1;
+    const int rowBytes = w * 2;
+    const int rowsPerBlock = static_cast<int>(UI::SharedTitleMask::BYTES) / rowBytes;
+    static_assert(static_cast<int>(UI::SharedTitleMask::BYTES) >= (2 * ZONE_OUT + 1) * 2, "a row fits the block");
+    int inBlock = 0;
+    const int32_t arrow2 = static_cast<int32_t>(ARROW_R) * ARROW_R;
+    const int32_t zoneIn2 = static_cast<int32_t>(ZONE_IN) * ZONE_IN;
+    const int32_t zoneOut2 = static_cast<int32_t>(ZONE_OUT) * ZONE_OUT;
+
     m_lcd->waitForVSync();                                     // start on the tearing edge
+    m_lcd->streamBitmapStart(static_cast<uint16_t>(x0), static_cast<uint16_t>(top),
+                             static_cast<uint16_t>(w), static_cast<uint16_t>(bottom - top + 1));
     for (int y = top; y <= bottom; y++) {
         const int dy = y - CY;
         const int32_t dy2 = static_cast<int32_t>(dy) * dy;
         const float yc = static_cast<float>(y) + 0.5f;
 
-        // --- ring zone: left and right bands, or one span above and below the inner edge
-        if (rings && dy2 <= static_cast<int32_t>(ZONE_OUT) * ZONE_OUT) {
-            const int xo = Graphics::isqrt16(static_cast<int32_t>(ZONE_OUT) * ZONE_OUT - dy2);
-            int xi = -1;
-            if (dy2 < static_cast<int32_t>(ZONE_IN) * ZONE_IN) {
-                xi = Graphics::isqrt16(static_cast<int32_t>(ZONE_IN) * ZONE_IN - dy2);
-            }
-            Row chev[4] = {};
-            if (ringsShown && m_chevDir != 0) {
-                for (int k = 0; k < 4; k++) chev[k].on = polySpan(m_chev[k], 3, yc, chev[k].x0, chev[k].x1);
-            }
-            auto ringColour = [&](int x) -> uint16_t {
-                if (!ringsShown) return BG_COLOR;
-                for (int k = 0; k < 4; k++) {
-                    if (chev[k].on && x >= chev[k].x0 && x <= chev[k].x1) return CHEVRON_COLOR;
-                }
-                const int dx = x - CX;
-                const int32_t d2 = static_cast<int32_t>(dx) * dx + dy2;
-                for (uint8_t i = 0; i < RING_COUNT; i++) {
-                    if (d2 <= m_ringOut2[i] && d2 > m_ringIn2[i]) return m_ringLit[i] ? RING_LIT : RING_UNLIT;
-                }
-                return BG_COLOR;
-            };
-            auto band = [&](int x0, int x1) {
-                for (int x = x0; x <= x1; x++) set(x - x0, ringColour(x));
-                put(x0, x1, static_cast<uint16_t>(y));
-            };
-            if (xi < 0) {
-                band(CX - xo, CX + xo);
-            } else {
-                band(CX - xo, CX - xi - 1);
-                band(CX + xi + 1, CX + xo);
-            }
+        // This row's shape edges, worked out once
+        Row chev[4] = {};
+        if (ringsShown && m_chevDir != 0 && dy2 <= zoneOut2) {
+            for (int k = 0; k < 4; k++) chev[k].on = polySpan(m_chev[k], 3, yc, chev[k].x0, chev[k].x1);
         }
+        Row oh = {}, os = {}, ih = {}, is = {};
+        if (arrowShown && dy2 <= arrow2) {
+            oh.on = polySpan(m_outerHead, 3, yc, oh.x0, oh.x1);
+            os.on = polySpan(m_outerShaft, 4, yc, os.x0, os.x1);
+            ih.on = polySpan(m_innerHead, 3, yc, ih.x0, ih.x1);
+            is.on = polySpan(m_innerShaft, 4, yc, is.x0, is.x1);
+        }
+        const float rowAlong = (yc - m_tailY) * m_axisY;
 
-        // --- arrow disc
-        if (arrow && dy2 <= static_cast<int32_t>(ARROW_R) * ARROW_R) {
-            const int xa = Graphics::isqrt16(static_cast<int32_t>(ARROW_R) * ARROW_R - dy2);
-            Row oh = {}, os = {}, ih = {}, is = {};
-            if (arrowShown) {
-                oh.on = polySpan(m_outerHead, 3, yc, oh.x0, oh.x1);
-                os.on = polySpan(m_outerShaft, 4, yc, os.x0, os.x1);
-                ih.on = polySpan(m_innerHead, 3, yc, ih.x0, ih.x1);
-                is.on = polySpan(m_innerShaft, 4, yc, is.x0, is.x1);
-            }
-            const float rowAlong = (yc - m_tailY) * m_axisY;
-            const int x0 = CX - xa, x1 = CX + xa;
-            for (int x = x0; x <= x1; x++) {
-                uint16_t c = BG_COLOR;
-                if ((ih.on && x >= ih.x0 && x <= ih.x1) || (is.on && x >= is.x0 && x <= is.x1)) {
-                    const float along = (static_cast<float>(x) + 0.5f - m_tailX) * m_axisX + rowAlong;
-                    c = (along <= m_fillLen && m_fillLen > 0.5f) ? FILL_COLOR : BG_COLOR;
-                } else if ((oh.on && x >= oh.x0 && x <= oh.x1) || (os.on && x >= os.x0 && x <= os.x1)) {
-                    c = ARROW_COLOR;
+        // Background, then only where the shapes are: the ring band's x ranges, the arrow's spans
+        for (int i = 0; i < w; i++) set(i, BG_COLOR);
+        auto clip = [&](int a, int b, int& lo, int& hi) { lo = a < x0 ? x0 : a; hi = b > x1 ? x1 : b; return lo <= hi; };
+
+        if (ringsShown && dy2 <= zoneOut2) {                     // the ring zone, outside ZONE_IN
+            const int xo = Graphics::isqrt16(zoneOut2 - dy2);
+            const int xi = (dy2 < zoneIn2) ? Graphics::isqrt16(zoneIn2 - dy2) : -1;
+            const int bands[2][2] = {{CX - xo, xi < 0 ? CX + xo : CX - xi - 1}, {xi < 0 ? 1 : CX + xi + 1, xi < 0 ? 0 : CX + xo}};
+            for (const auto& bnd : bands) {
+                int lo, hi;
+                if (!clip(bnd[0], bnd[1], lo, hi)) continue;
+                for (int x = lo; x <= hi; x++) {
+                    const int dx = x - CX;
+                    const int32_t d2 = static_cast<int32_t>(dx) * dx + dy2;
+                    if (d2 <= arrow2) continue;                     // the arrow disc's own pixels
+                    uint16_t c = BG_COLOR;
+                    bool onChev = false;
+                    for (int k = 0; k < 4 && !onChev; k++) onChev = chev[k].on && x >= chev[k].x0 && x <= chev[k].x1;
+                    if (onChev) {
+                        c = CHEVRON_COLOR;
+                    } else {
+                        for (uint8_t i = 0; i < RING_COUNT; i++) {
+                            if (d2 <= m_ringOut2[i] && d2 > m_ringIn2[i]) { c = m_ringLit[i] ? RING_LIT : RING_UNLIT; break; }
+                        }
+                    }
+                    set(x - x0, c);
                 }
-                set(x - x0, c);
             }
-            put(x0, x1, static_cast<uint16_t>(y));
         }
+        if (arrowShown && dy2 <= arrow2) {                        // the arrow: outline, then inside
+            int lo, hi;
+            const Row* outline[2] = {&oh, &os};
+            const Row* inside[2] = {&ih, &is};
+            for (const Row* r : outline) {
+                if (r->on && clip(r->x0, r->x1, lo, hi)) for (int x = lo; x <= hi; x++) set(x - x0, ARROW_COLOR);
+            }
+            for (const Row* r : inside) {
+                if (!r->on || !clip(r->x0, r->x1, lo, hi)) continue;
+                for (int x = lo; x <= hi; x++) {
+                    const float along = (static_cast<float>(x) + 0.5f - m_tailX) * m_axisX + rowAlong;
+                    set(x - x0, (along <= m_fillLen && m_fillLen > 0.5f) ? FILL_COLOR : BG_COLOR);
+                }
+            }
+        }
+        if (++inBlock == rowsPerBlock) {
+            m_lcd->streamBitmapData(block, static_cast<size_t>(inBlock) * rowBytes);
+            inBlock = 0;
+        }
+        buf = block + inBlock * rowBytes;
     }
+    if (inBlock > 0) m_lcd->streamBitmapData(block, static_cast<size_t>(inBlock) * rowBytes);
+    m_lcd->streamBitmapEnd();
 }
 
 void IndicatorService::renderReadout(int16_t speedPct, int16_t turnPct, int8_t dir) {
