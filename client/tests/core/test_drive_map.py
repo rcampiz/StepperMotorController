@@ -192,3 +192,28 @@ def test_the_twist_ramps_quickly_and_b_or_a_lost_pad_stop_at_once():
     drv.tick(full, dt=0.1)
     drv.tick(None, dt=0.1)
     assert fleet.stops == 3                                # pad gone: at once
+
+
+def test_max_rpm_sets_full_stick_and_caps_every_motor():
+    from smc_core.drive_map import full_scale_for_rpm
+    g = K.Geometry()
+    full = full_scale_for_rpm(100, g)
+    sps = 100 * g.full_steps_per_rev / 60.0                 # 333 full steps/s
+    cmds, scale = K.motor_commands(K.Twist(vx=full.vx), g)
+    assert scale == 1.0 and all(v == round(sps) for v, _ in cmds.values())      # full forward: 100 RPM each
+    cmds, _ = K.motor_commands(K.Twist(wz=full.wz), g)
+    assert all(v == round(sps) for v, _ in cmds.values())                        # full turn: 100 RPM each
+    capped = K.Geometry(max_motor_sps=sps)
+    cmds, scale = K.motor_commands(K.Twist(vx=full.vx, vy=full.vy), capped)      # a diagonal asks 2x
+    assert scale == pytest.approx(0.5) and max(v for v, _ in cmds.values()) <= round(sps)
+    # the driver: full scale, LCD scale and the ramps follow; the fleet is told the cap
+    class CapFleet(RecordingFleet):
+        lcd_full_scale = None
+        cap = None
+        def set_max_rpm(self, rpm): self.cap = rpm
+    fleet = CapFleet()
+    drv = BaseDriver(fleet)
+    drv.set_max_rpm(200, g)
+    assert drv.base.max_vx == pytest.approx(2 * full.vx) and fleet.cap == 200
+    assert fleet.lcd_full_scale.vx == pytest.approx(2 * full.vx)
+    assert drv.slew.accel == pytest.approx(3 * 2 * full.vx)                     # full speed still in ~1/3 s

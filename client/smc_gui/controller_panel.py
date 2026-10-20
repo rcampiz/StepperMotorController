@@ -78,6 +78,7 @@ class ControllerPanel(QGroupBox):
     """A controller group box; `state_changed` carries each polled state to its driver."""
     state_changed = Signal(object)      # GamepadState or None, every poll
     drive_toggled = Signal(bool)
+    max_rpm_changed = Signal(float)     # base mode: the motors' speed at full stick / trigger
 
     def __init__(self, mode: str = "motor", parent=None):
         super().__init__("Controller" if mode == "motor" else "Controller (base)", parent)
@@ -116,6 +117,14 @@ class ControllerPanel(QGroupBox):
         self._drive_cb = QCheckBox("Drive with controller")
         self._drive_cb.toggled.connect(self.drive_toggled.emit)
         settings.addWidget(self._drive_cb, 1, 0, 1, 2)
+        if self.mode == "base":
+            settings.addWidget(QLabel("Max:"), 2, 0)
+            self._max_rpm = QDoubleSpinBox(); self._max_rpm.setRange(5, 600); self._max_rpm.setValue(100)
+            self._max_rpm.setSuffix(" RPM"); self._max_rpm.setSingleStep(10)
+            self._max_rpm.setToolTip("Motor speed at full stick or full trigger; no motor goes faster "
+                                     "(a diagonal or a move with a turn is scaled down)")
+            self._max_rpm.valueChanged.connect(lambda v: self.max_rpm_changed.emit(float(v)))
+            settings.addWidget(self._max_rpm, 2, 1)
         if self.mode == "motor":
             settings.addWidget(QLabel("Max:"), 2, 0)
             self._max_rpm = QDoubleSpinBox(); self._max_rpm.setRange(1, 1500); self._max_rpm.setValue(250); self._max_rpm.setSuffix(" RPM")
@@ -144,6 +153,13 @@ class ControllerPanel(QGroupBox):
         if all(abs(v) < 1e-6 for v in axes.values()):
             # released: back to the real pad on the next poll if it is there
             self._use_soft = False
+
+    @property
+    def max_rpm(self) -> float:
+        return float(self._max_rpm.value())
+
+    def set_max_rpm(self, rpm: float) -> None:
+        self._max_rpm.setValue(rpm)
 
     @property
     def driving(self) -> bool:

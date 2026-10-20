@@ -19,7 +19,7 @@ DEV:ROLE (broken on current firmware, finding 1) is not needed.
 """
 
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable, Dict, List, Optional, Tuple
 
 from . import commands as C
@@ -248,6 +248,12 @@ class Fleet:
                 self._sent[role] = req.line
         self._show_motion(twist)
         return scale
+
+    def set_max_rpm(self, rpm: float) -> None:
+        """Cap every motor at `rpm` (live: the next drive() uses it). A twist that would run a
+        motor faster is scaled down as a whole, so the base keeps its direction and turn ratio."""
+        g = self.config.geometry
+        self.config.geometry = replace(g, max_motor_sps=max(1.0, rpm) * g.full_steps_per_rev / 60.0)
 
     def stop(self) -> None:
         for role, b in self.boards.items():             # always sent: a stop is never skipped

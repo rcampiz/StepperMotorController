@@ -204,6 +204,8 @@ class FleetPanel(QWidget):
         self._lx = self._spin(gg, 1, "Half wheelbase", 0.01, 1.0, 0.15, " m", 3)
         self._ly = self._spin(gg, 2, "Half track", 0.01, 1.0, 0.17, " m", 3)
         self._max_sps = self._spin(gg, 3, "Max motor speed", 50, 15000, 1000, " st/s", 0)
+        for sb in (self._radius, self._lx, self._ly, self._max_sps):   # the controller's Max RPM follows
+            sb.valueChanged.connect(self._apply_max_rpm)
         self._inv: Dict[str, QCheckBox] = {}
         inv_row = QHBoxLayout()
         inv_row.addWidget(QLabel("Inverted:"))
@@ -269,6 +271,7 @@ class FleetPanel(QWidget):
         # The pad drives the base: left stick vx/vy, right stick turn
         self.controller = ControllerPanel("base")
         self.controller.state_changed.connect(self._on_controller_state)
+        self.controller.max_rpm_changed.connect(self._apply_max_rpm)
         root.addWidget(self.controller)
         self._base_driver: Optional[BaseDriver] = None
 
@@ -476,10 +479,20 @@ class FleetPanel(QWidget):
         if state is not None and self._base_driver.last is not None:
             self.set_twist(self._base_driver.last)
 
+    def _apply_max_rpm(self, *_):
+        """The controller's Max RPM, under the Base geometry's motor-speed ceiling: full stick and
+        full trigger run the motors there, and the fleet caps every motor at it (live)."""
+        if self._base_driver is None:
+            return
+        g = self.geometry()
+        ceiling = g.max_motor_sps * 60.0 / g.full_steps_per_rev
+        self._base_driver.set_max_rpm(min(self.controller.max_rpm, ceiling), g)
+
     @Slot(dict)
     def _on_opened(self, serials: dict):
         self._base_driver = BaseDriver(self._bridge.fleet)
         self._base_driver.on_action = self._bridge.action
+        self._apply_max_rpm()
         for role, serial in serials.items():
             self._serial[role].setText(serial)
         if self.test_mode:

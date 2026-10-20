@@ -39,6 +39,10 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
   client commits since `client-vX.Y.0`; `smc --version` and `smc info` report it.
 - The virtual-Nucleo tests run every scenario on both motor drivers (powerSTEP01 and the
   STEP/DIR driver, `vnucleo.boards(driver=...)`).
+- Fleet controller "Max" (RPM): the motors' speed at full stick or full trigger, and a cap no
+  motor passes (a diagonal or a move with a turn is scaled down as a whole). It follows the Base
+  geometry (wheel size, motor-speed ceiling) live; the LCD's 100 % and the ramps follow it.
+  Default 100 RPM, what full stick gave before.
 
 ### Changed
 - Protocol 3 boards are configured in physical units (protocol 2 boards still work): motor

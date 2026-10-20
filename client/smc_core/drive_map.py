@@ -184,6 +184,16 @@ class TwistSlew:
                        wz=self._axis(cur.wz, tgt.wz, self.alpha, self.alpha_down, dt))
 
 
+def full_scale_for_rpm(rpm: float, g: K.Geometry) -> K.Twist:
+    """The twist that runs the motors at `rpm` on each axis alone: full stick forward or
+    sideways, or a full trigger, is that motor speed on every wheel. A diagonal or a move with a
+    turn would ask more; the fleet's speed cap (Fleet.set_max_rpm) scales those down, so no
+    motor passes `rpm`."""
+    w = max(0.0, rpm) / 60.0 * 2.0 * math.pi / g.gear_ratio       # wheel rad/s
+    v = w * g.wheel_radius_m
+    return K.Twist(vx=v, vy=v, wz=v / g.k)
+
+
 @dataclass
 class BaseMap:
     max_vx: float = 0.5              # m/s at full stick
@@ -265,3 +275,17 @@ class BaseDriver:
         self._cur = K.Twist()
         self.fleet.stop()
         self.last = K.Twist()
+
+    def set_max_rpm(self, rpm: float, geometry: K.Geometry) -> None:
+        """Full stick / full trigger = `rpm` on the motors (full_scale_for_rpm); the fleet caps
+        every motor at it; the LCDs show 100 % there; the ramps keep their time to full speed
+        (about a third of a second up, a sixth down)."""
+        full = full_scale_for_rpm(rpm, geometry)
+        self.base.max_vx, self.base.max_vy, self.base.max_wz = full.vx, full.vy, full.wz
+        if self.slew is not None:
+            self.slew = TwistSlew(accel=3.0 * full.vx, decel=6.0 * full.vx,
+                                  alpha=3.0 * full.wz, alpha_down=6.0 * full.wz)
+        if hasattr(self.fleet, "lcd_full_scale"):
+            self.fleet.lcd_full_scale = full
+        if hasattr(self.fleet, "set_max_rpm"):
+            self.fleet.set_max_rpm(rpm)
