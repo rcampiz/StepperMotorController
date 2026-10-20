@@ -140,13 +140,20 @@ class SingleMotorDriver:
 class BaseMap:
     max_vx: float = 0.5              # m/s at full stick
     max_vy: float = 0.5
-    max_wz: float = 2.0              # rad/s at full stick
+    max_wz: float = 2.0              # rad/s at full trigger (or stick)
     stick: StickMap = field(default_factory=lambda: StickMap(avoid_bands=False))
+    #: What turns the base: "triggers" (owner 2026-10-20: LT counter-clockwise, RT clockwise,
+    #: proportional to the pull) or "right_stick" (stick right = clockwise)
+    turn: str = "triggers"
 
     def twist(self, state: GamepadState) -> K.Twist:
+        if self.turn == "right_stick":
+            wz = -self.stick.shape(state.rx) * self.max_wz             # stick right = turn clockwise = -wz
+        else:
+            wz = self.stick.shape(state.lt - state.rt) * self.max_wz   # LT = counter-clockwise = +wz
         return K.Twist(vx=self.stick.shape(state.ly) * self.max_vx,
                        vy=-self.stick.shape(state.lx) * self.max_vy,      # stick right = move right = -vy (left positive)
-                       wz=-self.stick.shape(state.rx) * self.max_wz)      # stick right = turn clockwise = -wz
+                       wz=wz)
 
 
 class BaseDriver:

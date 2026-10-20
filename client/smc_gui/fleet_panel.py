@@ -7,7 +7,10 @@ What it does:
   - drives a body twist (vx, vy, wz) with sliders, a STOP, the base E-STOP and re-arm;
   - runs a mission script the way the Pi would, step by step;
   - logs every line sent to every board, so the Pi's code can be checked against it;
-  - can start four virtual Nucleos on this PC when sim/ has been built.
+  - can start four virtual Nucleos on this PC when sim/ has been built;
+  - test mode: whatever controllers are connected (1 to 4, any wheel slots) plus virtual
+    Nucleos in the slots set to "virtual", driven as one base by the pad (a wired Xbox
+    controller, e.g. the PowerA 1414135-02): each real motor turns as its wheel would.
 """
 
 import json
@@ -37,6 +40,7 @@ from smc_gui.controller_panel import ControllerPanel
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 VNUCLEO_EXE = os.path.join(ROOT, "build-vnucleo", "vnucleo.exe" if os.name == "nt" else "vnucleo")
 _HEARTBEAT = C.heartbeat(0).name            # the log hides these unless asked
+VIRTUAL = "virtual"                          # a wheel slot test mode fills with a virtual Nucleo
 
 
 class FleetBridge(QObject):
@@ -124,11 +128,17 @@ class FleetPanel(QWidget):
         self._bridge.done.connect(self._on_done)
         self._bridge.tx.connect(self._on_tx)
         self._virtual: List[subprocess.Popen] = []
+        self._virtual_addrs: set = set()              # addresses of the virtual Nucleos this page started
         self._mission: List[dict] = []
         self._mission_step_end = 0.0
         self._log_lines: List[str] = []
         self.opened = False
         self.last_estop = None
+        self.test_mode = False
+        self._test_banner = ""
+        #: Set by the main window: called with a port test mode is about to open, so a
+        #: window link holding that port lets it go first
+        self.release_port = None
         self._setup_ui()
         self._tick = QTimer(self)
         self._tick.setInterval(50)
@@ -170,9 +180,15 @@ class FleetPanel(QWidget):
         self._virtual_btn = QPushButton("Virtual x4"); self._virtual_btn.setToolTip(
             "Start four virtual Nucleos on this PC (sim/ must be built) and fill the addresses")
         self._virtual_btn.clicked.connect(self._on_virtual_clicked)
+        self._test_btn = QPushButton("Test mode")
+        self._test_btn.setToolTip(
+            "Test the base with the controllers you have: slots with a COM port keep their real board, "
+            "slots set to 'virtual' get a virtual Nucleo; opens the base and arms the controller")
+        self._test_btn.clicked.connect(self._on_test_clicked)
         self._load_btn = QPushButton("Load config..."); self._load_btn.clicked.connect(self._on_load)
         self._save_btn = QPushButton("Save config..."); self._save_btn.clicked.connect(self._on_save)
-        for b in (self._open_btn, self._close_btn, self._ports_btn, self._virtual_btn, self._load_btn, self._save_btn):
+        for b in (self._open_btn, self._close_btn, self._test_btn, self._ports_btn, self._virtual_btn,
+                  self._load_btn, self._save_btn):
             btns.addWidget(b)
         btns.addStretch()
         self._status = QLabel("closed"); self._status.setStyleSheet("color: %s;" % theme.MUTED)
@@ -285,9 +301,8 @@ class FleetPanel(QWidget):
         for role, cb in self._addr.items():
             current = cb.currentText()
             cb.clear()
-            cb.addItems(ports)
-            if current:
-                cb.setCurrentText(current)
+            cb.addItems([VIRTUAL] + ports)            # "virtual": test mode fills the slot
+            cb.setCurrentText(current if current else VIRTUAL)
 
     def set_addresses(self, addresses: Dict[str, str], serials: Optional[Dict[str, str]] = None):
         for role, addr in addresses.items():
@@ -338,19 +353,22 @@ class FleetPanel(QWidget):
                 json.dump(self.config_dict(), fh, indent=2)
 
     # --- virtual boards ----------------------------------------------------------------
-    def start_virtual(self, count: int = 4) -> bool:
+    def start_virtual(self, count: int = 4, roles: Optional[List[str]] = None) -> bool:
+        """Virtual Nucleos for `roles` (default: the first `count` wheel slots), addresses filled."""
+        roles = list(roles) if roles is not None else list(ROLES[:count])
         if not os.path.exists(VNUCLEO_EXE):
             self._status.setText("sim/ not built (cmake --preset vnucleo)")
             return False
         self.stop_virtual()
         addresses, serials = {}, {}
-        for i, role in enumerate(ROLES[:count]):
+        for role in roles:
             port = _free_port()
-            serial = "VN%06d" % (i + 1)
+            serial = "VN%06d" % (ROLES.index(role) + 1)
             p = subprocess.Popen([VNUCLEO_EXE, "--port", str(port), "--serial", serial],
                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             self._virtual.append(p)
             addresses[role] = "tcp://127.0.0.1:%d" % port
+            self._virtual_addrs.add(addresses[role])
             serials[role] = serial
             end = time.monotonic() + 5.0
             while time.monotonic() < end:
@@ -361,7 +379,7 @@ class FleetPanel(QWidget):
                     time.sleep(0.05)
         time.sleep(0.1)
         self.set_addresses(addresses, serials)
-        self._status.setText("four virtual Nucleos running")
+        self._status.setText("%d virtual Nucleo%s running" % (len(roles), "" if len(roles) == 1 else "s"))
         return True
 
     def stop_virtual(self):
@@ -377,17 +395,64 @@ class FleetPanel(QWidget):
     def _set_open_state(self, opened: bool):
         self.opened = opened
         self._open_btn.setEnabled(not opened)
+        self._test_btn.setEnabled(not opened)
         self._close_btn.setEnabled(opened)
         for w in (self._stop_btn, self._estop_btn, self._rearm_btn, self._enable_btn, self._run_btn, self._drive_on):
             w.setEnabled(opened)
         for cb in self._addr.values():
             cb.setEnabled(not opened)
 
+    # --- test mode: the controllers you have, virtual Nucleos for the rest -------------------
+    def start_test_mode(self) -> bool:
+        """Open the base with 1 to 4 real controllers: the slots with an address keep their
+        board, the slots set to "virtual" get a virtual Nucleo. The pad drives the whole base,
+        so each real motor turns as its wheel would; Close ends test mode."""
+        if self.opened:
+            return False
+        real = {r: cb.currentText().strip() for r, cb in self._addr.items()
+                if not self._is_virtual(cb.currentText())}
+        ports = [a.upper() for a in real.values()]
+        dup = sorted({a for a in ports if ports.count(a) > 1})
+        if dup:
+            self._status.setText("one board per slot: %s is in more than one" % ", ".join(dup))
+            return False
+        for address in real.values():
+            if self.release_port is not None:
+                self.release_port(address)        # the main window's link lets the port go
+        virtual = [r for r in ROLES if r not in real]
+        if virtual and not self.start_virtual(roles=virtual):
+            return False
+        self.test_mode = True
+        self._test_banner = "%d real (%s), %d virtual" % (len(real), ", ".join(sorted(real)) or "none", len(virtual))
+        self._status.setText("TEST MODE: " + self._test_banner)
+        self._status.setStyleSheet("color: %s; font-weight: bold;" % theme.YELLOW)
+        self._test_btn.setEnabled(False)
+        self._on_open_clicked()
+        return True
+
+    def _is_virtual(self, address: str) -> bool:
+        """A slot test mode fills: "virtual", empty, or a virtual Nucleo this page started before."""
+        a = address.strip()
+        return a.lower() in ("", VIRTUAL) or a in self._virtual_addrs
+
+    def _on_test_clicked(self):
+        self.start_test_mode()
+
+    def _end_test_mode(self):
+        if not self.test_mode:
+            return
+        self.test_mode = False
+        self.controller.set_driving(False)
+        self.stop_virtual()
+        self._status.setStyleSheet("color: %s;" % theme.MUTED)
+
     def _on_open_clicked(self):
         cfg = self.config()
-        missing = [r for r, a in cfg.addresses.items() if not a]
+        missing = [r for r, a in cfg.addresses.items() if not a or a.lower() == VIRTUAL]
         if missing:
-            self._status.setText("no address for %s" % ", ".join(missing))
+            self._status.setText("no board for %s (Test mode fills 'virtual' slots)" % ", ".join(missing))
+            self._test_btn.setEnabled(True)
+            self._end_test_mode()
             return
         self._status.setText("opening...")
         self._open_btn.setEnabled(False)
@@ -417,17 +482,25 @@ class FleetPanel(QWidget):
         self._base_driver.on_action = self._bridge.action
         for role, serial in serials.items():
             self._serial[role].setText(serial)
-        self._status.setText("open: four boards")
+        if self.test_mode:
+            # the pad drives the base from here: sticks move it, B stops, Y enables, START E-STOPs
+            self.controller.set_driving(True)
+            self._status.setText("TEST MODE (open): %s; the controller drives the base" % self._test_banner)
+            self._status.setStyleSheet("color: %s; font-weight: bold;" % theme.YELLOW)
+        else:
+            self._status.setText("open: four boards")
         self._set_open_state(True)
 
     @Slot(str)
     def _on_open_failed(self, why: str):
+        self._end_test_mode()                          # the virtual boards go with it
         self._status.setText("open failed: " + why)
         self._set_open_state(False)
 
     @Slot()
     def _on_closed(self):
         self._base_driver = None
+        self._end_test_mode()
         self._status.setText("closed")
         for role in ROLES:
             for store in (self._serial, self._state, self._speed, self._age):

@@ -4,7 +4,9 @@ mapped through smc_core.drive_map, and shown as two live stick pads with the but
 
 Two modes. "motor": the left stick's vertical axis drives the connected board (MOT:RUN in
 RPM, resonance bands stepped over), B stops, Y enables, X clears the fault, START E-STOPs.
-"base": left stick = vx/vy, right stick = wz for the fleet; the Fleet page owns the driver.
+"base": the left stick moves the base (vx/vy), the triggers turn it (LT counter-clockwise,
+RT clockwise); the on-screen right pad's x stands in for the triggers. The Fleet page owns
+the driver.
 """
 
 import time
@@ -97,10 +99,14 @@ class ControllerPanel(QGroupBox):
     def _setup_ui(self):
         v = QVBoxLayout(self)
         top = QHBoxLayout()
-        self._left = StickPad("L: speed" if self.mode == "motor" else "L: vx / vy")
-        self._right = StickPad("R: --" if self.mode == "motor" else "R: turn")
+        self._left = StickPad("L: speed" if self.mode == "motor" else "L: move")
+        self._right = StickPad("R: --" if self.mode == "motor" else "turn (LT/RT)")
         self._left.moved.connect(lambda x, y: self._on_screen(lx=x, ly=y))
-        self._right.moved.connect(lambda x, y: self._on_screen(rx=x, ry=y))
+        if self.mode == "base":
+            # the triggers turn the base: on screen, drag the right pad left (LT) or right (RT)
+            self._right.moved.connect(lambda x, y: self._on_screen(lt=max(0.0, -x), rt=max(0.0, x)))
+        else:
+            self._right.moved.connect(lambda x, y: self._on_screen(rx=x, ry=y))
         top.addWidget(self._left)
         top.addWidget(self._right)
         settings = QGridLayout()
@@ -119,7 +125,8 @@ class ControllerPanel(QGroupBox):
             self._bands_cb.setChecked(True)
             self._bands_cb.toggled.connect(lambda on: setattr(self.stick, "avoid_bands", bool(on)))
             settings.addWidget(self._bands_cb, 3, 0, 1, 2)
-        legend = QLabel("B stop   Y enable   X %s   START e-stop" % ("re-arm" if self.mode == "base" else "clear fault"))
+        legend = QLabel(("L stick move   LT/RT turn   " if self.mode == "base" else "") +
+                        "B stop   Y enable   X %s   START e-stop" % ("re-arm" if self.mode == "base" else "clear fault"))
         legend.setStyleSheet("color: %s; font-size: 10px;" % theme.MUTED)
         settings.addWidget(legend, 4, 0, 1, 2)
         top.addLayout(settings, 1)
@@ -154,7 +161,10 @@ class ControllerPanel(QGroupBox):
         now = time.monotonic()
         if state is not None:
             self._left.set(state.lx, state.ly, True)
-            self._right.set(state.rx, state.ry, True)
+            if self.mode == "base":
+                self._right.set(state.rt - state.lt, 0.0, True)    # the turn: right = RT, left = LT
+            else:
+                self._right.set(state.rx, state.ry, True)
             src = "on-screen stick" if self._use_soft else getattr(self._pad, "name", "pad")
             self._status.setText("%s: %s" % (src, " ".join(sorted(state.buttons)) or "ok"))
             self._last_seen = now

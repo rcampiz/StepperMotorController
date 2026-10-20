@@ -72,3 +72,39 @@ def test_wrong_serial_is_refused(panel):
     p.open_fleet()
     assert pump(app, lambda: p._status.text().startswith("open failed"), timeout=15.0)
     assert "wrong corner" in p._status.text()
+
+
+def test_test_mode_drives_the_boards_you_have_with_virtual_ones_in_the_empty_slots(tmp_path):
+    """One "real" controller (a virtual Nucleo standing in for COM5) in the FR slot, the rest
+    set to "virtual": test mode starts three virtual Nucleos, opens the base, arms the pad, and
+    the pad's left stick and triggers drive every wheel, the real one included."""
+    from PySide6.QtWidgets import QApplication
+    from smc_core.gamepad import SoftwareGamepad
+    from smc_gui.fleet_panel import VIRTUAL, FleetPanel
+    app = QApplication.instance() or QApplication([])
+    with vnucleo.boards(1, serial_base=99, log_dir=str(tmp_path)) as procs:   # a serial no virtual slot uses
+        real = procs[0][0]
+        p = FleetPanel()
+        released = []
+        p.release_port = released.append
+        try:
+            p.set_addresses({"FL": VIRTUAL, "FR": real, "RL": VIRTUAL, "RR": VIRTUAL})
+            pad = SoftwareGamepad()
+            p.controller.use_gamepad(pad)
+            assert p.start_test_mode(), p._status.text()
+            assert released == [real]                                  # the window's link lets it go
+            assert len(p._virtual) == 3
+            assert pump(app, lambda: p.opened, timeout=20.0), p._status.text()
+            assert p.test_mode and p.controller.driving
+            assert "TEST MODE" in p._status.text() and "1 real (FR)" in p._status.text()
+            p._clear_log()
+            pad.set(ly=0.6, lt=0.3)                                    # forward and turning left
+            assert pump(app, lambda: {l.split()[1] for l in p.sent_lines() if "MOT:RUN" in l} == set(ROLES),
+                        timeout=5.0), p.sent_lines()[-8:]
+            pad.set(ly=0.0, lt=0.0)
+            p.close_fleet()
+            assert pump(app, lambda: not p.opened, timeout=10.0)
+            assert not p.test_mode and not p.controller.driving and p._virtual == []
+        finally:
+            p.shutdown()
+            app.processEvents()

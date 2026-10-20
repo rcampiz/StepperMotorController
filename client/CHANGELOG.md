@@ -11,6 +11,15 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
 
 ## [Unreleased]
 
+### Added
+- Fleet test mode: test the base with the controllers you have (1 to 4, in any wheel slots).
+  Slots set to "virtual" get a virtual Nucleo; the base opens and the controller drives it, so
+  each real motor turns as its wheel would. A port the main window holds is released first;
+  Close ends test mode and stops the virtual boards.
+- Base driving with a wired Xbox controller (tested with the PowerA 1414135-02): the left stick
+  moves the base (vx/vy), the triggers turn it (LT counter-clockwise, RT clockwise, proportional);
+  `BaseMap.turn = "right_stick"` brings back the right-stick turn.
+
 ### Changed
 - The 23HS22-2804-ME1K motor profile carries the firmware's new defaults: run 1.01 A, acc/dec
   1.17 A (were 1.33 / 1.56 A) and the overcurrent guard at 78 A, so applying the profile no

@@ -127,14 +127,21 @@ class RecordingFleet:
         self.stops += 1
 
 
-def test_base_driver_maps_both_sticks_to_a_twist_and_buttons_to_actions():
+def test_base_driver_maps_the_left_stick_and_the_triggers_to_a_twist_and_buttons_to_actions():
     fleet = RecordingFleet()
     actions = []
     drv = BaseDriver(fleet, BaseMap(max_vx=1.0, max_vy=1.0, max_wz=2.0, stick=StickMap(expo=0.0, dead_zone=0.0)))
     drv.on_action = actions.append
-    t = drv.tick(GamepadState(ly=0.5, lx=0.5, rx=-0.5, packet=1))
+    # left stick: linear (up = forward, right = -vy); left trigger: counter-clockwise (+wz)
+    t = drv.tick(GamepadState(ly=0.5, lx=0.5, lt=0.5, packet=1))
     assert t.vx == pytest.approx(0.5) and t.vy == pytest.approx(-0.5) and t.wz == pytest.approx(1.0)
     assert fleet.twists[-1] == t
+    t = drv.tick(GamepadState(ly=0.5, lx=0.5, rt=0.25, rx=-0.5, packet=11))
+    assert t.wz == pytest.approx(-0.5)                         # right trigger: clockwise; the right stick does not turn
+    drv.base.turn = "right_stick"
+    t = drv.tick(GamepadState(ly=0.5, lx=0.5, rx=-0.5, packet=12))
+    assert t.wz == pytest.approx(1.0)                          # the right-stick option: stick left = counter-clockwise
+    drv.base.turn = "triggers"
     drv.tick(GamepadState(packet=2))                          # centred: one stop
     assert fleet.stops == 1
     drv.tick(GamepadState(packet=3))

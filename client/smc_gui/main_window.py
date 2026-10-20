@@ -224,6 +224,7 @@ class MainWindow(QMainWindow):
 
         # Fleet: four boards (FL/FR/RL/RR) driven as one base, the Pi's role on this PC
         self._fleet_panel = FleetPanel()
+        self._fleet_panel.release_port = self._release_port_for_fleet
         self._right_tabs.addTab(self._fleet_panel, "Fleet")
 
         splitter.addWidget(self._right_tabs)
@@ -463,6 +464,17 @@ class MainWindow(QMainWindow):
             self._status_bar.showMessage("Connection failed")
             return False
         self._board, self._bridge, self._port_label = board, bridge, label
+        return True
+
+    def _release_port_for_fleet(self, address: str) -> bool:
+        """Fleet test mode is about to open `address`: if this window's own link holds it,
+        disconnect so the fleet can open the port. True when the link was released."""
+        if self._board is None or not address:
+            return False
+        if self._port_label.strip().upper() != address.strip().upper():
+            return False
+        self._on_disconnect_clicked()
+        self._status_bar.showMessage(f"{address} handed to the Fleet page (test mode)", 8000)
         return True
 
     @Slot()
