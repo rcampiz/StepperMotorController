@@ -738,7 +738,7 @@ class DriverPanel(QWidget):
         mpi.showAxis('bottom')
         mpi.getAxis('bottom').setStyle(tickFont=QFont("Consolas", 7))
         mpi.getAxis('bottom').setPen('#666')
-        self._motion_plot.setLabel('left', 'steps/s',
+        self._motion_plot.setLabel('left', 'RPM',
                                    **{'font-size': '8pt', 'color': '#888'})
         self._motion_plot.setLabel('bottom', 'time (s)',
                                    **{'font-size': '8pt', 'color': '#888'})
@@ -761,6 +761,11 @@ class DriverPanel(QWidget):
         self._dec_rpm_spin.valueChanged.connect(self._on_dec_rpm_changed)
         self._maxspd_spin.valueChanged.connect(self._on_maxspd_steps_changed)
         self._maxspd_rpm_spin.valueChanged.connect(self._on_maxspd_rpm_changed)
+
+        # Shown in shaft RPM/s and RPM (owner 2026-10-20, as on the LCD); the steps/s boxes stay
+        # as the sliders' value carriers, hidden. Full steps: independent of the microstep mode.
+        for spin in (self._acc_spin, self._dec_spin, self._maxspd_spin):
+            spin.setVisible(False)
 
         # Initial sync
         self._syncing = True
@@ -961,8 +966,10 @@ class DriverPanel(QWidget):
         t_cruise = max(t_acc, 0.5)
         t_dec = maxspd / dec
 
+        rpm = maxspd * 60.0 / self._full_steps_per_rev           # the axis is shaft RPM
         x = [0, t_acc, t_acc + t_cruise, t_acc + t_cruise + t_dec]
-        y = [0, maxspd, maxspd, 0]
+        y = [0, rpm, rpm, 0]
+        maxspd = rpm
 
         self._motion_curve.setData(x, y)
         self._motion_fill.setData(x, y)
