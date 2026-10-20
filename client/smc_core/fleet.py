@@ -95,6 +95,11 @@ class Fleet:
         self.faults: List[Tuple[str, str]] = []     # (role, why) that stopped the base
         self._stopping = False
         self._opened = False                        # resets before open() are the boot itself
+        # The LCDs show the base's motion while it drives (arrow: linear, ring: turn)
+        self.show_motion = True
+        self.lcd_full_scale = K.Twist(vx=0.5, vy=0.5, wz=2.0)   # 100 % on the indicator
+        self._lcd_taken: set = set()                 # roles whose LCD is in REMOTE mode for us
+        self._lcd_last = None
         self._listeners: Dict[str, List[Callable]] = {}
         for role, b in self.boards.items():
             b.subscribe("telemetry", lambda data, t, role=role: self._on_telemetry(role, data, t))
@@ -131,8 +136,43 @@ class Fleet:
         self._opened = True
 
     def close(self, estop: bool = True) -> None:
+        self.release_lcds()
         for b in self.boards.values():
             b.close(estop=estop)
+
+    # --- the LCDs: the base's motion as the arrow (linear) and the ring (turn) ----------------
+    def _show_motion(self, twist: K.Twist) -> None:
+        if not self.show_motion:
+            return
+        ind = K.indicator(twist, self.lcd_full_scale)
+        if ind == self._lcd_last:
+            return
+        self._lcd_last = ind
+        req = C.disp_indicator(*ind)
+        for role, b in self.boards.items():
+            if role in self._lcd_taken:
+                b.set_latest("indicator", req)
+            else:
+                # Taking the LCD: the mode switch and the first indicator in order (a coalesced
+                # request could reach the board while it is still LOCAL and be refused)
+                b.submit(C.ui_mode(remote=True))
+                b.submit(req)
+                self._lcd_taken.add(role)
+
+    def _lcds_dropped(self, roles=None) -> None:
+        """Those LCDs left REMOTE mode (an E-STOP page, a reset): take them again on the next move."""
+        for role in (roles if roles is not None else list(self._lcd_taken)):
+            self._lcd_taken.discard(role)
+        self._lcd_last = None
+
+    def release_lcds(self) -> None:
+        """Give every LCD this fleet took back to its own menu (best effort)."""
+        for role in list(self._lcd_taken):
+            try:
+                self.boards[role].request(C.ui_mode(remote=False), timeout=1.0)
+            except Exception:                                           # noqa: BLE001
+                pass
+        self._lcds_dropped()
 
     def subscribe(self, kind: str, fn: Callable) -> None:
         """kind: "fault" (role, why) when the base was stopped because of one board."""
@@ -177,6 +217,7 @@ class Fleet:
         self._emit("fault", role, why)
 
     def _on_reset(self, role: str, info) -> None:
+        self._lcds_dropped([role])                  # it rebooted into LOCAL: retake its LCD
         if self.boards[role].session_ready or self._opened:
             self._board_lost(role, f"board reset (boot {info.boot:08X})")
 
@@ -187,6 +228,7 @@ class Fleet:
     def rearm(self) -> Dict[str, Response]:
         """After a base stop: clear every latch (operator action)."""
         self._stopping = False
+        self._lcds_dropped()            # the E-STOP pages took the LCDs: the next move retakes them
         return {r: b.request(C.fault_clear()) for r, b in self.boards.items()}
 
     # --- driving --------------------------------------------------------------------------
@@ -198,11 +240,13 @@ class Fleet:
             sps, direction = cmds[role]
             req = C.mot_run(sps, direction) if sps > 0 else C.mot_stop()
             self.boards[role].set_latest("drive", req)
+        self._show_motion(twist)
         return scale
 
     def stop(self) -> None:
         for b in self.boards.values():
             b.set_latest("drive", C.mot_stop())
+        self._show_motion(K.Twist())
 
     def enable(self) -> Dict[str, Response]:
         return self._all(C.mot_enable())

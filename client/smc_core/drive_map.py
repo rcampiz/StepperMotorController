@@ -162,6 +162,8 @@ class BaseDriver:
     def __init__(self, fleet, base: Optional[BaseMap] = None):
         self.fleet = fleet
         self.base = base or BaseMap()
+        if hasattr(fleet, "lcd_full_scale"):          # full stick / full trigger = 100 % on the LCDs
+            fleet.lcd_full_scale = K.Twist(vx=self.base.max_vx, vy=self.base.max_vy, wz=self.base.max_wz)
         self.last: Optional[K.Twist] = None
         self._buttons: frozenset = frozenset()
         self._was_connected = False

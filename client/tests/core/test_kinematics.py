@@ -53,3 +53,16 @@ def test_motor_commands_scale_uniformly_and_keep_direction():
 def test_zero_twist_is_all_stopped():
     cmds, scale = motor_commands(Twist(), G)
     assert scale == 1.0 and all(s == 0 for s, _ in cmds.values())
+
+
+def test_the_lcd_indicator_points_where_the_base_moves_and_rings_for_the_turn():
+    from smc_core import kinematics as K
+    full = K.Twist(vx=0.5, vy=0.5, wz=2.0)
+    assert K.indicator(K.Twist(), full) == (0, 0, False, 0, 0)              # still: no arrow, no ring
+    assert K.indicator(K.Twist(vx=0.5), full) == (0, 0, True, 100, 0)       # full ahead
+    assert K.indicator(K.Twist(vx=-0.25), full) == (180, 0, True, 50, 0)    # half astern
+    assert K.indicator(K.Twist(vy=-0.5), full)[:2] == (90, 0)               # right (vy is left-positive)
+    assert K.indicator(K.Twist(vy=0.5), full)[0] == 270                      # left
+    assert K.indicator(K.Twist(vx=0.5, vy=-0.5), full)[0] == 45             # ahead and right
+    assert K.indicator(K.Twist(wz=1.0), full) == (0, -1, False, 0, 50)      # counter-clockwise at half
+    assert K.indicator(K.Twist(wz=-3.0), full) == (0, 1, False, 0, 100)     # clockwise, capped at 100 %

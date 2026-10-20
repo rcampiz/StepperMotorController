@@ -19,6 +19,10 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
 - Base driving with a wired Xbox controller (tested with the PowerA 1414135-02): the left stick
   moves the base (vx/vy), the triggers turn it (LT counter-clockwise, RT clockwise, proportional);
   `BaseMap.turn = "right_stick"` brings back the right-stick turn.
+- The base's motion on every board's LCD while the fleet drives (pad, sliders, missions,
+  the Pi): the arrow shows the linear direction and speed, the ring the turn. The first move
+  takes each LCD (REMOTE mode), after an E-STOP or a board reset the next move retakes it, and
+  closing the fleet hands them back to their menus (`smc_core.kinematics.indicator`).
 
 ### Changed
 - The 23HS22-2804-ME1K motor profile carries the firmware's new defaults: run 1.01 A, acc/dec

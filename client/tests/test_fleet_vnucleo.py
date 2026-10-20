@@ -167,3 +167,26 @@ def test_a_board_that_reboots_stops_the_base():
                         timeout=3.0)
         finally:
             f.close(estop=False)
+
+
+def test_driving_shows_the_base_motion_on_every_lcd_and_close_gives_them_back(four):
+    """The arrow (linear) and the ring (turn) on every board's LCD while the base drives: the
+    first move takes each LCD (UI:MODE REMOTE, then the indicator, in order), later moves are
+    accepted; closing hands the LCDs back to their menus."""
+    procs, _ = four
+    f = make_fleet(procs)
+    try:
+        f.drive(K.Twist(vx=0.25, wz=-1.0))                     # ahead at half, turning clockwise
+        assert pump(f, lambda: f._lcd_taken == set(ROLES))
+        for b in f.boards.values():
+            assert pump(f, lambda b=b: "REMOTE" in (b.request(C.ui_mode_query(), timeout=2.0).raw or ""))
+        # a later move goes latest-wins and the board takes it (REMOTE, so no refusal)
+        f.drive(K.Twist(vy=0.25))
+        r = f.boards["FL"].request(C.disp_indicator(*K.indicator(K.Twist(vy=0.25), f.lcd_full_scale)), timeout=2.0)
+        assert r.success, r.raw
+        f.stop()
+        f.release_lcds()
+        assert f._lcd_taken == set()
+        assert "LOCAL" in (f.boards["RR"].request(C.ui_mode_query(), timeout=2.0).raw or "")
+    finally:
+        f.close(estop=False)

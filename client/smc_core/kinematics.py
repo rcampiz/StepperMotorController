@@ -35,6 +35,21 @@ class Twist:
     wz: float = 0.0       # rad/s, counter-clockwise
 
 
+def indicator(twist: Twist, full: Twist) -> Tuple[int, int, bool, int, int]:
+    """The LCD motion indicator (UI:DISP:INDICATOR) for a body twist: (angle, rot_dir,
+    has_translation, speed_pct, rot_pct). The arrow points where the base moves, in degrees
+    clockwise from straight ahead (forward 0, right 90), its length the linear speed as a share
+    of `full` (vx and vy scaled on their own full scale); the ring turns -1 counter-clockwise,
+    +1 clockwise, lit by |wz| as a share of full.wz."""
+    nx = twist.vx / full.vx if full.vx else 0.0
+    ny = twist.vy / full.vy if full.vy else 0.0
+    speed = min(100, int(round(100.0 * math.hypot(nx, ny))))
+    turn = min(100, int(round(100.0 * abs(twist.wz) / full.wz))) if full.wz else 0
+    angle = int(round(math.degrees(math.atan2(-twist.vy, twist.vx)))) % 360 if speed else 0
+    rot = 0 if turn == 0 else (-1 if twist.wz > 0 else 1)
+    return angle, rot, speed > 0, speed, turn
+
+
 @dataclass(frozen=True)
 class Geometry:
     wheel_radius_m: float = 0.048           # 97 mm mecanum wheel
