@@ -16,7 +16,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional, Tuple
 
-__version__ = "0.5.0"
+__version__ = "0.6.0"
 
 TAG_PREFIX = "client-v"
 #: What counts as a client change (git pathspecs, from the repository root)

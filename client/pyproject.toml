@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smc-client"
-version = "0.5.0"                # the client release, separate from the firmware (docs/VERSIONING.md)
+version = "0.6.0"                # the client release, separate from the firmware (docs/VERSIONING.md)
 description = "Host client for the STM32 stepper motor controller: shared core, GUI and CLI"
 requires-python = ">=3.11"
 license = {text = "MIT"}

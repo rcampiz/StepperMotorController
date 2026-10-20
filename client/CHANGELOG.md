@@ -11,6 +11,8 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-20
+
 ### Added
 - Client: typed builders for the new commands, `smc_core.driver` (one physical code path for
   protocol 2 and 3 boards), views for `DRV:CAPS?` / `DRV:CFG:PHYS?`, `smc driver caps|show`;
