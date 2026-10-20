@@ -24,7 +24,8 @@ def test_profile_requests_are_the_physical_drive_config_commands_in_order():
     p = motors.load_profile("23HS22-2804-ME1K")
     lines = [r.line for r in p.requests()]
     assert lines[0] == "DRV:CFG:DRIVE CURRENT"
-    assert lines[1] == "DRV:CFG:CURRENT 0.31 1.33 1.56 1.56"   # amps, as the file stores them
+    assert lines[1] == "DRV:CFG:CURRENT 0.31 1.01 1.17 1.17"   # amps, as the file stores them
+    assert "DRV:CFG:OVERCURRENT 78" in lines
     assert "DRV:CFG:USTEP 8" in lines
     assert "DRV:CFG:PRED ON 48" in lines and "DRV:CFG:IDLE 3000" in lines
     assert lines[-1] == "DRV:CFG:APPLY"
@@ -33,7 +34,8 @@ def test_profile_requests_are_the_physical_drive_config_commands_in_order():
 def test_a_protocol_2_board_gets_the_chip_codes():
     p = motors.load_profile("23HS22-2804-ME1K")
     lines = [r.line for r in p.requests(physical=False)]
-    assert lines[:3] == ["DRV:CFG:DRIVE CURRENT", "DRV:CFG:TVAL 04 11 14 14", "DRV:CFG:STEPMODE 3"]
+    assert lines[:3] == ["DRV:CFG:DRIVE CURRENT", "DRV:CFG:TVAL 04 0D 0F 0F", "DRV:CFG:STEPMODE 3"]
+    assert "DRV:CFG:OCD 2" in lines                                 # 78 A as the powerSTEP01 code
     assert lines[-1] == "DRV:CFG:APPLY"
     old = motors._from_dict("old", {"drive_mode": "current", "tval_a": {"hold": 0.31, "run": 1.33},
                                     "step_mode": 4, "ocd_th": 21})

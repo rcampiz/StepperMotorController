@@ -22,9 +22,11 @@ def test_driver_caps_and_show_on_the_fake_board(capsys):
 
 def test_motor_show_and_apply_pick_the_commands_by_protocol(capsys):
     assert main(["motor", "show", "23HS22-2804-ME1K"]) == 0
-    assert "DRV:CFG:CURRENT 0.31 1.33 1.56 1.56" in _json(capsys)["commands"]
+    cmds = _json(capsys)["commands"]
+    assert "DRV:CFG:CURRENT 0.31 1.01 1.17 1.17" in cmds and "DRV:CFG:OVERCURRENT 78" in cmds
     assert main(["motor", "show", "23HS22-2804-ME1K", "--protocol", "2"]) == 0
-    assert "DRV:CFG:TVAL 04 11 14 14" in _json(capsys)["commands"]
+    cmds = _json(capsys)["commands"]
+    assert "DRV:CFG:TVAL 04 0D 0F 0F" in cmds and "DRV:CFG:OCD 2" in cmds
     assert main(["motor", "apply", "generic-nema17-1.7A", "--sim"]) == 0
     sent = [s["command"] for s in _json(capsys)["sent"]]
     assert "DRV:CFG:USTEP 16" in sent and sent[-1] == "DRV:CFG:APPLY"
