@@ -33,9 +33,9 @@ static constexpr RowHelp HELP[ROW_COUNT] = {
     {"Coil current while moving (amps).", "Drive duty while moving (voltage mode)."},
     {"Overcurrent flag: switch voltage limit (amps: estimate). Not motor current.", nullptr},
     {"Stall detection sensitivity.", nullptr},
-    {"Ramp-up rate (full steps/s^2).", nullptr},
-    {"Ramp-down rate (full steps/s^2).", nullptr},
-    {"Speed ceiling for moves (full steps/s).", nullptr},
+    {"Ramp-up rate: RPM gained per second.", nullptr},
+    {"Ramp-down rate: RPM shed per second.", nullptr},
+    {"Speed ceiling for moves (shaft RPM).", nullptr},
     {"Coils off after the motor sits idle this long.", nullptr},
     {"Keep these settings after power off.", nullptr},
 };
@@ -85,6 +85,18 @@ static unsigned long whole(float v)
 static float clampf(float v, float lo, float hi)
 {
     return v < lo ? lo : (v > hi ? hi : v);
+}
+
+/// Shaft RPM per full step/s (the ramps and the ceiling show in RPM/s and RPM; owner 2026-10-20)
+static float rpmPerFsps(uint16_t fullStepsPerRev)
+{
+    return 60.0f / static_cast<float>(fullStepsPerRev != 0 ? fullStepsPerRev : 200);
+}
+
+/// A value shown rounded to the nearest whole unit
+static unsigned long nearest(float v)
+{
+    return (v > 0.0f) ? static_cast<unsigned long>(v + 0.5f) : 0UL;
 }
 
 void ConfigScreen::renderField(Services::ICanvas& lcd, uint8_t field)
@@ -140,9 +152,17 @@ void ConfigScreen::renderField(Services::ICanvas& lcd, uint8_t field)
             if (caps.stallDetect) snprintf(val, sizeof val, "%lu%%", whole(eff.stallThreshold01 * 100.0f + 0.5f));
             else snprintf(val, sizeof val, "n/a");
             break;
-        case FIELD_ACC:       label = "Accel";      snprintf(val, sizeof val, "%lu", whole(eff.accelFsps2)); break;
-        case FIELD_DEC:       label = "Decel";      snprintf(val, sizeof val, "%lu", whole(eff.decelFsps2)); break;
-        case FIELD_MAXSPD:    label = "Max speed";  snprintf(val, sizeof val, "%lu", whole(eff.maxSpeedFsps)); break;
+        case FIELD_ACC:
+        case FIELD_DEC: {
+            label = (field == FIELD_ACC) ? "Accel" : "Decel";
+            const float fsps2 = (field == FIELD_ACC) ? eff.accelFsps2 : eff.decelFsps2;
+            snprintf(val, sizeof val, "%lu RPM/s", nearest(fsps2 * rpmPerFsps(sc.getFullStepsPerRev())));
+            break;
+        }
+        case FIELD_MAXSPD:
+            label = "Max speed";
+            snprintf(val, sizeof val, "%lu RPM", nearest(eff.maxSpeedFsps * rpmPerFsps(sc.getFullStepsPerRev())));
+            break;
         case FIELD_IDLE: {
             label = "Idle release";
             const uint16_t ms = sc.getIdleReleaseMs();
@@ -234,10 +254,11 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
             break;
         case FIELD_ACC:
         case FIELD_DEC: {
-            // 50 full steps/s^2 a press, from the whole value shown
-            const float base = static_cast<float>(whole(field == FIELD_ACC ? eff.accelFsps2 : eff.decelFsps2));
+            // 25 RPM/s a press, from the value shown; the driver rounds onto its grid
+            const float k = rpmPerFsps(sc.getFullStepsPerRev());
+            const float shown = static_cast<float>(nearest((field == FIELD_ACC ? eff.accelFsps2 : eff.decelFsps2) * k));
             const float lo = caps.accelMinFsps2 > 15.0f ? caps.accelMinFsps2 : 15.0f;
-            const float v = static_cast<float>(whole(clampf(base + d * 50.0f, lo, caps.accelMaxFsps2)));
+            const float v = clampf((shown + d * 25.0f) / k, lo, caps.accelMaxFsps2);
             if (field == FIELD_ACC) s.accelFsps2 = v; else s.decelFsps2 = v;
             sc.setDriverSettings(s);
             break;
@@ -250,9 +271,10 @@ void ConfigScreen::adjustField(uint8_t field, int8_t delta)
             break;
         }
         case FIELD_MAXSPD: {
-            // 50 full steps/s a press, from the whole value shown, up to the driver's ceiling
-            const float base = static_cast<float>(whole(eff.maxSpeedFsps));
-            s.maxSpeedFsps = static_cast<float>(whole(clampf(base + d * 50.0f, 16.0f, caps.maxSpeedLimitFsps)));
+            // 10 RPM a press, from the value shown, up to the driver's ceiling
+            const float k = rpmPerFsps(sc.getFullStepsPerRev());
+            const float shown = static_cast<float>(nearest(eff.maxSpeedFsps * k));
+            s.maxSpeedFsps = clampf((shown + d * 10.0f) / k, 16.0f, caps.maxSpeedLimitFsps);
             sc.setDriverSettings(s);
             break;
         }
