@@ -60,7 +60,8 @@ def _open(args, heartbeat: bool) -> Board:
     live = Liveness(max_age_s=0.25)
     live.touch()
     cfg = BoardConfig(heartbeat=heartbeat, heartbeat_timeout_ms=args.hb_timeout,
-                      telemetry_period_ms=args.tlm_ms, telemetry_compact=args.tlm_compact)
+                      telemetry_period_ms=args.tlm_ms, telemetry_compact=args.tlm_compact,
+                      fast_baud=getattr(args, "link", 0) or 0)
     board = Board(transport, cfg, liveness=live if heartbeat else None, name=name)
     board._cli_liveness = live
     if not board.open(wait=True, timeout=args.connect_timeout):
@@ -364,7 +365,10 @@ def build_parser() -> argparse.ArgumentParser:
         g.add_argument("--port", help="serial port (COM6, /dev/ttyACM0) or tcp://HOST:PORT "
                                       "(virtual Nucleo)")
         g.add_argument("--sim", action="store_true", help="in-process fake board")
-        p.add_argument("--baud", type=int, default=115200)
+        p.add_argument("--baud", type=int, default=115200, help="rate the port opens at (the board boots at 115200)")
+        p.add_argument("--link", type=int, default=0,
+                       help="move the serial link to this rate after connecting (460800, 1000000, 2000000; "
+                            "the board is handed back at 115200 on exit)")
         p.add_argument("--hb-timeout", type=int, default=BoardConfig.heartbeat_timeout_ms,
                        help="firmware watchdog ms")
         p.add_argument("--tlm-ms", type=int, default=BoardConfig.telemetry_period_ms,

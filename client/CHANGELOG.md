@@ -36,6 +36,9 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
   closing the fleet hands them back to their menus (`smc_core.kinematics.indicator`).
 
 ### Changed
+- The GUI and the fleet move the link to 1000000 baud (firmware 0.6.4 receives it clean; bench:
+  every scenario passes at 1 Mbaud, ESTOP confirmed in 16 ms instead of 94). The GUI's Link
+  choice offers 1000000, 460800, 115200. `smc ... --link <rate>` does the same from the CLI.
 - `commands.baud` takes 1000000 and 2000000.
 - The 23HS22-2804-ME1K motor profile carries the firmware's new defaults: run 1.01 A, acc/dec
   1.17 A (were 1.33 / 1.56 A) and the overcurrent guard at 78 A, so applying the profile no

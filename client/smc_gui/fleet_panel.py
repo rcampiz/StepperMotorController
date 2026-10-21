@@ -324,7 +324,7 @@ class FleetPanel(QWidget):
         return FleetConfig(addresses={r: cb.currentText().strip() for r, cb in self._addr.items()},
                            serials={r: le.text().strip() for r, le in self._want.items() if le.text().strip()},
                            geometry=self.geometry(), board=BoardConfig(clear_fault_on_connect=True,
-                                                                      fast_baud=460800))
+                                                                      fast_baud=1000000))
 
     def config_dict(self) -> dict:
         cfg = self.config()

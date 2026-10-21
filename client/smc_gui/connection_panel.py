@@ -65,17 +65,19 @@ class ConnectionPanel(QWidget):
 
         inner.addSpacing(20)
 
-        # Link rate: the port opens at the board's boot rate (115200); with 460800 the session
-        # then moves the link there (SYST:BAUD), 4x the bandwidth, clean both ways on the
-        # ST-LINK VCP (bench 2026-10-20). Faster rates lose bytes into the board for now.
+        # Link rate: the port opens at the board's boot rate (115200) and the session then moves
+        # the link to the chosen rate (SYST:BAUD). Bench 2026-10-20 on the ST-LINK VCP, firmware
+        # 0.6.4: clean both ways up to 2 Mbaud; scenarios and E-STOP pass at 1 Mbaud (ESTOP
+        # confirmed in 16 ms instead of 94).
         baud_label = QLabel("Link:")
         inner.addWidget(baud_label)
 
         self._baud_combo = QComboBox()
-        self._baud_combo.addItems(["460800", "115200"])
-        self._baud_combo.setCurrentText("460800")
-        self._baud_combo.setToolTip("Serial link rate after connecting. The board boots at 115200; with "
-                                    "460800 the session switches to it (and back on disconnect)")
+        self._baud_combo.addItems(["1000000", "460800", "115200"])
+        self._baud_combo.setCurrentText("1000000")
+        self._baud_combo.setToolTip("Serial link rate after connecting. The board boots at 115200; the "
+                                    "session switches to this rate (and back on disconnect). Firmware "
+                                    "before 0.6.4 is clean only up to 460800")
         inner.addWidget(self._baud_combo)
 
         inner.addSpacing(20)
