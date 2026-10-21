@@ -47,7 +47,7 @@ COMMANDS: Dict[str, CommandSpec] = {
     'SYST:HB:TIMEOUT': CommandSpec('SYST:HB:TIMEOUT', 'cmdSetHeartbeat', 1, 'SYST:HB:TIMEOUT <timeout_ms>', 'SET_HEARTBEAT', False, False, False),
     'SYST:TLM:RATE': CommandSpec('SYST:TLM:RATE', 'cmdTelemetryRate', 1, 'SYST:TLM:RATE <ms>', 'TLM_RATE', False, False, False),
     'SYST:TLM:FMT': CommandSpec('SYST:TLM:FMT', 'cmdTelemetryFormat', 1, 'SYST:TLM:FMT <FULL|COMPACT>', 'TLM_FMT', False, False, False),
-    'SYST:BAUD': CommandSpec('SYST:BAUD', 'cmdSetBaud', 1, 'SYST:BAUD <115200|230400|460800|921600>', 'SET_BAUD', False, False, False),
+    'SYST:BAUD': CommandSpec('SYST:BAUD', 'cmdSetBaud', 1, 'SYST:BAUD <115200|230400|460800|921600|1000000|2000000>', 'SET_BAUD', False, False, False),
     'SYST:EVT:EN': CommandSpec('SYST:EVT:EN', 'cmdEventEnable', 0, '', '', False, False, False),
     'SYST:DELAY': CommandSpec('SYST:DELAY', 'cmdSystDelay', 1, 'SYST:DELAY <ms>', 'SYST:DELAY', False, False, False),
     'SYST:ESTOP': CommandSpec('SYST:ESTOP', 'cmdEstop', 0, '', 'SYST:ESTOP', False, False, False),

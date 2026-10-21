@@ -36,6 +36,7 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
   closing the fleet hands them back to their menus (`smc_core.kinematics.indicator`).
 
 ### Changed
+- `commands.baud` takes 1000000 and 2000000.
 - The 23HS22-2804-ME1K motor profile carries the firmware's new defaults: run 1.01 A, acc/dec
   1.17 A (were 1.33 / 1.56 A) and the overcurrent guard at 78 A, so applying the profile no
   longer restores the old currents.

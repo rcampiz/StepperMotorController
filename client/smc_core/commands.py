@@ -211,8 +211,8 @@ def telemetry_format_query() -> Request: return request("SYST:TLM:FMT?")
 
 @builds("SYST:BAUD")
 def baud(rate: int) -> Request:
-    if int(rate) not in (115200, 230400, 460800, 921600):
-        raise CommandError("baud must be 115200, 230400, 460800 or 921600")
+    if int(rate) not in (115200, 230400, 460800, 921600, 1000000, 2000000):
+        raise CommandError("baud must be 115200, 230400, 460800, 921600, 1000000 or 2000000")
     return request("SYST:BAUD", int(rate))
 
 @builds("SYST:EVT:EN")
