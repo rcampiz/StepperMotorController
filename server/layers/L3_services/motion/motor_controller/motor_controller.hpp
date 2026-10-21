@@ -14,6 +14,7 @@
 #include "L3_services/boundary/imotor_control_service.hpp"
 #include "L3_services/boundary/imotor_command_sink.hpp"
 #include "L3_services/motion/speed_trim_controller/speed_trim_controller.hpp"
+#include "L3_services/motion/resonance_avoider/resonance_avoider.hpp"
 #include "F_platform/boundary/iclock.hpp"
 #include <stdint.h>
 
@@ -51,6 +52,11 @@ public:
 
     /// The encoder, read at the instant the motor position is (nullptr: none fitted)
     void setEncoder(IEncoder* encoder) { m_encoder = encoder; }
+
+    /// The resonance avoider takes the stored model on the Motor task's next poll (any task)
+    void requestResonanceReload() { m_resReload = true; }
+    /// The avoider's state, for status replies (Comms task; word-sized reads)
+    const ResonanceAvoider& resonance() const { return m_resonance; }
 
     /// ESTOP path: force outputs to Hi-Z immediately (bypasses the command queue).
     void emergencyHiZ();
@@ -133,6 +139,9 @@ private:
     static constexpr uint32_t RESET_CHECK_MS = 500;
     uint32_t m_resetCheckMs = 0;
     uint32_t m_chipResets = 0;         ///< chip resets seen and repaired since boot
+    ResonanceAvoider m_resonance;      ///< moves the resonance off the speed in use (run current)
+    volatile bool m_resReload = true;  ///< the stored model changed: configure on the next poll
+    void resonanceStep(const MotorStatus& status, int32_t followError, uint16_t encPPR, uint16_t fpr);
 
     /// The settings last put in force (the saved ones, plus live MOT:CFG ramp/ceiling changes)
     Harness::DriverSettings m_inForce = {};

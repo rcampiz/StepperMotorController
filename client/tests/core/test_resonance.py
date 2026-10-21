@@ -38,6 +38,12 @@ def test_peaks_are_found_and_the_fit_recovers_the_model():
     assert abs(R.resonant_rpm(m, 1.0, 2) - 79.2) < 2.0      # 132 Hz / 2 / 50 x 60
 
 
+def test_a_jump_no_shaft_can_make_marks_the_capture_corrupt():
+    smooth = [3.0 * math.sin(i / 3.0) for i in range(1024)]
+    assert not R.capture_glitch(smooth)
+    assert R.capture_glitch(smooth[:500] + [x + 5672.0 for x in smooth[500:]])
+
+
 def test_a_flat_profile_has_no_resonance_and_no_model():
     rows = [{"run_a": i, "rpm": rpm, "ripple": 2.0, "peak_hz": 441.0, "ok": True}
             for i in (0.6, 1.0) for rpm in range(30, 151, 5)]

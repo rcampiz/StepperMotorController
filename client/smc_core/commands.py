@@ -425,6 +425,27 @@ def trim_max_pct(pct: int) -> Request:
 @builds("CTRL:TRIM:SAVE")
 def trim_save() -> Request: return request("CTRL:TRIM:SAVE")
 
+@builds("CTRL:RES?")
+def res_query() -> Request:
+    """The resonance avoider: model, limits, state, run current in force, resonant speeds."""
+    return request("CTRL:RES?")
+
+@builds("CTRL:RES:CFG")
+def res_config(enable: bool, f1a_hz: Optional[float] = None, exponent: Optional[float] = None,
+               band_pct: Optional[int] = None, boost_pct: Optional[int] = None,
+               cut_pct: Optional[int] = None, harmonic_mask: Optional[int] = None) -> Request:
+    """CTRL:RES:CFG: switch the resonance avoider and give its model, f_n = f1a_hz x I^exponent
+    (I in amps), and limits. Later arguments need the earlier ones; omitted ones stay."""
+    args = [1 if enable else 0]
+    for v in (f1a_hz, exponent, band_pct, boost_pct, cut_pct, harmonic_mask):
+        if v is None:
+            break
+        args.append(round(float(v), 3) if isinstance(v, float) else int(v))
+    return request("CTRL:RES:CFG", *args)
+
+@builds("CTRL:RES:SAVE")
+def res_save() -> Request: return request("CTRL:RES:SAVE")
+
 @builds("CTRL:TRIM:RESET")
 def trim_reset() -> Request: return request("CTRL:TRIM:RESET")
 

@@ -117,6 +117,15 @@ def _capture_tail(ctx: ScenarioContext, samples: int) -> Tuple[List[Tuple[int, i
     return rows, info
 
 
+GLITCH_COUNTS = 50.0         # no shaft moves the error this far between two samples (0.5 ms)
+
+
+def capture_glitch(err: List[float]) -> bool:
+    """A capture with a sample-to-sample error jump no shaft can make: corrupt readout
+    (bench 2026-10-21: a 5672-count jump inside 0.5 s at 75 RPM, impossible even stalled)."""
+    return any(abs(b - a) > GLITCH_COUNTS for a, b in zip(err, err[1:]))
+
+
 def _ripple(rows: List[Tuple[int, int]], info: Dict[str, Any], cpr: int, full: int,
             rate: float) -> Dict[str, Any]:
     enc = V.unwrap16([r[0] for r in rows])
@@ -131,7 +140,24 @@ def _ripple(rows: List[Tuple[int, int]], info: Dict[str, Any], cpr: int, full: i
     travel_cmd = (syn[-1] - syn[0]) * cpp
     return {"ripple": round(std, 2), "p2p": round(max(err) - min(err), 1),
             "peak_hz": round(pk_hz, 1), "peak_amp": round(pk_amp, 2),
-            "ok": abs(travel_enc - travel_cmd) <= 0.02 * abs(travel_cmd) + 4}
+            "ok": abs(travel_enc - travel_cmd) <= 0.02 * abs(travel_cmd) + 4,
+            "glitch": capture_glitch(err)}
+
+
+def _measure(ctx: ScenarioContext, samples: int, cpr: int, full: int, rate: float,
+             fill_s: float) -> Optional[Dict[str, Any]]:
+    """One capture's ripple; a corrupt capture is taken again once (`retried` says so)."""
+    r = None
+    for attempt in range(2):
+        cap_rows, info = _capture_tail(ctx, samples)
+        if len(cap_rows) < 64:
+            return None
+        r = _ripple(cap_rows, info, cpr, full, rate)
+        r["retried"] = attempt > 0
+        if not r["glitch"]:
+            return r
+        ctx.sleep(fill_s)                  # the rings refill after the resume
+    return r
 
 
 @scenario("resonance_profile",
@@ -143,7 +169,8 @@ def _ripple(rows: List[Tuple[int, int]], info: Dict[str, Any], cpr: int, full: i
           "currents are not changed; everything is restored. Current mode, forward only.",
           params={"current_fractions": [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.15], "rpm_from": 30,
                   "rpm_to": 150, "rpm_step": 5, "settle_s": 0.35, "samples": 1024,
-                  "rate_hz": 2000, "first_settle_s": 1.0, "peak_factor": 1.5},
+                  "rate_hz": 2000, "first_settle_s": 1.0, "peak_factor": 1.5,
+                  "apply": False, "band_pct": 8, "boost_pct": 40, "cut_pct": 30},
           moves_motor=True)
 def resonance_profile(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     geom = _chip_geometry(ctx)
@@ -176,10 +203,9 @@ def resonance_profile(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
                 ctx.sleep((float(params["first_settle_s"]) if first else float(params["settle_s"]))
                           + samples / float(rate) + 0.05)
                 first = False
-                cap_rows, info = _capture_tail(ctx, samples)
-                if len(cap_rows) < 64:
+                r = _measure(ctx, samples, cpr, full, rate, samples / float(rate) + 0.05)
+                if r is None:
                     continue
-                r = _ripple(cap_rows, info, cpr, full, rate)
                 r.update({"run_a": round(ia_used, 3), "rpm": rpm,
                           "harmonic": harmonic_of(r["peak_hz"], rpm, full)})
                 rows.append(r)
@@ -202,4 +228,68 @@ def resonance_profile(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     if model is not None:
         ctx.measure("predicted_rpm_at_run_current",
                     {k: round(resonant_rpm(model, c0["run_a"], k, full), 1) for k in (1, 2, 4)})
+        ctx.measure("f1a_hz", round(f1a_hz(model), 1))
+        if params.get("apply"):
+            r = ctx.call(C.res_config(True, f1a_hz(model), model["exponent"], int(params["band_pct"]),
+                                      int(params["boost_pct"]), int(params["cut_pct"])))
+            ctx.require("avoider configured", r.success, r.error_message or "")
+            ctx.require("avoider saved", ctx.call(C.res_save()).success)
+            ctx.measure("applied", True)
     ctx.check("profile measured", len(rows) >= len(rpms))
+
+
+def f1a_hz(model: Dict[str, Any]) -> float:
+    """The model's natural frequency at 1 A, the firmware's reference (CTRL:RES:CFG)."""
+    return model["f_ref_hz"] * (1.0 / model["i_ref_a"]) ** model["exponent"]
+
+
+@scenario("resonance_check",
+          "Ripple with the resonance avoider off and on at the same speeds: the motor runs through "
+          "rpm_list twice (2 kHz position capture at each), the avoider switched off then on "
+          "(CTRL:RES:CFG, not saved; its saved state is restored). Reports the ripple, the "
+          "avoider's state and the run current in force per speed. Needs a stored model.",
+          params={"rpm_list": [40, 60, 70, 75, 80, 85, 90, 100, 120], "settle_s": 0.5,
+                  "samples": 1024, "rate_hz": 2000},
+          moves_motor=True)
+def resonance_check(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
+    geom = _chip_geometry(ctx)
+    full, cpr = geom["full_steps_per_rev"], geom["encoder_cpr"] or 4000
+    rate, samples = int(params["rate_hz"]), int(params["samples"])
+    st = ctx.call(C.res_query())
+    ctx.require("read the avoider", st.success, st.error_message or "")
+    cfg0 = dict(st.data)
+    ctx.require("a stored model", float(cfg0.get("f1a_hz", 0)) > 0, "run resonance_profile with apply")
+    rate0 = int((ctx.call(C.enc_filter_query()).data or {}).get("sample_rate_hz", 1000))
+    out: Dict[str, List[Dict[str, Any]]] = {"off": [], "on": []}
+    try:
+        ctx.require("sample rate", ctx.call(C.enc_sample_rate(rate)).success)
+        ctx.call(C.fault_clear())
+        ctx.require("enable", ctx.call(C.mot_enable()).success)
+        for label, on in (("off", False), ("on", True)):
+            ctx.require(f"avoider {label}", ctx.call(C.res_config(on)).success)
+            first = True
+            for rpm in params["rpm_list"]:
+                ctx.require(f"run {rpm}", ctx.call(C.mot_run_rpm(float(rpm), 1)).success)
+                ctx.sleep((1.0 if first else float(params["settle_s"])) + samples / float(rate) + 0.05)
+                first = False
+                s = ctx.call(C.res_query()).data or {}
+                r = _measure(ctx, samples, cpr, full, rate, samples / float(rate) + 0.05)
+                if r is None:
+                    continue
+                r.update({"rpm": rpm, "state": s.get("state"), "run_a": s.get("run_a")})
+                out[label].append(r)
+    finally:
+        ctx.call(C.cap_resume())
+        ctx.call(C.mot_stop())
+        ctx.call(C.res_config(bool(cfg0.get("enabled"))))
+        ctx.call(C.enc_sample_rate(rate0))
+        ctx.call(C.mot_disable())
+    ctx.measure("off", out["off"])
+    ctx.measure("on", out["on"])
+    worst_off = max((r["ripple"] for r in out["off"]), default=0.0)
+    worst_on = max((r["ripple"] for r in out["on"]), default=0.0)
+    ctx.measure("worst_ripple_off", worst_off)
+    ctx.measure("worst_ripple_on", worst_on)
+    ctx.check("no lost steps", all(r["ok"] or r["glitch"] for r in out["off"] + out["on"]))
+    ctx.check("no corrupt captures left", not any(r["glitch"] for r in out["off"] + out["on"]))
+    ctx.check("both passes measured", len(out["off"]) == len(out["on"]) == len(params["rpm_list"]))

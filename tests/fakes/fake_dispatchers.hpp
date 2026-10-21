@@ -112,6 +112,8 @@ struct FakeSupervisorTrimDispatcher : Services::ISupervisorTrimDispatcher {
     uint8_t sysIdGetPhase()  override { calls.push_back("sysIdGetPhase"); return uint8_t{}; }
     uint16_t sysIdGetSampleCount()  override { calls.push_back("sysIdGetSampleCount"); return uint16_t{}; }
     const SysIdSampleData* sysIdGetSamples(uint16_t& count)  override { calls.push_back("sysIdGetSamples"); count = uint16_t{}; return nullptr; }
+    ResonanceStatus getResonance()  override { calls.push_back("getResonance"); return ResonanceStatus{}; }
+    void setResonanceConfig(const Harness::ResonanceConfig& c)  override { calls.push_back("setResonanceConfig"); }
 };
 
 struct FakeEncoderDispatcher : Services::IEncoderDispatcher {

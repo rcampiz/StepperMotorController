@@ -294,6 +294,106 @@ void CommandParser::cmdTrimSave() {
   respondStatus(m_dispatcher.configSaveToFlash(), "Trim config saved");
 }
 
+// =========================================================================
+// CTRL:RES:* — Resonance avoider (the run current moves the resonance off the speed)
+// =========================================================================
+
+namespace {
+
+bool parseResReal(const char *s, float &out) {
+  if (s == nullptr || *s == '\0') return false;
+  char *end = nullptr;
+  const double v = strtod(s, &end);
+  if (end == s || *end != '\0' || !(v == v)) return false;
+  out = static_cast<float>(v);
+  return true;
+}
+
+const char *resStateName(uint8_t s) {
+  switch (static_cast<Harness::ResonanceState>(s)) {
+    case Harness::ResonanceState::NOMINAL: return "nominal";
+    case Harness::ResonanceState::BOOST: return "boost";
+    case Harness::ResonanceState::CUT: return "cut";
+    case Harness::ResonanceState::UNAVOIDABLE: return "unavoidable";
+    default: return "off";
+  }
+}
+
+} // namespace
+
+// CTRL:RES? — the stored model and limits (defaults filled in), the live state and the
+// resonant speeds (harmonics 1, 2, 4) at the configured run current
+void CommandParser::cmdResQuery() {
+  const auto s = m_dispatcher.getResonance();
+  char f1a[16], ex[16], runIn[16], runCfg[16], r1[16], r2[16], r4[16];
+  formatFixed(f1a, sizeof(f1a), s.config.f1AHz, 1);
+  formatFixed(ex, sizeof(ex), s.config.exponent, 2);
+  formatFixed(runIn, sizeof(runIn), s.runInForceA, 3);
+  formatFixed(runCfg, sizeof(runCfg), s.runConfiguredA, 3);
+  formatFixed(r1, sizeof(r1), s.resonantRpm[0], 1);
+  formatFixed(r2, sizeof(r2), s.resonantRpm[1], 1);
+  formatFixed(r4, sizeof(r4), s.resonantRpm[2], 1);
+  const unsigned band = s.config.bandPct ? s.config.bandPct : Harness::RES_DEFAULT_BAND_PCT;
+  const unsigned boost = s.config.boostPct ? s.config.boostPct : Harness::RES_DEFAULT_BOOST_PCT;
+  const unsigned cut = s.config.cutPct ? s.config.cutPct : Harness::RES_DEFAULT_CUT_PCT;
+  const unsigned mask = s.config.harmonicMask ? s.config.harmonicMask : Harness::RES_DEFAULT_HARMONICS;
+  char buf[384];
+  if (m_format == ResponseFormat::JSON) {
+    snprintf(buf, sizeof(buf),
+             "{\"enabled\":%s,\"state\":\"%s\",\"run_a\":%s,\"run_cfg_a\":%s,"
+             "\"f1a_hz\":%s,\"exponent\":%s,\"band_pct\":%u,\"boost_pct\":%u,\"cut_pct\":%u,"
+             "\"harmonics\":%u,\"rpm_k1\":%s,\"rpm_k2\":%s,\"rpm_k4\":%s,"
+             "\"changes\":%lu,\"guard_trips\":%lu}",
+             s.config.enabled ? "true" : "false", resStateName(s.state), runIn, runCfg, f1a, ex,
+             band, boost, cut, mask, r1, r2, r4, static_cast<unsigned long>(s.changes),
+             static_cast<unsigned long>(s.guardTrips));
+    respondJsonOk("CTRL:RES?", buf);
+  } else {
+    snprintf(buf, sizeof(buf),
+             "enabled=%u state=%s run=%sA cfg=%sA f1a=%sHz exp=%s band=%u%% boost=%u%% cut=%u%%"
+             " mask=%u rpm_k1=%s rpm_k2=%s rpm_k4=%s changes=%lu guard_trips=%lu",
+             s.config.enabled ? 1u : 0u, resStateName(s.state), runIn, runCfg, f1a, ex, band,
+             boost, cut, mask, r1, r2, r4, static_cast<unsigned long>(s.changes),
+             static_cast<unsigned long>(s.guardTrips));
+    respondOk(buf);
+  }
+}
+
+// CTRL:RES:CFG <enable 0|1> [f1a_hz] [exponent] [band_pct] [boost_pct] [cut_pct] [harmonic_mask]
+// In force on the Motor task's next poll; CTRL:RES:SAVE keeps it. Omitted values stay.
+void CommandParser::cmdResConfig(const ParsedCommand &cmd) {
+  if (cmd.argCount < 1) {
+    respondErr("Usage: CTRL:RES:CFG <0|1> [f1a_hz] [exponent] [band_pct] [boost_pct] [cut_pct] [mask 1-7]");
+    return;
+  }
+  Harness::ResonanceConfig c = m_dispatcher.getResonance().config;
+  c.enabled = strtol(cmd.args[0], nullptr, 10) != 0;
+  float v = 0.0f;
+  if (cmd.argCount >= 2) {
+    if (!parseResReal(cmd.args[1], v) || v < 1.0f || v > 2000.0f) { respondErr("f1a_hz is 1-2000"); return; }
+    c.f1AHz = v;
+  }
+  if (cmd.argCount >= 3) {
+    if (!parseResReal(cmd.args[2], v) || v < 0.05f || v > 2.0f) { respondErr("exponent is 0.05-2"); return; }
+    c.exponent = v;
+  }
+  const long lim[4][2] = {{1, 30}, {0, 100}, {0, 90}, {1, 7}};
+  uint8_t *dst[4] = {&c.bandPct, &c.boostPct, &c.cutPct, &c.harmonicMask};
+  for (unsigned i = 0; i < 4 && 3u + i < cmd.argCount; ++i) {
+    const long n = strtol(cmd.args[3 + i], nullptr, 10);
+    if (n < lim[i][0] || n > lim[i][1]) { respondErr("band 1-30, boost 0-100, cut 0-90, mask 1-7"); return; }
+    *dst[i] = static_cast<uint8_t>(n);
+  }
+  if (c.enabled && !(c.f1AHz > 0.0f)) { respondErr("No model: give f1a_hz and exponent"); return; }
+  m_dispatcher.setResonanceConfig(c);
+  respondOk(c.enabled ? "Resonance avoider on (not saved; CTRL:RES:SAVE keeps it)"
+                      : "Resonance avoider off (not saved; CTRL:RES:SAVE keeps it)");
+}
+
+void CommandParser::cmdResSave() {
+  respondStatus(m_dispatcher.configSaveToFlash(), "Resonance config saved");
+}
+
 // --- System Identification commands ---
 
 void CommandParser::cmdSysIdStep(const ParsedCommand &cmd) {

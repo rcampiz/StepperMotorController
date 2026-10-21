@@ -477,6 +477,12 @@ aliases kept one release (marked **deprecated** in section 9 and in `SYST:HELP?`
     `observer_bw_hz` in `CTRL:ENC:FILT?`: a tracking observer on every encoder sample as the
     velocity chain's input. `CTRL:ENC:FILT:SAVE` keeps every stage's parameters (before, only
     the flags, EMA alpha, SMA window, window and rate).
+17. (2026-10-21) The resonance avoider: `CTRL:RES?`, `CTRL:RES:CFG <0|1> [f1a_hz] [exponent]
+    [band_pct] [boost_pct] [cut_pct] [harmonic_mask]`, `CTRL:RES:SAVE`. With a model of the
+    natural frequency against the run current (f_n = f1a_hz x I^exponent; the client's
+    `resonance_profile` scenario measures it), the Motor task moves the run current live so no
+    harmonic (1, 2, 4) of the electrical frequency meets f_n at the speed in use: the smallest
+    raise first, else the smallest cut (steady speed, encoder lag guard), else unchanged.
 
 Reserved for a later version:
 

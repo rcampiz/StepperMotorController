@@ -481,6 +481,11 @@ private:
   void cmdTrimReset();                               // CTRL:TRIM:RESET
   void cmdTrimSave();                                // CTRL:TRIM:SAVE
 
+  // Resonance avoider (CTRL:RES:*)
+  void cmdResQuery();                                // CTRL:RES? — model, limits, live state
+  void cmdResConfig(const ParsedCommand &cmd);       // CTRL:RES:CFG <en> [f1a] [exp] [band] [boost] [cut] [mask]
+  void cmdResSave();                                 // CTRL:RES:SAVE
+
   // System identification commands
   void cmdSysIdStep(const ParsedCommand &cmd);       // CTRL:SYSID:STEP
   void cmdSysIdRamp(const ParsedCommand &cmd);       // CTRL:SYSID:RAMP

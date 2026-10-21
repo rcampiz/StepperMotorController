@@ -301,6 +301,11 @@ void MotorController::periodicUpdate()
     auto measTicks = static_cast<int32_t>(encoderAtPosition);
     int32_t followError = cmdTicks - measTicks;
 
+    // The resonance avoider, every poll: the run current that keeps the resonance off this speed
+    if (!m_motionInhibited) {
+        resonanceStep(status, followError, encPPR, fpr);
+    }
+
     // The control laws run every CONTROL_PERIOD_MS whatever the poll period: their gains, slew
     // limits (dtSec below) and the sysid clock count 50 ms ticks. The status read above, the
     // edges and the idle release below run on every poll.
@@ -520,7 +525,9 @@ bool MotorController::applyConfig()
     // could not put in force with the outputs on (powerSTEP01: microstep mode, drive mode)
     m_inForce = motion.stepper.config.getDriverSettings();
     m_speedOverrideActive = false;       // the saved config is the value to keep from here on
-    return m_driver->apply(m_inForce) == ApplyResult::APPLIED;
+    const bool ok = m_driver->apply(m_inForce) == ApplyResult::APPLIED;
+    m_resonance.resync(m_inForce.currentA.run);   // the apply wrote the configured run current
+    return ok;
 }
 
 bool MotorController::applyWithOutputsOff()
@@ -529,8 +536,32 @@ bool MotorController::applyWithOutputsOff()
     m_driver->hardHiZ();
     m_clock->delayMs(5);
     const ApplyResult r = m_driver->apply(m_inForce);
+    m_resonance.resync(m_inForce.currentA.run);
     m_driver->softStop();
     return r == ApplyResult::APPLIED;
+}
+
+void MotorController::resonanceStep(const MotorStatus& status, int32_t followError,
+                                    uint16_t encPPR, uint16_t fpr)
+{
+    if (m_resReload) {
+        m_resReload = false;
+        m_resonance.configure(motion.configStore.getResonanceConfig());
+    }
+    const Harness::DriverCaps& caps = m_driver->caps();
+    ResonanceInput in{};
+    in.speedFsps = status.speedFsps;
+    // Current mode only: the model was profiled on the run current
+    in.runA = (m_inForce.mode == Harness::DriveMode::CURRENT) ? m_inForce.currentA.run : 0.0f;
+    in.stepA = caps.currentStepA;
+    in.maxA = caps.maxCurrentA;
+    in.guardAvailable = (m_encoder != nullptr);
+    in.followError = followError;
+    in.countsPerFullStep = (fpr != 0u) ? static_cast<float>(encPPR) / static_cast<float>(fpr) : 0.0f;
+    const ResonanceDecision d = m_resonance.update(in);
+    if (d.write && !m_driver->setRunCurrentLive(d.runA)) {
+        m_resonance.markUnsupported();
+    }
 }
 
 bool MotorController::applyConfigOutputsOff()

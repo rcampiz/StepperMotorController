@@ -16,6 +16,16 @@ tags.
 ## [Unreleased]
 
 ### Added
+- The resonance avoider (`CTRL:RES?`, `CTRL:RES:CFG`, `CTRL:RES:SAVE`; stored in the config
+  record's spare bytes, off in older records): the mechanical resonance follows the run current
+  (bench f_n = 137 Hz x I^0.51), so the Motor task moves the run current live (TVAL_RUN alone,
+  `IMotorDriver::setRunCurrentLive`, no flash write) to keep it off the speed in use. Least
+  sacrifice first: the smallest raise (up to +40 %), else the smallest cut (up to -30 %; only
+  at steady speed, so a joystick never gets one while it changes the speed, and only with an
+  encoder: dropped when the steady lag grows by 0.35 step), else unchanged; back to the run
+  current with hysteresis once clear. Bench 2026-10-21 (docs/bench/resonance_avoider_2026-10-21.png):
+  worst ripple 7.0 -> 2.5 counts over 40-120 RPM; a 64 s joystick-like session, 63 current
+  changes, no guard trip, no lost step.
 - A tracking observer for the encoder velocity (`CTRL:ENC:FILT:OBS <0|1> [bandwidth 1-200 Hz]`,
   `observer_enabled` / `observer_bw_hz` in `CTRL:ENC:FILT?`, saved with the chain): a
   critically damped second-order loop on every DMA sample, whose velocity replaces the
@@ -32,6 +42,8 @@ tags.
   loop's following error uses the same pair.
 
 ### Fixed
+- `IEncoder::countNow()` stays live through a capture readout (it returned the frozen count, so
+  the paired lag jumped while the rings were read).
 - The release image boots: the startup code ran the C++ static constructors before
   `SystemInit`, which enables the FPU, so any of them touching a float register faulted before
   the UART was up (the optimised build did; so did the observer's first, debug, version).

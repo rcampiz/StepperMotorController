@@ -32,7 +32,8 @@ def run(board, name, **params):
 def test_registry_lists_the_builtin_scenarios():
     names = [s.name for s in runner.list_scenarios()]
     assert names == ["bringup", "drive_mode_chip", "estop_latency", "filter_bode", "heartbeat_loss",
-                     "motion_scale", "position_capture", "resonance_map", "resonance_sweep",
+                     "motion_scale", "position_capture", "resonance_check", "resonance_map",
+                     "resonance_profile", "resonance_sweep",
                      "step_mode_chip", "step_mode_readback", "sysid", "telemetry_load"]
 
 

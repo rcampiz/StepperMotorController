@@ -82,6 +82,10 @@ smc_add_test(test_encoder_service test_encoder_service.cpp
     ${SERVER}/layers/L3_services/motion/encoder_service/encoder_service.cpp
     ${SERVER}/layers/L3_services/infra/telemetry_store/telemetry_store.cpp)
 
+# The resonance avoider (pure logic) on the bench model.
+smc_add_test(test_resonance_avoider test_resonance_avoider.cpp
+    ${SERVER}/layers/L3_services/motion/resonance_avoider/resonance_avoider.cpp)
+
 # The tracking observer (ENC_FILT_OBSERVER) on synthetic encoder samples.
 smc_add_test(test_encoder_observer test_encoder_observer.cpp
     ${SERVER}/layers/L3_services/motion/encoder_processor/encoder_processor.cpp)
@@ -101,6 +105,7 @@ smc_add_test(test_motor_service test_motor_service.cpp
     ${SERVER}/harness/pins/imicrosecond_clock.cpp
     ${SERVER}/layers/L3_services/motion/motor_service/motor_service.cpp
     ${SERVER}/layers/L3_services/motion/motor_controller/motor_controller.cpp
+    ${SERVER}/layers/L3_services/motion/resonance_avoider/resonance_avoider.cpp
     ${SERVER}/layers/L3_services/motion/motion.cpp
     ${SERVER}/layers/L3_services/motion/control_mode/control_mode.cpp
     ${SERVER}/layers/L3_services/motion/following_supervisor/following_supervisor.cpp
@@ -142,6 +147,7 @@ smc_add_test(test_screen_dispatcher test_screen_dispatcher.cpp
     ${SERVER}/harness/pins/imicrosecond_clock.cpp
     ${SERVER}/layers/L3_services/motion/motor_service/motor_service.cpp
     ${SERVER}/layers/L3_services/motion/motor_controller/motor_controller.cpp
+    ${SERVER}/layers/L3_services/motion/resonance_avoider/resonance_avoider.cpp
     ${SERVER}/layers/L3_services/motion/motion.cpp
     ${SERVER}/layers/L3_services/motion/control_mode/control_mode.cpp
     ${SERVER}/layers/L3_services/motion/following_supervisor/following_supervisor.cpp
@@ -226,6 +232,7 @@ smc_add_test(test_screen_config test_screen_config.cpp
     ${SERVER}/harness/pins/imicrosecond_clock.cpp
     ${SERVER}/layers/L3_services/motion/motor_service/motor_service.cpp
     ${SERVER}/layers/L3_services/motion/motor_controller/motor_controller.cpp
+    ${SERVER}/layers/L3_services/motion/resonance_avoider/resonance_avoider.cpp
     ${SERVER}/layers/L3_services/motion/motion.cpp
     ${SERVER}/layers/L3_services/motion/control_mode/control_mode.cpp
     ${SERVER}/layers/L3_services/motion/following_supervisor/following_supervisor.cpp

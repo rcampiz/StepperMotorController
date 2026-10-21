@@ -118,6 +118,11 @@ public:
     /// The chip lost its configuration behind the firmware's back (supply drop): call
     /// periodically (task context); true = re-initialise and apply the settings again.
     virtual bool checkReset() { return false; }
+    /// The run current reference in force now, amps (current mode): the chip's run level
+    /// alone, written at once, also while running; the stored settings are not changed (the
+    /// next apply() writes them again). False when the drive cannot (voltage mode, no such
+    /// chip): the caller stops asking. The resonance avoider's actuator.
+    virtual bool setRunCurrentLive(float amps) { (void)amps; return false; }
     /// The driver's own diagnostic text for a view (opaque above L4): the length written.
     virtual size_t diagnostics(Harness::DriverDiagView view, char* buf, size_t size)
     {

@@ -73,6 +73,9 @@ class FakeBoard:
                            "holt_enabled": False, "holt_alpha": 51, "holt_beta": 13,
                            "observer_enabled": True, "observer_bw_hz": 10}
         self.sysid_sine = None                     # (base_sps, amp_sps, f_hz, dur_ms) of the last SINE
+        self.res_cfg = {"enabled": False, "state": "off", "run_a": 0.0, "run_cfg_a": 0.0, "f1a_hz": 0.0,
+                        "exponent": 0.0, "band_pct": 8, "boost_pct": 40, "cut_pct": 30, "harmonics": 7,
+                        "rpm_k1": 0.0, "rpm_k2": 0.0, "rpm_k4": 0.0, "changes": 0, "guard_trips": 0}
         self.idle_release_ms = 0
         # DIAG:MEM? as the release build reports it: bytes per region, then (words) per task
         self.mem = {"flash": (288252, 512 * 1024), "ram": (82892, 96 * 1024),
@@ -763,6 +766,19 @@ class FakeBoard:
         self.enc_rate = max(100, min(10000, int(args[0])))
         self.enc_filter["sample_rate_hz"] = self.enc_rate
         self._ok("ENC_FILT", "Sample rate %d Hz" % self.enc_rate)
+
+    # Resonance avoider: config only (the fake has no resonance to avoid)
+    def _c_CTRL_RES_Q(self, name, args):
+        self._ok("CTRL:RES?", data=dict(self.res_cfg))
+
+    def _c_CTRL_RES_CFG(self, name, args):
+        keys = ("enabled", "f1a_hz", "exponent", "band_pct", "boost_pct", "cut_pct", "harmonics")
+        for k, v in zip(keys, args):
+            self.res_cfg[k] = (v not in ("0", "OFF")) if k == "enabled" else float(v)
+        self._ok("CTRL:RES:CFG", "Resonance avoider %s" % ("on" if self.res_cfg["enabled"] else "off"))
+
+    def _c_CTRL_RES_SAVE(self, name, args):
+        self._ok("CTRL:RES:SAVE", "Resonance config saved")
 
     def _c_CTRL_ENC_FILT_Q(self, name, args):
         self._ok("ENC_FILT", data=dict(self.enc_filter))

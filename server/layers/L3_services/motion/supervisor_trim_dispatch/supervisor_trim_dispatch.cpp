@@ -35,6 +35,32 @@ void SupervisorTrimDispatch::applySupervisorConfig() {
     motion.control.supervisor.configure(scfg);
 }
 
+Services::ISupervisorTrimDispatcher::ResonanceStatus SupervisorTrimDispatch::getResonance() {
+    ResonanceStatus s{};
+    const ResonanceAvoider& live = motion.stepper.controller.resonance();
+    s.config = motion.configStore.getResonanceConfig();
+    s.state = static_cast<uint8_t>(live.state());
+    s.runInForceA = live.currentA();
+    s.runConfiguredA = motion.stepper.config.getDriverSettings().currentA.run;
+    s.changes = live.changes();
+    s.guardTrips = live.guardTrips();
+    ResonanceAvoider model;                       // the stored model's speeds (pure maths)
+    Harness::ResonanceConfig c = s.config;
+    c.enabled = true;
+    model.configure(c);
+    const float fpr = static_cast<float>(motion.configStore.getFullStepsPerRev());
+    static constexpr uint8_t KS[3] = {1, 2, 4};
+    for (unsigned i = 0; i < 3; ++i) {
+        s.resonantRpm[i] = model.resonantFsps(s.runConfiguredA, KS[i]) / fpr * 60.0f;
+    }
+    return s;
+}
+
+void SupervisorTrimDispatch::setResonanceConfig(const Harness::ResonanceConfig& c) {
+    motion.configStore.setResonanceConfig(c);
+    motion.stepper.controller.requestResonanceReload();
+}
+
 bool SupervisorTrimDispatch::supervisorClearFault() {
     return motion.control.supervisor.clearFault();
 }

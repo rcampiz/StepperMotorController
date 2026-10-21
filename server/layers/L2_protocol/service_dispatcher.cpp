@@ -301,6 +301,14 @@ void ServiceDispatcher::resetTrim() {
     m_supTrim->resetTrim();
 }
 
+Services::ISupervisorTrimDispatcher::ResonanceStatus ServiceDispatcher::getResonance() {
+    return m_supTrim->getResonance();
+}
+
+void ServiceDispatcher::setResonanceConfig(const Harness::ResonanceConfig& c) {
+    m_supTrim->setResonanceConfig(c);
+}
+
 void ServiceDispatcher::applyTrimConfig() {
     m_supTrim->applyTrimConfig();
 }

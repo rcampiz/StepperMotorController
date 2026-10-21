@@ -101,6 +101,8 @@ public:
     void setTrimLimits(uint16_t outLim, uint16_t iLim) override;
     void setTrimMaxPct(int16_t val) override;
     void resetTrim() override;
+    ResonanceStatus getResonance() override;
+    void setResonanceConfig(const Harness::ResonanceConfig& c) override;
     void applyTrimConfig() override;
     bool sysIdStart(uint8_t type, uint16_t targetSpeed, uint16_t startSpeed,
                      bool forward, uint16_t durationMs, uint16_t settleMs,

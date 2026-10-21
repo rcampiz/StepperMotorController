@@ -144,6 +144,13 @@ public:
         return m_real.checkReset();   // every 500 ms, too noisy
     }
 
+    bool setRunCurrentLive(float amps) override {
+        const bool ok = m_real.setRunCurrentLive(amps);
+        Harness::ITrace::logResult(Harness::ITrace::L3_L4_MOTOR, "[L3<L4]", "setRunCurrentLive",
+                                   static_cast<uint32_t>(amps * 1000.0f));
+        return ok;
+    }
+
     size_t diagnostics(Harness::DriverDiagView view, char* buf, size_t size) override {
         Harness::ITrace::log(Harness::ITrace::L3_L4_MOTOR, "[L3>L4]", "diagnostics");
         return m_real.diagnostics(view, buf, size);

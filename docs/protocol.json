@@ -1713,6 +1713,29 @@
       "deprecated": ""
     },
     {
+      "name": "CTRL:RES:CFG",
+      "prefix": "CTRL",
+      "handler": "cmdResConfig",
+      "file": "control_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "CTRL:RES:CFG <0|1> [f1a_hz] [exponent] [band_pct] [boost_pct] [cut_pct] [mask 1-7]"
+      ],
+      "ascii_ok": [],
+      "json": [],
+      "errors": [
+        "No model: give f1a_hz and exponent",
+        "band 1-30, boost 0-100, cut 0-90, mask 1-7",
+        "exponent is 0.05-2",
+        "f1a_hz is 1-2000"
+      ],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
       "name": "CTRL:SYSID:STEP",
       "prefix": "CTRL",
       "handler": "cmdSysIdStep",
@@ -2141,6 +2164,63 @@
       "usage": [],
       "ascii_ok": [
         "<status> or Trim config saved"
+      ],
+      "json": [],
+      "errors": [],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": true,
+      "deprecated": ""
+    },
+    {
+      "name": "CTRL:RES?",
+      "prefix": "CTRL",
+      "handler": "cmdResQuery",
+      "file": "control_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [
+        {
+          "command": "CTRL:RES?",
+          "keys": [
+            "band_pct",
+            "boost_pct",
+            "changes",
+            "cut_pct",
+            "enabled",
+            "exponent",
+            "f1a_hz",
+            "guard_trips",
+            "harmonics",
+            "rpm_k1",
+            "rpm_k2",
+            "rpm_k4",
+            "run_a",
+            "run_cfg_a",
+            "state"
+          ]
+        }
+      ],
+      "errors": [],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "CTRL:RES:SAVE",
+      "prefix": "CTRL",
+      "handler": "cmdResSave",
+      "file": "control_handlers.cpp",
+      "min_args": 0,
+      "usage": [],
+      "ascii_ok": [
+        "<status> or Resonance config saved"
       ],
       "json": [],
       "errors": [],

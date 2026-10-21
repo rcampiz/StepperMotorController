@@ -21,6 +21,7 @@
 #include <stddef.h>
 #include "harness/defs/harness_l3_l4.hpp"
 #include "harness/pins/encoder_filter_config.hpp"
+#include "harness/pins/resonance_config.hpp"
 
 namespace Services {
 
@@ -85,7 +86,14 @@ struct MotorConfig {
     uint8_t  encHoltAlpha;        // Holt level smoothing /255 (0 = 51)
     uint8_t  encHoltBeta;         // Holt trend smoothing /255 (0 = 13)
     uint8_t  encObserverBwHz;     // tracking observer bandwidth, Hz (0 = ENC_FILT_DEFAULT_OBSERVER_HZ)
-    uint8_t  reserved5[8];        // zero
+    // Resonance avoider (2026-10-21; zero in older records: off, no model)
+    uint16_t resF1AHz10;          // natural frequency at 1 A, 0.1 Hz
+    uint8_t  resFlags;            // bit 0 enabled, bits 1-3 harmonics k = 1, 2, 4 (0: all)
+    uint8_t  resExponent100;      // f_n ~ I^(exponent / 100)
+    uint8_t  resBandPct;          // avoided band half-width, % (0 = default)
+    uint8_t  resBoostPct;         // largest raise, % (0 = default)
+    uint8_t  resCutPct;           // largest cut, % (0 = default)
+    uint8_t  reserved5[1];        // zero
 
     uint32_t crc32;               // CRC32 of everything above
 };
@@ -245,6 +253,9 @@ public:
     /// The whole stored filter chain, as the encoder processor and CTRL:ENC:FILT? take it
     /// (stage parameters 0 = that stage's default)
     Harness::EncoderFilterConfig getEncFilterConfig() const;
+    /// The resonance avoider's model and limits (CTRL:RES:CFG; saved with the record)
+    Harness::ResonanceConfig getResonanceConfig() const;
+    void setResonanceConfig(const Harness::ResonanceConfig& c);
     uint16_t getFullStepsPerRev() const { return (m_config.fullStepsPerRev != 0) ? m_config.fullStepsPerRev : 200; }
     uint16_t getEncoderPPR() const { return (m_config.encoderPPR != 0) ? m_config.encoderPPR : 4000; }
     uint32_t getMicrostepsPerRev() const { return static_cast<uint32_t>(getFullStepsPerRev()) * getEffectiveMicrosteps(); }

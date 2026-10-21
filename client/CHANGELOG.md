@@ -12,6 +12,9 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
 ## [Unreleased]
 
 ### Added
+- `resonance_profile` (with `apply`: stores the fitted model in the avoider) and
+  `resonance_check` (the same speeds with the avoider off and on) scenarios; `res_query`,
+  `res_config`, `res_save` builders; captures with a jump no shaft can make are taken again.
 - `commands.enc_filter_observer` (`CTRL:ENC:FILT:OBS`), the observer in the simulator and in the
   filter scenarios' chains (`_chain(observer=...)`, restored with the rest).
 - 50 Hz telemetry in the GUI on a fast link: the telemetry period follows the Link rate (20 ms

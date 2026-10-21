@@ -153,6 +153,15 @@ public:
         return true;
     }
     bool checkReset() override { return m_resetWatch.check(*this); }
+    bool setRunCurrentLive(float amps) override
+    {
+        // TVAL_RUN is KVAL_RUN's register: in voltage mode it is a duty, not a current
+        if ((getParam(Reg::STEP_MODE) & PowerStepSettings::STEP_MODE_CM_VM) == 0u) {
+            return false;
+        }
+        setParam(Reg::KVAL_RUN, PowerStepSettings::ampsToTval(amps));
+        return true;
+    }
     size_t diagnostics(Harness::DriverDiagView view, char* buf, size_t size) override
     {
         return PowerStepSettings::diagnostics(*this, view, buf, size);

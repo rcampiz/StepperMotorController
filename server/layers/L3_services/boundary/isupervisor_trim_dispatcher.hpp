@@ -6,6 +6,7 @@
 #pragma once
 
 #include <stdint.h>
+#include "harness/pins/resonance_config.hpp"
 
 namespace Services {
 
@@ -72,6 +73,19 @@ public:
     virtual uint8_t sysIdGetPhase() = 0;
     virtual uint16_t sysIdGetSampleCount() = 0;
     virtual const SysIdSampleData* sysIdGetSamples(uint16_t& count) = 0;
+
+    // Resonance avoider (CTRL:RES:*)
+    struct ResonanceStatus {
+        Harness::ResonanceConfig config;   ///< as stored
+        uint8_t  state;                    ///< Harness::ResonanceState
+        float    runInForceA;              ///< the run current the avoider last wrote
+        float    runConfiguredA;           ///< the configured run current
+        uint32_t changes;
+        uint32_t guardTrips;
+        float    resonantRpm[3];           ///< harmonics 1, 2, 4 at the configured run current (0: no model)
+    };
+    virtual ResonanceStatus getResonance() = 0;
+    virtual void setResonanceConfig(const Harness::ResonanceConfig& c) = 0;
 };
 
 } // namespace Services

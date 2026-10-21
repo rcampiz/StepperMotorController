@@ -186,6 +186,7 @@ public:
     Drivers::ApplyResult apply(const Drivers::DriverSettings& s) override { Meter::Scope m(N); return m_real.apply(s); }
     bool readSettings(Drivers::DriverSettings& inForce) override { Meter::Scope m(N); return m_real.readSettings(inForce); }
     bool checkReset() override { Meter::Scope m(N); return m_real.checkReset(); }
+    bool setRunCurrentLive(float amps) override { Meter::Scope m(N); return m_real.setRunCurrentLive(amps); }
     size_t diagnostics(Harness::DriverDiagView view, char* buf, size_t size) override { Meter::Scope m(N); return m_real.diagnostics(view, buf, size); }
     Drivers::MotorStatus getStatus() override { Meter::Scope m(N); return m_real.getStatus(); }
     Drivers::MotorStatus readState() override { Meter::Scope m(N); return m_real.readState(); }

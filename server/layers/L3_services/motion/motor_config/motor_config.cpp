@@ -167,6 +167,29 @@ void MotorConfigManager::setEncFilterFull(const Harness::EncoderFilterConfig& cf
     m_config.encObserverBwHz = cfg.observerBwHz;
 }
 
+Harness::ResonanceConfig MotorConfigManager::getResonanceConfig() const {
+    Harness::ResonanceConfig c = {};
+    c.enabled = (m_config.resFlags & 0x01u) != 0u;
+    c.harmonicMask = static_cast<uint8_t>((m_config.resFlags >> 1) & 0x07u);
+    c.f1AHz = static_cast<float>(m_config.resF1AHz10) / 10.0f;
+    c.exponent = static_cast<float>(m_config.resExponent100) / 100.0f;
+    c.bandPct = m_config.resBandPct;
+    c.boostPct = m_config.resBoostPct;
+    c.cutPct = m_config.resCutPct;
+    return c;
+}
+
+void MotorConfigManager::setResonanceConfig(const Harness::ResonanceConfig& c) {
+    const float f = c.f1AHz * 10.0f + 0.5f;
+    const float e = c.exponent * 100.0f + 0.5f;
+    m_config.resF1AHz10 = (f <= 0.0f) ? 0u : (f >= 65535.0f) ? 65535u : static_cast<uint16_t>(f);
+    m_config.resExponent100 = (e <= 0.0f) ? 0u : (e >= 255.0f) ? 255u : static_cast<uint8_t>(e);
+    m_config.resFlags = static_cast<uint8_t>((c.enabled ? 0x01u : 0u) | ((c.harmonicMask & 0x07u) << 1));
+    m_config.resBandPct = c.bandPct;
+    m_config.resBoostPct = c.boostPct;
+    m_config.resCutPct = c.cutPct;
+}
+
 Harness::EncoderFilterConfig MotorConfigManager::getEncFilterConfig() const {
     Harness::EncoderFilterConfig cfg = {};
     cfg.filterFlags = m_config.encFilterType;

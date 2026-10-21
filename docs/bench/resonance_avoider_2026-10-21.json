@@ -1,0 +1,222 @@
+{
+ "off": [
+  {
+   "ripple": 3.44,
+   "p2p": 15.0,
+   "peak_hz": 132.0,
+   "peak_amp": 4.46,
+   "ok": true,
+   "glitch": false,
+   "retried": false,
+   "rpm": 40,
+   "state": "off",
+   "run_a": 1.014
+  },
+  {
+   "ripple": 1.87,
+   "p2p": 11.0,
+   "peak_hz": 99.0,
+   "peak_amp": 1.35,
+   "ok": true,
+   "glitch": false,
+   "retried": false,
+   "rpm": 60,
+   "state": "off",
+   "run_a": 1.014
+  },
+  {
+   "ripple": 2.72,
+   "p2p": 13.0,
+   "peak_hz": 116.0,
+   "peak_amp": 2.83,
+   "ok": true,
+   "glitch": false,
+   "retried": false,
+   "rpm": 70,
+   "state": "off",
+   "run_a": 1.014
+  },
+  {
+   "ripple": 3.88,
+   "p2p": 17.0,
+   "peak_hz": 124.0,
+   "peak_amp": 4.7,
+   "ok": true,
+   "glitch": false,
+   "retried": false,
+   "rpm": 75,
+   "state": "off",
+   "run_a": 1.014
+  },
+  {
+   "ripple": 7.0,
+   "p2p": 26.0,
+   "peak_hz": 133.0,
+   "peak_amp": 9.1,
+   "ok": true,
+   "glitch": false,
+   "retried": false,
+   "rpm": 80,
+   "state": "off",
+   "run_a": 1.014
+  },
+  {
+   "ripple": 5.1,
+   "p2p": 20.0,
+   "peak_hz": 140.0,
+   "peak_amp": 6.64,
+   "ok": true,
+   "glitch": false,
+   "retried": false,
+   "rpm": 85,
+   "state": "off",
+   "run_a": 1.014
+  },
+  {
+   "ripple": 2.54,
+   "p2p": 13.0,
+   "peak_hz": 149.0,
+   "peak_amp": 2.18,
+   "ok": true,
+   "glitch": false,
+   "retried": false,
+   "rpm": 90,
+   "state": "off",
+   "run_a": 1.014
+  },
+  {
+   "ripple": 2.04,
+   "p2p": 10.0,
+   "peak_hz": 165.0,
+   "peak_amp": 0.82,
+   "ok": true,
+   "glitch": false,
+   "retried": false,
+   "rpm": 100,
+   "state": "off",
+   "run_a": 1.014
+  },
+  {
+   "ripple": 1.99,
+   "p2p": 10.0,
+   "peak_hz": 99.0,
+   "peak_amp": 0.77,
+   "ok": true,
+   "glitch": false,
+   "retried": false,
+   "rpm": 120,
+   "state": "off",
+   "run_a": 1.014
+  }
+ ],
+ "on": [
+  {
+   "ripple": 1.79,
+   "p2p": 9.0,
+   "peak_hz": 132.0,
+   "peak_amp": 1.8,
+   "ok": true,
+   "glitch": false,
+   "retried": false,
+   "rpm": 40,
+   "state": "boost",
+   "run_a": 1.404
+  },
+  {
+   "ripple": 2.46,
+   "p2p": 12.5,
+   "peak_hz": 99.0,
+   "peak_amp": 1.38,
+   "ok": true,
+   "glitch": false,
+   "retried": false,
+   "rpm": 60,
+   "state": "nominal",
+   "run_a": 1.014
+  },
+  {
+   "ripple": 2.41,
+   "p2p": 12.0,
+   "peak_hz": 116.0,
+   "peak_amp": 2.85,
+   "ok": true,
+   "glitch": false,
+   "retried": false,
+   "rpm": 70,
+   "state": "nominal",
+   "run_a": 1.014
+  },
+  {
+   "ripple": 2.47,
+   "p2p": 12.5,
+   "peak_hz": 124.0,
+   "peak_amp": 2.56,
+   "ok": true,
+   "glitch": false,
+   "retried": false,
+   "rpm": 75,
+   "state": "boost",
+   "run_a": 1.17
+  },
+  {
+   "ripple": 2.3,
+   "p2p": 12.0,
+   "peak_hz": 133.0,
+   "peak_amp": 2.36,
+   "ok": true,
+   "glitch": false,
+   "retried": false,
+   "rpm": 80,
+   "state": "boost",
+   "run_a": 1.326
+  },
+  {
+   "ripple": 1.8,
+   "p2p": 10.0,
+   "peak_hz": 140.0,
+   "peak_amp": 1.22,
+   "ok": true,
+   "glitch": false,
+   "retried": false,
+   "rpm": 85,
+   "state": "cut",
+   "run_a": 0.78
+  },
+  {
+   "ripple": 2.14,
+   "p2p": 10.5,
+   "peak_hz": 149.0,
+   "peak_amp": 0.92,
+   "ok": true,
+   "glitch": false,
+   "retried": false,
+   "rpm": 90,
+   "state": "cut",
+   "run_a": 0.78
+  },
+  {
+   "ripple": 1.99,
+   "p2p": 10.5,
+   "peak_hz": 165.0,
+   "peak_amp": 0.85,
+   "ok": true,
+   "glitch": false,
+   "retried": false,
+   "rpm": 100,
+   "state": "nominal",
+   "run_a": 1.014
+  },
+  {
+   "ripple": 1.97,
+   "p2p": 9.5,
+   "peak_hz": 99.0,
+   "peak_amp": 0.73,
+   "ok": true,
+   "glitch": false,
+   "retried": false,
+   "rpm": 120,
+   "state": "nominal",
+   "run_a": 1.014
+  }
+ ]
+}

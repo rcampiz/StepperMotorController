@@ -150,13 +150,11 @@ int64_t EncoderService::countNow()
     m_critical->enter();
     const int64_t count = m_state.count;
     const uint16_t raw = m_stateRaw;
-    const bool frozen = m_frozen;
     m_critical->exit();
-    if (frozen) {
-        return count;               // a capture readout: sampling is paused, keep the last count
-    }
-    // The 16-bit counter cannot move half a wrap (32768 counts, 8 turns) in the 10 ms
-    // between samples, so the difference is the movement since the sample, sign included
+    // The 16-bit counter cannot move half a wrap (32768 counts, 8 turns) between samples (10 ms;
+    // a capture readout, which pauses the sampling, takes well under a second), so the
+    // difference is the movement since the sample, sign included. (Returning the frozen count
+    // during a readout made the lag jump: the resonance avoider's guard tripped, 2026-10-21.)
     const auto live = static_cast<uint16_t>(m_hw->getCount());
     return count + static_cast<int16_t>(static_cast<uint16_t>(live - raw));
 }

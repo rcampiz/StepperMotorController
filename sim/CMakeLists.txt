@@ -62,6 +62,7 @@ set(FIRMWARE_SOURCES
     ${L3}/motion/motion_service/motion_service.cpp
     ${L3}/motion/motor_config/motor_config.cpp
     ${L3}/motion/motor_controller/motor_controller.cpp
+    ${L3}/motion/resonance_avoider/resonance_avoider.cpp
     ${L3}/motion/motor_driver_dispatch/motor_driver_dispatch.cpp
     ${L3}/motion/motor_event_service/motor_event_service.cpp
     ${L3}/motion/motor_service/motor_service.cpp

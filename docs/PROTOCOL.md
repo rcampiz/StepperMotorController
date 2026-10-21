@@ -231,6 +231,12 @@ aliases kept one release (marked **deprecated** in section 9 and in `SYST:HELP?`
     `observer_bw_hz` in `CTRL:ENC:FILT?`: a tracking observer on every encoder sample as the
     velocity chain's input. `CTRL:ENC:FILT:SAVE` keeps every stage's parameters (before, only
     the flags, EMA alpha, SMA window, window and rate).
+17. (2026-10-21) The resonance avoider: `CTRL:RES?`, `CTRL:RES:CFG <0|1> [f1a_hz] [exponent]
+    [band_pct] [boost_pct] [cut_pct] [harmonic_mask]`, `CTRL:RES:SAVE`. With a model of the
+    natural frequency against the run current (f_n = f1a_hz x I^exponent; the client's
+    `resonance_profile` scenario measures it), the Motor task moves the run current live so no
+    harmonic (1, 2, 4) of the electrical frequency meets f_n at the speed in use: the smallest
+    raise first, else the smallest cut (steady speed, encoder lag guard), else unchanged.
 
 Reserved for a later version:
 
@@ -347,6 +353,7 @@ step mode 0-7, the same texts as before.
 | `CTRL:TRIM:GAINS` | 2 | CTRL:TRIM:GAINS <kp> <ki> | ASCII: `OK Trim gains set`; JSON `CTRL:TRIM:GAINS` keys: `ki`, `kp` | — | `cmdTrimSetGains` (control_handlers.cpp) |
 | `CTRL:TRIM:LIMITS` | 2 | CTRL:TRIM:LIMITS <output_limit> <integral_limit> | ASCII: `OK Trim limits set`; JSON `CTRL:TRIM:LIMITS` keys: `i_limit`, `out_limit` | — | `cmdTrimSetLimits` (control_handlers.cpp) |
 | `CTRL:TRIM:MAXPCT` | 1 | CTRL:TRIM:MAXPCT <1-50> | ASCII: `OK Trim max percent set`; JSON `CTRL:TRIM:MAXPCT` keys: `max_pct` | `maxPct must be 1-50` | `cmdTrimSetMaxPct` (control_handlers.cpp) |
+| `CTRL:RES:CFG` | 1 | CTRL:RES:CFG <0\|1> [f1a_hz] [exponent] [band_pct] [boost_pct] [cut_pct] [mask 1-7] | `OK <status>` | `No model: give f1a_hz and exponent`<br>`band 1-30, boost 0-100, cut 0-90, mask 1-7`<br>`exponent is 0.05-2`<br>`f1a_hz is 1-2000` | `cmdResConfig` (control_handlers.cpp) |
 | `CTRL:SYSID:STEP` | 2 | CTRL:SYSID:STEP <speed_sps> <dir> [dur_ms] [settle_ms] | ASCII: `OK SYSID step started` | `SYSID already running`<br>`speed_sps must be 1-<caps>` | `cmdSysIdStep` (control_handlers.cpp) |
 | `CTRL:SYSID:RAMP` | 3 | CTRL:SYSID:RAMP <start_sps> <end_sps> <dir> [dur_ms] | ASCII: `OK SYSID ramp started` | `SYSID already running`<br>`speed must be 0-<caps> sps` | `cmdSysIdRamp` (control_handlers.cpp) |
 | `CTRL:SYSID:SINE` | 4 | CTRL:SYSID:SINE <baseline> <amplitude> <freq_mHz> <dir> | ASCII: `OK SYSID sine started` | `SYSID already running`<br>`freq_mHz must be 1-5000 (0.001-5.0 Hz)`<br>`speed must be 0-<caps> sps` | `cmdSysIdSine` (control_handlers.cpp) |
@@ -365,6 +372,8 @@ step mode 0-7, the same texts as before.
 | `CTRL:TRIM?` | 0 | — | ASCII: `OK <formatted text>`; JSON `CTRL:TRIM?` keys: `active`, `base_fsps`, `base_spd`, `final_fsps`, `final_spd`, `frozen`, `i_limit`, `ki`, `kp`, `max_pct`, `out_limit`, `trim_fsps`, `trim_spd`, `vel_quality` | — | `cmdTrimQuery` (control_handlers.cpp) |
 | `CTRL:TRIM:RESET` | 0 | — | ASCII: `OK Trim reset` | — | `cmdTrimReset` (control_handlers.cpp) |
 | `CTRL:TRIM:SAVE` | 0 | — | ASCII: `OK <status> or Trim config saved` | — | `cmdTrimSave` (control_handlers.cpp) |
+| `CTRL:RES?` | 0 | — | ASCII: `OK <formatted text>`; JSON `CTRL:RES?` keys: `band_pct`, `boost_pct`, `changes`, `cut_pct`, `enabled`, `exponent`, `f1a_hz`, `guard_trips`, `harmonics`, `rpm_k1`, `rpm_k2`, `rpm_k4`, `run_a`, `run_cfg_a`, `state` | — | `cmdResQuery` (control_handlers.cpp) |
+| `CTRL:RES:SAVE` | 0 | — | ASCII: `OK <status> or Resonance config saved` | — | `cmdResSave` (control_handlers.cpp) |
 | `CTRL:SYSID:STATUS?` | 0 | — | ASCII: `OK <formatted text>`; JSON `CTRL:SYSID:STATUS` keys: `phase`, `samples` | — | `cmdSysIdStatus` (control_handlers.cpp) |
 | `CTRL:SYSID:ABORT` | 0 | — | ASCII: `OK SYSID aborted` | — | `cmdSysIdAbort` (control_handlers.cpp) |
 | `CTRL:CAP:FREEZE` | 0 | — | ASCII: `OK <plain lines>`; JSON `CAP_FREEZE` keys: `pulses_per_full_step`, `rate_hz`, `samples`, `sync` | `No encoder sampler to capture` | `cmdCaptureFreeze` (control_handlers.cpp) |
