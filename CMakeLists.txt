@@ -131,6 +131,16 @@ file(GLOB ROOT_SOURCES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/server/*.cpp)
 set(ASM_SOURCES server/foundation/F_platform/startup/startup_stm32f401xe.s)
 set_source_files_properties(${ASM_SOURCES} PROPERTIES LANGUAGE ASM)
 
+# The LCD's pixel composers run -O2 in every build: at -Og little inlines and the saver's
+# title box cost ~3.4 us a pixel (5 frames/s, bench 2026-10-21). Nothing on the target is
+# stepped through in a debugger, so these lose nothing that is used.
+set(PIXEL_COMPOSER_SOURCES
+    server/layers/L3_services/ui/screens/saver_screen.cpp
+    server/layers/L3_services/ui/screens/estop_screen.cpp
+    server/layers/L3_services/infra/indicator_service/indicator_service.cpp
+)
+set_source_files_properties(${PIXEL_COMPOSER_SOURCES} PROPERTIES COMPILE_OPTIONS "-O2")
+
 add_executable(${PROJECT_NAME}.elf
     ${THIRD_PARTY_SOURCES}
     ${APP_SOURCES}

@@ -126,6 +126,7 @@
         "server/layers/L3_services/graphics/graphics.hpp",
         "server/layers/L3_services/graphics/primitives/primitives.hpp",
         "server/layers/L3_services/graphics/trig_lut/trig_lut.hpp",
+        "server/layers/L3_services/graphics/vhs_bands/vhs_bands.hpp",
         "server/layers/L3_services/infra/infra.hpp",
         "server/layers/L3_services/infra/flash_dispatch/flash_dispatch.cpp",
         "server/layers/L3_services/infra/flash_dispatch/flash_dispatch.hpp",

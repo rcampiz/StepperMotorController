@@ -29,6 +29,7 @@
 
 #include "L3_services/boundary/iindicator_renderer.hpp"
 #include "harness/defs/harness_l3_l4.hpp"
+#include "graphics/vhs_bands/vhs_bands.hpp"
 #include <stdint.h>
 
 namespace Services {
@@ -52,6 +53,9 @@ public:
 
     /// The screen was drawn by someone else: the next tick starts from a clear panel
     void invalidate() override;
+
+    /// The hold-CENTER sweep: the hint plate fills from the left (Display task)
+    void setHoldProgress(uint8_t pct) override { m_holdPct = pct > 100 ? 100 : pct; }
 
     /// Hide the indicator (target with no translation and no turn)
     void clear();
@@ -109,8 +113,9 @@ public:
     static constexpr uint16_t READOUT_COLOR  = indicatorRgb(255, 240, 250);
     static constexpr uint16_t READOUT_SHADOW = RING_LIT;                    // one pixel down and right
     static constexpr uint16_t HINT_COLOR     = 0xDF3E;                      // Theme::TEXT
+    static constexpr uint16_t HOLD_FILL      = RING_LIT;                    // the hold sweep
+    static constexpr uint16_t HOLD_TEXT      = DIAL_BG;                     // the hint over it
 
-    static constexpr uint8_t BAND_COUNT = 2;       ///< VHS tracking bands (the table is in the .cpp)
     static constexpr uint32_t BAND_MAX_WAIT_MS = 50;    ///< the longest the bands hold for the arrow
 
     /// The eased state, for tests
@@ -118,7 +123,7 @@ public:
     float currentSpeed() const { return m_speed; }
     float currentTurn() const { return m_turn; }
     /// A band's top row as drawn (-1 before the first frame), for tests
-    int16_t bandTop(uint8_t i) const { return m_bandTop[i]; }
+    int16_t bandTop(uint8_t i) const { return m_vhs.top(i); }
 
 private:
     Services::ICanvas* m_lcd = nullptr;
@@ -145,9 +150,10 @@ private:
     bool m_ringLit[RING_COUNT] = {};
     int8_t m_chevDir = 0;
     char m_readout[48] = {};
-    int16_t m_bandTop[BAND_COUNT] = {-1, -1};
-    uint16_t m_bandFrame = 0;                // seeds the tear and the noise
+    Graphics::VhsBands m_vhs;                // the tracking bands
     uint32_t m_bandStepMs = 0;               // when the bands last moved
+    uint8_t m_holdPct = 0;                   // the hold sweep: asked for, and as drawn
+    uint8_t m_holdDrawn = 0;
 
     // Per-frame geometry (screen coordinates)
     float m_outerHead[3][2];
@@ -166,7 +172,6 @@ private:
     void sync();
     void composeRow(int y, int x0, int x1, uint8_t* buf) const;
     void paintRows(int top, int bottom, int x0, int x1, bool onTearingEdge = true);
-    void paintBandRows(int top, int count);
     void renderReadout(int16_t speedPct, int16_t turnPct, int8_t dir);
 };
 

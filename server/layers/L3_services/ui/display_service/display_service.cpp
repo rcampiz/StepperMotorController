@@ -306,7 +306,18 @@ void DisplayService::handleJoystick()
         }
         // The way out from the board itself: hold CENTER 2 s, the same gesture as "home"
         // in local mode. The host's next drawing command finds the board in LOCAL mode.
-        if (centerLongPress(dir == UI::JoyDirection::CENTER, m_clock->getTickMs())) {
+        const uint32_t now = m_clock->getTickMs();
+        const bool fired = centerLongPress(dir == UI::JoyDirection::CENTER, now);
+        if (m_indicator != nullptr) {
+            // The hold fills the hint plate, so the press is seen to register (owner 2026-10-21)
+            uint32_t pct = 0;
+            if (m_centerHeld && !m_longPressFired) {
+                const uint32_t held = now - m_centerDownMs;
+                pct = held >= LONG_PRESS_MS ? 100u : held * 100u / LONG_PRESS_MS;
+            }
+            m_indicator->setHoldProgress(static_cast<uint8_t>(pct));
+        }
+        if (fired) {
             m_uiMode->setMode(UI::UIMode::LOCAL);
         }
         return;

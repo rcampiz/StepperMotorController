@@ -67,6 +67,21 @@ tags.
   20 Hz cutoff came back as 10 Hz after a restart (bench 2026-10-21: 20 Hz now survives one).
 
 ### Changed
+- LCD: the VHS tracking bands (`graphics/vhs_bands/vhs_bands.hpp`, shared) roll over the
+  synthwave saver (the whole scene, title included) and the E-STOP / FAULT page (the hazard
+  stripes, the grid, the page and behind the title's letters; never over the status panel, the
+  prompt, the clear bar or a message). Each screen composes the rows the bands left and reached.
+  The saver's title comes up 1 s into a scene and fades in over 0.4 s (was 5 s and 0.8 s).
+- LCD saver, faster (bench, synthwave): 20 frames/s without the title (was ~9) and 10-11 with it
+  (was ~5, the title moving every other frame). The sky is composed a row at a time by runs (its
+  colour, the sun's span, the scene a pixel only where mountains or buildings reach the row), the
+  title stepped along the row and repainted every frame, the floor only on the rows a grid line
+  moved through (it was the whole floor, 40-80 KB a frame), rows streamed four a call
+  (`ScratchRow::ROWS`). The pixel composers (saver, E-STOP page, motion indicator) build -O2 in
+  every build: at -Og the saver's title box cost ~3.4 us a pixel.
+- LCD motion indicator: holding CENTER fills the "hold CENTER 2s: menu" plate from the left in
+  hot pink (the 2 s to the menu), so the press is seen to register; letting go clears it.
+  `IIndicatorRenderer::setHoldProgress()`, fed by the DisplayService's long-press timer.
 - LCD motion indicator: a VHS / synthwave look. A violet backdrop with scanlines and speckle,
   and two tracking bands (cyan and pink bars, a bright line, a tear and noise that re-roll)
   rolling down behind the dial; hot-pink rings with a yellow inner line, yellow chevrons, a white

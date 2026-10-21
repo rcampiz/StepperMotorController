@@ -5,13 +5,16 @@
  *
  *  - SYNTHWAVE: a sky with twinkling stars, a striped sun whose bands slide down,
  *    wireframe mountains or a lit skyline, and a perspective grid that scrolls toward the
- *    viewer. Every 30 s a new scene: another palette (sunset, Blade Runner amber, cyber,
+ *    viewer, and two VHS tracking bands rolling down over all of it (Graphics::VhsBands,
+ *    the motion indicator's). Every 30 s a new scene: another palette (sunset, Blade Runner amber, cyber,
  *    acid), horizon height, sun size and place, so no pixel holds one picture. Once per
  *    scene "STEPPER / MOTOR / CONTROLLER" fades in on three lines, Hotline Miami style
  *    (tall slanted block letters, hard offset shadow, dark outline, neon colours that flash),
  *    with the release ("v0.5.0", Harness::FW_VERSION) under it in smaller letters of the same
- *    cut, rocks and bobs like that game's menu for 10 s and fades out. Per frame the floor and the
- *    sun's box are repainted, and the title's box every other frame while it shows.
+ *    cut, rocks and bobs like that game's menu for 10 s and fades out. Per frame: the floor rows
+ *    a grid line left or reached (a floor row is one colour or one line, its verticals fixed),
+ *    the sun's box every other frame, the title's box while it shows, and the rows the bands
+ *    left and reached.
  *  - HOTLINE: a diagonal stripe band and a blocky SMC card with chromatic aberration,
  *    relaid every 2 s, with VHS glitch slices in between.
  *  - BLANK: a black panel, nothing sent.
@@ -22,6 +25,7 @@
 
 #include "ui/screen.hpp"
 #include "ui/screen_care.hpp"
+#include "graphics/vhs_bands/vhs_bands.hpp"
 #include <stdint.h>
 
 namespace UI {
@@ -38,7 +42,8 @@ public:
 
     // Synthwave scene geometry (public for the host tests)
     static constexpr uint16_t SCENE_FRAMES = 600;  ///< 30 s at 20 Hz, then a new scene
-    static constexpr uint16_t TITLE_START_FRAME = 100;   ///< the title starts 5 s into a scene
+    static constexpr uint16_t TITLE_START_FRAME = 20;    ///< the title starts 1 s into a scene (was 5 s:
+                                                         ///< the owner wanted it sooner, 2026-10-21)
     int16_t horizon() const { return m_horizon; }
     uint8_t palette() const { return m_palette; }
 
@@ -68,12 +73,21 @@ private:
     uint16_t m_sky[240] = {};              // sky colour per row (horizon < 240)
     uint8_t m_starX[STAR_COUNT] = {};
     uint8_t m_starY[STAR_COUNT] = {};
+    Graphics::VhsBands m_vhs;              // the tracking bands, on the frame clock
+    uint32_t m_vhsTicks = 0;
     void synthNewScene();
     void synthFullPaint(Services::ICanvas& lcd);
-    void synthFloor(Services::ICanvas& lcd);
+    bool floorLine(int16_t r, float phase) const;          // floor row r (1 = under the horizon) is a grid line
+    void floorRow(int16_t y, uint8_t* buf) const;          // a whole floor row, the bands over it
+    void synthRows(Services::ICanvas& lcd, int16_t first, int16_t last);   // sky or floor, whole rows
     void synthSunBox(Services::ICanvas& lcd);
     void synthTwinkle(Services::ICanvas& lcd);
     void synthTitle(Services::ICanvas& lcd, uint16_t t);
+    void synthPrepareTitle(uint16_t t);    // this frame's rock, bob and colours
+    /// Columns [xa, xb] of sky row y into buf (big-endian RGB565, buf[0] = column xa): the
+    /// scene by runs, the stars, the title as last prepared, the bands
+    void composeUpper(int16_t y, int16_t xa, int16_t xb, uint8_t* buf) const;
+    void synthUpperRows(Services::ICanvas& lcd, int16_t first, int16_t last);   // sky rows, all of each
     uint16_t synthUpper(int16_t x, int16_t y) const;   // sky, sun, mountains, horizon line
     void renderSynthwave(Services::ICanvas& lcd);
 

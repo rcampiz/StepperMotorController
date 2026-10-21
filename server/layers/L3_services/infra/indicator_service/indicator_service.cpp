@@ -33,25 +33,12 @@ constexpr float OUTLINE = 2.0f;
 constexpr int SCREEN_W = Services::Canvas::WIDTH;
 constexpr int SCREEN_H = Services::Canvas::HEIGHT;
 
-// The VHS tracking bands: rows, speed (px/s, downward), top row at t = 0, tear (px either way)
-constexpr int BAND_H[IndicatorService::BAND_COUNT] = {12, 6};
-constexpr uint32_t BAND_SPEED[IndicatorService::BAND_COUNT] = {24, 36};   // was 55, 90: too fast (owner 2026-10-21)
-constexpr uint32_t BAND_START[IndicatorService::BAND_COUNT] = {30, 200};
-constexpr int BAND_TEAR[IndicatorService::BAND_COUNT] = {9, 5};
-constexpr int BAND_STRIPE = 7;               // px per colour bar inside a band
-
 // The backdrop's colours (8-bit; packed per row, the odd rows a scanline darker)
 struct Rgb { int r, g, b; };
 constexpr Rgb VHS_LO = {20, 0, 40};
 constexpr Rgb VHS_HI = {70, 10, 100};
 constexpr Rgb SPECKLE = {200, 160, 255};
-constexpr Rgb BAND_CYAN = {5, 217, 232};
-constexpr Rgb BAND_HOT = {255, 0, 128};
-constexpr Rgb TRACK_LINE = {235, 220, 255};
-constexpr Rgb NOISE = {230, 230, 255};       // not white: the arrow's outline is
-constexpr int BAND_MIX = 115;                // 256ths of the bar colour over the backdrop
 constexpr int SPECKLE_PER_ROW = 7;           // ~3 % of the backdrop's pixels
-constexpr int NOISE_PER_ROW = 29;            // ~12 % of a band's
 
 const char HINT_TEXT[] = "hold CENTER 2s: menu";
 static_assert(sizeof HINT_TEXT - 1 == IndicatorService::HINT_CHARS, "the hint plate fits the hint");
@@ -63,13 +50,6 @@ inline Rgb mix(Rgb a, Rgb b, int q8) {
 inline uint16_t pack565(Rgb c, bool scanline) {
     if (scanline) c = {c.r * 205 / 256, c.g * 205 / 256, c.b * 205 / 256};
     return indicatorRgb(static_cast<uint8_t>(c.r), static_cast<uint8_t>(c.g), static_cast<uint8_t>(c.b));
-}
-
-/// 16 bits of noise for a pixel and a seed: integer only, a few cycles
-inline uint32_t hash16(uint32_t x, uint32_t y, uint32_t seed) {
-    uint32_t v = (x * 73856093u) ^ (y * 19349663u) ^ (seed * 83492791u);
-    v = (v ^ (v >> 13)) * 0x5BD1E995u;
-    return (v ^ (v >> 15)) & 0xFFFFu;
 }
 
 inline int floorToInt(float v) {
@@ -213,20 +193,14 @@ void IndicatorService::tick(uint32_t nowMs) {
     // BAND_MAX_WAIT_MS, one Display period) leaves them where they are: the arrow first
     const bool squareDirty = arrowDirty || ringsDirty;
     const bool stepBands = opened || !squareDirty || (nowMs - m_bandStepMs >= BAND_MAX_WAIT_MS);
-    int16_t oldTop[BAND_COUNT];
-    for (uint8_t i = 0; i < BAND_COUNT; i++) {
-        oldTop[i] = m_bandTop[i];
-        if (stepBands) {
-            m_bandTop[i] = static_cast<int16_t>((BAND_START[i] + static_cast<uint64_t>(nowMs) * BAND_SPEED[i] / 1000u) %
-                                                static_cast<uint32_t>(SCREEN_H));
-        }
-    }
+    if (opened) m_vhs.reset();
     if (stepBands) {
-        m_bandFrame++;
+        m_vhs.step(nowMs);
         m_bandStepMs = nowMs;
     }
 
     if (opened) {
+        m_holdDrawn = m_holdPct;
         paintRows(0, SCREEN_H - 1, 0, SCREEN_W - 1);              // the backdrop, the dial, the plates
         m_screenValid = true;
     }
@@ -250,19 +224,17 @@ void IndicatorService::tick(uint32_t nowMs) {
     renderReadout(arrowShown ? static_cast<int16_t>(m_speed + 0.5f) : -1,
                   tDir != 0 ? static_cast<int16_t>(m_turn + 0.5f) : -1, tDir);
 
-    // The bands: the rows each left and the rows it reached (its noise re-rolls every step)
+    // The hold-CENTER sweep: the hint plate alone
+    if (m_holdPct != m_holdDrawn) {
+        m_holdDrawn = m_holdPct;
+        paintRows(HINT_T, HINT_B, HINT_L, HINT_R);
+    }
+
+    // The bands: the rows each left and the rows it reached (the noise re-rolls every step).
+    // No wait for the tearing edge (~8 ms spun on average): a band caught mid-scan looks torn,
+    // which is what a tracking band looks like anyway
     if (stepBands && !opened) {
-        for (uint8_t i = 0; i < BAND_COUNT; i++) {
-            const int moved = (m_bandTop[i] - oldTop[i] + SCREEN_H) % SCREEN_H;
-            if (oldTop[i] < 0) {
-                paintBandRows(m_bandTop[i], BAND_H[i]);
-            } else if (moved <= BAND_H[i]) {
-                paintBandRows(oldTop[i], moved + BAND_H[i]);
-            } else {
-                paintBandRows(oldTop[i], BAND_H[i]);
-                paintBandRows(m_bandTop[i], BAND_H[i]);
-            }
-        }
+        m_vhs.dirtyRuns([this](int first, int last) { paintRows(first, last, 0, SCREEN_W - 1, false); });
     }
 }
 
@@ -365,56 +337,28 @@ void IndicatorService::composeRow(int y, int x0, int x1, uint8_t* buf) const {
     const Rgb base = mix(VHS_LO, VHS_HI, wave);
     const uint16_t cBase = pack565(base, scan);
     const uint16_t cSpeck = pack565(SPECKLE, scan);
-    int band = -1, r = 0;
-    for (int i = 0; i < BAND_COUNT && band < 0; i++) {
-        if (m_bandTop[i] < 0) continue;
-        const int rr = (y - m_bandTop[i] + SCREEN_H) % SCREEN_H;
-        if (rr < BAND_H[i]) { band = i; r = rr; }
-    }
+    const Graphics::VhsBands::Row band = m_vhs.row(y);
     auto backdrop = [&](int a, int b) {
         if (a < x0) a = x0;
         if (b > x1) b = x1;
         if (a > b) return;
-        // The speckle and the noise: so many dots a row at hashed columns (a hash a dot, not a
-        // hash a pixel); a pure function of the pixel, so overlapping repaints agree
-        auto scatter = [&](int count, uint32_t seed, uint16_t colour) {
-            const uint16_t v = swapped(colour);
-            for (int k = 0; k < count; k++) {
-                const int x = static_cast<int>(hash16(static_cast<uint32_t>(k), static_cast<uint32_t>(y), seed) % SCREEN_W);
-                if (x >= a && x <= b) px[x] = v;
-            }
-        };
-        if (band < 0) {
-            fill(a, b, cBase);
-            scatter(SPECKLE_PER_ROW, 0, cSpeck);
-            return;
+        // The speckle: so many dots a row at hashed columns (a hash a dot, not a hash a
+        // pixel); a pure function of the pixel, so overlapping repaints agree
+        fill(a, b, cBase);
+        const uint16_t speck = swapped(cSpeck);
+        for (int k = 0; k < SPECKLE_PER_ROW; k++) {
+            const int x = static_cast<int>(Graphics::VhsBands::hash16(static_cast<uint32_t>(k), static_cast<uint32_t>(y), 0) % SCREEN_W);
+            if (x >= a && x <= b) px[x] = speck;
         }
-        if (r == 0) {                                           // the bright tracking line
-            fill(a, b, pack565(TRACK_LINE, scan));
-            return;
-        }
-        const uint16_t sBar[2] = {swapped(pack565(mix(base, BAND_HOT, BAND_MIX), scan)),
-                                  swapped(pack565(mix(base, BAND_CYAN, BAND_MIX), scan))};
-        const int tear = BAND_TEAR[band];
-        const int shift = static_cast<int>(hash16(static_cast<uint32_t>(r), m_bandFrame, static_cast<uint32_t>(band + 1)) %
-                                           static_cast<uint32_t>(2 * tear + 1)) - tear + 10 * BAND_STRIPE;
-        int bar = ((a + shift) / BAND_STRIPE) & 1;              // the colour bars, a run at a time
-        int x = a;
-        int run = BAND_STRIPE - (a + shift) % BAND_STRIPE;
-        while (x <= b) {
-            const int end = (x + run - 1 < b) ? x + run - 1 : b;
-            for (const uint16_t v = sBar[bar]; x <= end; x++) px[x] = v;
-            bar ^= 1;
-            run = BAND_STRIPE;
-        }
-        scatter(NOISE_PER_ROW, m_bandFrame + 7u, pack565(NOISE, scan));
+        band.apply(buf, x0, a, b);                              // the tracking bands over it
     };
     backdrop(x0, ia - 1);
     backdrop(ib + 1, x1);
     if (ia > ib || ib < x0 || ia > x1) return;
 
     // --- a plate: a dark panel with text in the medium font ---------------------------------
-    auto text = [&](const char* s, int n, int tx, int ty, uint16_t fg, bool shadow) {
+    // split: the columns left of it take fgLeft (the hold sweep)
+    auto text = [&](const char* s, int n, int tx, int ty, uint16_t fg, bool shadow, int split, uint16_t fgLeft) {
         const int gy = y - ty;
         for (int c = 0; c < n && s[c] != '\0'; c++) {
             const uint8_t* g = m_lcd->mediumGlyphRows(s[c]);
@@ -425,7 +369,7 @@ void IndicatorService::composeRow(int y, int x0, int x1, uint8_t* buf) const {
                 const int x = tx + c * TEXT_W + b;
                 if (x < x0 || x > x1) continue;
                 const uint8_t m = static_cast<uint8_t>(0x80u >> b);
-                if (cur & m) set(x, fg);
+                if (cur & m) set(x, x < split ? fgLeft : fg);
                 else if (under & m) set(x, READOUT_SHADOW);
             }
         }
@@ -435,10 +379,12 @@ void IndicatorService::composeRow(int y, int x0, int x1, uint8_t* buf) const {
             const bool edge = (y == READOUT_T || y == READOUT_B);
             fill(ia, ib, edge ? PLATE_RIM : DIAL_BG);
             if (!edge) { fill(ia, ia, PLATE_RIM); fill(ib, ib, PLATE_RIM); }
-            text(m_readout, READOUT_CHARS, READOUT_X, READOUT_Y, READOUT_COLOR, true);
+            text(m_readout, READOUT_CHARS, READOUT_X, READOUT_Y, READOUT_COLOR, true, -1, 0);
         } else {
-            fill(ia, ib, DIAL_BG);
-            text(HINT_TEXT, HINT_CHARS, HINT_X, HINT_Y, HINT_COLOR, false);
+            const int sweep = HINT_L + (HINT_R - HINT_L + 1) * m_holdDrawn / 100;   // filled: < sweep
+            fill(ia, sweep - 1, HOLD_FILL);
+            fill(sweep, ib, DIAL_BG);
+            text(HINT_TEXT, HINT_CHARS, HINT_X, HINT_Y, HINT_COLOR, false, sweep, HOLD_TEXT);
         }
         return;
     }
@@ -539,17 +485,6 @@ void IndicatorService::paintRows(int top, int bottom, int x0, int x1, bool onTea
     }
     if (inBlock > 0) m_lcd->streamBitmapData(block, static_cast<size_t>(inBlock) * rowBytes);
     m_lcd->streamBitmapEnd();
-}
-
-void IndicatorService::paintBandRows(int top, int count) {
-    // No wait for the tearing edge (~8 ms spun on average): a band caught mid-scan looks torn,
-    // which is what a tracking band looks like anyway
-    if (top + count <= SCREEN_H) {
-        paintRows(top, top + count - 1, 0, SCREEN_W - 1, false);
-    } else {                                                    // wraps past the bottom
-        paintRows(top, SCREEN_H - 1, 0, SCREEN_W - 1, false);
-        paintRows(0, top + count - 1 - SCREEN_H, 0, SCREEN_W - 1, false);
-    }
 }
 
 void IndicatorService::renderReadout(int16_t speedPct, int16_t turnPct, int8_t dir) {

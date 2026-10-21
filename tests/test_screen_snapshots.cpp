@@ -288,7 +288,9 @@ TEST(saver_styles_animate_and_any_key_leaves) {
     rig.frame(); rig.frame();
     const uint32_t perTwo = rig.panel.pixelsWritten - full;
     printf("  saver: full scene %u px, two animation frames %u px\n", full, perTwo);
-    EXPECT_TRUE(perTwo > 2u * 240u * 80u && perTwo < 240u * 320u);    // the floor and the sun box, not the sky
+    // the floor rows a grid line moved through, the sun box and the bands' rows: not the whole
+    // floor (it was, 40-80 KB a frame) and not the sky
+    EXPECT_TRUE(perTwo > 2u * 240u * 4u && perTwo < 2u * 240u * 60u);
     for (int i = 0; i < 10; i++) rig.frame();
     rig.dump("saver_synth_later");
     // the title fades in 5 s in and rocks; a new scene at 30 s has another palette and horizon
@@ -530,6 +532,17 @@ TEST(motion_indicator_shows_heading_speed_and_turn_magnitudes) {
     rig.dump("indicator_full");
     EXPECT_TRUE(rig.panel.countColor(Ind::RING_UNLIT, 20, 60, 200, 200) == 0);
     EXPECT_TRUE(rig.panel.countColor(Ind::RING_LIT, 20, 60, 200, 32) > lit40);
+    // holding CENTER: the hint plate fills from the left (the press is seen to register)
+    ind.setHoldProgress(50);
+    indTick(ind);
+    rig.dump("indicator_hold");
+    const uint16_t plateW = Ind::HINT_R - Ind::HINT_L + 1;
+    const uint32_t swept = rig.panel.countColor(Ind::HOLD_FILL, Ind::HINT_L, Ind::HINT_T, plateW / 2, Ind::HINT_B - Ind::HINT_T + 1);
+    EXPECT_TRUE(swept > 300u);                                                        // the left half filled
+    EXPECT_EQ(rig.panel.countColor(Ind::HOLD_FILL, Ind::HINT_L + plateW / 2 + 1, Ind::HINT_T, plateW / 2 - 1, 16), 0u);
+    ind.setHoldProgress(0);                                                           // let go: the plate clears
+    indTick(ind);
+    EXPECT_EQ(rig.panel.countColor(Ind::HOLD_FILL, Ind::HINT_L, Ind::HINT_T, plateW, 16), 0u);
     // nothing to show: the zones go dark
     ind.clear();
     settle(ind);

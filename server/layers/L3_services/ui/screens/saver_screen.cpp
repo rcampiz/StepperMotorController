@@ -6,6 +6,7 @@
 #include "ui/screens/saver_screen.hpp"
 #include "ui/theme.hpp"
 #include "ui/display_scratch.hpp"
+#include "graphics/primitives/primitives.hpp"
 #include "harness/defs/harness_l3_l4.hpp"
 #include "harness/pins/protocol_version.hpp"
 #include <string.h>
@@ -313,7 +314,7 @@ constexpr uint16_t VER_TOP_INK = rgb(250, 255, 255), VER_BOTTOM_INK = rgb(40, 22
 constexpr uint16_t VER_SHADOW_INK = rgb(255, 20, 170);
 constexpr uint16_t FLASH_FRAMES = 16;                   // a new colour step every 0.8 s
 // Fade in, hold, fade out (frames at 20 Hz)
-constexpr uint16_t FADE_FRAMES = 16;
+constexpr uint16_t FADE_FRAMES = 8;                     // 0.4 s (was 0.8: sooner, owner 2026-10-21)
 constexpr uint16_t HOLD_TITLE_FRAMES = 200;
 
 const uint8_t* glyphFor(char c) {
@@ -453,6 +454,39 @@ void buildTitleMask() {
     s_maskBuilt = true;
 }
 
+/// Rows streamed ScratchRow::ROWS a call (a call per row cost ~0.2 ms of lock and DMA set-up,
+/// ~1500 a second: bench 2026-10-21): compose(y, buf) fills one row of w pixels
+template <typename Compose>
+void streamRows(Services::ICanvas& lcd, int16_t x0, int16_t y0, int16_t w, int16_t rows, Compose compose)
+{
+    if (w <= 0 || rows <= 0) return;
+    ScratchRow lease;                       // the Display task's shared rows
+    uint8_t* const block = lease.data();
+    const size_t rowBytes = static_cast<size_t>(w) * 2;
+    lcd.streamBitmapStart(static_cast<uint16_t>(x0), static_cast<uint16_t>(y0), static_cast<uint16_t>(w),
+                          static_cast<uint16_t>(rows));
+    size_t k = 0;
+    for (int16_t r = 0; r < rows; r++) {
+        compose(static_cast<int16_t>(y0 + r), block + k * rowBytes);
+        if (++k == ScratchRow::ROWS) {
+            lcd.streamBitmapData(block, k * rowBytes);
+            k = 0;
+        }
+    }
+    if (k > 0) lcd.streamBitmapData(block, k * rowBytes);
+    lcd.streamBitmapEnd();
+}
+
+// The title as last prepared (synthPrepareTitle): the box repaint and the band rows that
+// cross it between repaints compose the same pixels from it
+struct TitleFrame {
+    int32_t sa = 0, ca = 65536, cx = 0, cy = 0;
+    uint16_t face[3][TITLE_LINE_H] = {};
+    uint16_t shadow[3] = {};
+    uint16_t verFace[VER_H] = {};
+};
+TitleFrame s_tf;
+
 } // namespace
 
 void SaverScreen::synthNewScene()
@@ -572,71 +606,166 @@ uint16_t SaverScreen::synthUpper(int16_t x, int16_t y) const
     return sky;
 }
 
+void SaverScreen::composeUpper(int16_t y, int16_t xa, int16_t xb, uint8_t* buf) const
+{
+    // By runs, not a scene call a pixel (bench 2026-10-21: the title's frames took ~200 ms, 5
+    // frames/s): the row's sky colour, the sun's span (its disc one colour a row, the glow a
+    // mix a pixel), the scene a pixel only where the mountains or buildings reach the row
+    const Palette& P = PALETTES[m_palette];
+    auto put = [&](int16_t x, uint16_t c) {
+        buf[(x - xa) * 2] = static_cast<uint8_t>(c >> 8);
+        buf[(x - xa) * 2 + 1] = static_cast<uint8_t>(c & 0xFF);
+    };
+    auto fill = [&](int16_t a, int16_t b, uint16_t c) {
+        for (int16_t x = a < xa ? xa : a; x <= (b > xb ? xb : b); x++) put(x, c);
+    };
+    if (y == m_horizon) {
+        fill(xa, xb, P.horizon);
+    } else {
+        const uint16_t sky = m_sky[y];
+        fill(xa, xb, sky);
+        const int16_t sunCY = static_cast<int16_t>(m_horizon - m_sunR / 2);
+        const int32_t dy = y - sunCY;
+        const int32_t r2 = static_cast<int32_t>(m_sunR) * m_sunR;
+        const int32_t glowR = m_sunR + 7, g2 = glowR * glowR;
+        if (dy * dy <= g2) {
+            const int16_t gx = Graphics::isqrt16(g2 - dy * dy);
+            const int16_t rel = static_cast<int16_t>(y - (sunCY - m_sunR));
+            uint16_t disc = mix(P.sunTop, P.sunBottom, rel * 256 / (2 * m_sunR));
+            const int16_t bandStart = static_cast<int16_t>(sunCY - m_sunR / 5);
+            if (y >= bandStart) {
+                const int gap = 1 + (y - bandStart) / 10;                // bands widen downward
+                if (((y + m_stripe) % 9) < gap) disc = sky;
+            }
+            const int16_t a = static_cast<int16_t>(m_sunX - gx < xa ? xa : m_sunX - gx);
+            const int16_t b = static_cast<int16_t>(m_sunX + gx > xb ? xb : m_sunX + gx);
+            for (int16_t x = a; x <= b; x++) {
+                const int32_t dx = x - m_sunX;
+                const int32_t d2 = dx * dx + dy * dy;
+                put(x, d2 <= r2 ? disc : mix(P.glow, sky, static_cast<int>((d2 - r2) * 256 / (g2 - r2))));
+            }
+        }
+        for (int16_t x = xa; x <= xb; x++) {                             // mountains / buildings
+            if (y >= m_horizon - m_ridge[x]) put(x, synthUpper(x, y));
+        }
+    }
+
+    // The stars (not under the title's box while it shows: its repaint never had them)
+    const bool titleUp = m_titleAlpha > 0;
+    const bool inBoxRows = y >= m_titleY && y < m_titleY + 2 * BOX_HH;
+    for (uint8_t i = 0; i < STAR_COUNT; i++) {
+        if (m_starY[i] != y || m_starX[i] < xa || m_starX[i] > xb) continue;
+        if (titleUp && inBoxRows && m_starX[i] >= m_titleX && m_starX[i] < m_titleX + 2 * BOX_HW) continue;
+        put(m_starX[i], (i % 3) ? STAR_DIM : STAR);
+    }
+
+    // The title at m_titleAlpha, rocked and bobbed: each pixel inverse-rotated into the mask,
+    // stepped along the row
+    if (titleUp && inBoxRows) {
+        const int16_t a = m_titleX < xa ? xa : m_titleX;
+        const int16_t b = static_cast<int16_t>(m_titleX + 2 * BOX_HW - 1 > xb ? xb : m_titleX + 2 * BOX_HW - 1);
+        const int32_t dy = y - s_tf.cy;
+        int32_t mx = (MW / 2) * 65536 + (a - s_tf.cx) * s_tf.ca + dy * s_tf.sa;
+        int32_t my = (MH / 2) * 65536 - (a - s_tf.cx) * s_tf.sa + dy * s_tf.ca;
+        for (int16_t x = a; x <= b; x++, mx += s_tf.ca, my -= s_tf.sa) {
+            const int16_t ix = static_cast<int16_t>((mx + 32768) >> 16), iy = static_cast<int16_t>((my + 32768) >> 16);
+            const uint8_t m = maskAt(ix, iy);
+            if (m == 0) continue;
+            uint16_t c;
+            const int16_t ty = static_cast<int16_t>(iy - 1);
+            int16_t line = static_cast<int16_t>(ty / TITLE_PITCH);
+            if (line < 0) line = 0;
+            if (line > 2) line = 2;
+            if (ty >= VER_TOP - 1) {                      // the version line, its outline included
+                int16_t ly = static_cast<int16_t>(ty - VER_TOP);
+                if (ly < 0) ly = 0;
+                if (ly >= VER_H) ly = VER_H - 1;
+                c = (m == 3) ? s_tf.verFace[ly] : (m == 2 ? VER_SHADOW_INK : TITLE_OUTLINE);
+            } else if (m == 3) {
+                int16_t ly = static_cast<int16_t>(ty - line * TITLE_PITCH);
+                if (ly < 0) ly = 0;
+                if (ly >= TITLE_LINE_H) ly = TITLE_LINE_H - 1;
+                c = s_tf.face[line][ly];
+            } else if (m == 2) {
+                c = s_tf.shadow[line];
+            } else {
+                c = TITLE_OUTLINE;
+            }
+            if (m_titleAlpha < 256) {
+                const uint16_t under = static_cast<uint16_t>((buf[(x - xa) * 2] << 8) | buf[(x - xa) * 2 + 1]);
+                c = mix(under, c, m_titleAlpha);
+            }
+            put(x, c);
+        }
+    }
+    m_vhs.row(y).apply(buf, xa, xa, xb);
+}
+
+void SaverScreen::synthUpperRows(Services::ICanvas& lcd, int16_t first, int16_t last)
+{
+    // Whole rows of the sky
+    if (last > m_horizon) last = m_horizon;
+    if (first < 0) first = 0;
+    if (first > last) return;
+    streamRows(lcd, 0, first, W, static_cast<int16_t>(last - first + 1),
+               [&](int16_t y, uint8_t* buf) { composeUpper(y, 0, W - 1, buf); });
+}
+
 void SaverScreen::synthFullPaint(Services::ICanvas& lcd)
 {
     lcd.waitForVSync();
-    {
-        ScratchRow lease;                   // the Display task's shared row; given back before synthFloor
-        uint8_t* const row = lease.data();
-        lcd.streamBitmapStart(0, 0, W, static_cast<uint16_t>(m_horizon + 1));
-        for (int16_t y = 0; y <= m_horizon; y++) {
-            for (int16_t x = 0; x < W; x++) {
-                const uint16_t c = synthUpper(x, y);
-                row[x * 2] = static_cast<uint8_t>(c >> 8);
-                row[x * 2 + 1] = static_cast<uint8_t>(c & 0xFF);
-            }
-            lcd.streamBitmapData(row, ScratchRow::BYTES);
-        }
-        lcd.streamBitmapEnd();
-    }
-    for (uint8_t i = 0; i < STAR_COUNT; i++) {
-        lcd.drawPixel(m_starX[i], m_starY[i], (i % 3) ? STAR_DIM : STAR);
-    }
-    synthFloor(lcd);
+    synthRows(lcd, 0, H - 1);
 }
 
-void SaverScreen::synthFloor(Services::ICanvas& lcd)
+bool SaverScreen::floorLine(int16_t r, float phase) const
+{
+    if (r < MIN_LINE_ROW) return false;                              // crowded: no lines up there
+    const float depth = GRID_K / static_cast<float>(r);
+    const int n = static_cast<int>(depth + phase + 0.5f);
+    const float off = GRID_K / (static_cast<float>(n) - phase) - static_cast<float>(r);
+    return n > 0 && off > -0.5f && off <= 0.5f;
+}
+
+void SaverScreen::floorRow(int16_t y, uint8_t* row) const
 {
     const Palette& P = PALETTES[m_palette];
-    ScratchRow lease;                       // the Display task's shared row
-    uint8_t* const row = lease.data();
     const int16_t rows = static_cast<int16_t>(H - m_horizon - 1);
-    lcd.streamBitmapStart(0, static_cast<uint16_t>(m_horizon + 1), W, static_cast<uint16_t>(rows));
-    for (int16_t r = 1; r <= rows; r++) {
-        const uint16_t bg = mix(P.floorFar, P.floorNear, r * 256 / rows);
-        const int fade = 80 + r * 176 / rows;                            // far lines dimmer
-        const uint16_t line = mix(bg, P.grid, fade);
-        const float depth = GRID_K / static_cast<float>(r);
-        const int n = static_cast<int>(depth + m_phase + 0.5f);
-        const float lineRow = GRID_K / (static_cast<float>(n) - m_phase);
-        const float off = lineRow - static_cast<float>(r);
-        const bool crowded = r < MIN_LINE_ROW;
-        const bool horizontal = !crowded && (off > -0.5f && off <= 0.5f) && n > 0;
-        for (int16_t x = 0; x < W; x++) {
-            const uint16_t c = horizontal ? line : bg;
-            row[x * 2] = static_cast<uint8_t>(c >> 8);
-            row[x * 2 + 1] = static_cast<uint8_t>(c & 0xFF);
-        }
-        const float span = GRID_STEP * static_cast<float>(r) / static_cast<float>(rows > 0 ? rows : 1) *
-                           (static_cast<float>(rows) / 119.0f);          // same spacing whatever the horizon
-        if (!horizontal && span >= 7.0f) {
-            for (int j = -14; j <= 14; j++) {
-                const int x = static_cast<int>(W / 2 + j * span + (j >= 0 ? 0.5f : -0.5f));
-                if (x >= 0 && x < W) {
-                    row[x * 2] = static_cast<uint8_t>(line >> 8);
-                    row[x * 2 + 1] = static_cast<uint8_t>(line & 0xFF);
-                }
+    const int16_t r = static_cast<int16_t>(y - m_horizon);
+    const uint16_t bg = mix(P.floorFar, P.floorNear, r * 256 / rows);
+    const int fade = 80 + r * 176 / rows;                                // far lines dimmer
+    const uint16_t line = mix(bg, P.grid, fade);
+    const bool horizontal = floorLine(r, m_phase);
+    for (int16_t x = 0; x < W; x++) {
+        const uint16_t c = horizontal ? line : bg;
+        row[x * 2] = static_cast<uint8_t>(c >> 8);
+        row[x * 2 + 1] = static_cast<uint8_t>(c & 0xFF);
+    }
+    const float span = GRID_STEP * static_cast<float>(r) / static_cast<float>(rows > 0 ? rows : 1) *
+                       (static_cast<float>(rows) / 119.0f);              // same spacing whatever the horizon
+    if (!horizontal && span >= 7.0f) {
+        for (int j = -14; j <= 14; j++) {
+            const int x = static_cast<int>(W / 2 + j * span + (j >= 0 ? 0.5f : -0.5f));
+            if (x >= 0 && x < W) {
+                row[x * 2] = static_cast<uint8_t>(line >> 8);
+                row[x * 2 + 1] = static_cast<uint8_t>(line & 0xFF);
             }
         }
-        lcd.streamBitmapData(row, ScratchRow::BYTES);
     }
-    lcd.streamBitmapEnd();
+    m_vhs.row(y).apply(row, 0, 0, W - 1);
+}
+
+void SaverScreen::synthRows(Services::ICanvas& lcd, int16_t first, int16_t last)
+{
+    // Whole rows: the sky's above the horizon, the floor's below it
+    if (first < 0) first = 0;
+    if (last > H - 1) last = H - 1;
+    if (first <= m_horizon) synthUpperRows(lcd, first, last < m_horizon ? last : m_horizon);
+    const int16_t f = first > m_horizon ? first : static_cast<int16_t>(m_horizon + 1);
+    if (f <= last) streamRows(lcd, 0, f, W, static_cast<int16_t>(last - f + 1), [&](int16_t y, uint8_t* buf) { floorRow(y, buf); });
 }
 
 void SaverScreen::synthSunBox(Services::ICanvas& lcd)
 {
-    ScratchRow lease;                       // the Display task's shared row
-    uint8_t* const row = lease.data();
     const int16_t sunCY = static_cast<int16_t>(m_horizon - m_sunR / 2);
     int16_t y0 = static_cast<int16_t>(sunCY - m_sunR / 5);              // the banded part only
     int16_t x0 = static_cast<int16_t>(m_sunX - m_sunR);
@@ -646,97 +775,38 @@ void SaverScreen::synthSunBox(Services::ICanvas& lcd)
     // Keep clear of the title while it shows (it repaints its own rows)
     if (m_titleAlpha > 0 && y0 < m_titleY + 2 * BOX_HH) y0 = static_cast<int16_t>(m_titleY + 2 * BOX_HH);
     if (y0 >= m_horizon) return;
-    const uint16_t w = static_cast<uint16_t>(x1 - x0 + 1);
-    lcd.streamBitmapStart(static_cast<uint16_t>(x0), static_cast<uint16_t>(y0), w,
-                          static_cast<uint16_t>(m_horizon - y0));
-    for (int16_t y = y0; y < m_horizon; y++) {
-        for (int16_t x = x0; x <= x1; x++) {
-            const uint16_t c = synthUpper(x, y);
-            row[(x - x0) * 2] = static_cast<uint8_t>(c >> 8);
-            row[(x - x0) * 2 + 1] = static_cast<uint8_t>(c & 0xFF);
-        }
-        lcd.streamBitmapData(row, static_cast<size_t>(w) * 2);
+    streamRows(lcd, x0, y0, static_cast<int16_t>(x1 - x0 + 1), static_cast<int16_t>(m_horizon - y0),
+               [&](int16_t y, uint8_t* buf) { composeUpper(y, x0, x1, buf); });
+}
+
+void SaverScreen::synthPrepareTitle(uint16_t t)
+{
+    // This frame's angle (sin a ~ a, cos a ~ 1 - a^2/2, Q16) and bob, and the colours: each
+    // line one step along the flash cycle, a vertical gradient on the faces
+    buildTitleMask();
+    s_tf.sa = ROCK_Q16 * sinApprox(static_cast<int32_t>(t) * 1024 / ROCK_FRAMES, 1024) / 1024;
+    s_tf.ca = 65536 - (s_tf.sa * s_tf.sa) / (2 * 65536);
+    const int16_t bob = sinApprox(static_cast<int32_t>(t) * 1024 / BOB_FRAMES + 256, BOB);
+    s_tf.cx = m_titleX + BOX_HW;                          // where the mask's centre lands
+    s_tf.cy = m_titleY + BOX_HH + bob;
+    const uint8_t step = static_cast<uint8_t>((t / FLASH_FRAMES) % 3);
+    for (int line = 0; line < 3; line++) {
+        const TitleInk& k = TITLE_INKS[(step + line) % 3];
+        s_tf.shadow[line] = k.shadow;
+        for (int ly = 0; ly < TITLE_LINE_H; ly++) s_tf.face[line][ly] = mix(k.top, k.bottom, ly * 256 / (TITLE_LINE_H - 1));
     }
-    lcd.streamBitmapEnd();
+    for (int ly = 0; ly < VER_H; ly++) s_tf.verFace[ly] = mix(VER_TOP_INK, VER_BOTTOM_INK, ly * 256 / (VER_H - 1));
 }
 
 void SaverScreen::synthTitle(Services::ICanvas& lcd, uint16_t t)
 {
-    // The title's box: the scene underneath, the title over it at m_titleAlpha, rocked by a
-    // small angle and bobbed, composited row by row from the mask (inverse-rotating each
-    // pixel into it). At alpha 0 it is just the scene, stars put back.
-    buildTitleMask();
-    ScratchRow lease;                       // the Display task's shared row
-    uint8_t* const row = lease.data();
-    const int16_t x0 = m_titleX, y0 = m_titleY;
-    const int16_t w = static_cast<int16_t>(2 * BOX_HW), rows = static_cast<int16_t>(2 * BOX_HH);
-    const int a = m_titleAlpha;
-
-    // This frame's angle (sin a ~ a, cos a ~ 1 - a^2/2, Q16) and bob
-    const int32_t sa = ROCK_Q16 * sinApprox(static_cast<int32_t>(t) * 1024 / ROCK_FRAMES, 1024) / 1024;
-    const int32_t ca = 65536 - (sa * sa) / (2 * 65536);
-    const int16_t bob = sinApprox(static_cast<int32_t>(t) * 1024 / BOB_FRAMES + 256, BOB);
-    // Colours: each line one step along the flash cycle, a vertical gradient on the faces
-    const uint8_t step = static_cast<uint8_t>((t / FLASH_FRAMES) % 3);
-    uint16_t face[3][TITLE_LINE_H];
-    uint16_t shadow[3];
-    for (int line = 0; line < 3; line++) {
-        const TitleInk& k = TITLE_INKS[(step + line) % 3];
-        shadow[line] = k.shadow;
-        for (int ly = 0; ly < TITLE_LINE_H; ly++) face[line][ly] = mix(k.top, k.bottom, ly * 256 / (TITLE_LINE_H - 1));
-    }
-    uint16_t verFace[VER_H];                              // the version's colours do not flash
-    for (int ly = 0; ly < VER_H; ly++) verFace[ly] = mix(VER_TOP_INK, VER_BOTTOM_INK, ly * 256 / (VER_H - 1));
-
-    const int32_t cx = x0 + BOX_HW, cy = y0 + BOX_HH + bob;   // where the mask's centre lands
-    lcd.streamBitmapStart(static_cast<uint16_t>(x0), static_cast<uint16_t>(y0), static_cast<uint16_t>(w),
-                          static_cast<uint16_t>(rows));
-    for (int16_t y = y0; y < y0 + rows; y++) {
-        const int32_t dy = y - cy;
-        // mask coordinates of the row's first pixel, Q16, then step along the row
-        int32_t mx = (MW / 2) * 65536 + (x0 - cx) * ca + dy * sa;
-        int32_t my = (MH / 2) * 65536 - (x0 - cx) * sa + dy * ca;
-        for (int16_t x = x0; x < x0 + w; x++, mx += ca, my -= sa) {
-            uint16_t c;
-            const int16_t ix = static_cast<int16_t>((mx + 32768) >> 16), iy = static_cast<int16_t>((my + 32768) >> 16);
-            const uint8_t m = a > 0 ? maskAt(ix, iy) : 0;
-            if (m == 0) {
-                c = synthUpper(x, y);
-            } else {
-                const int16_t ty = static_cast<int16_t>(iy - 1);
-                int16_t line = static_cast<int16_t>(ty / TITLE_PITCH);
-                if (line < 0) line = 0;
-                if (line > 2) line = 2;
-                if (ty >= VER_TOP - 1) {                      // the version line, its outline included
-                    int16_t ly = static_cast<int16_t>(ty - VER_TOP);
-                    if (ly < 0) ly = 0;
-                    if (ly >= VER_H) ly = VER_H - 1;
-                    c = (m == 3) ? verFace[ly] : (m == 2 ? VER_SHADOW_INK : TITLE_OUTLINE);
-                } else if (m == 3) {
-                    int16_t ly = static_cast<int16_t>(ty - line * TITLE_PITCH);
-                    if (ly < 0) ly = 0;
-                    if (ly >= TITLE_LINE_H) ly = TITLE_LINE_H - 1;
-                    c = face[line][ly];
-                } else if (m == 2) {
-                    c = shadow[line];
-                } else {
-                    c = TITLE_OUTLINE;
-                }
-                if (a < 256) c = mix(synthUpper(x, y), c, a);
-            }
-            row[(x - x0) * 2] = static_cast<uint8_t>(c >> 8);
-            row[(x - x0) * 2 + 1] = static_cast<uint8_t>(c & 0xFF);
-        }
-        lcd.streamBitmapData(row, static_cast<size_t>(w) * 2);
-    }
-    lcd.streamBitmapEnd();
-    if (a == 0) {                                        // the stars that were under it
-        for (uint8_t i = 0; i < STAR_COUNT; i++) {
-            if (m_starX[i] >= x0 && m_starX[i] < x0 + w && m_starY[i] >= y0 && m_starY[i] < y0 + rows) {
-                lcd.drawPixel(m_starX[i], m_starY[i], (i % 3) ? STAR_DIM : STAR);
-            }
-        }
-    }
+    // The title's box: the scene underneath, the title over it at m_titleAlpha, the bands over
+    // both. At alpha 0 it is just the scene, stars included.
+    synthPrepareTitle(t);
+    const int16_t x0 = m_titleX;
+    const int16_t w = static_cast<int16_t>(2 * BOX_HW);
+    streamRows(lcd, x0, m_titleY, w, static_cast<int16_t>(2 * BOX_HH),
+               [&](int16_t y, uint8_t* buf) { composeUpper(y, x0, static_cast<int16_t>(x0 + w - 1), buf); });
 }
 
 void SaverScreen::synthTwinkle(Services::ICanvas& lcd)
@@ -744,6 +814,7 @@ void SaverScreen::synthTwinkle(Services::ICanvas& lcd)
     const Palette& P = PALETTES[m_palette];
     for (int k = 0; k < 3; k++) {
         const uint8_t i = static_cast<uint8_t>(nextRandom() % STAR_COUNT);
+        if (m_vhs.covers(m_starY[i])) continue;           // a dot would punch through a band
         if (m_titleAlpha > 0 && m_starX[i] >= m_titleX && m_starX[i] < m_titleX + 2 * BOX_HW &&
             m_starY[i] >= m_titleY && m_starY[i] < m_titleY + 2 * BOX_HH) continue;
         const uint32_t r = nextRandom() % 4;
@@ -754,21 +825,26 @@ void SaverScreen::synthTwinkle(Services::ICanvas& lcd)
 
 void SaverScreen::renderSynthwave(Services::ICanvas& lcd)
 {
+    m_vhsTicks++;                              // the bands' clock: 50 ms a frame
     if (!m_synthReady || m_frame >= SCENE_FRAMES) {
         m_seedScene = nextRandom();
         synthNewScene();
+        m_vhs.reset();
+        m_vhs.step(m_vhsTicks * 50u);
         synthFullPaint(lcd);
         m_synthReady = true;
         m_frame = 0;
         return;
     }
     m_frame++;
+    m_vhs.step(m_vhsTicks * 50u);
+    const float oldPhase = m_phase;
     m_phase += 0.05f;                          // the floor comes toward the viewer
     if (m_phase >= 1.0f) m_phase -= 1.0f;
     lcd.waitForVSync();
-    // Once per scene the name fades in, rocks and flashes for a while, and fades out. It
-    // repaints on odd frames (the sun's stripes take the even ones), and once more at the end
-    // to leave the sky clean.
+    // Once per scene the name fades in, rocks and flashes for a while, and fades out; its box
+    // repaints every frame (it was every other frame, the sun's stripes taking the others: the
+    // text looked choppy, owner 2026-10-21), and once more at the end to leave the sky clean.
     if (m_frame >= TITLE_START_FRAME && m_frame <= TITLE_START_FRAME + 2 * FADE_FRAMES + HOLD_TITLE_FRAMES) {
         const uint16_t t = static_cast<uint16_t>(m_frame - TITLE_START_FRAME);
         const uint16_t last = 2 * FADE_FRAMES + HOLD_TITLE_FRAMES;
@@ -776,7 +852,7 @@ void SaverScreen::renderSynthwave(Services::ICanvas& lcd)
         if (t < FADE_FRAMES) a = static_cast<uint16_t>((t + 1) * 256 / FADE_FRAMES);
         else if (t < FADE_FRAMES + HOLD_TITLE_FRAMES) a = 256;
         else a = static_cast<uint16_t>((last - t) * 256 / FADE_FRAMES);
-        if ((m_frame & 1) != 0 || t == last) {
+        {
             m_titleAlpha = a;
             synthTitle(lcd, t);
         }
@@ -785,7 +861,22 @@ void SaverScreen::renderSynthwave(Services::ICanvas& lcd)
         m_stripe = static_cast<uint8_t>((m_stripe + 8) % 9);   // bands slide down one row
         synthSunBox(lcd);
     }
-    synthFloor(lcd);
+    // The floor rows a grid line left or reached, in runs (it was the whole floor every frame,
+    // 40-80 KB: bench 2026-10-21, 8 frames/s while the title showed)
+    const int16_t floorRows = static_cast<int16_t>(H - m_horizon - 1);
+    int16_t runStart = -1;
+    for (int16_t r = 1; r <= floorRows + 1; r++) {
+        const bool changed = r <= floorRows && floorLine(r, oldPhase) != floorLine(r, m_phase);
+        if (changed && runStart < 0) runStart = r;
+        if (!changed && runStart >= 0) {
+            synthRows(lcd, static_cast<int16_t>(m_horizon + runStart), static_cast<int16_t>(m_horizon + r - 1));
+            runStart = -1;
+        }
+    }
+    // The rows the bands left and reached, sky or floor
+    m_vhs.dirtyRuns([&](int first, int last) {
+        synthRows(lcd, static_cast<int16_t>(first), static_cast<int16_t>(last));
+    });
     if ((m_frame % 6) == 0) synthTwinkle(lcd);
 }
 

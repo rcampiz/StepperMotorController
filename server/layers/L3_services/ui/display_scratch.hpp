@@ -8,7 +8,9 @@
  * into another user. Nothing here locks: a second task must never take these.
  *
  * - ScratchRow: one RGB565 panel row (480 B) for code that composes a row and streams it
- *   (streamBitmapStart / Data / End). Take it as a local lease for the length of the stream:
+ *   (streamBitmapStart / Data / End), with room for ROWS rows for code that streams several
+ *   a call (each call costs its own bus lock and DMA set-up: the saver, 2026-10-21). Take it
+ *   as a local lease for the length of the stream:
  *       ScratchRow lease; uint8_t* row = lease.data();
  *   A lease taken while another is held (a nested use, which would corrupt the outer row) is
  *   counted in ScratchRow::collisions(); the host tests check it stays 0.
@@ -19,9 +21,9 @@
  *   does not, the owner rebuilds it: the saver's "built" flag and the E-STOP page's word
  *   cache both start over).
  *
- * The canvas below (L4 LCD driver) copies a row before streamBitmapData returns, so a row
- * buffer is free again as soon as the call returns. The L4/L5 buffers (LCD invert buffers,
- * the SPI DMA fill buffer) are not here: the Comms task reaches them too.
+ * The canvas below (L4 LCD driver) has sent a row by the time streamBitmapData returns (the
+ * DMA reads it in place), so a row buffer is free again as soon as the call returns. The
+ * L4/L5 buffers (the SPI DMA fill buffer) are not here: the Comms task reaches them too.
  */
 #pragma once
 
@@ -34,6 +36,7 @@ namespace UI {
 class ScratchRow {
 public:
     static constexpr size_t BYTES = static_cast<size_t>(Theme::WIDTH) * 2u;   ///< one RGB565 row
+    static constexpr size_t ROWS = 4;                                        ///< rows it holds
 
     ScratchRow() {
         if (depth()++ != 0u) collisionCount()++;
@@ -50,7 +53,7 @@ public:
 private:
     // Inline functions: one instance across the image (zero-initialised, no guard)
     static uint8_t* storage() {
-        static uint8_t s_row[BYTES];
+        static uint8_t s_row[BYTES * ROWS];
         return s_row;
     }
     static uint8_t& depth() {

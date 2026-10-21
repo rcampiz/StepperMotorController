@@ -14,12 +14,18 @@
  *        the page back at once and holds it while the bar fills. The title is the saver's
  *        Hotline Miami lettering (slanted, extruded shadow, flashing hot colours), rocking and
  *        bobbing all the while it shows.
+ *
+ *        Two VHS tracking bands (Graphics::VhsBands, the motion indicator's) roll down the
+ *        page: over the hazard stripes, the grid, the page and behind the title's letters,
+ *        never over the status panel, the prompt, the bar or a message (they stay
+ *        readable). Each frame the rows the bands left and reached are recomposed.
  */
 
 #ifndef ESTOP_SCREEN_HPP
 #define ESTOP_SCREEN_HPP
 
 #include "ui/screen.hpp"
+#include "graphics/vhs_bands/vhs_bands.hpp"
 #include <stdint.h>
 
 namespace UI {
@@ -73,6 +79,8 @@ private:
     uint8_t m_stripePhase = 0;
     uint16_t m_tick = 0;             ///< frames since the page came up: the title's rock and flash
     float m_gridPhase = 0.0f;
+    Graphics::VhsBands m_vhs;        ///< the tracking bands, on the frame clock
+    uint32_t m_vhsTicks = 0;
 
     void applyLayout();
     uint16_t ink(uint16_t c) const;  ///< c faded toward the page by m_alpha
@@ -82,6 +90,13 @@ private:
     void drawFaults(Services::ICanvas& lcd, uint8_t faults, bool readable);
     void drawBands(Services::ICanvas& lcd);
     void drawGrid(Services::ICanvas& lcd);
+    void gridRow(uint16_t i, uint8_t* row) const;          ///< the grid's i-th row, a panel row
+    void stripeRow(uint16_t r, uint8_t* row) const;        ///< a hazard band's r-th row
+    void prepareTitle();                                  ///< this frame's rock, bob and colours
+    bool titlePixel(int16_t x, int16_t y, uint16_t& c) const;   ///< a letter's pixel, as prepared
+    bool keepOut(int16_t y, int16_t& a, int16_t& b) const;      ///< columns the bands leave alone
+    void composeRow(int16_t y, uint8_t* row) const;       ///< a whole panel row, bands included
+    void paintBandRows(Services::ICanvas& lcd, int16_t first, int16_t last);
 };
 
 } // namespace UI
