@@ -20,7 +20,7 @@ DEV:ROLE (broken on current firmware, finding 1) is not needed.
 
 import time
 from dataclasses import dataclass, field, replace
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 from . import commands as C
 from . import kinematics as K
@@ -251,11 +251,12 @@ class Fleet:
         return {r: b.request(C.fault_clear()) for r, b in self.boards.items()}
 
     # --- driving --------------------------------------------------------------------------
-    def drive(self, twist: K.Twist, target: Optional[K.Twist] = None) -> float:
+    def drive(self, twist: K.Twist, target: Optional[K.Twist] = None, hold: Iterable[str] = ()) -> float:
         """Run every wheel for a body twist (coalesced: only the newest twist is sent).
         Returns the scale applied to stay under the motor speed limit. With `target` (where the
         slew is heading), a wheel inside one of its resonance bands with its target beyond it
-        goes to the band's far edge at once (drive_map.cross_band)."""
+        goes to the band's far edge at once (drive_map.cross_band). The wheels in `hold` stop
+        (the driver's deceleration ramp) and hold their position: a brake on that side."""
         from .drive_map import cross_band
         cmds, scale = K.motor_commands(twist, self.config.geometry)
         tcmds = K.motor_commands(target, self.config.geometry)[0] if target is not None else cmds
@@ -269,7 +270,7 @@ class Fleet:
                 trpm = tsps * per_rpm * (1 if tdir else -1)
                 out = cross_band(rpm, trpm, bands)
                 sps, direction = abs(out) / per_rpm, (1 if out > 0 else 0)
-            req = C.mot_run(sps, direction) if sps > 0 else C.mot_stop()
+            req = C.mot_run(sps, direction) if sps > 0 and role not in hold else C.mot_stop()
             if self._sent.get(role) != req.line:          # a wheel whose command did not change hears nothing
                 self.boards[role].set_latest("drive", req)
                 self._sent[role] = req.line

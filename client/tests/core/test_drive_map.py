@@ -118,17 +118,19 @@ def test_band_avoidance_moves_a_demand_off_the_resonance(board):
 class RecordingFleet:
     def __init__(self):
         self.twists = []
+        self.holds = []
         self.stops = 0
 
-    def drive(self, t, target=None):
+    def drive(self, t, target=None, hold=()):
         self.twists.append(t)
+        self.holds.append(tuple(hold))
         return 1.0
 
     def stop(self):
         self.stops += 1
 
 
-def test_base_driver_maps_the_left_stick_and_the_triggers_to_a_twist_and_buttons_to_actions():
+def test_base_driver_maps_the_left_stick_and_the_right_stick_to_a_twist_and_buttons_to_actions():
     fleet = RecordingFleet()
     actions = []
     # the mapping and the buttons alone: no dead zone, no rate limit (tested below)
@@ -137,16 +139,16 @@ def test_base_driver_maps_the_left_stick_and_the_triggers_to_a_twist_and_buttons
                    right=StickGate(0.0, 0.0))
     drv = BaseDriver(fleet, free, slew=None)
     drv.on_action = actions.append
-    # left stick: linear (up = forward, right = -vy); left trigger: counter-clockwise (+wz)
-    t = drv.tick(GamepadState(ly=0.5, lx=0.5, lt=0.5, packet=1))
+    # left stick: linear (up = forward, right = -vy); right stick left: counter-clockwise (+wz)
+    t = drv.tick(GamepadState(ly=0.5, lx=0.5, rx=-0.5, packet=1))
     assert t.vx == pytest.approx(0.5) and t.vy == pytest.approx(-0.5) and t.wz == pytest.approx(1.0)
     assert fleet.twists[-1] == t
-    t = drv.tick(GamepadState(ly=0.5, lx=0.5, rt=0.25, rx=-0.5, packet=11))
-    assert t.wz == pytest.approx(-0.5)                         # right trigger: clockwise; the right stick does not turn
+    t = drv.tick(GamepadState(ly=0.5, lx=0.5, rx=0.25, ry=0.9, packet=11))
+    assert t.wz == pytest.approx(-0.5)                         # right half: clockwise; its y does nothing
+    drv.base.turn = "triggers"                                # the 2026-10-20 option: the triggers turn
+    t = drv.tick(GamepadState(ly=0.5, lx=0.5, lt=0.5, rx=-0.5, packet=12))
+    assert t.wz == pytest.approx(1.0) and fleet.holds[-1] == ()  # LT counter-clockwise, no brake
     drv.base.turn = "right_stick"
-    t = drv.tick(GamepadState(ly=0.5, lx=0.5, rx=-0.5, packet=12))
-    assert t.wz == pytest.approx(1.0)                          # the right-stick option: stick left = counter-clockwise
-    drv.base.turn = "triggers"
     drv.tick(GamepadState(packet=2))                          # centred: one stop
     assert fleet.stops == 1
     drv.tick(GamepadState(packet=3))
@@ -156,6 +158,24 @@ def test_base_driver_maps_the_left_stick_and_the_triggers_to_a_twist_and_buttons
     assert actions == ["estop", "rearm"]
     drv.tick(None)                                             # pad gone: stop
     assert fleet.stops == 2
+
+
+def test_the_triggers_hold_a_side_while_the_base_drives():
+    # owner 2026-10-21: LT holds the left wheels (FL, RL), RT the right ones (FR, RR), like a brake
+    fleet = RecordingFleet()
+    drv = BaseDriver(fleet, slew=None)
+    drv.tick(GamepadState(ly=0.8, packet=1))
+    assert fleet.holds[-1] == ()
+    drv.tick(GamepadState(ly=0.8, lt=0.6, packet=2))
+    assert fleet.holds[-1] == ("FL", "RL")
+    drv.tick(GamepadState(ly=0.8, lt=0.6, rt=1.0, packet=3))
+    assert fleet.holds[-1] == ("FL", "RL", "FR", "RR")
+    drv.tick(GamepadState(ly=0.8, rt=0.10, packet=4))          # RT eased to within its gate: still held
+    assert fleet.holds[-1] == ("FR", "RR")
+    drv.tick(GamepadState(ly=0.8, rt=0.05, packet=5))          # let go: the right side drives again
+    assert fleet.holds[-1] == ()
+    drv.tick(GamepadState(lt=0.03, packet=6))                  # a resting trigger is no brake
+    assert drv.held == ()
 
 
 def test_a_pad_resting_off_centre_does_not_move_the_base_and_the_gate_has_hysteresis():

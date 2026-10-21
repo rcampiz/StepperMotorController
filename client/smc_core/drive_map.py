@@ -10,8 +10,10 @@ so the motor never dwells where it shakes. The loop sends MOT:RUN <rpm> RPM each
 or the pad goes away.
 
 Base (fleet): the left stick moves the base (vx up, vy left) through a round dead zone with
-hysteresis, the triggers turn it (LT counter-clockwise, RT clockwise), and the twist is rate
-limited (quick, bounded speed-up and slow-down; B, START or a lost pad stop at once). The fleet
+hysteresis, the right stick's x turns it (right half clockwise, left half counter-clockwise,
+with the push), and the twist is rate limited (quick, bounded speed-up and slow-down; B, START
+or a lost pad stop at once). The triggers are brakes: LT stops the left wheels (FL, RL) and
+holds them while it is pulled, RT the right ones (FR, RR); the other side keeps the twist. The fleet
 scales the four wheels together, so bands are not avoided there (four wheels cannot all dodge
 at once).
 
@@ -302,9 +304,10 @@ class BaseMap:
     left: StickGate = field(default_factory=StickGate)                                  # the move stick
     triggers: Tuple[StickGate, StickGate] = field(default_factory=lambda: (StickGate(0.12, 0.08), StickGate(0.12, 0.08)))
     right: StickGate = field(default_factory=StickGate)
-    #: What turns the base: "triggers" (owner 2026-10-20: LT counter-clockwise, RT clockwise,
-    #: proportional to the pull) or "right_stick" (stick right = clockwise)
-    turn: str = "triggers"
+    #: What turns the base: "right_stick" (owner 2026-10-21: stick right = clockwise, left =
+    #: counter-clockwise, with the push; the triggers are then the side brakes) or "triggers"
+    #: (2026-10-20: LT counter-clockwise, RT clockwise, proportional to the pull; no brakes)
+    turn: str = "right_stick"
 
     def twist(self, state: GamepadState) -> K.Twist:
         if self.turn == "right_stick":
@@ -325,6 +328,15 @@ class BaseMap:
                        vy=-lx * self.max_vy,                            # stick right = move right = -vy (left positive)
                        wz=wz)
 
+    def held(self, state: GamepadState) -> Tuple[str, ...]:
+        """The wheels the triggers hold (owner 2026-10-21: a brake a side): LT the left ones,
+        RT the right ones, while pulled past their gates. None while the triggers turn the base."""
+        if self.turn != "right_stick":
+            return ()
+        lt, _ = self.triggers[0].gate(state.lt)
+        rt, _ = self.triggers[1].gate(state.rt)
+        return (("FL", "RL") if lt > 0.0 else ()) + (("FR", "RR") if rt > 0.0 else ())
+
 
 class BaseDriver:
     """Turns pad states into fleet twists; buttons act on the whole base."""
@@ -342,6 +354,7 @@ class BaseDriver:
         if hasattr(fleet, "lcd_full_scale"):          # full stick / full trigger = 100 % on the LCDs
             fleet.lcd_full_scale = K.Twist(vx=self.base.max_vx, vy=self.base.max_vy, wz=self.base.max_wz)
         self.last: Optional[K.Twist] = None
+        self.held: Tuple[str, ...] = ()                # the wheels the triggers hold now
         self._buttons: frozenset = frozenset()
         self._was_connected = False
         self.on_action: Optional[Callable[[str], None]] = None      # "estop" / "rearm" / "enable" to run off-thread
@@ -374,13 +387,15 @@ class BaseDriver:
             self._halt()                                # B: stop at once, no ramp
             return self.last
         target = self.base.twist(state)
+        self.held = self.base.held(state)
         t = self.slew.step(self._cur, target, dt) if self.slew is not None else target
         self._cur = t
         if t == K.Twist():
             if self.last is None or self.last != t:
                 self.fleet.stop()
         else:
-            self.fleet.drive(t, target)                 # the target: each wheel crosses its bands fast
+            # the target: each wheel crosses its bands fast; the held wheels stop and hold
+            self.fleet.drive(t, target, hold=self.held)
         self.last = t
         return t
 

@@ -71,6 +71,24 @@ def test_a_body_twist_drives_the_four_wheels_and_reads_back(four):
         f.close()
 
 
+def test_held_wheels_stop_and_the_others_keep_driving(four):
+    """A brake a side (the pad's triggers): the held wheels stop, the others keep the twist,
+    and letting go runs them again."""
+    procs, _ = four
+    f = make_fleet(procs)
+    speed = lambda r: f.frame().boards.get(r, (0, {}))[1].get("motor", {}).get("speed", 0)
+    try:
+        f._all(C.fault_clear())
+        f.drive(K.Twist(vx=0.2), hold=("FL", "RL"))
+        assert pump(f, lambda: speed("FR") != 0 and speed("RR") != 0, timeout=5.0)
+        assert speed("FL") == 0 and speed("RL") == 0
+        assert f._sent["FL"] == C.mot_stop().line
+        f.drive(K.Twist(vx=0.2))                                # let go
+        assert pump(f, lambda: speed("FL") != 0 and speed("RL") != 0, timeout=5.0)
+    finally:
+        f.close()
+
+
 def test_base_estop_writes_every_board_before_confirming(four):
     procs, _ = four
     f = make_fleet(procs)

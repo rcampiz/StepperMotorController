@@ -4,9 +4,9 @@ mapped through smc_core.drive_map, and shown as two live stick pads with the but
 
 Two modes. "motor": the left stick's vertical axis drives the connected board (MOT:RUN in
 RPM, resonance bands stepped over), B stops, Y enables, X clears the fault, START E-STOPs.
-"base": the left stick moves the base (vx/vy), the triggers turn it (LT counter-clockwise,
-RT clockwise); the on-screen right pad's x stands in for the triggers. The Fleet page owns
-the driver.
+"base": the left stick moves the base (vx/vy), the right stick's x turns it (right half
+clockwise, left half counter-clockwise), the triggers brake a side (LT holds the left wheels,
+RT the right ones). The on-screen pads stand in for the sticks. The Fleet page owns the driver.
 """
 
 import math
@@ -24,7 +24,7 @@ from smc_core.gamepad import GamepadState, IGamepad, SoftwareGamepad, XInputGame
 from smc_gui import theme
 
 
-TRIGGER_DEAD_ZONE = 0.12               # = drive_map.BaseMap's trigger gates (start)
+TRIGGER_DEAD_ZONE = 0.12               # = drive_map.BaseMap's trigger gates (start): a brake past it
 
 
 class StickPad(QWidget):
@@ -114,17 +114,13 @@ class ControllerPanel(QGroupBox):
         v = QVBoxLayout(self)
         top = QHBoxLayout()
         self._left = StickPad("L: speed" if self.mode == "motor" else "L: move")
-        self._right = StickPad("R: --" if self.mode == "motor" else "turn (LT/RT)")
+        self._right = StickPad("R: --" if self.mode == "motor" else "R: turn")
         self._left.moved.connect(lambda x, y: self._on_screen(lx=x, ly=y))
-        if self.mode == "base":
-            # the triggers turn the base: on screen, drag the right pad left (LT) or right (RT)
-            self._right.moved.connect(lambda x, y: self._on_screen(lt=max(0.0, -x), rt=max(0.0, x)))
-        else:
-            self._right.moved.connect(lambda x, y: self._on_screen(rx=x, ry=y))
+        self._right.moved.connect(lambda x, y: self._on_screen(rx=x, ry=y))
         # The dead zones the drivers apply, drawn on the pads (a pad at rest sits a little off centre)
         if self.mode == "base":
             self._left.dead_zone = StickGate().enter
-            self._right.dead_zone = TRIGGER_DEAD_ZONE
+            self._right.dead_zone = StickGate().enter
         else:
             self._left.dead_zone = self.stick.dead_zone
         top.addWidget(self._left)
@@ -156,7 +152,7 @@ class ControllerPanel(QGroupBox):
             self._bands_cb.setChecked(True)
             self._bands_cb.toggled.connect(lambda on: setattr(self.stick, "avoid_bands", bool(on)))
             settings.addWidget(self._bands_cb, 3, 0, 1, 2)
-        legend = QLabel(("L stick move   LT/RT turn   " if self.mode == "base" else "") +
+        legend = QLabel(("L stick move   R stick turn   LT/RT brake left/right   " if self.mode == "base" else "") +
                         "B stop   Y enable   X %s   START e-stop (hold 3 s: clear)" % (
                             "re-arm" if self.mode == "base" else "clear fault"))
         legend.setStyleSheet("color: %s; font-size: 10px;" % theme.MUTED)
@@ -201,16 +197,17 @@ class ControllerPanel(QGroupBox):
         if state is not None:
             if self.mode == "base":
                 self._left.active = math.hypot(state.lx, state.ly) > self._left.dead_zone
-                self._right.active = max(state.lt, state.rt) > TRIGGER_DEAD_ZONE
+                self._right.active = abs(state.rx) > self._right.dead_zone
             else:
                 self._left.active = abs(state.ly) > self._left.dead_zone
             self._left.set(state.lx, state.ly, True)
-            if self.mode == "base":
-                self._right.set(state.rt - state.lt, 0.0, True)    # the turn: right = RT, left = LT
-            else:
-                self._right.set(state.rx, state.ry, True)
+            self._right.set(state.rx, state.ry, True)
             src = "on-screen stick" if self._use_soft else getattr(self._pad, "name", "pad")
-            self._status.setText("%s: %s" % (src, " ".join(sorted(state.buttons)) or "ok"))
+            words = sorted(state.buttons)
+            if self.mode == "base":                  # the side brakes, while pulled
+                words += ["brake L"] if state.lt > TRIGGER_DEAD_ZONE else []
+                words += ["brake R"] if state.rt > TRIGGER_DEAD_ZONE else []
+            self._status.setText("%s: %s" % (src, " ".join(words) or "ok"))
             self._last_seen = now
         else:
             self._left.set(0, 0, False)

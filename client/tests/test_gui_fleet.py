@@ -98,10 +98,10 @@ def test_test_mode_drives_the_boards_you_have_with_virtual_ones_in_the_empty_slo
             assert p.test_mode and p.controller.driving
             assert "TEST MODE" in p._status.text() and "1 real (FR)" in p._status.text()
             p._clear_log()
-            pad.set(ly=0.6, lt=0.3)                                    # forward and turning left
+            pad.set(ly=0.6, rx=-0.3)                                   # forward and turning left
             assert pump(app, lambda: {l.split()[1] for l in p.sent_lines() if "MOT:RUN" in l} == set(ROLES),
                         timeout=5.0), p.sent_lines()[-8:]
-            pad.set(ly=0.0, lt=0.0)
+            pad.set(ly=0.0, rx=0.0)
             p.close_fleet()
             assert pump(app, lambda: not p.opened, timeout=10.0)
             assert not p.test_mode and not p.controller.driving and p._virtual == []
