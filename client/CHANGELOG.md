@@ -12,6 +12,11 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
 ## [Unreleased]
 
 ### Added
+- The graph shows slip: under the speed plot, how far the shaft is from where it was commanded
+  (encoder against the driver's step count), in degrees on its own scale (a lost full step is
+  1.8 degrees), with a readout in degrees and steps and a "Zero slip" button; the window is
+  10, 30 or 60 s (was a fixed 60 s). `smc_core.slip.SlipTracker` (counter wrap, the encoder's
+  direction learned, a resolution change restarts the baseline).
 - Fleet test mode: test the base with the controllers you have (1 to 4, in any wheel slots).
   Slots set to "virtual" get a virtual Nucleo; the base opens and the controller drives it, so
   each real motor turns as its wheel would. A port the main window holds is released first;

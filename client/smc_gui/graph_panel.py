@@ -1,7 +1,9 @@
 """
 Real-time graph panel for motor and encoder telemetry.
 
-Plots motor speed and encoder velocity over time using pyqtgraph.
+Plots motor speed and encoder velocity over time using pyqtgraph, and under it the slip: how
+far the shaft is from where it was commanded, in degrees (smc_core.slip), on its own scale so a
+lost step (1.8 degrees) shows. The time window is 10, 30 or 60 s.
 Provides configurable display-side filtering for velocity data.
 
 Filter types:
@@ -29,6 +31,7 @@ from PySide6.QtGui import QFont
 
 import pyqtgraph as pg
 
+from smc_core.slip import SlipTracker
 from smc_gui import theme
 from smc_gui.encoder_dial import EncoderDial
 
@@ -377,6 +380,9 @@ class GraphPanel(QWidget):
         self._motor_speed = deque(maxlen=self.MAX_POINTS)
         self._encoder_velocity = deque(maxlen=self.MAX_POINTS)
         self._full_steps_per_rev = 200  # Updated from DRV:FULL_STEPS? response
+        self._slip = SlipTracker()
+        self._slip_deg = deque(maxlen=self.MAX_POINTS)
+        self._window_s = 30.0
 
         # Display-side filter state
         self._disp_filter_type = "None"
@@ -432,6 +438,22 @@ class GraphPanel(QWidget):
             cb_layout.addWidget(cb)
             self._trace_cbs[key] = cb
         cb_layout.addStretch()
+        cb_layout.addWidget(QLabel("Window:"))
+        self._window_combo = QComboBox()
+        for secs in (10, 30, 60):
+            self._window_combo.addItem("%d s" % secs, float(secs))
+        self._window_combo.setCurrentIndex(1)
+        self._window_combo.currentIndexChanged.connect(
+            lambda _i: setattr(self, "_window_s", float(self._window_combo.currentData())))
+        cb_layout.addWidget(self._window_combo)
+        self._slip_label = QLabel("slip --")
+        self._slip_label.setStyleSheet("font-family: Consolas; color: %s;" % theme.MAGENTA)
+        self._slip_label.setMinimumWidth(170)
+        cb_layout.addWidget(self._slip_label)
+        zero = QPushButton("Zero slip")
+        zero.setToolTip("Start the slip from here (the encoder against the commanded position)")
+        zero.clicked.connect(self.zero_slip)
+        cb_layout.addWidget(zero)
         layout.addLayout(cb_layout)
 
         # Dial on the left, the speed / velocity plot on the right
@@ -463,7 +485,19 @@ class GraphPanel(QWidget):
             curve.setVisible(default_on)
             self._curves[key] = curve
 
-        body.addWidget(self._plot, 1)
+        # Slip under the speed plot, same time axis, its own scale (degrees of shaft)
+        self._slip_plot = pg.PlotWidget()
+        self._slip_plot.setLabel("left", "slip", units="deg")
+        self._slip_plot.setFixedHeight(170)
+        self._slip_plot.showGrid(x=True, y=True, alpha=0.25)
+        self._slip_plot.setXLink(self._plot)
+        self._slip_plot.addItem(pg.InfiniteLine(pos=0, angle=0, pen=pg.mkPen(theme.GRID_MAJ)))
+        self._slip_curve = self._slip_plot.plot(pen=pg.mkPen(color=theme.MAGENTA, width=2))
+        plots = QVBoxLayout()
+        plots.setSpacing(2)
+        plots.addWidget(self._plot, 1)
+        plots.addWidget(self._slip_plot)
+        body.addLayout(plots, 1)
         layout.addLayout(body, 1)
 
     # =========================================================================
@@ -637,9 +671,19 @@ class GraphPanel(QWidget):
         self._grid.setPen(pg.mkPen(theme.GRID_MAJ))
         self._dial.update()
 
+    def zero_slip(self):
+        """The slip starts from here."""
+        self._slip.reset()
+        self._slip_deg.clear()
+        self._slip_deg.extend([float("nan")] * len(self._timestamps))   # no line before the zero
+
     def update_drv_config(self, data: dict):
         if "encoder_ppr" in data:
             self._dial.set_cpr(int(data["encoder_ppr"]))
+        fpr = int(data.get("full_steps_per_rev") or self._full_steps_per_rev)
+        usteps = data.get("microsteps_per_rev") or (fpr * int(data["microsteps"]) if data.get("microsteps") else None)
+        ppr = data.get("encoder_ppr")
+        self._slip.set_geometry(usteps_per_rev=usteps, counts_per_rev=4 * int(ppr) if ppr else None)
         """Update full_steps_per_rev for RPM conversion on motor speed plot."""
         if "full_steps_per_rev" in data:
             self._full_steps_per_rev = data["full_steps_per_rev"]
@@ -665,6 +709,18 @@ class GraphPanel(QWidget):
         encoder = data.get("encoder", {})
         vel = encoder.get("velocity", encoder.get("vel", 0)) if isinstance(encoder, dict) else 0
 
+        # Slip: the encoder against the commanded position (degrees of shaft)
+        pos = motor.get("position") if isinstance(motor, dict) else None
+        count = encoder.get("count") if isinstance(encoder, dict) else None
+        if isinstance(pos, (int, float)) and isinstance(count, (int, float)):
+            slip = self._slip.update(int(pos), int(count))
+            steps = slip / (360.0 / self._full_steps_per_rev)
+            self._slip_label.setText("slip %+7.2f deg (%+.2f steps)" % (slip, steps))
+        else:
+            slip = float("nan")
+        self._slip_deg.append(slip)
+        self._slip_curve.setData(list(self._timestamps), list(self._slip_deg), connect="finite")
+
         # Apply display-side filter
         filtered_vel = self._apply_display_filter(vel)
         self._encoder_velocity.append(filtered_vel)
@@ -689,8 +745,8 @@ class GraphPanel(QWidget):
         # Encoder velocity (ticks/s)
         self._curves["enc_vel"].setData(ts, vel_list)
 
-        # Rolling X window — fixed 60s view, data scrolls from right to left
-        self._plot.setXRange(max(0, t - 60.0), t, padding=0)
+        # Rolling X window (10 / 30 / 60 s), data scrolls from right to left
+        self._plot.setXRange(max(0, t - self._window_s), t, padding=0)
 
     @Slot()
     def clear(self):
@@ -701,6 +757,9 @@ class GraphPanel(QWidget):
         self._encoder_velocity.clear()
         for curve in self._curves.values():
             curve.setData([], [])
+        self._slip.reset()
+        self._slip_deg.clear()
+        self._slip_curve.setData([], [])
         # Reset display filter state
         self._disp_ema_state = 0.0
         self._disp_sma_buf.clear()
