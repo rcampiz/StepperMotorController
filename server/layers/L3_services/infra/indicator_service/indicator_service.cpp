@@ -209,8 +209,8 @@ void IndicatorService::tick(uint32_t nowMs) {
     }
 
     // The bands move on the clock, and everything painted this tick shows them where they are
-    // now; a tick that repaints the dial's square leaves them where they are unless they have
-    // waited BAND_MAX_WAIT_MS (the arrow first: bench 2026-10-21, 17.7 -> 10.3 frames/s with both)
+    // now; a tick that repaints the dial's square right after a late one (within
+    // BAND_MAX_WAIT_MS, one Display period) leaves them where they are: the arrow first
     const bool squareDirty = arrowDirty || ringsDirty;
     const bool stepBands = opened || !squareDirty || (nowMs - m_bandStepMs >= BAND_MAX_WAIT_MS);
     int16_t oldTop[BAND_COUNT];

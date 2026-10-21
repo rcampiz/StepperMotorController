@@ -214,7 +214,11 @@ public:
         writeCmd(0x3A);  // Color mode
         writeData(0x55); // 16-bit RGB565
 
-        writeCmd(0x21);  // Inversion on (required for IPS panel driving)
+        // Inversion off, colours sent as they are. It was INVON with every pixel inverted in
+        // software to cancel it: the same picture, but each streamed byte copied and flipped
+        // on the CPU, ~2.4 MB/s on a 42 MHz bus (bench 2026-10-21). Now the DMA sends the
+        // caller's buffer straight out
+        writeCmd(0x20);
 
         writeCmd(0x35);  // TEON — enable Tearing Effect output on TE pin (PA0)
         writeData(0x00); // Mode 0: V-blank only
@@ -254,9 +258,7 @@ public:
         csLow();
         setWindowLocked(x, y, x + w - 1, y + h - 1);
 
-        // Compensate for INVON (required for IPS panel, inverts pixel data)
-        uint16_t c = ~color;
-        uint8_t pattern[2] = { static_cast<uint8_t>(c >> 8), static_cast<uint8_t>(c & 0xFF) };
+        uint8_t pattern[2] = { static_cast<uint8_t>(color >> 8), static_cast<uint8_t>(color & 0xFF) };
         m_spi.writeFill(pattern, 2, static_cast<uint32_t>(w) * h);
 
         csHigh();
@@ -272,9 +274,8 @@ public:
         csLow();
         setWindowLocked(x, y, x, y);
 
-        uint16_t c = ~color;  // INVON compensation
-        m_spi.transfer(c >> 8);
-        m_spi.transfer(c & 0xFF);
+        m_spi.transfer(static_cast<uint8_t>(color >> 8));
+        m_spi.transfer(static_cast<uint8_t>(color & 0xFF));
         csHigh();
         m_spi.unlock();
     }
@@ -370,7 +371,7 @@ public:
         fillRect(0, s6Y, WIDTH, s6H, BLACK);
 
         drawString(4, s6Y + 4,  "240x320 ST7789 IPS", WHITE, BLACK);
-        drawString(4, s6Y + 14, "BGR INVON  SPI1 Mode0", WHITE, BLACK);
+        drawString(4, s6Y + 14, "BGR INVOFF SPI1 Mode0", WHITE, BLACK);
         drawString(4, s6Y + 26, "X-NUCLEO-GFX01M2", GRAY, BLACK);
 
         // PLUGE near-black calibration bars (right side)
@@ -421,8 +422,8 @@ public:
         if (c < 32 || c > 126) c = '?';
 
         const uint8_t* glyph = FONT_5X7[c - 32];
-        uint16_t fgInv = ~fg;  // INVON compensation
-        uint16_t bgInv = ~bg;
+        const uint16_t fgPx = fg;
+        const uint16_t bgPx = bg;
 
         if (scale == 3 || scale == 2) {
             // Medium (8x12) and large (12x16): the bitmap fonts, one-character runs
@@ -447,7 +448,7 @@ public:
         for (uint8_t row = 0; row < 7; row++) {
             for (uint8_t sy = 0; sy < scale; sy++) {
                 for (uint8_t col = 0; col < 5; col++) {
-                    uint16_t color = (glyph[col] & (1 << row)) ? fgInv : bgInv;
+                    uint16_t color = (glyph[col] & (1 << row)) ? fgPx : bgPx;
                     for (uint8_t sx = 0; sx < scale; sx++) {
                         buf[idx++] = static_cast<uint8_t>(color >> 8);
                         buf[idx++] = static_cast<uint8_t>(color & 0xFF);
@@ -455,16 +456,16 @@ public:
                 }
                 // Spacing column (scale pixels wide)
                 for (uint8_t sx = 0; sx < scale; sx++) {
-                    buf[idx++] = static_cast<uint8_t>(bgInv >> 8);
-                    buf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+                    buf[idx++] = static_cast<uint8_t>(bgPx >> 8);
+                    buf[idx++] = static_cast<uint8_t>(bgPx & 0xFF);
                 }
             }
         }
         // Row 7: all background (scale pixel rows)
         for (uint8_t sy = 0; sy < scale; sy++) {
             for (uint16_t px = 0; px < charW; px++) {
-                buf[idx++] = static_cast<uint8_t>(bgInv >> 8);
-                buf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+                buf[idx++] = static_cast<uint8_t>(bgPx >> 8);
+                buf[idx++] = static_cast<uint8_t>(bgPx & 0xFF);
             }
         }
 
@@ -514,8 +515,8 @@ public:
             }
 
             uint16_t pixelW = len * cw;
-            uint16_t fgInv = ~fg;  // INVON compensation
-            uint16_t bgInv = ~bg;
+            const uint16_t fgPx = fg;
+            const uint16_t bgPx = bg;
 
             // Row buffer: max 480 bytes (fits 20 chars at scale=2 or 40 at scale=1)
             uint8_t rowBuf[WIDTH * 2];
@@ -536,7 +537,7 @@ public:
                     if (cc < 32 || cc > 126) cc = '?';
                     const uint8_t* glyph = FONT_5X7[cc - 32];
                     for (uint8_t col = 0; col < 5; col++) {
-                        uint16_t color = (glyph[col] & (1 << row)) ? fgInv : bgInv;
+                        uint16_t color = (glyph[col] & (1 << row)) ? fgPx : bgPx;
                         for (uint8_t sx = 0; sx < scale; sx++) {
                             rowBuf[idx++] = static_cast<uint8_t>(color >> 8);
                             rowBuf[idx++] = static_cast<uint8_t>(color & 0xFF);
@@ -544,8 +545,8 @@ public:
                     }
                     // Spacing column (scale pixels wide)
                     for (uint8_t sx = 0; sx < scale; sx++) {
-                        rowBuf[idx++] = static_cast<uint8_t>(bgInv >> 8);
-                        rowBuf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+                        rowBuf[idx++] = static_cast<uint8_t>(bgPx >> 8);
+                        rowBuf[idx++] = static_cast<uint8_t>(bgPx & 0xFF);
                     }
                 }
                 // Send same pixel row `scale` times (vertical scaling)
@@ -558,8 +559,8 @@ public:
             {
                 uint16_t idx = 0;
                 for (uint16_t px = 0; px < pixelW; px++) {
-                    rowBuf[idx++] = static_cast<uint8_t>(bgInv >> 8);
-                    rowBuf[idx++] = static_cast<uint8_t>(bgInv & 0xFF);
+                    rowBuf[idx++] = static_cast<uint8_t>(bgPx >> 8);
+                    rowBuf[idx++] = static_cast<uint8_t>(bgPx & 0xFF);
                 }
                 for (uint8_t sy = 0; sy < scale; sy++) {
                     m_spi.writeOnly(rowBuf, idx);
@@ -598,10 +599,10 @@ public:
                       const char* text, uint16_t fg, uint16_t bg) override {
         if (x + lineW > WIDTH || y + lineH > HEIGHT) return;
 
-        uint16_t fgInv = ~fg;
-        uint16_t bgInv = ~bg;
-        auto bgH = static_cast<uint8_t>(bgInv >> 8);
-        auto bgL = static_cast<uint8_t>(bgInv & 0xFF);
+        const uint16_t fgPx = fg;
+        const uint16_t bgPx = bg;
+        auto bgH = static_cast<uint8_t>(bgPx >> 8);
+        auto bgL = static_cast<uint8_t>(bgPx & 0xFF);
 
         // Count printable characters that fit
         uint16_t len = 0;
@@ -629,7 +630,7 @@ public:
                     if (cc < 32 || cc > 126) cc = '?';
                     const uint8_t* glyph = FONT_5X7[cc - 32];
                     for (uint8_t col = 0; col < 5; col++) {
-                        uint16_t color = (glyph[col] & (1 << row)) ? fgInv : bgInv;
+                        uint16_t color = (glyph[col] & (1 << row)) ? fgPx : bgPx;
                         rowBuf[idx++] = static_cast<uint8_t>(color >> 8);
                         rowBuf[idx++] = static_cast<uint8_t>(color & 0xFF);
                     }
@@ -670,21 +671,15 @@ public:
                              const char* text, const uint16_t* charColors, uint16_t bg) override {
         if (x + lineW > WIDTH || y + lineH > HEIGHT) return;
 
-        uint16_t bgInv = ~bg;
-        auto bgH = static_cast<uint8_t>(bgInv >> 8);
-        auto bgL = static_cast<uint8_t>(bgInv & 0xFF);
+        const uint16_t bgPx = bg;
+        auto bgH = static_cast<uint8_t>(bgPx >> 8);
+        auto bgL = static_cast<uint8_t>(bgPx & 0xFF);
 
         uint16_t len = 0;
         if (text != nullptr) {
             while (text[len] && (len + 1) * CHAR_WIDTH <= lineW) len++;
         }
         uint16_t textW = len * CHAR_WIDTH;
-
-        // Pre-invert all character colors
-        uint16_t fgInv[42];
-        for (uint16_t i = 0; i < len; i++) {
-            fgInv[i] = ~charColors[i];
-        }
 
         uint8_t rowBuf[WIDTH * 2];
 
@@ -703,9 +698,9 @@ public:
                     char cc = text[c];
                     if (cc < 32 || cc > 126) cc = '?';
                     const uint8_t* glyph = FONT_5X7[cc - 32];
-                    uint16_t cfgInv = fgInv[c];
+                    const uint16_t cfgPx = charColors[c];
                     for (uint8_t col = 0; col < 5; col++) {
-                        uint16_t color = (glyph[col] & (1 << row)) ? cfgInv : bgInv;
+                        uint16_t color = (glyph[col] & (1 << row)) ? cfgPx : bgPx;
                         rowBuf[idx++] = static_cast<uint8_t>(color >> 8);
                         rowBuf[idx++] = static_cast<uint8_t>(color & 0xFF);
                     }
@@ -749,8 +744,8 @@ public:
     void drawStringBitmap(uint16_t x, uint16_t y, const char* str, uint16_t fg, uint16_t bg,
                           const Row (*table)[CH]) {
         if (str == nullptr || y + CH > HEIGHT) return;
-        const uint16_t fgInv = ~fg;
-        const uint16_t bgInv = ~bg;
+        const uint16_t fgPx = fg;
+        const uint16_t bgPx = bg;
         uint8_t rowBuf[WIDTH * 2];
 
         while (*str && y + CH <= HEIGHT) {
@@ -771,7 +766,7 @@ public:
                     if (cc < 32 || cc > 126) cc = '?';
                     const Row bits = table[cc - 32][row];
                     for (uint16_t col = 0; col < CW; col++) {
-                        const uint16_t color = (bits & (static_cast<Row>(1) << (CW - 1 - col))) ? fgInv : bgInv;
+                        const uint16_t color = (bits & (static_cast<Row>(1) << (CW - 1 - col))) ? fgPx : bgPx;
                         rowBuf[idx++] = static_cast<uint8_t>(color >> 8);
                         rowBuf[idx++] = static_cast<uint8_t>(color & 0xFF);
                     }
@@ -913,9 +908,9 @@ public:
 
         for (uint16_t row = 0; row < drawH; row++) {
             for (uint16_t col = 0; col < drawW; col++) {
-                uint16_t pixel = ~data[(row * w) + col];  // INVON compensation
-                m_spi.transfer(pixel >> 8);
-                m_spi.transfer(pixel & 0xFF);
+                const uint16_t pixel = data[(row * w) + col];
+                m_spi.transfer(static_cast<uint8_t>(pixel >> 8));
+                m_spi.transfer(static_cast<uint8_t>(pixel & 0xFF));
             }
         }
 
@@ -945,12 +940,9 @@ public:
         csLow();
         setWindowLocked(x, y, x + drawW - 1, y + drawH - 1);
 
-        // Transfer raw bytes with INVON compensation (invert each byte)
         auto maxBytes = static_cast<size_t>(drawW) * drawH * 2;
         size_t transferLen = len < maxBytes ? len : maxBytes;
-        for (size_t i = 0; i < transferLen; i++) {
-            m_spi.transfer(~data[i]);
-        }
+        m_spi.writeOnly(data, transferLen);
 
         csHigh();
         m_spi.unlock();
@@ -978,13 +970,7 @@ public:
         csLow();
         setWindowLocked(x, y, x, static_cast<uint16_t>(y + drawH - 1));
 
-        // Invert for INVON compensation, then DMA write
-        static uint8_t invBuf[600];
-        auto len = static_cast<size_t>(drawH) * 2;
-        for (size_t i = 0; i < len; i++) {
-            invBuf[i] = ~data[i];
-        }
-        m_spi.writeOnly(invBuf, len);
+        m_spi.writeOnly(data, static_cast<size_t>(drawH) * 2);
 
         csHigh();
         m_spi.unlock();
@@ -1042,18 +1028,7 @@ public:
         csLow();
         dcLow();  m_spi.transfer(0x3C);  // RAMWRC: memory write continue
         dcHigh();
-        // Bulk-invert into static buffer, then TX-only write (DMA on SPI1)
-        static uint8_t invBuf[512];
-        size_t offset = 0;
-        while (offset < len) {
-            size_t chunk = len - offset;
-            if (chunk > sizeof(invBuf)) chunk = sizeof(invBuf);
-            for (size_t i = 0; i < chunk; i++) {
-                invBuf[i] = ~data[offset + i];
-            }
-            m_spi.writeOnly(invBuf, chunk);
-            offset += chunk;
-        }
+        m_spi.writeOnly(data, len);                 // straight from the caller (DMA on SPI1)
         csHigh();
         m_spi.unlock();
     }

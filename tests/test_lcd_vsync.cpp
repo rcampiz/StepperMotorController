@@ -31,7 +31,8 @@ TEST(bitmap_stream_locks_the_bus_per_chunk_and_continues_with_ramwrc) {
     lcd.streamBitmapData(px, 4);
     EXPECT_EQ(spi.locks, 2);
     EXPECT_EQ(spi.unlocks, 2);                       // free again after the chunk
-    EXPECT_EQ(spi.tx[before], 0x3C);                 // RAMWRC, then the (inverted) pixels
+    EXPECT_EQ(spi.tx[before], 0x3C);                 // RAMWRC, then the pixels as given
+    for (size_t i = 0; i < 4; i++) EXPECT_EQ(spi.tx[before + 1 + i], px[i]);
     lcd.streamBitmapData(px + 4, 4);
     EXPECT_EQ(spi.locks, 3);
     EXPECT_EQ(spi.unlocks, 3);
@@ -49,6 +50,12 @@ TEST(lcd_init_turns_the_picture_180_degrees_and_says_so) {
         if (spi.tx[i] == 0x36 && spi.tx[i + 1] == 0x88) madctl = true;
     }
     EXPECT_TRUE(madctl);                                  // MY + BGR
+    // Inversion off (0x20) after the colour mode: the pixels go out as they are, no copy
+    bool invoff = false;
+    for (size_t i = 0; i + 2 < spi.tx.size(); i++) {
+        if (spi.tx[i] == 0x3A && spi.tx[i + 1] == 0x55 && spi.tx[i + 2] == 0x20) invoff = true;
+    }
+    EXPECT_TRUE(invoff);
     EXPECT_TRUE(static_cast<Drivers::ICanvas&>(lcd).isRotated180());
     const uint8_t vcom[1] = {0x19};
     EXPECT_TRUE(lcd.writePanelRegister(0xBB, vcom, 1));   // VCOM is tunable

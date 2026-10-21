@@ -72,10 +72,17 @@ tags.
   rolling down behind the dial; hot-pink rings with a yellow inner line, yellow chevrons, a white
   arrow with a cyan / red split that fills with the speed; the readout and the "hold CENTER 2s"
   hint in the 8 x 12 font on dark plates (the 6 x 8 hint was hard to read on the panel). One row
-  composer draws every pixel; a tick repaints only what changed plus the bands' rows (~6k px),
-  the bands without the tearing-edge wait. While the arrow redraws, the bands wait up to 100 ms.
-  Bench, arrow sweeping: 14.1 frames/s (16.0 before); arrow still: the bands take 25 % of the
-  Display task's time (lowest priority).
+  composer draws every pixel; a tick repaints only what changed plus the bands' rows (~5k px),
+  the bands without the tearing-edge wait, every tick (24 and 36 px/s). Bench, arrow sweeping:
+  18.2 frames/s with the bands (16.0 before, with the driver change below); arrow still: the
+  bands take 16-20 % of the Display task's time (lowest priority).
+- LCD driver: display inversion off, pixels sent as they are. It was INVON (0x21) with every
+  pixel inverted in software to cancel it: the same picture, but each streamed byte copied into
+  a 512-byte buffer and flipped on the CPU before its DMA. Streams, columns and raw bitmaps now
+  go out by DMA straight from the caller's buffer: 0.9 ms a streamed block instead of 2.1 ms,
+  every screen draws faster and SPI1 (shared with the powerSTEP01) is held less. The host
+  panel simulator models INVON / INVOFF, so a path sent with the wrong polarity fails the
+  screen tests.
 - LCD motion indicator: the rotation chevrons span all three rings (22 px base centred on the
   ring band, 20 px long; they were 14 px on the outer ring alone and looked tiny).
 - The default encoder velocity filter is the tracking observer alone at 10 Hz (32 ms lag,

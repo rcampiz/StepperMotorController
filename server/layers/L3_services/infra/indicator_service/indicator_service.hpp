@@ -15,9 +15,10 @@
  * text changes, and each tick the rows of two VHS tracking bands that roll down the screen
  * (the rows they left and the rows they reached, ~6k px a tick). The bands pass behind the
  * dial and the plates; their colours, the tear and the noise are integer maths per pixel.
- * The arrow keeps its frame rate: a tick that repaints the dial's square moves the bands only
- * if they have waited BAND_MAX_WAIT_MS (they follow the clock, so they jump further), and the
- * bands alone skip the wait for the tearing edge (a torn VHS band looks like one).
+ * The bands step every tick, the arrow's included (the LCD driver sends pixels without a copy
+ * since 2026-10-21: 18 frames/s with both); a tick that follows a late one within
+ * BAND_MAX_WAIT_MS repaints the arrow alone. The bands skip the wait for the tearing edge (a
+ * torn VHS band looks like one).
  * (Owner 2026-10-21: a Hotline Miami / synthwave look, VHS lines that move.)
  *
  * No RTOS headers. LCD injected at init time.
@@ -110,7 +111,7 @@ public:
     static constexpr uint16_t HINT_COLOR     = 0xDF3E;                      // Theme::TEXT
 
     static constexpr uint8_t BAND_COUNT = 2;       ///< VHS tracking bands (the table is in the .cpp)
-    static constexpr uint32_t BAND_MAX_WAIT_MS = 100;   ///< the longest the bands hold for the arrow
+    static constexpr uint32_t BAND_MAX_WAIT_MS = 50;    ///< the longest the bands hold for the arrow
 
     /// The eased state, for tests
     float currentAngle() const { return m_angle; }

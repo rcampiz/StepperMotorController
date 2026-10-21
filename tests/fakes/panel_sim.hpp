@@ -4,7 +4,9 @@
  *        (CASET/RASET/RAMWR/RAMWRC, data when D/C is high) into a 240x320 RGB565 frame.
  *
  * The real driver runs unchanged, so a snapshot is exactly the pixel stream the panel receives,
- * INVON compensation included (the driver sends inverted pixels; the panel inverts them back).
+ * Display inversion as the ST7789 does it: off after reset, INVON (0x21) / INVOFF (0x20) switch
+ * it, and while it is on every pixel shows inverted. A drawing path that sends the wrong
+ * polarity shows up as wrong colours in the frame.
  * writePpm() dumps the frame for a look; scripts/lcd/snapshots_to_png.py converts the folder.
  */
 #pragma once
@@ -24,12 +26,13 @@ struct PanelSim : Board::ISPIBus {
 
     explicit PanelSim(const Board::IGPIO& dc) : m_dc(dc) { memset(frame, 0, sizeof frame); }
 
-    uint16_t frame[H][W];          ///< true RGB565 (inversion undone)
+    uint16_t frame[H][W];          ///< RGB565 as the panel shows it
     uint32_t pixelsWritten = 0;    ///< every pixel the driver sent, for cost accounting
     uint32_t windows = 0;          ///< RAMWR count: one per drawing call that opens a window
     uint32_t cmds = 0;
     bool asleep = false;        ///< SLPIN .. SLPOUT
     bool displayOn = true;      ///< DISPON / DISPOFF
+    bool inverted = false;      ///< INVON .. INVOFF (off after reset)
 
     void lock() override {}
     void unlock() override {}
@@ -89,6 +92,8 @@ private:
         if (b == 0x11) asleep = false;                                             // SLPOUT
         if (b == 0x28) displayOn = false;                                          // DISPOFF
         if (b == 0x29) displayOn = true;                                           // DISPON
+        if (b == 0x20) inverted = false;                                           // INVOFF
+        if (b == 0x21) inverted = true;                                            // INVON
         if (b == 0x2C) { m_cx = m_x0; m_cy = m_y0; m_hiByte = true; windows++; }   // RAMWR
         if (b == 0x3C) { m_hiByte = true; }                                        // RAMWRC
     }
@@ -106,7 +111,7 @@ private:
             case 0x2C: case 0x3C:
                 if (m_hiByte) { m_hi = b; m_hiByte = false; return; }
                 m_hiByte = true;
-                put(static_cast<uint16_t>(~((m_hi << 8) | b)));
+                put(static_cast<uint16_t>(inverted ? ~((m_hi << 8) | b) : ((m_hi << 8) | b)));
                 break;
             default:
                 break;

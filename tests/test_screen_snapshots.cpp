@@ -511,9 +511,11 @@ TEST(motion_indicator_shows_heading_speed_and_turn_magnitudes) {
     ind.draw({45, 1, true, 20, 40});
     indTick(ind);
     const uint32_t first = rig.panel.pixelsWritten - before;
-    EXPECT_EQ(ind.bandTop(0), top1);                      // the arrow first: the bands wait
-    for (uint32_t i = 0; i < Ind::BAND_MAX_WAIT_MS / 50u; i++) indTick(ind);   // ...BAND_MAX_WAIT_MS at most
-    EXPECT_TRUE(ind.bandTop(0) != top1);
+    EXPECT_TRUE(ind.bandTop(0) != top1);                  // a full period on: the bands move too
+    const int16_t top2 = ind.bandTop(0);
+    ind.draw({45, 1, true, 60, 40});
+    indTick(ind, 10);                                     // a tick right after a late one:
+    EXPECT_EQ(ind.bandTop(0), top2);                      // the arrow first, the bands wait
     printf("  indicator: one easing step of the arrow %u px\n", first);
     const uint32_t square = (2u * Ind::ARROW_R + 1) * (2u * Ind::ARROW_R + 1);
     const uint32_t plate = (Ind::READOUT_R - Ind::READOUT_L + 1u) * (Ind::READOUT_B - Ind::READOUT_T + 1u);
