@@ -12,6 +12,12 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
 ## [Unreleased]
 
 ### Added
+- A faster serial link: after session setup the GUI and the fleet move the link to 460800 baud
+  (`BoardConfig.fast_baud`, SYST:BAUD; 4x the bandwidth, clean both ways on the ST-LINK VCP,
+  bench 2026-10-20), so telemetry can run every 35 ms (was 139). The port opens at the boot
+  rate; close() hands the board back at 115200; a board left fast by a crashed client or reset
+  while fast is found again (setup tries the other rate, heartbeat loss drops to the boot
+  rate). The GUI's "Link" choice (460800 or 115200) replaces the baud box.
 - The graph shows slip: under the speed plot, how far the shaft is from where it was commanded
   (encoder against the driver's step count), in degrees on its own scale (a lost full step is
   1.8 degrees), with a readout in degrees and steps and a "Zero slip" button; the window is

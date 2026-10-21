@@ -77,6 +77,9 @@ def _reply_name(req: C.Request) -> str:
     return spec.json_command if spec is not None and spec.json_command else req.name
 
 
+BOOT_BAUD = 115200                            # the rate the firmware boots at
+
+
 @dataclass
 class BoardConfig:
     heartbeat: bool = True
@@ -103,6 +106,12 @@ class BoardConfig:
     estop_confirm_window_s: float = 0.3
     stream_chunk: int = 256                   # bytes per drained write in uploads
     reconnect_s: float = 0.0                  # >0: reopen the transport after link loss
+    # After the session is set up, move a serial link to this rate (SYST:BAUD; 0 = stay at the
+    # boot rate). Bench 2026-10-20 on the ST-LINK VCP: 460800 clean both ways, 4x the link.
+    # The board boots at 115200 and reverts there by itself when a new rate is not confirmed
+    # within 2 s; the client finds it again at either rate (setup alternates), and close()
+    # hands it back at 115200 for the next tool.
+    fast_baud: int = 0
     flight_recorder_lines: int = 500
 
 
@@ -330,7 +339,14 @@ class Board:
         return True
 
     def close(self, estop: bool = False) -> None:
-        """Stop the threads and close the port. The firmware watchdog is left armed."""
+        """Stop the threads and close the port. The firmware watchdog is left armed. A link
+        moved to a fast rate is handed back at the boot rate, so the next tool finds the board."""
+        if (self._link_up and self._running and self._can_baud()
+                and self.transport.baudrate != BOOT_BAUD):
+            try:
+                self.request(C.baud(BOOT_BAUD), timeout=1.0)
+            except Exception:  # noqa: BLE001 - best effort; the board keeps the rate otherwise
+                pass
         if estop and self._link_up:
             try:
                 self.estop_write()
@@ -670,8 +686,27 @@ class Board:
         self._emit("estop", result)
         return result
 
+    def _can_baud(self) -> bool:
+        """A serial link whose rate the client can change (not TCP, not a test pipe)."""
+        return isinstance(getattr(self.transport, "baudrate", None), int)
+
+    def _negotiate_baud(self, rate: int) -> None:
+        """Ask the board for `rate`, follow it, confirm within its 2 s revert window; if the
+        confirmation fails, go back to the boot rate (the board does too, on its own)."""
+        r = self._execute(C.baud(rate), "setup")
+        if not r.success:
+            return
+        self.transport.set_baudrate(rate)
+        time.sleep(0.02)
+        if self._execute(C.idn(), "setup").success:
+            log.info("%s: link at %d baud", self.name, rate)
+            return
+        self.transport.set_baudrate(BOOT_BAUD)
+        time.sleep(2.3)                                     # the board's own revert
+        self._emit("error", f"link stays at {BOOT_BAUD} baud: {rate} was not confirmed")
+
     def _run_setup(self) -> None:
-        """Session setup: JSON mode, identity, events, telemetry push, watchdog."""
+        """Session setup: JSON mode, identity, link rate, events, telemetry push, watchdog."""
         self._setup_needed.clear()
         try:
             self.transport.flush_input()
@@ -687,6 +722,11 @@ class Board:
             time.sleep(0.2)
         if resp is None or not resp.success:
             self._emit("error", f"no reply to FMT JSON ({resp.error_message if resp else '?'})")
+            if self.config.fast_baud and self._can_baud():
+                # Not answering at this rate: it rebooted (115200) or kept a fast rate from an
+                # earlier session; try the other one next
+                other = BOOT_BAUD if self.transport.baudrate != BOOT_BAUD else self.config.fast_baud
+                self.transport.set_baudrate(other)
             self._setup_needed.set()
             time.sleep(0.5)
             return
@@ -699,6 +739,9 @@ class Board:
         if self.identity is not None and self.identity.proto not in SUPPORTED_PROTOCOLS:
             self._emit("error", f"board speaks protocol {self.identity.proto}, "
                                 f"this client protocols {'/'.join(map(str, SUPPORTED_PROTOCOLS))}")
+        if (self.config.fast_baud and self._can_baud()
+                and self.transport.baudrate != self.config.fast_baud):
+            self._negotiate_baud(self.config.fast_baud)       # before the telemetry rate: it sets the floor
         if self.config.clear_fault_on_connect:
             self._execute(C.fault_clear(), "setup")
         if self.config.events:
@@ -799,6 +842,13 @@ class Board:
                     and not self._hb_loss_signalled):
                 self._hb_loss_signalled = True
                 self._emit("heartbeat_lost", self._hb_consecutive_misses)
+                if (self.config.fast_baud and self._can_baud()
+                        and self.transport.baudrate != BOOT_BAUD):
+                    # At a fast rate a reset is silent (its !RESET line arrives garbled): find
+                    # the board again from the boot rate
+                    self.transport.set_baudrate(BOOT_BAUD)
+                    self._session_ready.clear()
+                    self._setup_needed.set()
             return
         rtt = (self._clock() - t0) * 1000.0
         self.hb.acked += 1

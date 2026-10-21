@@ -65,17 +65,17 @@ class ConnectionPanel(QWidget):
 
         inner.addSpacing(20)
 
-        # Baud rate
-        baud_label = QLabel("Baud:")
+        # Link rate: the port opens at the board's boot rate (115200); with 460800 the session
+        # then moves the link there (SYST:BAUD), 4x the bandwidth, clean both ways on the
+        # ST-LINK VCP (bench 2026-10-20). Faster rates lose bytes into the board for now.
+        baud_label = QLabel("Link:")
         inner.addWidget(baud_label)
 
         self._baud_combo = QComboBox()
-        # Only rates the firmware accepts (SYST:BAUD). Stay at 115200 on the ST-LINK VCP:
-        # it drops bytes above that during bulk transfers (PROTOCOL.md section 1).
-        self._baud_combo.addItems(["115200", "230400", "460800", "921600"])
-        self._baud_combo.setCurrentText("115200")
-        self._baud_combo.setToolTip("Serial baud rate (keep 115200 on the ST-LINK VCP; "
-                                    "verify faster rates per adapter)")
+        self._baud_combo.addItems(["460800", "115200"])
+        self._baud_combo.setCurrentText("460800")
+        self._baud_combo.setToolTip("Serial link rate after connecting. The board boots at 115200; with "
+                                    "460800 the session switches to it (and back on disconnect)")
         inner.addWidget(self._baud_combo)
 
         inner.addSpacing(20)
@@ -143,7 +143,7 @@ class ConnectionPanel(QWidget):
 
     @property
     def baudrate(self) -> int:
-        """Get selected baud rate."""
+        """The link rate to move to after connecting (115200: stay at the boot rate)."""
         return int(self._baud_combo.currentText())
 
     @property

@@ -501,6 +501,10 @@ class FakeBoard:
         self.indicator = (int(args[0]), int(args[1]), args[2] not in ("0", "false"), pct[0], pct[1])
         self._ok(name, "")
 
+    def _c_SYST_BAUD(self, name, args):
+        self.baud = int(args[0]) if args else 115200            # a test pipe has no rate to change
+        self._ok(name, "")
+
     def _c_UI_ESTOP_HOLD(self, name, args):
         try:
             pct = int(args[0])

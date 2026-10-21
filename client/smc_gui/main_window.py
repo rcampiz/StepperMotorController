@@ -54,7 +54,7 @@ from smc_gui import theme
 from smc_core import commands as C
 from smc_core import views as V
 from smc_core import runner
-from smc_core.board import Board, BoardConfig, EstopResult, Liveness
+from smc_core.board import BOOT_BAUD, Board, BoardConfig, EstopResult, Liveness
 from smc_core.codec import Response
 from smc_core.transport.base import ITransport
 
@@ -418,7 +418,7 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Connection Error", "Please select a port.")
             return
         from smc_core.transport import open_transport
-        transport = open_transport(port, self._connection_panel.baudrate)
+        transport = open_transport(port, BOOT_BAUD)      # the board boots here; the session moves on
         self.attach_transport(transport, port)
 
     def attach_transport(self, transport: ITransport, label: str) -> bool:
@@ -432,6 +432,8 @@ class MainWindow(QMainWindow):
             telemetry_period_ms=self._connection_panel.telemetry_ms,
             telemetry_compact=self._connection_panel.telemetry_compact,
             clear_fault_on_connect=True,      # a comms-timeout ESTOP from the last session
+            fast_baud=(self._connection_panel.baudrate
+                       if self._connection_panel.baudrate > BOOT_BAUD else 0),
         )
         self._liveness.max_age_s = max(0.2, 4 * period_ms / 1000.0)
         board = Board(transport, config, liveness=self._liveness, name=label)

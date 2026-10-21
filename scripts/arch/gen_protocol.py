@@ -282,11 +282,12 @@ client (`smc_core`) accepts 2 and 3 and uses the protocol 3 commands when the bo
 ## 1. Transport and framing
 
 - Byte stream over the ST-LINK virtual COM port: USART2, 8N1, **115200** baud by default.
-  `SYST:BAUD` can select 230400/460800/921600 (with the revert rule of section 4), but the
-  stock ST-LINK V2-1 VCP drops bytes above 115200 during bulk transfers (bitmap and flash
-  uploads), so clients stay at 115200 on that adapter and offer nothing below it (the
-  firmware accepts no rate below 115200). A different USB-serial adapter, or several boards
-  on separate CDC links, must be verified per adapter before a client raises the rate.
+  `SYST:BAUD` can select 230400/460800/921600 (with the revert rule of section 4). Bench
+  2026-10-20 on the ST-LINK V2-1 VCP: 460800 is clean both ways, and the GUI and the fleet
+  move the link there after session setup (and back to 115200 on close). Above it the
+  board, not the adapter, loses bytes it receives back to back (the VCP carries 2 Mbaud
+  board-to-host intact): the receive path takes one interrupt per byte. The firmware accepts
+  no rate below 115200. Another adapter must be verified before a client raises the rate.
 - A command is one line: printable ASCII (0x20..0x7E), terminated by CR, LF or CRLF.
   Maximum **{line_max} characters** per line, **{max_args} arguments** of at most **{arg_max}
   characters** each, separated by spaces. The command word is upper-cased by the parser;
