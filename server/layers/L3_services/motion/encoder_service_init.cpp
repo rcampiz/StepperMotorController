@@ -21,10 +21,10 @@ bool initEncoderSubsystem(Platform::IClock& clock,
     }
 
     const auto& encCfg = motion.encoder.config;
+    const Harness::EncoderFilterConfig f = encCfg.getEncFilterConfig();
     motion.encoder.processor.setFilterConfig(
-        encCfg.getEncFilterType(), encCfg.getEncFilterParam(),
-        encCfg.getEncSmaWindow(),
-        0, 0, 0, 0, 0, 0, 0);
+        f.filterFlags, f.emaAlpha, f.smaWindow, f.padeGainPct, f.padeMaxCorr,
+        f.biquadCutoffHz, f.notchCenterHz, f.notchQ10, f.holtAlpha, f.holtBeta);
 
     if (!g_encoderService.init(*h.encoderHw, critical, usClock,
                                motion.encoder.processor, motion.control.mode,

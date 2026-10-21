@@ -45,9 +45,8 @@ public:
     // Persistent encoder filter config (stored in motor config flash)
     virtual void configSetEncFilter(uint8_t type, uint8_t alpha) = 0;
     virtual void configSetEncSmaWindow(uint8_t window) = 0;
-    virtual void configSetEncFilterFull(uint8_t flags, uint8_t emaAlpha,
-                                         uint8_t smaWindow, uint8_t measWindowMs,
-                                         uint8_t rateDiv) = 0;
+    /// The whole chain to keep (flags, every stage's parameters, window, sample rate)
+    virtual void configSetEncFilterFull(const EncFilterParams& cfg) = 0;
 };
 
 } // namespace Services

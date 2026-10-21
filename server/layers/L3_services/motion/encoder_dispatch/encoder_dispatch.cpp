@@ -64,11 +64,8 @@ void EncoderDispatch::configSetEncSmaWindow(uint8_t window) {
     motion.encoder.config.getConfigMutable().encSmaWindow = window;
 }
 
-void EncoderDispatch::configSetEncFilterFull(uint8_t flags, uint8_t emaAlpha,
-                                              uint8_t smaWindow, uint8_t measWindowMs,
-                                              uint8_t rateDiv) {
-    motion.encoder.config.setEncFilterFull(flags, emaAlpha, smaWindow,
-                                            measWindowMs, rateDiv);
+void EncoderDispatch::configSetEncFilterFull(const EncFilterParams& cfg) {
+    motion.encoder.config.setEncFilterFull(cfg);
 }
 
 } // namespace Services

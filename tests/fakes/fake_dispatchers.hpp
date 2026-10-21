@@ -127,7 +127,7 @@ struct FakeEncoderDispatcher : Services::IEncoderDispatcher {
     void encFilterSetLegacy(uint8_t type, uint8_t param)  override { calls.push_back("encFilterSetLegacy"); }
     void configSetEncFilter(uint8_t type, uint8_t alpha)  override { calls.push_back("configSetEncFilter"); }
     void configSetEncSmaWindow(uint8_t window)  override { calls.push_back("configSetEncSmaWindow"); }
-    void configSetEncFilterFull(uint8_t flags, uint8_t emaAlpha, uint8_t smaWindow, uint8_t measWindowMs, uint8_t rateDiv)  override { calls.push_back("configSetEncFilterFull"); }
+    void configSetEncFilterFull(const EncFilterParams& cfg)  override { calls.push_back("configSetEncFilterFull"); }
 };
 
 struct FakeMotorDriverDispatcher : Services::IMotorDriverDispatcher {

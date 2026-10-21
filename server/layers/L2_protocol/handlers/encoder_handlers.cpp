@@ -419,14 +419,11 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
 
   // CTRL:ENC:FILT:SAVE
   if (strcmp(sub, "SAVE") == 0) {
+    // The live chain, every stage's parameters included (before 2026-10-21 only the flags,
+    // EMA alpha, SMA window, window and rate were kept: a 20 Hz cutoff came back as 10)
     ICommandDispatcher::EncFilterParams cfg;
     m_dispatcher.encFilterGetConfig(cfg);
-    uint8_t rateDiv = (cfg.sampleRateHz != 1000)
-                          ? static_cast<uint8_t>(cfg.sampleRateHz / 100)
-                          : 0;
-    m_dispatcher.configSetEncFilterFull(cfg.filterFlags, cfg.emaAlpha,
-                                        cfg.smaWindow, cfg.measWindowMs,
-                                        rateDiv);
+    m_dispatcher.configSetEncFilterFull(cfg);
     respondStatus(m_dispatcher.configSaveToFlash(), "Filter config saved");
     return;
   }

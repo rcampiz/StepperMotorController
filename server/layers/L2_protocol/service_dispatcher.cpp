@@ -373,10 +373,8 @@ void ServiceDispatcher::configSetEncSmaWindow(uint8_t window) {
     m_encoder->configSetEncSmaWindow(window);
 }
 
-void ServiceDispatcher::configSetEncFilterFull(uint8_t flags, uint8_t emaAlpha,
-                                                uint8_t smaWindow, uint8_t measWindowMs,
-                                                uint8_t rateDiv) {
-    m_encoder->configSetEncFilterFull(flags, emaAlpha, smaWindow, measWindowMs, rateDiv);
+void ServiceDispatcher::configSetEncFilterFull(const EncFilterParams& cfg) {
+    m_encoder->configSetEncFilterFull(cfg);
 }
 
 // ── IMotorDriverDispatcher ──────────────────────────────────────────

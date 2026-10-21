@@ -149,14 +149,38 @@ void MotorConfigManager::setEncFilter(uint8_t type, uint8_t param) {
     m_config.encFilterParam = param;
 }
 
-void MotorConfigManager::setEncFilterFull(uint8_t flags, uint8_t emaAlpha,
-                                           uint8_t smaWindow, uint8_t measWindowMs,
-                                           uint8_t sampleRateDiv100) {
-    m_config.encFilterType = flags;
-    m_config.encFilterParam = emaAlpha;
-    m_config.encSmaWindow = smaWindow;
-    m_config.encMeasWindowMs = measWindowMs;
-    m_config.encSampleRateDiv100 = sampleRateDiv100;
+void MotorConfigManager::setEncFilterFull(const Harness::EncoderFilterConfig& cfg) {
+    m_config.encFilterType = cfg.filterFlags;
+    m_config.encFilterParam = cfg.emaAlpha;
+    m_config.encSmaWindow = cfg.smaWindow;
+    m_config.encMeasWindowMs = cfg.measWindowMs;
+    // stored /100, 0 = the 1 kHz default
+    m_config.encSampleRateDiv100 = (cfg.sampleRateHz != 0 && cfg.sampleRateHz != 1000)
+                                       ? static_cast<uint8_t>(cfg.sampleRateHz / 100) : 0;
+    m_config.encPadeGainPct = cfg.padeGainPct;
+    m_config.encPadeMaxCorr = cfg.padeMaxCorr;
+    m_config.encBiquadCutoffHz = cfg.biquadCutoffHz;
+    m_config.encNotchCenterHz = cfg.notchCenterHz;
+    m_config.encNotchQ10 = cfg.notchQ10;
+    m_config.encHoltAlpha = cfg.holtAlpha;
+    m_config.encHoltBeta = cfg.holtBeta;
+}
+
+Harness::EncoderFilterConfig MotorConfigManager::getEncFilterConfig() const {
+    Harness::EncoderFilterConfig cfg = {};
+    cfg.filterFlags = m_config.encFilterType;
+    cfg.emaAlpha = m_config.encFilterParam;
+    cfg.smaWindow = m_config.encSmaWindow;
+    cfg.measWindowMs = getEncMeasWindowMs();
+    cfg.sampleRateHz = getEncSampleRateHz();
+    cfg.padeGainPct = m_config.encPadeGainPct;
+    cfg.padeMaxCorr = m_config.encPadeMaxCorr;
+    cfg.biquadCutoffHz = m_config.encBiquadCutoffHz;
+    cfg.notchCenterHz = m_config.encNotchCenterHz;
+    cfg.notchQ10 = m_config.encNotchQ10;
+    cfg.holtAlpha = m_config.encHoltAlpha;
+    cfg.holtBeta = m_config.encHoltBeta;
+    return cfg;
 }
 
 void MotorConfigManager::setFullStepsPerRev(uint16_t steps) {

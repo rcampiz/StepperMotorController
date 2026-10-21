@@ -105,6 +105,44 @@ TEST(save_then_reload_round_trips_through_the_store) {
     EXPECT_TRUE(again.getDriverSettings().accelFsps2 == 1234.5f);   // physical, stored as-is
 }
 
+TEST(the_whole_encoder_filter_chain_survives_a_save_and_reload) {
+    FakeConfigStore store;
+    PowerStepModel drv;
+    {
+        Services::MotorConfigManager cfg;
+        cfg.init(store, &drv);
+        Harness::EncoderFilterConfig f = {};
+        f.filterFlags = Harness::ENC_FILT_BIQUAD | Harness::ENC_FILT_NOTCH;
+        f.emaAlpha = 90; f.smaWindow = 4; f.measWindowMs = 20; f.sampleRateHz = 2000;
+        f.padeGainPct = 30; f.padeMaxCorr = 70; f.biquadCutoffHz = 20;
+        f.notchCenterHz = 33; f.notchQ10 = 15; f.holtAlpha = 60; f.holtBeta = 9;
+        cfg.setEncFilterFull(f);
+        EXPECT_TRUE(cfg.saveToFlash());
+    }
+    Services::MotorConfigManager again;
+    EXPECT_TRUE(again.init(store, &drv));
+    const Harness::EncoderFilterConfig g = again.getEncFilterConfig();
+    EXPECT_EQ(g.filterFlags, static_cast<uint8_t>(Harness::ENC_FILT_BIQUAD | Harness::ENC_FILT_NOTCH));
+    EXPECT_EQ(g.emaAlpha, 90); EXPECT_EQ(g.smaWindow, 4);
+    EXPECT_EQ(g.measWindowMs, 20); EXPECT_EQ(g.sampleRateHz, 2000);
+    EXPECT_EQ(g.padeGainPct, 30); EXPECT_EQ(g.padeMaxCorr, 70);
+    EXPECT_EQ(g.biquadCutoffHz, 20);                 // was lost: boot always used 10 Hz
+    EXPECT_EQ(g.notchCenterHz, 33); EXPECT_EQ(g.notchQ10, 15);
+    EXPECT_EQ(g.holtAlpha, 60); EXPECT_EQ(g.holtBeta, 9);
+}
+
+TEST(a_record_saved_before_the_stage_fields_reads_every_stage_at_its_default) {
+    FakeConfigStore store;
+    PowerStepModel drv;
+    Services::MotorConfigManager cfg;
+    cfg.init(store, &drv);                           // defaults: the spare bytes were zero
+    const Harness::EncoderFilterConfig g = cfg.getEncFilterConfig();
+    EXPECT_EQ(g.filterFlags, Harness::ENC_FILT_DEFAULT_FLAGS);
+    EXPECT_EQ(g.biquadCutoffHz, 0);                  // 0 = the processor's 10 Hz
+    EXPECT_EQ(g.padeGainPct, 0); EXPECT_EQ(g.holtAlpha, 0); EXPECT_EQ(g.notchQ10, 0);
+    EXPECT_EQ(g.sampleRateHz, 1000); EXPECT_EQ(g.measWindowMs, 40);
+}
+
 TEST(current_mode_runs_at_most_1_16_and_conversions_follow) {
     // Bench 2026-10-18: 1/128 configured in current mode, the chip ran 1/16, and a 1-rev jog
     // (25600 microsteps) turned the shaft 8 times. Conversions use the resolution in force,

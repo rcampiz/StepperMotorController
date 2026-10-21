@@ -20,6 +20,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include "harness/defs/harness_l3_l4.hpp"
+#include "harness/pins/encoder_filter_config.hpp"
 
 namespace Services {
 
@@ -74,7 +75,16 @@ struct MotorConfig {
     uint8_t  followMaxRetries;
     uint8_t  reserved0;
     uint16_t idleReleaseMs;       // coils to Hi-Z after this long stopped and energised; 0 = never
-    uint8_t  reserved5[16];       // zero
+    // Encoder filter stage parameters (2026-10-21, in what were spare bytes: records saved
+    // before hold 0 there, which every stage reads as its default, as boot always applied)
+    uint8_t  encPadeGainPct;      // Pade correction strength, % (0 = 50)
+    uint8_t  encPadeMaxCorr;      // Pade max correction, counts/s (0 = 50)
+    uint8_t  encBiquadCutoffHz;   // Butterworth cutoff, Hz (0 = 10)
+    uint8_t  encNotchCenterHz;    // notch centre, Hz (0 = 25)
+    uint8_t  encNotchQ10;         // notch Q x 10 (0 = 50)
+    uint8_t  encHoltAlpha;        // Holt level smoothing /255 (0 = 51)
+    uint8_t  encHoltBeta;         // Holt trend smoothing /255 (0 = 13)
+    uint8_t  reserved5[9];        // zero
 
     uint32_t crc32;               // CRC32 of everything above
 };
@@ -231,6 +241,9 @@ public:
         uint8_t d = m_config.encSampleRateDiv100;
         return (d != 0) ? static_cast<uint16_t>(d) * 100 : 1000;
     }
+    /// The whole stored filter chain, as the encoder processor and CTRL:ENC:FILT? take it
+    /// (stage parameters 0 = that stage's default)
+    Harness::EncoderFilterConfig getEncFilterConfig() const;
     uint16_t getFullStepsPerRev() const { return (m_config.fullStepsPerRev != 0) ? m_config.fullStepsPerRev : 200; }
     uint16_t getEncoderPPR() const { return (m_config.encoderPPR != 0) ? m_config.encoderPPR : 4000; }
     uint32_t getMicrostepsPerRev() const { return static_cast<uint32_t>(getFullStepsPerRev()) * getEffectiveMicrosteps(); }
@@ -264,8 +277,9 @@ public:
     // Setters (modify RAM, call saveToFlash() to persist)
     void setFaultAction(uint8_t action);
     void setEncFilter(uint8_t type, uint8_t param);
-    void setEncFilterFull(uint8_t flags, uint8_t emaAlpha, uint8_t smaWindow,
-                          uint8_t measWindowMs, uint8_t sampleRateDiv100);
+    /// Store the whole filter chain (CTRL:ENC:FILT:SAVE: the live chain): flags, every stage's
+    /// parameters, the measurement window and the sample rate
+    void setEncFilterFull(const Harness::EncoderFilterConfig& cfg);
     void setFullStepsPerRev(uint16_t steps);
     void setEncoderPPR(uint16_t ppr);
     void setPidGains(int16_t kp100, int16_t ki100, int16_t kd100);

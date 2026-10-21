@@ -24,6 +24,13 @@ tags.
   -1.6..+0.6 degrees, under one full step (docs/bench/slip_paired_2026-10-21.png). The control
   loop's following error uses the same pair.
 
+### Fixed
+- `CTRL:ENC:FILT:SAVE` keeps the whole filter chain: the Butterworth cutoff, the Pade gain and
+  limit, the notch centre and Q and the Holt factors are stored too (in the config record's
+  spare bytes; a record saved before reads them as 0, each stage's default, as boot always
+  applied). Before, only the flags, EMA alpha, SMA window, window and rate were kept, so a
+  20 Hz cutoff came back as 10 Hz after a restart (bench 2026-10-21: 20 Hz now survives one).
+
 ### Changed
 - The default encoder velocity filter is one 10 Hz Butterworth low-pass on the 40 ms window
   (config defaults, `CTRL:ENC:FILT:RESET`): 36 ms of lag instead of 208 ms for 0.5 RPM of

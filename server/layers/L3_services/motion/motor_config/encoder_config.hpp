@@ -30,10 +30,8 @@ public:
     void setEncFilter(uint8_t type, uint8_t param) {
         m_mgr.setEncFilter(type, param);
     }
-    void setEncFilterFull(uint8_t flags, uint8_t emaAlpha, uint8_t smaWindow,
-                          uint8_t measWindowMs, uint8_t sampleRateDiv100) {
-        m_mgr.setEncFilterFull(flags, emaAlpha, smaWindow, measWindowMs, sampleRateDiv100);
-    }
+    void setEncFilterFull(const Harness::EncoderFilterConfig& cfg) { m_mgr.setEncFilterFull(cfg); }
+    Harness::EncoderFilterConfig getEncFilterConfig() const { return m_mgr.getEncFilterConfig(); }
 
     // Direct mutable access for fields not covered by setters
     MotorConfig& getConfigMutable() { return m_mgr.getConfigMutable(); }
