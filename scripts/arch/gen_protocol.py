@@ -473,6 +473,10 @@ aliases kept one release (marked **deprecated** in section 9 and in `SYST:HELP?`
     count read at the same instant as `motor.position` (`encoder.count` is the Encoder
     task's own, up to 10 ms old, and the position is polled every 50 ms). Slip is
     `enc_at_pos` against `position`; the control loop's following error uses the same pair.
+16. (2026-10-21) `CTRL:ENC:FILT:OBS <0|1> [bandwidth 1-200 Hz]` and `observer_enabled` /
+    `observer_bw_hz` in `CTRL:ENC:FILT?`: a tracking observer on every encoder sample as the
+    velocity chain's input. `CTRL:ENC:FILT:SAVE` keeps every stage's parameters (before, only
+    the flags, EMA alpha, SMA window, window and rate).
 
 Reserved for a later version:
 

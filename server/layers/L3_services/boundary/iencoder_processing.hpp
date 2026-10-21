@@ -31,7 +31,8 @@ public:
     virtual void setFilterConfig(uint8_t flags, uint8_t emaAlpha, uint8_t smaWindow,
                                  uint8_t padeGainPct, uint8_t padeMaxCorr,
                                  uint8_t biquadCutoffHz, uint8_t notchCenterHz,
-                                 uint8_t notchQ10, uint8_t holtAlpha, uint8_t holtBeta) = 0;
+                                 uint8_t notchQ10, uint8_t holtAlpha, uint8_t holtBeta,
+                                 uint8_t observerBwHz) = 0;
 
     /** @brief Get current filter configuration (filter params only) */
     virtual void getFilterConfig(Harness::EncoderFilterConfig& cfg) const = 0;

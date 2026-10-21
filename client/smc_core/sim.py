@@ -70,7 +70,8 @@ class FakeBoard:
                            "sma_enabled": False, "sma_window": 8, "pade_enabled": False, "pade_gain": 25,
                            "pade_max_corr": 50, "biquad_enabled": True, "biquad_cutoff_hz": 10,
                            "notch_enabled": False, "notch_center_hz": 25, "notch_q10": 50,
-                           "holt_enabled": False, "holt_alpha": 51, "holt_beta": 13}
+                           "holt_enabled": False, "holt_alpha": 51, "holt_beta": 13,
+                           "observer_enabled": False, "observer_bw_hz": 20}
         self.sysid_sine = None                     # (base_sps, amp_sps, f_hz, dur_ms) of the last SINE
         self.idle_release_ms = 0
         # DIAG:MEM? as the release build reports it: bytes per region, then (words) per task
@@ -777,6 +778,7 @@ class FakeBoard:
     def _c_CTRL_ENC_FILT_SMA(self, name, args): self._filt_stage(name, args, "sma", "sma_window")
     def _c_CTRL_ENC_FILT_PADE(self, name, args): self._filt_stage(name, args, "pade", "pade_gain", "pade_max_corr")
     def _c_CTRL_ENC_FILT_BIQUAD(self, name, args): self._filt_stage(name, args, "biquad", "biquad_cutoff_hz")
+    def _c_CTRL_ENC_FILT_OBS(self, name, args): self._filt_stage(name, args, "observer", "observer_bw_hz")
     def _c_CTRL_ENC_FILT_NOTCH(self, name, args): self._filt_stage(name, args, "notch", "notch_center_hz", "notch_q10")
     def _c_CTRL_ENC_FILT_HOLT(self, name, args): self._filt_stage(name, args, "holt", "holt_alpha", "holt_beta")
 
@@ -793,6 +795,8 @@ class FakeBoard:
         lag += 10.0 if f["pade_enabled"] else 0.0
         lag += (160.0 / max(1, f["biquad_cutoff_hz"])) if f["biquad_enabled"] else 0.0
         lag += 8.0 if f["holt_enabled"] else 0.0
+        if f["observer_enabled"]:                   # replaces the window's half-window lag
+            lag += 1000.0 / (2.0 * 3.14159 * max(1, f["observer_bw_hz"])) - f["meas_window_ms"] / 2.0
         return lag
 
     CAP_SAMPLES = 4096

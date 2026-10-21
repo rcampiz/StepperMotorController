@@ -164,6 +164,7 @@ void MotorConfigManager::setEncFilterFull(const Harness::EncoderFilterConfig& cf
     m_config.encNotchQ10 = cfg.notchQ10;
     m_config.encHoltAlpha = cfg.holtAlpha;
     m_config.encHoltBeta = cfg.holtBeta;
+    m_config.encObserverBwHz = cfg.observerBwHz;
 }
 
 Harness::EncoderFilterConfig MotorConfigManager::getEncFilterConfig() const {
@@ -180,6 +181,7 @@ Harness::EncoderFilterConfig MotorConfigManager::getEncFilterConfig() const {
     cfg.notchQ10 = m_config.encNotchQ10;
     cfg.holtAlpha = m_config.encHoltAlpha;
     cfg.holtBeta = m_config.encHoltBeta;
+    cfg.observerBwHz = m_config.encObserverBwHz;
     return cfg;
 }
 

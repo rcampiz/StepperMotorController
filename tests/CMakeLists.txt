@@ -82,6 +82,10 @@ smc_add_test(test_encoder_service test_encoder_service.cpp
     ${SERVER}/layers/L3_services/motion/encoder_service/encoder_service.cpp
     ${SERVER}/layers/L3_services/infra/telemetry_store/telemetry_store.cpp)
 
+# The tracking observer (ENC_FILT_OBSERVER) on synthetic encoder samples.
+smc_add_test(test_encoder_observer test_encoder_observer.cpp
+    ${SERVER}/layers/L3_services/motion/encoder_processor/encoder_processor.cpp)
+
 # --- Step 7: H_TASKS_L3 â€” Comms task body in L3; bounded ARM/START flush; ESTOP bypass.
 smc_add_test(test_comms_service test_comms_service.cpp
     ${SERVER}/layers/L3_services/comms/comms_service/comms_service.cpp

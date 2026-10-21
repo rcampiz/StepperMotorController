@@ -16,6 +16,13 @@ tags.
 ## [Unreleased]
 
 ### Added
+- A tracking observer for the encoder velocity (`CTRL:ENC:FILT:OBS <0|1> [bandwidth 1-200 Hz]`,
+  `observer_enabled` / `observer_bw_hz` in `CTRL:ENC:FILT?`, saved with the chain): a
+  critically damped second-order loop on every DMA sample, whose velocity replaces the
+  measurement window's count difference as the chain's input. The Encoder task now gives each
+  sample of a batch its own instant (1 / rate apart). Bench 2026-10-21 against the true
+  velocity: 10 Hz 32 ms lag / 0.39 RPM noise (the 10 Hz Butterworth: 38 ms / 0.42), 20 Hz
+  14 ms / 1.1 RPM, 50 Hz 8 ms / 6.0 RPM; the 4000-count encoder sets the noise. Off by default.
 - `motor.enc_at_pos` in `DIAG:STAT?` and both telemetry pushes: the encoder count read at the
   same instant as `motor.position` (`IEncoder::countNow()`: the last sampled count plus the
   hardware counter's movement since). `encoder.count` is the Encoder task's own, up to 10 ms
@@ -25,6 +32,11 @@ tags.
   loop's following error uses the same pair.
 
 ### Fixed
+- The release image boots: the startup code ran the C++ static constructors before
+  `SystemInit`, which enables the FPU, so any of them touching a float register faulted before
+  the UART was up (the optimised build did; so did the observer's first, debug, version).
+  `SystemInit` now runs first, as in ST's startup. Bench 2026-10-21: the release image with the
+  old order prints nothing, with the new one boots and answers.
 - `CTRL:ENC:FILT:SAVE` keeps the whole filter chain: the Butterworth cutoff, the Pade gain and
   limit, the notch centre and Q and the Holt factors are stored too (in the config record's
   spare bytes; a record saved before reads them as 0, each stage's default, as boot always

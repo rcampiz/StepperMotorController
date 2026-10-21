@@ -27,6 +27,8 @@ using Harness::ENC_FILT_NOTCH;
 using Harness::ENC_FILT_HOLT;
 using Harness::ENC_FILT_DEFAULT_FLAGS;
 using Harness::ENC_FILT_DEFAULT_BIQUAD_HZ;
+using Harness::ENC_FILT_OBSERVER;
+using Harness::ENC_FILT_DEFAULT_OBSERVER_HZ;
 
 class EncoderProcessor : public Services::IEncoderProcessing {
 public:
@@ -62,7 +64,8 @@ public:
     void setFilterConfig(uint8_t flags, uint8_t emaAlpha, uint8_t smaWindow,
                          uint8_t padeGainPct, uint8_t padeMaxCorr,
                          uint8_t biquadCutoffHz, uint8_t notchCenterHz,
-                         uint8_t notchQ10, uint8_t holtAlpha, uint8_t holtBeta) override;
+                         uint8_t notchQ10, uint8_t holtAlpha, uint8_t holtBeta,
+                         uint8_t observerBwHz) override;
 
     void getFilterConfig(EncoderFilterConfig& cfg) const override;
 
@@ -123,6 +126,23 @@ private:
     float m_holtLevel = 0.0f;
     float m_holtTrend = 0.0f;
     bool  m_holtInit = false;
+
+    // Tracking observer (ENC_FILT_OBSERVER): a second-order loop that follows every DMA sample
+    // (critically damped, bandwidth m_observerBwHz). Position is kept as an integer base plus
+    // a float fraction so a long run never costs it resolution.
+    void observerUpdate(uint32_t tickUs);
+    void observerGains();
+    uint8_t  m_observerBwHz = ENC_FILT_DEFAULT_OBSERVER_HZ;
+    // The default bandwidth's gains, constant-initialised (no code before main; setFilterConfig
+    // recomputes them)
+    static constexpr float OBS_WN_DEFAULT = 2.0f * 3.14159265f * ENC_FILT_DEFAULT_OBSERVER_HZ;
+    float    m_obsKp = 2.0f * OBS_WN_DEFAULT;              // 2 zeta wn, 1/s (zeta = 1)
+    float    m_obsKi = OBS_WN_DEFAULT * OBS_WN_DEFAULT;    // wn^2, 1/s^2
+    int64_t  m_obsBase = 0;            // estimated position, whole counts
+    float    m_obsFrac = 0.0f;         // estimated position, fraction (0..1)
+    float    m_obsVel = 0.0f;          // estimated velocity, counts/s
+    uint32_t m_obsLastUs = 0;
+    bool     m_obsSeeded = false;
 
     // Quality tracking
     uint32_t m_lastEdgeUs = 0;

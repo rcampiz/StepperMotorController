@@ -19,6 +19,9 @@ constexpr uint8_t ENC_FILT_PADE   = 0x04;  // bit 2: Padé [1/1] sharpener enabl
 constexpr uint8_t ENC_FILT_BIQUAD = 0x08;  // bit 3: Butterworth 2nd-order IIR low-pass
 constexpr uint8_t ENC_FILT_NOTCH  = 0x10;  // bit 4: Notch (band-reject) filter
 constexpr uint8_t ENC_FILT_HOLT   = 0x20;  // bit 5: Holt's double exponential smoothing
+constexpr uint8_t ENC_FILT_OBSERVER = 0x40; // bit 6: tracking observer on every DMA sample; its
+                                            //        velocity is the chain's input (else the
+                                            //        window difference)
 
 // The default chain (config defaults, CTRL:ENC:FILT:RESET, the processor before any config):
 // one 2nd-order Butterworth low-pass at 10 Hz on the 40 ms measurement window. Bench tune
@@ -27,6 +30,7 @@ constexpr uint8_t ENC_FILT_HOLT   = 0x20;  // bit 5: Holt's double exponential s
 // chain before it lagged 208 ms (0.1 RPM), no filter 14 ms (2.1 RPM).
 constexpr uint8_t ENC_FILT_DEFAULT_FLAGS     = ENC_FILT_BIQUAD;
 constexpr uint8_t ENC_FILT_DEFAULT_BIQUAD_HZ = 10;
+constexpr uint8_t ENC_FILT_DEFAULT_OBSERVER_HZ = 20;   // observer bandwidth when 0 is stored
 
 /**
  * @brief Composable encoder filter configuration
@@ -41,6 +45,7 @@ struct EncoderFilterConfig {
     static constexpr uint8_t FILT_BIQUAD = ENC_FILT_BIQUAD;
     static constexpr uint8_t FILT_NOTCH  = ENC_FILT_NOTCH;
     static constexpr uint8_t FILT_HOLT   = ENC_FILT_HOLT;
+    static constexpr uint8_t FILT_OBSERVER = ENC_FILT_OBSERVER;
 
     uint8_t  filterFlags;      // Bitfield: ENC_FILT_EMA | SMA | PADE | BIQUAD | NOTCH | HOLT
     uint8_t  emaAlpha;         // EMA smoothing (0-255, higher = smoother)
@@ -54,6 +59,7 @@ struct EncoderFilterConfig {
     uint8_t  notchQ10;         // Notch Q factor × 10 (1-100 → Q 0.1-10.0, 0 = default 50)
     uint8_t  holtAlpha;        // Holt level smoothing (0-255, 0 = default 51 ≈ 0.20)
     uint8_t  holtBeta;         // Holt trend smoothing (0-255, 0 = default 13 ≈ 0.05)
+    uint8_t  observerBwHz;     // Observer bandwidth (1-200 Hz, 0 = default ENC_FILT_DEFAULT_OBSERVER_HZ)
 };
 
 } // namespace Harness

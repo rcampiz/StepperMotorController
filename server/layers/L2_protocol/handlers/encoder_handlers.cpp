@@ -58,6 +58,8 @@ void CommandParser::cmdEncFilter(const ParsedCommand &cmd) {
     unsigned ntQ = (cfg.notchQ10 > 0) ? cfg.notchQ10 : 50;
     unsigned hAlph = (cfg.holtAlpha > 0) ? cfg.holtAlpha : 51;
     unsigned hBeta = (cfg.holtBeta > 0) ? cfg.holtBeta : 13;
+    unsigned obsBw = (cfg.observerBwHz > 0) ? cfg.observerBwHz : Harness::ENC_FILT_DEFAULT_OBSERVER_HZ;
+    const bool obsOn = (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_OBSERVER) != 0;
     if (m_format == ResponseFormat::JSON) {
       snprintf(
           buf, sizeof(buf),
@@ -67,7 +69,8 @@ void CommandParser::cmdEncFilter(const ParsedCommand &cmd) {
           "\"pade_enabled\":%s,\"pade_gain\":%u,\"pade_max_corr\":%u,"
           "\"biquad_enabled\":%s,\"biquad_cutoff_hz\":%u,"
           "\"notch_enabled\":%s,\"notch_center_hz\":%u,\"notch_q10\":%u,"
-          "\"holt_enabled\":%s,\"holt_alpha\":%u,\"holt_beta\":%u}",
+          "\"holt_enabled\":%s,\"holt_alpha\":%u,\"holt_beta\":%u,"
+          "\"observer_enabled\":%s,\"observer_bw_hz\":%u}",
           (unsigned)cfg.measWindowMs, (unsigned)cfg.sampleRateHz,
           (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_EMA) ? "true" : "false",
           (unsigned)cfg.emaAlpha,
@@ -78,13 +81,13 @@ void CommandParser::cmdEncFilter(const ParsedCommand &cmd) {
           bqCut, (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_NOTCH) ? "true" : "false",
           ntCtr, ntQ,
           (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_HOLT) ? "true" : "false", hAlph,
-          hBeta);
+          hBeta, obsOn ? "true" : "false", obsBw);
       respondJsonOk(m_currentCmd, buf);
     } else {
       snprintf(buf, sizeof(buf),
                "window=%ums rate=%uHz EMA=%s alpha=%u SMA=%s window=%u"
                " PADE=%s gain=%u%% max=%utps BIQUAD=%s cut=%uHz"
-               " NOTCH=%s ctr=%uHz Q=%u.%u HOLT=%s a=%u b=%u",
+               " NOTCH=%s ctr=%uHz Q=%u.%u HOLT=%s a=%u b=%u OBS=%s bw=%uHz",
                (unsigned)cfg.measWindowMs, (unsigned)cfg.sampleRateHz,
                (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_EMA) ? "ON" : "OFF",
                (unsigned)cfg.emaAlpha,
@@ -95,7 +98,7 @@ void CommandParser::cmdEncFilter(const ParsedCommand &cmd) {
                bqCut, (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_NOTCH) ? "ON" : "OFF",
                ntCtr, ntQ / 10, ntQ % 10,
                (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_HOLT) ? "ON" : "OFF", hAlph,
-               hBeta);
+               hBeta, obsOn ? "ON" : "OFF", obsBw);
       respondOk(buf);
     }
     return;
@@ -311,6 +314,38 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
     snprintf(buf, sizeof(buf), "BIQUAD %s cutoff=%uHz",
              (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_BIQUAD) ? "ON" : "OFF",
              (unsigned)((cfg.biquadCutoffHz > 0) ? cfg.biquadCutoffHz : 10));
+    respondOk(buf);
+    return;
+  }
+
+  // CTRL:ENC:FILT:OBS <0|1> [bandwidthHz]: the tracking observer (every DMA sample) as the
+  // chain's input instead of the measurement window's count difference
+  if (strcmp(sub, "OBS") == 0) {
+    if (cmd.argCount < 1) {
+      respondErr("OBS requires 0|1 [bandwidth 1-200 Hz]");
+      return;
+    }
+    long enable = strtol(cmd.args[0], nullptr, 10);
+    ICommandDispatcher::EncFilterParams cfg;
+    m_dispatcher.encFilterGetConfig(cfg);
+    if (enable) {
+      cfg.filterFlags |= ICommandDispatcher::EncFilterParams::FILT_OBSERVER;
+      if (cmd.argCount >= 2) {
+        long bw = strtol(cmd.args[1], nullptr, 10);
+        if (bw < 1 || bw > 200) {
+          respondErr("Bandwidth must be 1-200 Hz");
+          return;
+        }
+        cfg.observerBwHz = static_cast<uint8_t>(bw);
+      }
+    } else {
+      cfg.filterFlags &= ~ICommandDispatcher::EncFilterParams::FILT_OBSERVER;
+    }
+    m_dispatcher.encFilterSetConfig(cfg);
+    char buf[64];
+    snprintf(buf, sizeof(buf), "OBS %s bw=%uHz",
+             (cfg.filterFlags & ICommandDispatcher::EncFilterParams::FILT_OBSERVER) ? "ON" : "OFF",
+             (unsigned)((cfg.observerBwHz > 0) ? cfg.observerBwHz : Harness::ENC_FILT_DEFAULT_OBSERVER_HZ));
     respondOk(buf);
     return;
   }

@@ -12,6 +12,8 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
 ## [Unreleased]
 
 ### Added
+- `commands.enc_filter_observer` (`CTRL:ENC:FILT:OBS`), the observer in the simulator and in the
+  filter scenarios' chains (`_chain(observer=...)`, restored with the rest).
 - 50 Hz telemetry in the GUI on a fast link: the telemetry period follows the Link rate (20 ms
   on 460800 and 1 Mbaud, 200 ms at 115200; bench 2026-10-21: 266 samples in 5.8 s at 1 Mbaud
   against 41 at 115200, docs/bench/telemetry_115200_vs_1M_2026-10-21.png). The graph keeps

@@ -24,7 +24,7 @@ bool initEncoderSubsystem(Platform::IClock& clock,
     const Harness::EncoderFilterConfig f = encCfg.getEncFilterConfig();
     motion.encoder.processor.setFilterConfig(
         f.filterFlags, f.emaAlpha, f.smaWindow, f.padeGainPct, f.padeMaxCorr,
-        f.biquadCutoffHz, f.notchCenterHz, f.notchQ10, f.holtAlpha, f.holtBeta);
+        f.biquadCutoffHz, f.notchCenterHz, f.notchQ10, f.holtAlpha, f.holtBeta, f.observerBwHz);
 
     if (!g_encoderService.init(*h.encoderHw, critical, usClock,
                                motion.encoder.processor, motion.control.mode,

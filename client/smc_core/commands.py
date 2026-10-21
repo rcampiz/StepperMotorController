@@ -372,6 +372,12 @@ def enc_filter_holt(enable: bool, alpha: Optional[int] = None,
                     beta: Optional[int] = None) -> Request:
     return request("CTRL:ENC:FILT:HOLT", bool(enable), alpha, beta)
 
+@builds("CTRL:ENC:FILT:OBS")
+def enc_filter_observer(enable: bool, bandwidth_hz: Optional[int] = None) -> Request:
+    """CTRL:ENC:FILT:OBS <0|1> [bandwidth 1-200 Hz]: the tracking observer (every encoder
+    sample) as the velocity chain's input instead of the measurement window."""
+    return request("CTRL:ENC:FILT:OBS", bool(enable), bandwidth_hz)
+
 @builds("CTRL:ENC:FILT:RATE")
 def enc_filter_rate(hz: int) -> Request: return request("CTRL:ENC:FILT:RATE", int(hz))
 

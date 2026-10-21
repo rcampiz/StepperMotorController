@@ -61,11 +61,14 @@ void EncoderService::sample()
     const uint32_t bufSize = m_hw->sampleBufferSize();
     const uint32_t tickUs = m_usClock->getTickUs();
 
-    // --- Feed every new DMA sample to the processor ---
+    // --- Feed every new DMA sample to the processor, each at its own instant (the samples are
+    //     1 / rate apart, the newest is now): the tracking observer integrates over them ---
     const uint32_t writeIdx = m_hw->sampleWriteIndex();
     const uint16_t* buf = m_hw->sampleBuffer();
-    while (m_lastDmaIdx != writeIdx) {
-        m_processor->feedSample(buf[m_lastDmaIdx], tickUs);
+    const uint32_t pending = (writeIdx + bufSize - m_lastDmaIdx) % bufSize;
+    const uint32_t periodUs = 1000000u / m_sampleRateHz;
+    for (uint32_t left = pending; m_lastDmaIdx != writeIdx; --left) {
+        m_processor->feedSample(buf[m_lastDmaIdx], tickUs - (left - 1u) * periodUs);
         m_lastDmaIdx = (m_lastDmaIdx + 1) % bufSize;
     }
 
@@ -204,7 +207,7 @@ void EncoderService::setConfig(const IEncoderDispatcher::EncFilterParams& cfg)
         cfg.filterFlags, cfg.emaAlpha, cfg.smaWindow,
         cfg.padeGainPct, cfg.padeMaxCorr,
         cfg.biquadCutoffHz, cfg.notchCenterHz, cfg.notchQ10,
-        cfg.holtAlpha, cfg.holtBeta);
+        cfg.holtAlpha, cfg.holtBeta, cfg.observerBwHz);
     m_measWindowMs = (cfg.measWindowMs != 0) ? cfg.measWindowMs : DEFAULT_MEAS_WINDOW_MS;
     uint16_t rate = (cfg.sampleRateHz != 0) ? cfg.sampleRateHz : DEFAULT_SAMPLE_RATE_HZ;
     if (rate != m_sampleRateHz) {

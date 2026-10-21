@@ -43,7 +43,7 @@ struct FakeProcessing : Services::IEncoderProcessing {
     void feedSample(uint16_t raw, uint32_t) override { ++fed; position = raw; lastRawCnt = raw; }
     int32_t filter(int32_t raw, uint32_t) override { lastRaw = raw; return raw * 10; }   // "filter" = x10
     void reset() override { position = 0; }
-    void setFilterConfig(uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t) override {}
+    void setFilterConfig(uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t) override {}
     void getFilterConfig(Harness::EncoderFilterConfig& cfg) const override { cfg = Harness::EncoderFilterConfig{}; }
     void setFilter(uint8_t, uint8_t) override {}
     void getFilter(uint8_t& t, uint8_t& p) const override { t = 0; p = 0; }

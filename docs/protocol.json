@@ -4232,6 +4232,27 @@
       "deprecated": ""
     },
     {
+      "name": "CTRL:ENC:FILT:OBS",
+      "prefix": "CTRL",
+      "handler": "cmdEncFilterSub",
+      "file": "encoder_handlers.cpp",
+      "min_args": 1,
+      "usage": [],
+      "ascii_ok": [
+        "<formatted text>"
+      ],
+      "json": [],
+      "errors": [
+        "Bandwidth must be 1-200 Hz",
+        "OBS requires 0|1 [bandwidth 1-200 Hz]"
+      ],
+      "note": "sub-command",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
       "name": "CTRL:ENC:FILT:NOTCH",
       "prefix": "CTRL",
       "handler": "cmdEncFilterSub",

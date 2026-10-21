@@ -30,6 +30,52 @@ void EncoderProcessor::feedSample(uint16_t rawCount, uint32_t tickUs)
     if (delta != 0) {
         m_lastEdgeUs = tickUs;
     }
+    observerUpdate(tickUs);
+}
+
+// ============================================================================
+// Tracking observer
+// ============================================================================
+
+void EncoderProcessor::observerGains()
+{
+    const float bw = static_cast<float>((m_observerBwHz > 0) ? m_observerBwHz : ENC_FILT_DEFAULT_OBSERVER_HZ);
+    const float wn = 2.0f * 3.14159265f * bw;
+    m_obsKp = 2.0f * wn;               // zeta = 1: no overshoot on a speed step
+    m_obsKi = wn * wn;
+}
+
+void EncoderProcessor::observerUpdate(uint32_t tickUs)
+{
+    // Runs on every sample whether or not the observer feeds the chain, so switching it on
+    // finds it already locked
+    const int64_t pos = m_accumulatedCount;
+    if (!m_obsSeeded) {
+        m_obsBase = pos;
+        m_obsFrac = 0.0f;
+        m_obsVel = 0.0f;
+        m_obsLastUs = tickUs;
+        m_obsSeeded = true;
+        return;
+    }
+    const float dt = static_cast<float>(tickUs - m_obsLastUs) * 1e-6f;
+    m_obsLastUs = tickUs;
+    if (!(dt > 0.0f)) {
+        return;                        // same instant: nothing to integrate
+    }
+    float err = static_cast<float>(pos - m_obsBase) - m_obsFrac;
+    // A jump the shaft cannot make (a counter reset, a restart of the sampling, a capture
+    // freeze, a gap over 50 ms): take the measured position, keep the speed
+    if (dt > 0.05f || err > 2000.0f || err < -2000.0f) {
+        m_obsBase = pos;
+        m_obsFrac = 0.0f;
+        return;
+    }
+    m_obsVel += m_obsKi * dt * err;
+    m_obsFrac += (m_obsVel + m_obsKp * err) * dt;
+    const float whole = floorf(m_obsFrac);
+    m_obsBase += static_cast<int64_t>(whole);
+    m_obsFrac -= whole;
 }
 
 // ============================================================================
@@ -38,7 +84,12 @@ void EncoderProcessor::feedSample(uint16_t rawCount, uint32_t tickUs)
 
 int32_t EncoderProcessor::filter(int32_t rawVelocity, uint32_t tickUs)
 {
+    // The chain's input: the observer's velocity (every DMA sample, ENC_FILT_OBSERVER) or
+    // the measurement window's count difference
     int32_t filtered = rawVelocity;
+    if (m_filterFlags & ENC_FILT_OBSERVER) {
+        filtered = static_cast<int32_t>(lroundf(m_obsVel));
+    }
 
     if (m_filterFlags & ENC_FILT_EMA) {
         filtered = applyEMA(filtered);
@@ -109,6 +160,7 @@ void EncoderProcessor::reset()
     m_accumulatedCount = 0;
     m_lastRawCount = 0;
     m_lastEdgeUs = 0;
+    m_obsSeeded = false;
     m_velQuality = VelocityQuality::INVALID;
     resetFilters();
 }
@@ -137,7 +189,8 @@ void EncoderProcessor::setFilterConfig(uint8_t flags, uint8_t emaAlpha,
                                        uint8_t padeGainPct, uint8_t padeMaxCorr,
                                        uint8_t biquadCutoffHz,
                                        uint8_t notchCenterHz, uint8_t notchQ10,
-                                       uint8_t holtAlpha, uint8_t holtBeta)
+                                       uint8_t holtAlpha, uint8_t holtBeta,
+                                       uint8_t observerBwHz)
 {
     m_filterFlags = flags;
     m_emaAlpha = emaAlpha;
@@ -149,6 +202,8 @@ void EncoderProcessor::setFilterConfig(uint8_t flags, uint8_t emaAlpha,
     m_notchQ10 = notchQ10;
     m_holtAlpha = holtAlpha;
     m_holtBeta = holtBeta;
+    m_observerBwHz = (observerBwHz > 0) ? observerBwHz : ENC_FILT_DEFAULT_OBSERVER_HZ;
+    observerGains();
 
     resetFilters();
     computeBiquadCoeffs(m_biquadCutoffHz);
@@ -167,6 +222,7 @@ void EncoderProcessor::getFilterConfig(EncoderFilterConfig& cfg) const
     cfg.notchQ10 = m_notchQ10;
     cfg.holtAlpha = m_holtAlpha;
     cfg.holtBeta = m_holtBeta;
+    cfg.observerBwHz = m_observerBwHz;
     // measWindowMs and sampleRateHz are NOT set here — task fills those in
 }
 

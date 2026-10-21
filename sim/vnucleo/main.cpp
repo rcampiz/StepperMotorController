@@ -167,9 +167,10 @@ int main(int argc, char** argv) {
 
     // initEncoderSubsystem with the fake encoder
     const auto& encCfg = Services::motion.encoder.config;
+    const Harness::EncoderFilterConfig f = encCfg.getEncFilterConfig();   // as initEncoderSubsystem
     Services::motion.encoder.processor.setFilterConfig(
-        encCfg.getEncFilterType(), encCfg.getEncFilterParam(), encCfg.getEncSmaWindow(),
-        0, 0, 0, 0, 0, 0, 0);
+        f.filterFlags, f.emaAlpha, f.smaWindow, f.padeGainPct, f.padeMaxCorr,
+        f.biquadCutoffHz, f.notchCenterHz, f.notchQ10, f.holtAlpha, f.holtBeta, f.observerBwHz);
     const bool encoderOk = Services::g_encoderService.init(
         encoderHw, critical, usClock, Services::motion.encoder.processor,
         Services::motion.control.mode, encCfg.getEncMeasWindowMs(), encCfg.getEncSampleRateHz());

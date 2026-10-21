@@ -180,6 +180,7 @@ COMMANDS: Dict[str, CommandSpec] = {
     'CTRL:ENC:FILT:SMA': CommandSpec('CTRL:ENC:FILT:SMA', 'cmdEncFilterSub', 1, '', '', False, False, False),
     'CTRL:ENC:FILT:PADE': CommandSpec('CTRL:ENC:FILT:PADE', 'cmdEncFilterSub', 1, '', '', False, False, False),
     'CTRL:ENC:FILT:BIQUAD': CommandSpec('CTRL:ENC:FILT:BIQUAD', 'cmdEncFilterSub', 1, '', '', False, False, False),
+    'CTRL:ENC:FILT:OBS': CommandSpec('CTRL:ENC:FILT:OBS', 'cmdEncFilterSub', 1, '', '', False, False, False),
     'CTRL:ENC:FILT:NOTCH': CommandSpec('CTRL:ENC:FILT:NOTCH', 'cmdEncFilterSub', 1, '', '', False, False, False),
     'CTRL:ENC:FILT:HOLT': CommandSpec('CTRL:ENC:FILT:HOLT', 'cmdEncFilterSub', 1, '', '', False, False, False),
     'CTRL:ENC:FILT:RATE': CommandSpec('CTRL:ENC:FILT:RATE', 'cmdEncFilterSub', 1, '', '', False, False, False),

@@ -50,11 +50,14 @@ LoopFillZerobss:
     cmp r2, r4
     bcc FillZerobss
 
+    /* The system initialization function first: it enables the FPU, and a static constructor
+       that touches a float (or code the compiler moves through FPU registers) faults with
+       the FPU off before anything can print (2026-10-21: no boot at all). ST's startup
+       calls it first too. */
+    bl SystemInit
+
     /* Call static constructors */
     bl __libc_init_array
-
-    /* Call the system initialization function */
-    bl SystemInit
 
     /* Call the application's entry point */
     bl main

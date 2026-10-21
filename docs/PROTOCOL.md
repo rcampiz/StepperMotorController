@@ -227,6 +227,10 @@ aliases kept one release (marked **deprecated** in section 9 and in `SYST:HELP?`
     count read at the same instant as `motor.position` (`encoder.count` is the Encoder
     task's own, up to 10 ms old, and the position is polled every 50 ms). Slip is
     `enc_at_pos` against `position`; the control loop's following error uses the same pair.
+16. (2026-10-21) `CTRL:ENC:FILT:OBS <0|1> [bandwidth 1-200 Hz]` and `observer_enabled` /
+    `observer_bw_hz` in `CTRL:ENC:FILT?`: a tracking observer on every encoder sample as the
+    velocity chain's input. `CTRL:ENC:FILT:SAVE` keeps every stage's parameters (before, only
+    the flags, EMA alpha, SMA window, window and rate).
 
 Reserved for a later version:
 
@@ -370,6 +374,7 @@ step mode 0-7, the same texts as before.
 | `CTRL:ENC:FILT:SMA` (sub-command) | 1 | — | ASCII: `OK <formatted text>` | `SMA requires 0\|1 [window]`<br>`SMA window must be 0-32` | `cmdEncFilterSub` (encoder_handlers.cpp) |
 | `CTRL:ENC:FILT:PADE` (sub-command) | 1 | — | ASCII: `OK <formatted text>` | `Gain must be 1-100%%`<br>`MaxCorr must be 1-255 tps`<br>`PADE requires 0\|1 [gain% 1-100] [maxCorr 1-255]` | `cmdEncFilterSub` (encoder_handlers.cpp) |
 | `CTRL:ENC:FILT:BIQUAD` (sub-command) | 1 | — | ASCII: `OK <formatted text>` | `BIQUAD requires 0\|1 [cutoff 1-50 Hz]`<br>`Cutoff must be 1-50 Hz` | `cmdEncFilterSub` (encoder_handlers.cpp) |
+| `CTRL:ENC:FILT:OBS` (sub-command) | 1 | — | ASCII: `OK <formatted text>` | `Bandwidth must be 1-200 Hz`<br>`OBS requires 0\|1 [bandwidth 1-200 Hz]` | `cmdEncFilterSub` (encoder_handlers.cpp) |
 | `CTRL:ENC:FILT:NOTCH` (sub-command) | 1 | — | ASCII: `OK <formatted text>` | `Center must be 1-50 Hz`<br>`NOTCH requires 0\|1 [center 1-50 Hz] [Q*10 1-100]`<br>`Q*10 must be 1-100` | `cmdEncFilterSub` (encoder_handlers.cpp) |
 | `CTRL:ENC:FILT:HOLT` (sub-command) | 1 | — | ASCII: `OK <formatted text>` | `Alpha must be 0-255`<br>`Beta must be 0-255`<br>`HOLT requires 0\|1 [alpha 0-255] [beta 0-255]` | `cmdEncFilterSub` (encoder_handlers.cpp) |
 | `CTRL:ENC:FILT:RATE` (sub-command) | 1 | — | ASCII: `OK <formatted text>` | `RATE requires hz (100-10000)`<br>`Rate must be 100-10000 Hz` | `cmdEncFilterSub` (encoder_handlers.cpp) |
