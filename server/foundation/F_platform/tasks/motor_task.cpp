@@ -43,7 +43,11 @@ void vMotorTask(void* pvParameters)
         Harness::setTraceTaskId(Harness::TASK_MOTOR);
         Harness::setTraceServiceId(Harness::SVC_MOTION);
 
-        if (s_cmdQueue->receive(cmd, MOTOR_STATUS_PERIOD_MS)) {
+        // Wait for a command at most until the next poll is due (a whole period after a pass
+        // made the poll period the period plus the pass: 87 polls/s at 10 ms, bench 2026-10-21)
+        const uint32_t sinceMs = s_clock->getTickMs() - lastStatusUpdate;
+        const uint32_t waitMs = (sinceMs >= MOTOR_STATUS_PERIOD_MS) ? 0u : MOTOR_STATUS_PERIOD_MS - sinceMs;
+        if (s_cmdQueue->receive(cmd, waitMs)) {
             {
                 Harness::Meter::Scope crossing(Harness::Meter::TASKS_MOTOR);   // H_TASKS_L3
                 s_service->onCommand(cmd);

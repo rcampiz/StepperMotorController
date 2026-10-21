@@ -282,7 +282,7 @@ void MotorController::periodicUpdate()
     // Read the driver's state (flags, position in microsteps, speed in full steps/s) and the
     // encoder count right after it, and publish the pair: slip and the following error compare
     // the two at one instant (the encoder task's own count is up to 10 ms old and this poll
-    // runs every 50 ms: up to 45 degrees apart at 150 RPM, bench 2026-10-21). The service owns
+    // ran every 50 ms: up to 45 degrees apart at 150 RPM, bench 2026-10-21). The service owns
     // the telemetry write; the harness tap (if any) is a pure observer.
     const MotorStatus status = m_driver->readState();
     const int64_t encoderAtPosition = encoderNow();
@@ -301,10 +301,23 @@ void MotorController::periodicUpdate()
     auto measTicks = static_cast<int32_t>(encoderAtPosition);
     int32_t followError = cmdTicks - measTicks;
 
+    // The control laws run every CONTROL_PERIOD_MS whatever the poll period: their gains, slew
+    // limits (dtSec below) and the sysid clock count 50 ms ticks. The status read above, the
+    // edges and the idle release below run on every poll.
+    bool controlDue = true;
+    if (m_clock != nullptr) {
+        const uint32_t now = m_clock->getTickMs();
+        controlDue = !m_controlRan || (now - m_lastControlMs >= CONTROL_PERIOD_MS);
+        if (controlDue) {
+            m_lastControlMs = now;
+            m_controlRan = true;
+        }
+    }
+
     // ── System identification (overrides normal control when active) ──
     Trace::setCurrentServiceId(Trace::SVC_SYSID);
     bool sysidActive = false;
-    if (!m_motionInhibited) {
+    if (controlDue && !m_motionInhibited) {
         auto& sysid = motion.control.sysId;
         auto sysResult = sysid.tick(
             snap.encoder.velocity, followError, fpr, encPPR);
@@ -327,13 +340,13 @@ void MotorController::periodicUpdate()
 
     // The driver's speed ceiling, read once for the trim clamp and the supervisor
     float maxSpeedFsps = 0.0f;
-    if (!m_motionInhibited && !sysidActive) {
+    if (controlDue && !m_motionInhibited && !sysidActive) {
         maxSpeedFsps = m_driver->getMaxSpeed();
     }
 
     // ── Speed-trim controller (skipped during sysid) ──
     Trace::setCurrentServiceId(Trace::SVC_MOTION);
-    if (!m_motionInhibited && !sysidActive && motion.control.trim.isActive()) {
+    if (controlDue && !m_motionInhibited && !sysidActive && motion.control.trim.isActive()) {
         SpeedTrimInput ti{};
         ti.encVelTps       = snap.encoder.velocity;
         ti.velQuality      = static_cast<VelocityQuality>(
@@ -353,7 +366,7 @@ void MotorController::periodicUpdate()
 
     // ── Following Error Supervisor (skipped during sysid) ──
     Trace::setCurrentServiceId(Trace::SVC_SAFETY);
-    if (!m_motionInhibited && !sysidActive) {
+    if (controlDue && !m_motionInhibited && !sysidActive) {
         auto mode = motion.control.mode.getMode();
         auto& sup = motion.control.supervisor;
 

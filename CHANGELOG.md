@@ -32,6 +32,17 @@ tags.
   20 Hz cutoff came back as 10 Hz after a restart (bench 2026-10-21: 20 Hz now survives one).
 
 ### Changed
+- The Motor task reads the driver every 5 ms (was 50): position, speed, faults and the encoder
+  count paired with them reach telemetry and the fault / stall / motion-done edges 10x sooner;
+  slip carries a new value in 96 % of 20 ms telemetry samples (40 % before). The control laws
+  (sysid, speed trim, following supervisor) keep their 50 ms clock: their gains, slew limits
+  and the sysid time base are per 50 ms tick. The task waits only for the rest of its period
+  (a whole period after each pass made it period + pass).
+- The powerSTEP01 status poll holds the shared SPI1 bus once for its three exchanges (it took
+  it three times, each a possible wait for a ~2.4 ms LCD chunk and a bus mode switch).
+- The LCD starts its next frame at once after a late one (it slept a whole 50 ms period after
+  it: every frame over 50 ms took 100). Bench 2026-10-21, motor at 150 RPM and the arrow
+  sweeping: 17.7 frames/s with the 5 ms poll, 14.1 before at 50 ms.
 - The default encoder velocity filter is one 10 Hz Butterworth low-pass on the 40 ms window
   (config defaults, `CTRL:ENC:FILT:RESET`): 36 ms of lag instead of 208 ms for 0.5 RPM of
   steady-state noise instead of 0.1 (bench tune 2026-10-21, against the true velocity from the

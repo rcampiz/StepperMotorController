@@ -12,7 +12,7 @@
  * are NOT signals of this harness; both sides get them from PlatformResources.
  *
  * Signals (the task sheet is the upper side; L3 provides, the task calls down):
- *   IMotorService::onCommand/periodicUpdate   Motor task   (prio 4, queue-driven, 50 ms status)
+ *   IMotorService::onCommand/periodicUpdate   Motor task   (prio 4, queue-driven, 5 ms status, 50 ms control)
  *   ICommsService::onStart/tick               Comms task   (prio 3, RX wake, 10 ms fallback)
  *   IEncoderService::sample                   Encoder task (prio 2, 10 ms; optional)
  *   IDisplayService::tick                     Display task (prio 1, 50 ms)

@@ -63,7 +63,9 @@ public:
 
     void processCommand(const MotorCommand& cmd) override;
 
-    // ── Periodic control loop (called every 50ms) ──
+    // ── Periodic update (Motor task, every MOTOR_STATUS_PERIOD_MS): the driver's state and the
+    //    encoder count with it, published, and the fault / stall / motion-done edges, every call;
+    //    the control laws (sysid, speed trim, following supervisor) every CONTROL_PERIOD_MS ──
 
     /**
      * @brief Run one control loop iteration
@@ -118,6 +120,10 @@ private:
     float m_savedMaxSpeedFsps = 0.0f;
     bool m_speedOverrideActive = false;
     int32_t m_lastPositionUsteps = 0;  ///< last position read (published while the chip is in standby)
+    /// The control laws' period: their gains, slew limits and the sysid clock are per 50 ms tick
+    static constexpr uint32_t CONTROL_PERIOD_MS = 50;
+    uint32_t m_lastControlMs = 0;      ///< when the control laws last ran
+    bool     m_controlRan = false;     ///< false until the first control pass
     IEncoder* m_encoder = nullptr;     ///< setEncoder(); countNow() pairs with each position read
     int64_t encoderNow();              ///< the encoder count now (0 without an encoder)
     uint32_t m_stoppedSinceMs = 0;     ///< tick when the motor was last seen stopped and energised (0: not)

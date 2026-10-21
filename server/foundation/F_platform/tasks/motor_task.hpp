@@ -21,7 +21,11 @@ namespace Scheduler {
 
 // MOTOR_TASK_STACK_SIZE: tasks/task_stacks.hpp (all the stack sizes, in one place)
 constexpr uint32_t MOTOR_TASK_PRIORITY = 4;
-constexpr uint32_t MOTOR_STATUS_PERIOD_MS = 50;   // periodicUpdate cadence / queue timeout
+// periodicUpdate cadence / queue timeout: the driver's state and the encoder count read with it
+// (telemetry, fault / stall / motion-done edges). The control laws inside run on their own 50 ms
+// clock (MotorController::CONTROL_PERIOD_MS). Was 50 until 2026-10-21; bench at 5 ms with the
+// LCD streaming: 199 polls/s, the LCD at 17.7 frames/s (14.1 before, at 50 ms).
+constexpr uint32_t MOTOR_STATUS_PERIOD_MS = 5;
 
 using MotorCmdQueue = Platform::IQueue<MotorCommand, Harness::MOTOR_CMD_QUEUE_DEPTH>;
 

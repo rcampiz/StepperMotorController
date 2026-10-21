@@ -178,29 +178,15 @@ public:
     void clearFaults() { (void)getStatus(); }
 
     Drivers::MotorStatus getStatus() override {
-        m_spi.lock();
-        m_spi.setMode(Board::SPIMode::Mode3);
-        m_spi.setPrescaler(Board::SPIPrescaler::Div32);
-        // powerSTEP01 requires CS toggle between each byte!
-        transferByte(static_cast<uint8_t>(Cmd::GetStatus));
-        uint8_t hi = transferByte(0x00);
-        uint8_t lo = transferByte(0x00);
+        busAcquire();
+        const uint16_t word = statusExchange();
         m_spi.unlock();
-        return decodePowerStepStatus(static_cast<uint16_t>((hi << 8) | lo));   // the bit layout stays in L4
+        return decodePowerStepStatus(word);   // the bit layout stays in L4
     }
 
     uint32_t getParam(Reg reg) {
-        uint8_t len = paramLen(reg);
-        uint32_t val = 0;
-
-        m_spi.lock();
-        m_spi.setMode(Board::SPIMode::Mode3);
-        m_spi.setPrescaler(Board::SPIPrescaler::Div32);
-        // powerSTEP01 requires CS toggle between each byte!
-        transferByte(static_cast<uint8_t>(Cmd::GetParam) | static_cast<uint8_t>(reg));
-        for (uint8_t i = 0; i < len; i++) {
-            val = (val << 8) | transferByte(0x00);
-        }
+        busAcquire();
+        const uint32_t val = paramExchange(reg);
         m_spi.unlock();
         return val;
     }
@@ -219,11 +205,19 @@ public:
         m_spi.unlock();
     }
 
-    /// The poll: STATUS, ABS_POS, SPEED (three exchanges, as the motor loop always read them)
+    /// The poll: STATUS, ABS_POS, SPEED, three exchanges under one hold of the shared bus. The
+    /// LCD streams on the same SPI in ~2.4 ms chunks: taking the bus once per exchange waited
+    /// for up to three of them per poll and switched the bus mode three times (bench
+    /// 2026-10-21, 5 ms polls: 1.35 ms per readState, most of it waiting).
     Drivers::MotorStatus readState() override {
-        Drivers::MotorStatus s = getStatus();
-        s.positionUsteps = PowerStepUnits::absPosToUsteps(getParam(Reg::ABS_POS));
-        s.speedFsps = PowerStepUnits::speedRegToFsps(getParam(Reg::SPEED));
+        busAcquire();
+        const uint16_t word = statusExchange();
+        const uint32_t absPos = paramExchange(Reg::ABS_POS);
+        const uint32_t speed = paramExchange(Reg::SPEED);
+        m_spi.unlock();
+        Drivers::MotorStatus s = decodePowerStepStatus(word);
+        s.positionUsteps = PowerStepUnits::absPosToUsteps(absPos);
+        s.speedFsps = PowerStepUnits::speedRegToFsps(speed);
         return s;
     }
 
@@ -297,6 +291,32 @@ private:
     Board::IGPIO& m_busy;
     Board::IGPIO& m_flag;
     PowerStepSettings::ResetWatch m_resetWatch;
+
+    /// Take the shared SPI bus and set it up for the powerSTEP01 (mode 3, 2.6 MHz)
+    void busAcquire() {
+        m_spi.lock();
+        m_spi.setMode(Board::SPIMode::Mode3);
+        m_spi.setPrescaler(Board::SPIPrescaler::Div32);
+    }
+
+    /// GET_STATUS, bus held (powerSTEP01 requires a CS toggle between each byte)
+    uint16_t statusExchange() {
+        transferByte(static_cast<uint8_t>(Cmd::GetStatus));
+        const uint8_t hi = transferByte(0x00);
+        const uint8_t lo = transferByte(0x00);
+        return static_cast<uint16_t>((hi << 8) | lo);
+    }
+
+    /// GET_PARAM, bus held
+    uint32_t paramExchange(Reg reg) {
+        const uint8_t len = paramLen(reg);
+        uint32_t val = 0;
+        transferByte(static_cast<uint8_t>(Cmd::GetParam) | static_cast<uint8_t>(reg));
+        for (uint8_t i = 0; i < len; i++) {
+            val = (val << 8) | transferByte(0x00);
+        }
+        return val;
+    }
 
     void csLow() { m_cs.write(false); }
     void csHigh() { m_cs.write(true); }

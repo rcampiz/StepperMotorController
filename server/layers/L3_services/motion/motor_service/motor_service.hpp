@@ -3,7 +3,7 @@
  * @brief L3 MotorService — Motor task entry points, command sink, task control, immediate stop
  *
  * Owns the Motor task's work (H_TASKS_L3): executes queued commands through MotorController,
- * polls status every 50 ms, publishes system telemetry. Also the L3-internal command sink
+ * polls status every MOTOR_STATUS_PERIOD_MS, publishes system telemetry. Also the L3-internal command sink
  * (sendCommand -> Platform queue with a bounded timeout), the motor task control port used
  * by the driver dispatcher and debug service (reinit/applyConfig/getDebugInfo/setStepModeSafe/
  * setDebugPaused), and the immediate stop used by the ESTOP path.
