@@ -740,9 +740,13 @@ class GraphPanel(QWidget):
         encoder = data.get("encoder", {})
         vel = encoder.get("velocity", encoder.get("vel", 0)) if isinstance(encoder, dict) else 0
 
-        # Slip: the encoder against the commanded position (degrees of shaft)
+        # Slip: the encoder against the commanded position (degrees of shaft). motor.enc_at_pos
+        # is the count read at the same instant as the position (firmware 0.7); encoder.count
+        # can be up to 50 ms apart from it, tens of degrees of false slip while turning.
         pos = motor.get("position") if isinstance(motor, dict) else None
-        count = encoder.get("count") if isinstance(encoder, dict) else None
+        count = motor.get("enc_at_pos") if isinstance(motor, dict) else None
+        if count is None:
+            count = encoder.get("count") if isinstance(encoder, dict) else None
         if isinstance(pos, (int, float)) and isinstance(count, (int, float)):
             slip = self._slip.update(int(pos), int(count))
         else:

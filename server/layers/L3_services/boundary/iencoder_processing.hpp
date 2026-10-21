@@ -45,6 +45,9 @@ public:
     /** @brief Get accumulated position (64-bit, no wrap) */
     virtual int64_t getPosition() const = 0;
 
+    /** @brief The raw 16-bit counter value getPosition() corresponds to (the last sample fed) */
+    virtual uint16_t lastRawCount() const = 0;
+
     /** @brief Get velocity quality assessment */
     virtual VelocityQuality getQuality() const = 0;
 

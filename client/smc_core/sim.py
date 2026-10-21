@@ -138,7 +138,7 @@ class FakeBoard:
         return {
             "state": self.state, "tick": int(time.monotonic() * 1e6) & 0xFFFFFFFF,
             "queue_depth": 0,
-            "motor": {"position": self.position, "speed": self.speed,
+            "motor": {"position": self.position, "enc_at_pos": self._enc_count(), "speed": self.speed,
                       "busy": self.speed != 0 or self.target is not None, "hi_z": self.hi_z, "direction": self.direction,
                       "mot_status": 0, "status_reg": "7E03", "cmd_err": False, "ocd": False,
                       "thermal_sd": False, "thermal_warn": False, "uvlo": False,
@@ -947,7 +947,8 @@ class FakeBoard:
                         st = self.status()
                         if self.tlm_compact:
                             st = {"state": st["state"], "tick": st["tick"],
-                                  "motor": {k: st["motor"][k] for k in ("position", "speed", "busy", "hi_z")},
+                                  "motor": {k: st["motor"][k]
+                                            for k in ("position", "enc_at_pos", "speed", "busy", "hi_z")},
                                   "encoder": {k: st["encoder"][k] for k in ("count", "velocity")},
                                   "control": {"following_error": st["control"]["following_error"]},
                                   "heartbeat": {"remaining_ms": st["heartbeat"]["remaining_ms"]}}

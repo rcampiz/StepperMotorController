@@ -17,8 +17,9 @@ public:
     virtual ~ISnapshotWriter() = default;
 
     /** @brief Write the driver's state (from MotorController::periodicUpdate): decoded flags,
-     *         position in microsteps, speed in full steps/s; physical, no chip registers */
-    virtual void writeMotorStatus(const Harness::MotorState& status) = 0;
+     *         position in microsteps, speed in full steps/s; physical, no chip registers.
+     *         encoderAtPosition: the encoder count read right after the position (0: no encoder) */
+    virtual void writeMotorStatus(const Harness::MotorState& status, int64_t encoderAtPosition) = 0;
 
     /** @brief Write encoder telemetry (from encoder_task) */
     virtual void writeEncoder(const Services::EncoderTelemetryData& data) = 0;

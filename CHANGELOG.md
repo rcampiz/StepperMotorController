@@ -15,6 +15,15 @@ tags.
 
 ## [Unreleased]
 
+### Added
+- `motor.enc_at_pos` in `DIAG:STAT?` and both telemetry pushes: the encoder count read at the
+  same instant as `motor.position` (`IEncoder::countNow()`: the last sampled count plus the
+  hardware counter's movement since). `encoder.count` is the Encoder task's own, up to 10 ms
+  old, and the position is polled every 50 ms, so slip computed from the two swung by tens of
+  degrees while turning (bench 2026-10-21, 150 RPM: -22..+41 degrees); from the pair it is
+  -1.6..+0.6 degrees, under one full step (docs/bench/slip_paired_2026-10-21.png). The control
+  loop's following error uses the same pair.
+
 ### Changed
 - The serial link runs clean up to 2 Mbaud: the USART2 receive ISR runs at NVIC 1, above the
   FreeRTOS critical sections and the SEGGER RTT lock, and defers its one RTOS call (the Comms

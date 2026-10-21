@@ -36,13 +36,14 @@ TEST(motor_writes_surface_as_converted_telemetry) {
     st.faults = Harness::DriverFault::STALL | Harness::DriverFault::THERMAL_WARNING;
     st.positionUsteps = -1;                        // physical: the driver sign-extended it
     st.speedFsps = 0.0f;
-    snap.writeMotorStatus(st);
+    snap.writeMotorStatus(st, -7);                 // and the encoder count read with the position
 
     Protocol::TelemetrySnapshot t = snap.getSnapshot();
     EXPECT_EQ(t.motor.statusReg, 0x1234u);
     EXPECT_TRUE(t.motor.busy && !t.motor.hiZ && t.motor.stalled && t.motor.statusReadable);
     EXPECT_EQ(t.motor.faults, static_cast<uint8_t>(Harness::DriverFault::STALL | Harness::DriverFault::THERMAL_WARNING));
     EXPECT_EQ(t.motor.position, -1);
+    EXPECT_EQ(t.motor.encoderAtPosition, -7);
     EXPECT_EQ(t.motor.speed, 0u);
     EXPECT_EQ(t.timestamp, 1234u);
 }
@@ -53,7 +54,7 @@ TEST(position_and_speed_are_published_in_physical_units) {
     Harness::MotorState st;
     st.positionUsteps = 100;
     st.speedFsps = 999.987f;                       // what RUN 1000 reads back on a powerSTEP01
-    snap.writeMotorStatus(st);
+    snap.writeMotorStatus(st, 0);
     EXPECT_EQ(snap.getSnapshot().motor.position, 100);
     EXPECT_EQ(snap.getSnapshot().motor.speed, 999u);   // whole steps/s, truncated (as before)
 }
@@ -61,7 +62,7 @@ TEST(position_and_speed_are_published_in_physical_units) {
 TEST(every_write_and_read_is_lock_balanced) {
     CountingLock lock; FixedClock clock;
     Services::TelemetryStore snap; snap.init(lock, clock);
-    snap.writeMotorStatus(Harness::MotorState{});
+    snap.writeMotorStatus(Harness::MotorState{}, 0);
     Protocol::SystemTelemetry sys{}; sys.uptimeTicks = 7; snap.writeSystem(sys);
     (void)snap.getSnapshot();
     EXPECT_EQ(lock.acquires, lock.releases);

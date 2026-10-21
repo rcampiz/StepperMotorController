@@ -14,6 +14,7 @@ namespace Protocol {
 
 struct MotorTelemetry {
     int32_t position;
+    int64_t encoderAtPosition;   ///< the encoder count read at the same instant as position
     int32_t targetPosition;
     uint32_t speed;
     uint32_t statusReg;      ///< the driver chip's own status word: opaque, diagnostics only

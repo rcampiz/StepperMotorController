@@ -11,6 +11,7 @@
 #include "L3_services/infra/trace/trace.hpp"
 #include "harness/pins/async_event.hpp"
 #include "L3_services/infra/telemetry_store/telemetry_store.hpp"
+#include "L3_services/boundary/iencoder.hpp"
 #include <limits.h>
 
 namespace Services {
@@ -278,10 +279,14 @@ void MotorController::periodicUpdate()
         }
     }
 
-    // Read the driver's state (flags, position in microsteps, speed in full steps/s) and
-    // publish it. The service owns the telemetry write; the harness tap (if any) is a pure observer.
+    // Read the driver's state (flags, position in microsteps, speed in full steps/s) and the
+    // encoder count right after it, and publish the pair: slip and the following error compare
+    // the two at one instant (the encoder task's own count is up to 10 ms old and this poll
+    // runs every 50 ms: up to 45 degrees apart at 150 RPM, bench 2026-10-21). The service owns
+    // the telemetry write; the harness tap (if any) is a pure observer.
     const MotorStatus status = m_driver->readState();
-    Services::g_telemetryStore.writeMotorStatus(status);
+    const int64_t encoderAtPosition = encoderNow();
+    Services::g_telemetryStore.writeMotorStatus(status, encoderAtPosition);
 
     const int32_t position = status.positionUsteps;
     m_lastPositionUsteps = position;
@@ -293,7 +298,7 @@ void MotorController::periodicUpdate()
     uint16_t fpr = motion.stepper.config.getFullStepsPerRev();
 
     int32_t cmdTicks = motorPosToEncoderTicks(position, encPPR, ustepsPerRev);
-    auto measTicks = static_cast<int32_t>(snap.encoder.count);
+    auto measTicks = static_cast<int32_t>(encoderAtPosition);
     int32_t followError = cmdTicks - measTicks;
 
     // ── System identification (overrides normal control when active) ──
@@ -607,7 +612,12 @@ void MotorController::publishStandbySnapshot()
     // position as last read.
     Harness::MotorState st = Harness::MotorState::standby();   // outputs off, not readable, speed 0
     st.positionUsteps = m_lastPositionUsteps;
-    Services::g_telemetryStore.writeMotorStatus(st);
+    Services::g_telemetryStore.writeMotorStatus(st, encoderNow());
+}
+
+int64_t MotorController::encoderNow()
+{
+    return (m_encoder != nullptr) ? m_encoder->countNow() : 0;
 }
 
 void MotorController::wakeFromStandby()

@@ -115,6 +115,7 @@ TEST(lcd_estop_events_name_their_source) {
 TEST(status_json_worst_case_fits_the_buffer_with_margin) {
     Protocol::TelemetrySnapshot snap{};
     snap.motor.position = INT32_MIN; snap.motor.speed = UINT32_MAX;
+    snap.motor.encoderAtPosition = INT64_MIN;
     snap.motor.statusReg = 0xFFFF; snap.motor.busy = true; snap.motor.hiZ = true;
     snap.encoder.count = INT64_MIN; snap.encoder.velocity = INT32_MIN;
     snap.encoder.indexSeen = true; snap.encoder.revolutions = INT32_MIN;
@@ -143,7 +144,9 @@ TEST(status_json_worst_case_fits_the_buffer_with_margin) {
     char buf[Protocol::STATUS_JSON_BUF];
     int n = Protocol::renderStatusJson(buf, sizeof(buf), snap, v);
     EXPECT_TRUE(n > 600);
-    EXPECT_TRUE(n < static_cast<int>(sizeof(buf)) - 64);        // >= 64 bytes of margin
+    // >= 32 bytes of margin (2026-10-21: 1234 of 1280 with motor.enc_at_pos; the 115200 floor
+    // stays 139 ms because it is computed from the buffer, not the line)
+    EXPECT_TRUE(n < static_cast<int>(sizeof(buf)) - 32);
     std::string js(buf);
     EXPECT_EQ(js.size(), static_cast<size_t>(n));
     EXPECT_TRUE(js.rfind("}}") == js.size() - 2);
@@ -409,6 +412,7 @@ TEST(json_telemetry_push_carries_exactly_the_diag_stat_data_object) {
 TEST(compact_json_worst_case_fits_its_buffer_with_margin) {
     Protocol::TelemetrySnapshot snap{};
     snap.motor.position = INT32_MIN; snap.motor.speed = UINT32_MAX;
+    snap.motor.encoderAtPosition = INT64_MIN;
     snap.motor.busy = true; snap.motor.hiZ = true;
     snap.encoder.count = INT64_MIN; snap.encoder.velocity = INT32_MIN;
     snap.control.followingError = INT32_MIN;
@@ -443,7 +447,7 @@ TEST(tlm_fmt_compact_switches_the_push_and_its_rate_floor_but_not_diag_stat) {
     EXPECT_TRUE(tlm.find("\"position\":1234") != std::string::npos);
     EXPECT_TRUE(tlm.find("\"following_error\":") != std::string::npos);
     EXPECT_TRUE(tlm.find("\"rx_overflow_lines\":") == std::string::npos);
-    EXPECT_TRUE(tlm.size() < 220);
+    EXPECT_TRUE(tlm.size() < 240);                                     // 230 with motor.enc_at_pos
     std::string stat = r.run("DIAG:STAT?");                            // the full object on request
     EXPECT_TRUE(stat.find("\"rx_overflow_lines\":") != std::string::npos);
     out = r.run("SYST:TLM:FMT?");

@@ -23,13 +23,14 @@ public:
     Protocol::TelemetrySnapshot getSnapshot() override;
 
     // ISnapshotWriter
-    void writeMotorStatus(const Harness::MotorState& status) override;
+    void writeMotorStatus(const Harness::MotorState& status, int64_t encoderAtPosition) override;
     void writeEncoder(const EncoderTelemetryData& data) override;
     void writeControl(const Protocol::ControlTelemetry& ctrl) override;
     void writeSystem(const Protocol::SystemTelemetry& sys) override;
 
 private:
     Harness::MotorState m_motorStatus = Harness::MotorState::standby();   ///< incl. position and speed
+    int64_t m_encoderAtPosition = 0;   ///< the encoder count read with m_motorStatus's position
     Protocol::EncoderTelemetry m_encoder = {};
     Protocol::ControlTelemetry m_control = {};
     Protocol::SystemTelemetry m_system = {};

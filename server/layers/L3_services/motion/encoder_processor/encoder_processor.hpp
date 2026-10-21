@@ -72,6 +72,7 @@ public:
 
     // Accessors
     int64_t getPosition() const override { return m_accumulatedCount; }
+    uint16_t lastRawCount() const override { return m_lastRawCount; }
     int32_t getFilteredVelocity() const { return m_filteredVelocity; }
     VelocityQuality getQuality() const override { return m_velQuality; }
     uint8_t getFilterFlags() const override { return m_filterFlags; }

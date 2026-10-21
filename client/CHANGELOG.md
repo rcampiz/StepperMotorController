@@ -12,6 +12,13 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
 ## [Unreleased]
 
 ### Added
+- 50 Hz telemetry in the GUI on a fast link: the telemetry period follows the Link rate (20 ms
+  on 460800 and 1 Mbaud, 200 ms at 115200; bench 2026-10-21: 266 samples in 5.8 s at 1 Mbaud
+  against 41 at 115200, docs/bench/telemetry_115200_vs_1M_2026-10-21.png). The graph keeps
+  60 s of it (3600 points), places samples on the board's tick instead of PC arrival time and
+  redraws on a 33 ms timer.
+- The slip plot uses `motor.enc_at_pos` (firmware 0.7: the encoder count read with the
+  position) when the board sends it; `encoder.count` before that.
 - A faster serial link: after session setup the GUI and the fleet move the link to 460800 baud
   (`BoardConfig.fast_baud`, SYST:BAUD; 4x the bandwidth, clean both ways on the ST-LINK VCP,
   bench 2026-10-20), so telemetry can run every 35 ms (was 139). The port opens at the boot

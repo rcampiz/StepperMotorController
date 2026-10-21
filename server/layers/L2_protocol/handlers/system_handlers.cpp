@@ -79,8 +79,9 @@ int renderStatusJson(char* buf, size_t bufSize,
                      const TelemetrySnapshot& snap, const StatusJsonView& v,
                      const char* head) {
   // newlib-nano: no %lld — pre-format int64_t as string
-  char encCountStr[24];
+  char encCountStr[24], encAtPosStr[24];
   i64toa(snap.encoder.count, encCountStr, sizeof(encCountStr));
+  i64toa(snap.motor.encoderAtPosition, encAtPosStr, sizeof(encAtPosStr));
   const Protocol2TrimSpeeds spd = protocol2TrimSpeeds(snap.control);   // protocol 2 wire unit
   // Protocol 3: base and final speed in full steps/s (one decimal; trim = final - base, as
   // CTRL:TRIM? gives it; base_spd/trim_spd/final_spd are deprecated), the driver's chip-neutral
@@ -92,7 +93,7 @@ int renderStatusJson(char* buf, size_t bufSize,
       buf, bufSize,
         "%s"
         "{\"state\":\"%s\",\"tick\":%lu,\"queue_depth\":%u,"
-        "\"motor\":{\"position\":%ld,\"speed\":%lu,\"busy\":%s,\"hi_z\":%s,"
+        "\"motor\":{\"position\":%ld,\"enc_at_pos\":%s,\"speed\":%lu,\"busy\":%s,\"hi_z\":%s,"
         "\"direction\":%d,\"mot_status\":%u,\"status_reg\":\"%04X\","
         "\"cmd_err\":%s,\"ocd\":%s,\"thermal_sd\":%s,"
         "\"thermal_warn\":%s,\"uvlo\":%s,\"stall_a\":%s,\"stall_b\":%s,"
@@ -113,7 +114,7 @@ int renderStatusJson(char* buf, size_t bufSize,
       "\"mode\":\"%s\",\"encoder_status\":\"%s\",\"error\":%s}}",
         head, v.stateStr, static_cast<unsigned long>(v.tick),
         static_cast<unsigned>(v.queueDepth),
-        static_cast<long>(snap.motor.position),
+        static_cast<long>(snap.motor.position), encAtPosStr,
         static_cast<unsigned long>(snap.motor.speed),
         snap.motor.busy ? "true" : "false", snap.motor.hiZ ? "true" : "false",
         v.direction, v.motStat, static_cast<unsigned>(v.statusReg),
@@ -152,19 +153,20 @@ int renderStatusJson(char* buf, size_t bufSize,
 
 int renderCompactJson(char* buf, size_t bufSize,
                       const TelemetrySnapshot& snap, const StatusJsonView& v) {
-  char encCountStr[24];
+  char encCountStr[24], encAtPosStr[24];
   i64toa(snap.encoder.count, encCountStr, sizeof(encCountStr));
+  i64toa(snap.motor.encoderAtPosition, encAtPosStr, sizeof(encAtPosStr));
   return snprintf(
       buf, bufSize,
       "%s"
       "{\"state\":\"%s\",\"tick\":%lu,"
-      "\"motor\":{\"position\":%ld,\"speed\":%lu,\"busy\":%s,\"hi_z\":%s},"
+      "\"motor\":{\"position\":%ld,\"enc_at_pos\":%s,\"speed\":%lu,\"busy\":%s,\"hi_z\":%s},"
       "\"encoder\":{\"count\":%s,\"velocity\":%ld},"
       "\"control\":{\"following_error\":%ld},"
       "\"heartbeat\":{\"remaining_ms\":%lu}}}",
       TELEMETRY_JSON_HEAD, v.stateStr, static_cast<unsigned long>(v.tick),
-      static_cast<long>(snap.motor.position), static_cast<unsigned long>(snap.motor.speed),
-      snap.motor.busy ? "true" : "false", snap.motor.hiZ ? "true" : "false",
+      static_cast<long>(snap.motor.position), encAtPosStr,
+      static_cast<unsigned long>(snap.motor.speed), snap.motor.busy ? "true" : "false", snap.motor.hiZ ? "true" : "false",
       encCountStr, static_cast<long>(snap.encoder.velocity),
       static_cast<long>(snap.control.followingError),
       static_cast<unsigned long>(v.hbRemainingMs));

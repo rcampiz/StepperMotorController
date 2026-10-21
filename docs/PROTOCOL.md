@@ -82,7 +82,7 @@ capabilities: the message gives the range, e.g. `current must be 0-9.906 A`), `E
 | Line | When | ASCII | JSON |
 |---|---|---|---|
 | Event | motor fault/stall edges, motion done, following supervisor | `!<TYPE> status=0x<hex4> [detail=<text>]` | `{"kind":"event","type":"<TYPE>","seq":<n>,"ts_ms":<n>,"data":{"status":<n>[,"detail":"<text>"]}}` |
-| Telemetry push | every `SYST:TLM:RATE <ms>` ms (20..5000, 0 = off; off at boot; the ack returns the clamped value and `min_ms`, the floor at the current baud rate: one worst-case line may use at most 80 % of the link, 139 ms at 115200 for the full object and 42 ms for the compact one, so the Encoder task is never starved by the push) | `TELEM: pos=<i> spd=<u> enc=<i> vel=<i>` | `{"kind":"telemetry","data":{...}}` where `data` is byte-for-byte the `DIAG:STAT?` `data` object (section 8), so a client receiving pushes never polls. After `SYST:TLM:FMT COMPACT` the push carries only the live fields with the same names and nesting (`state`, `tick`, `motor.position/speed/busy/hi_z`, `encoder.count/velocity`, `control.following_error`, `heartbeat.remaining_ms`; about 170 bytes, no `system` key): the client merges it into its last full object and asks `DIAG:STAT?` for the rest at its own pace. `SYST:TLM:FMT?` reports the format and the floor; send the format before the rate. |
+| Telemetry push | every `SYST:TLM:RATE <ms>` ms (20..5000, 0 = off; off at boot; the ack returns the clamped value and `min_ms`, the floor at the current baud rate: one worst-case line may use at most 80 % of the link, 139 ms at 115200 for the full object and 42 ms for the compact one, so the Encoder task is never starved by the push) | `TELEM: pos=<i> spd=<u> enc=<i> vel=<i>` | `{"kind":"telemetry","data":{...}}` where `data` is byte-for-byte the `DIAG:STAT?` `data` object (section 8), so a client receiving pushes never polls. After `SYST:TLM:FMT COMPACT` the push carries only the live fields with the same names and nesting (`state`, `tick`, `motor.position/enc_at_pos/speed/busy/hi_z`, `encoder.count/velocity`, `control.following_error`, `heartbeat.remaining_ms`; about 170 bytes, no `system` key): the client merges it into its last full object and asks `DIAG:STAT?` for the rest at its own pace. `SYST:TLM:FMT?` reports the format and the floor; send the format before the rate. |
 | Joystick | board joystick in LOCAL UI mode | `EVENT JOY <LEFT\|RIGHT\|UP\|DOWN\|CENTER> pressed\|released` | same |
 | Banner | power-up and Comms start | 5 lines starting with a blank line and `====` | same |
 
@@ -223,6 +223,10 @@ aliases kept one release (marked **deprecated** in section 9 and in `SYST:HELP?`
 14. (2026-10-18) `SYST:TLM:FMT FULL|COMPACT` and `SYST:TLM:FMT?`: the compact telemetry push
     (section 2) cuts a push from about 900 bytes to about 170 and lowers the rate floor to
     42 ms at 115200; switching back to FULL raises a too-fast period to the full floor.
+15. (2026-10-21) `motor.enc_at_pos` in `DIAG:STAT?` and both telemetry pushes: the encoder
+    count read at the same instant as `motor.position` (`encoder.count` is the Encoder
+    task's own, up to 10 ms old, and the position is polled every 50 ms). Slip is
+    `enc_at_pos` against `position`; the control loop's following error uses the same pair.
 
 Reserved for a later version:
 
@@ -230,7 +234,7 @@ Reserved for a later version:
 
 ## 8. `DIAG:STAT?` JSON fields
 
-Top level `data`: `state`, `tick`, `queue_depth`, `motor`, `position`, `speed`, `busy`, `hi_z`, `direction`, `mot_status`, `status_reg`, `cmd_err`, `ocd`, `thermal_sd`, `thermal_warn`, `uvlo`, `stall_a`, `stall_b`, `faults`, `driver_raw`, `encoder`, `count`, `velocity`, `index_seen`, `revolutions`, `index_period_us`, `vel_quality`, `control`, `following_error`, `setpoint`, `mode`, `tracking`, `trim_out`, `p`, `i`, `d`, `sup_state`, `tier`, `vel_error`, `retries`, `base_spd`, `trim_spd`, `final_spd`, `base_fsps`, `final_fsps`, `trim_frozen`, `vel_quality`, `heartbeat`, `enabled`, `timeout_ms`, `remaining_ms`, `timed_out`, `system`, `uptime_ticks`, `free_heap`, `rx_overflows`, `rx_overflow_lines`, `mode`, `encoder_status`, `error`.
+Top level `data`: `state`, `tick`, `queue_depth`, `motor`, `position`, `enc_at_pos`, `speed`, `busy`, `hi_z`, `direction`, `mot_status`, `status_reg`, `cmd_err`, `ocd`, `thermal_sd`, `thermal_warn`, `uvlo`, `stall_a`, `stall_b`, `faults`, `driver_raw`, `encoder`, `count`, `velocity`, `index_seen`, `revolutions`, `index_period_us`, `vel_quality`, `control`, `following_error`, `setpoint`, `mode`, `tracking`, `trim_out`, `p`, `i`, `d`, `sup_state`, `tier`, `vel_error`, `retries`, `base_spd`, `trim_spd`, `final_spd`, `base_fsps`, `final_fsps`, `trim_frozen`, `vel_quality`, `heartbeat`, `enabled`, `timeout_ms`, `remaining_ms`, `timed_out`, `system`, `uptime_ticks`, `free_heap`, `rx_overflows`, `rx_overflow_lines`, `mode`, `encoder_status`, `error`.
 
 `motor.faults` bits (protocol 3; chip-neutral, `DRV:CAPS? fault_bits` lists them in order):
 0 `overcurrent`, 1 `undervoltage`, 2 `thermal_shutdown`, 3 `thermal_warning`, 4 `stall`,
@@ -240,7 +244,7 @@ Top level `data`: `state`, `tick`, `queue_depth`, `motor`, `position`, `speed`, 
 
 Telemetry structures behind it (`harness/pins/telemetry_types.hpp`):
 
-- `MotorTelemetry`: `position` (int32_t), `targetPosition` (int32_t), `speed` (uint32_t), `statusReg` (uint32_t), `faults` (uint8_t), `phase` (uint8_t), `busy` (bool), `hiZ` (bool), `stalled` (bool), `forward` (bool), `statusReadable` (bool)
+- `MotorTelemetry`: `position` (int32_t), `encoderAtPosition` (int64_t), `targetPosition` (int32_t), `speed` (uint32_t), `statusReg` (uint32_t), `faults` (uint8_t), `phase` (uint8_t), `busy` (bool), `hiZ` (bool), `stalled` (bool), `forward` (bool), `statusReadable` (bool)
 - `EncoderTelemetry`: `count` (int64_t), `velocity` (int32_t), `indexSeen` (bool), `indexTick` (uint32_t), `revolutions` (int32_t), `indexPeriodUs` (uint32_t), `velocityQuality` (uint8_t), `filterFlags` (uint8_t), `measWindowMs` (uint8_t), `sampleRateHz` (uint16_t)
 - `SystemTelemetry`: `uptimeTicks` (uint32_t), `freeHeap` (uint32_t), `cpuLoad` (uint8_t)
 - `ControlTelemetry`: `followingError` (int32_t), `setpoint` (int32_t), `mode` (uint8_t), `tracking` (bool), `pidOutput` (int16_t), `pTerm` (int16_t), `iTerm` (int16_t), `dTerm` (int16_t), `supervisorState` (uint8_t), `currentTier` (uint8_t), `velError` (int32_t), `retryCount` (uint8_t), `baseSpeedFsps` (float), `trimSpeedFsps` (float), `finalSpeedFsps` (float), `trimFrozen` (uint8_t), `velQuality` (uint8_t)

@@ -32,6 +32,7 @@ bool EncoderService::init(Drivers::IEncoderHardware& hw,
     }
 
     m_state.count = 0;
+    m_stateRaw = m_processor->lastRawCount();
     m_state.velocity = 0;
     m_state.indexSeen = false;
     m_state.indexTick = 0;
@@ -99,6 +100,7 @@ void EncoderService::sample()
     // --- Shared snapshot (read by the Comms task through getState) ---
     m_critical->enter();
     m_state.count = m_processor->getPosition();
+    m_stateRaw = m_processor->lastRawCount();
     m_state.velocity = filtered;
     m_state.indexSeen = indexSeen;
     m_state.indexTick = indexTick;
@@ -137,6 +139,25 @@ EncoderSnapshot EncoderService::getState()
     return state;
 }
 
+int64_t EncoderService::countNow()
+{
+    if (m_hw == nullptr || !m_hw->isReady()) {
+        return 0;
+    }
+    m_critical->enter();
+    const int64_t count = m_state.count;
+    const uint16_t raw = m_stateRaw;
+    const bool frozen = m_frozen;
+    m_critical->exit();
+    if (frozen) {
+        return count;               // a capture readout: sampling is paused, keep the last count
+    }
+    // The 16-bit counter cannot move half a wrap (32768 counts, 8 turns) in the 10 ms
+    // between samples, so the difference is the movement since the sample, sign included
+    const auto live = static_cast<uint16_t>(m_hw->getCount());
+    return count + static_cast<int16_t>(static_cast<uint16_t>(live - raw));
+}
+
 int32_t EncoderService::getCount()
 {
     return (m_hw != nullptr && m_hw->isReady()) ? m_hw->getCount() : 0;
@@ -150,6 +171,7 @@ void EncoderService::resetCount()
     m_critical->enter();
     m_state.count = 0;
     m_processor->reset();
+    m_stateRaw = m_processor->lastRawCount();
     m_critical->exit();
 }
 

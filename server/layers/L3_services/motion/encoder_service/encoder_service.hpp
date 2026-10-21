@@ -45,6 +45,7 @@ public:
 
     // IEncoder (dispatchers, Comms task)
     EncoderSnapshot getState() override;
+    int64_t countNow() override;
     int32_t getCount() override;
     void resetCount() override;
     void clearIndexFlag() override;
@@ -71,6 +72,7 @@ private:
     IEncoderStatusSink*          m_statusSink = nullptr;
 
     volatile EncoderSnapshot m_state = {};
+    volatile uint16_t m_stateRaw = 0;   ///< the hardware counter value m_state.count corresponds to
     uint32_t m_lastDmaIdx = 0;
     uint32_t m_ackedIndexPulses = 0;   ///< pulses acknowledged by clearIndexFlag (Comms task writes, Encoder task reads)
     uint16_t m_sampleRateHz = DEFAULT_SAMPLE_RATE_HZ;

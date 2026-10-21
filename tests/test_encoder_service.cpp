@@ -13,10 +13,10 @@ namespace {
 struct FakeEncoderHw : Drivers::IEncoderHardware {
     std::vector<uint16_t> ring = std::vector<uint16_t>(256, 0);
     uint32_t writeIdx = 0; uint16_t rate = 1000; bool ready = true;
-    int resets = 0; Drivers::IndexSnapshot idx{};
+    int resets = 0; Drivers::IndexSnapshot idx{}; int32_t count = 1234;
     FakeEncoderHw() { idx.tickMs = 77; idx.revolutions = 3; idx.periodUs = 5000; }
     bool isReady() const override { return ready; }
-    int32_t getCount() const override { return 1234; }
+    int32_t getCount() const override { return count; }   // the live counter (driver: int16 sign-extended)
     void reset() override { ++resets; }
     Drivers::IndexSnapshot readIndex() const override { return idx; }
     void indexISR(uint32_t, uint32_t) override {}
@@ -40,7 +40,7 @@ struct FakeUsClock : Platform::IMicrosecondClock {
 
 struct FakeProcessing : Services::IEncoderProcessing {
     int fed = 0; int64_t position = 0; int32_t lastRaw = 0;
-    void feedSample(uint16_t raw, uint32_t) override { ++fed; position = raw; }
+    void feedSample(uint16_t raw, uint32_t) override { ++fed; position = raw; lastRawCnt = raw; }
     int32_t filter(int32_t raw, uint32_t) override { lastRaw = raw; return raw * 10; }   // "filter" = x10
     void reset() override { position = 0; }
     void setFilterConfig(uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t, uint8_t) override {}
@@ -48,6 +48,8 @@ struct FakeProcessing : Services::IEncoderProcessing {
     void setFilter(uint8_t, uint8_t) override {}
     void getFilter(uint8_t& t, uint8_t& p) const override { t = 0; p = 0; }
     int64_t getPosition() const override { return position; }
+    uint16_t lastRawCount() const override { return lastRawCnt; }
+    uint16_t lastRawCnt = 0;
     VelocityQuality getQuality() const override { return static_cast<VelocityQuality>(0); }
     uint8_t getFilterFlags() const override { return 0; }
 };
@@ -75,6 +77,24 @@ TEST(init_reports_ready_through_the_status_sink) {
     EXPECT_TRUE(r.init());
     EXPECT_EQ(r.sink.last, Harness::EncoderStatus::READY);
     EXPECT_TRUE(r.svc.isAvailable());
+}
+
+TEST(count_now_adds_the_counter_movement_since_the_last_sample) {
+    // The motor task pairs this with each position read: the sampled count is up to 10 ms old
+    Rig r; r.init();
+    r.hw.ring[0] = 100; r.hw.writeIdx = 1;
+    r.svc.sample();                                // count 100 at raw 100 (fake: position = raw)
+    r.hw.count = 130;                              // the shaft has moved on 30 counts since
+    EXPECT_EQ(r.svc.countNow(), 130);
+    r.hw.count = 90;                               // or back 10
+    EXPECT_EQ(r.svc.countNow(), 90);
+    r.hw.ring[1] = 65530; r.hw.writeIdx = 2;
+    r.svc.sample();                                // count 65530 at raw 65530
+    r.hw.count = 4;                                // across the 16-bit wrap: +10
+    EXPECT_EQ(r.svc.countNow(), 65540);
+    r.hw.count = -6;                               // the driver's sign-extended form of 65530
+    EXPECT_EQ(r.svc.countNow(), 65530);
+    EXPECT_EQ(r.crit.depth, 0);
 }
 
 TEST(init_without_hardware_reports_not_present) {

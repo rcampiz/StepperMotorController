@@ -19,6 +19,8 @@
 
 namespace Services {
 
+class IEncoder;
+
 // Consumer port types used extensively in this module
 using Services::MotorCmdType;
 using Services::MotorCommand;
@@ -46,6 +48,9 @@ public:
      */
     /// Bind the L4 driver (from H_L3_L4) and the Platform clock. Call once before any other method.
     void bind(IMotorDriver& driver, Platform::IClock& clock);
+
+    /// The encoder, read at the instant the motor position is (nullptr: none fitted)
+    void setEncoder(IEncoder* encoder) { m_encoder = encoder; }
 
     /// ESTOP path: force outputs to Hi-Z immediately (bypasses the command queue).
     void emergencyHiZ();
@@ -113,6 +118,8 @@ private:
     float m_savedMaxSpeedFsps = 0.0f;
     bool m_speedOverrideActive = false;
     int32_t m_lastPositionUsteps = 0;  ///< last position read (published while the chip is in standby)
+    IEncoder* m_encoder = nullptr;     ///< setEncoder(); countNow() pairs with each position read
+    int64_t encoderNow();              ///< the encoder count now (0 without an encoder)
     uint32_t m_stoppedSinceMs = 0;     ///< tick when the motor was last seen stopped and energised (0: not)
     bool     m_stoppedSeen = false;
 

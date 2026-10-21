@@ -33,6 +33,10 @@ bool initEncoderSubsystem(Platform::IClock& clock,
         return true;  // hardware not ready: stay OPEN_LOOP
     }
 
+    // The motor task reads the encoder at the instant it reads the motor position (slip,
+    // following error: a matched pair, not two values up to 50 ms apart)
+    motion.stepper.controller.setEncoder(&g_encoderService);
+
     result.encoderAvailable = true;
     result.encoderService = &g_encoderService;
     result.encoder = &g_encoderService;

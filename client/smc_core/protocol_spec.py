@@ -213,16 +213,17 @@ ERROR_CODES: Tuple[str, ...] = (
 EVENT_TYPES: Tuple[str, ...] = ('FAULT', 'FAULT_CLEAR', 'STALL', 'STALL_CLEAR', 'MOTION_DONE', 'FOLLOW_FAULT', 'FOLLOW_RECOVERY', 'FOLLOW_RECOVERED', 'ESTOP', 'ESTOP_CLEAR',)
 EVENT_MASK_BITS: Dict[str, int] = {'FAULT': 0, 'FAULT_CLR': 1, 'STALL': 2, 'STALL_CLR': 3, 'MOTION_DONE': 4, 'FOLLOW_FAULT': 5, 'FOLLOW_RECOVERY': 6, 'FOLLOW_RECOVERED': 7}
 STATUS_JSON_KEYS: Tuple[str, ...] = (
-    'state', 'tick', 'queue_depth', 'motor', 'position', 'speed',
-    'busy', 'hi_z', 'direction', 'mot_status', 'status_reg', 'cmd_err',
-    'ocd', 'thermal_sd', 'thermal_warn', 'uvlo', 'stall_a', 'stall_b',
-    'faults', 'driver_raw', 'encoder', 'count', 'velocity', 'index_seen',
-    'revolutions', 'index_period_us', 'vel_quality', 'control', 'following_error', 'setpoint',
-    'mode', 'tracking', 'trim_out', 'p', 'i', 'd',
-    'sup_state', 'tier', 'vel_error', 'retries', 'base_spd', 'trim_spd',
-    'final_spd', 'base_fsps', 'final_fsps', 'trim_frozen', 'vel_quality', 'heartbeat',
-    'enabled', 'timeout_ms', 'remaining_ms', 'timed_out', 'system', 'uptime_ticks',
-    'free_heap', 'rx_overflows', 'rx_overflow_lines', 'mode', 'encoder_status', 'error',
+    'state', 'tick', 'queue_depth', 'motor', 'position', 'enc_at_pos',
+    'speed', 'busy', 'hi_z', 'direction', 'mot_status', 'status_reg',
+    'cmd_err', 'ocd', 'thermal_sd', 'thermal_warn', 'uvlo', 'stall_a',
+    'stall_b', 'faults', 'driver_raw', 'encoder', 'count', 'velocity',
+    'index_seen', 'revolutions', 'index_period_us', 'vel_quality', 'control', 'following_error',
+    'setpoint', 'mode', 'tracking', 'trim_out', 'p', 'i',
+    'd', 'sup_state', 'tier', 'vel_error', 'retries', 'base_spd',
+    'trim_spd', 'final_spd', 'base_fsps', 'final_fsps', 'trim_frozen', 'vel_quality',
+    'heartbeat', 'enabled', 'timeout_ms', 'remaining_ms', 'timed_out', 'system',
+    'uptime_ticks', 'free_heap', 'rx_overflows', 'rx_overflow_lines', 'mode', 'encoder_status',
+    'error',
 )
 LIMITS: Dict[str, int] = {
     'line_max_chars': 127,

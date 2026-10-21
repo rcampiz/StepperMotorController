@@ -15,6 +15,7 @@ bool TelemetryStore::init(Platform::ILock& lock, Platform::IClock& clock)
     m_lock = &lock;
     m_clock = &clock;
     m_motorStatus = Harness::MotorState::standby();
+    m_encoderAtPosition = 0;
     memset(&m_encoder, 0, sizeof(m_encoder));
     memset(&m_control, 0, sizeof(m_control));
     memset(&m_system, 0, sizeof(m_system));
@@ -36,6 +37,7 @@ Protocol::TelemetrySnapshot TelemetryStore::getSnapshot()
     snap.motor.forward = mst.forward;
     snap.motor.statusReadable = mst.readable;
     snap.motor.position = mst.positionUsteps;
+    snap.motor.encoderAtPosition = m_encoderAtPosition;
     // Whole steps/s, truncated (the driver keeps the integer part exact)
     snap.motor.speed = (mst.speedFsps > 0.0f) ? static_cast<uint32_t>(mst.speedFsps) : 0u;
     snap.motor.busy = mst.busy();
@@ -53,10 +55,11 @@ Protocol::TelemetrySnapshot TelemetryStore::getSnapshot()
     return snap;
 }
 
-void TelemetryStore::writeMotorStatus(const Harness::MotorState& status)
+void TelemetryStore::writeMotorStatus(const Harness::MotorState& status, int64_t encoderAtPosition)
 {
     m_lock->acquire();
     m_motorStatus = status;
+    m_encoderAtPosition = encoderAtPosition;
     m_timestamp = m_clock->getTickMs();
     m_lock->release();
 }

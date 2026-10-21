@@ -27,6 +27,9 @@ public:
     virtual ~IEncoder() = default;
 
     virtual EncoderSnapshot getState() = 0;
+    /// The 64-bit count at this instant: the last sampled count plus how far the hardware
+    /// counter has moved since (getState().count is up to one sampling period old). Any task.
+    virtual int64_t countNow() { return getState().count; }
     virtual int32_t getCount() = 0;
     virtual void resetCount() = 0;
     virtual void clearIndexFlag() = 0;
