@@ -44,6 +44,9 @@ tags.
   20 Hz cutoff came back as 10 Hz after a restart (bench 2026-10-21: 20 Hz now survives one).
 
 ### Changed
+- The default encoder velocity filter is the tracking observer alone at 10 Hz (32 ms lag,
+  0.39 RPM noise against the 10 Hz Butterworth's 38 ms / 0.42 RPM; bench 2026-10-21). A board
+  with a saved chain keeps it (`CTRL:ENC:FILT:RESET` + `CTRL:ENC:FILT:SAVE` moves it over).
 - The Motor task reads the driver every 5 ms (was 50): position, speed, faults and the encoder
   count paired with them reach telemetry and the fault / stall / motion-done edges 10x sooner;
   slip carries a new value in 96 % of 20 ms telemetry samples (40 % before). The control laws

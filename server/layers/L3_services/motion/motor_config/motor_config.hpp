@@ -84,7 +84,7 @@ struct MotorConfig {
     uint8_t  encNotchQ10;         // notch Q x 10 (0 = 50)
     uint8_t  encHoltAlpha;        // Holt level smoothing /255 (0 = 51)
     uint8_t  encHoltBeta;         // Holt trend smoothing /255 (0 = 13)
-    uint8_t  encObserverBwHz;     // tracking observer bandwidth, Hz (0 = 20)
+    uint8_t  encObserverBwHz;     // tracking observer bandwidth, Hz (0 = ENC_FILT_DEFAULT_OBSERVER_HZ)
     uint8_t  reserved5[8];        // zero
 
     uint32_t crc32;               // CRC32 of everything above

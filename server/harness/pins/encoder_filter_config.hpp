@@ -24,13 +24,14 @@ constexpr uint8_t ENC_FILT_OBSERVER = 0x40; // bit 6: tracking observer on every
                                             //        window difference)
 
 // The default chain (config defaults, CTRL:ENC:FILT:RESET, the processor before any config):
-// one 2nd-order Butterworth low-pass at 10 Hz on the 40 ms measurement window. Bench tune
-// 2026-10-21 (docs/bench/encoder_filter_tune_2026-10-21.png), against the true velocity from
-// the unfiltered count: 36 ms lag, 0.5 RPM steady-state noise; the EMA+SMA+Pade+Butterworth
-// chain before it lagged 208 ms (0.1 RPM), no filter 14 ms (2.1 RPM).
-constexpr uint8_t ENC_FILT_DEFAULT_FLAGS     = ENC_FILT_BIQUAD;
+// the tracking observer alone at 10 Hz. Bench tunes 2026-10-21 against the true velocity from
+// the unfiltered count (docs/bench/encoder_observer_tune_2026-10-21.json): 32 ms lag, 0.39 RPM
+// steady-state noise; the 10 Hz Butterworth on the 40 ms window before it 38 ms / 0.42 RPM
+// (encoder_filter_tune_2026-10-21.png), the EMA+SMA+Pade+Butterworth chain 208 ms / 0.1 RPM.
+// A 20 Hz observer reads 14 ms / 1.1 RPM: the 4000-count encoder sets the noise.
+constexpr uint8_t ENC_FILT_DEFAULT_FLAGS     = ENC_FILT_OBSERVER;
 constexpr uint8_t ENC_FILT_DEFAULT_BIQUAD_HZ = 10;
-constexpr uint8_t ENC_FILT_DEFAULT_OBSERVER_HZ = 20;   // observer bandwidth when 0 is stored
+constexpr uint8_t ENC_FILT_DEFAULT_OBSERVER_HZ = 10;   // observer bandwidth when 0 is stored
 
 /**
  * @brief Composable encoder filter configuration

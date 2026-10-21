@@ -72,6 +72,11 @@ namespace IHM03A1 {
     // PB5 - D4 on IHM03A1 (GFX01M2 SPIB_MOSI trace cut to resolve conflict)
     static GPIO_TypeDef* const BUSY_PORT = GPIOB;
     static constexpr uint8_t BUSY_PIN = 5;
+
+    // STCK (step-clock input) is routed to the Nucleo by default: Arduino D9 (CN5-2) and
+    // Morpho CN10-19, i.e. PC7 (UM1910 tables 1 and 2). Not used by the firmware yet; nothing
+    // else here drives PC7. Its one timer function, TIM3_CH2, is taken (TIM3 counts SYNC on
+    // PB5), so step pulses would come from GPIO writes timed by a free timer (TIM1/9/10/11).
 }
 
 // ============================================================================

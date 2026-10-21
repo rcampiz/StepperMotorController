@@ -45,6 +45,7 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
   closing the fleet hands them back to their menus (`smc_core.kinematics.indicator`).
 
 ### Changed
+- The simulator's encoder filter starts as the firmware's new default, the 10 Hz observer alone.
 - The simulator's encoder filter starts as the firmware's new default, the 10 Hz Butterworth alone.
 - The GUI and the fleet move the link to 1000000 baud (firmware 0.6.4 receives it clean; bench:
   every scenario passes at 1 Mbaud, ESTOP confirmed in 16 ms instead of 94). The GUI's Link

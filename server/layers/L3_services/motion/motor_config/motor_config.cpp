@@ -132,7 +132,7 @@ void MotorConfigManager::applyDefaults() {
 
     m_config.faultAction = 1;  // HardHiZ - safest option
 
-    // Encoder velocity filter: the Butterworth alone (its cutoff is not stored: 10 Hz at boot)
+    // Encoder velocity filter: the tracking observer alone (stage parameters 0: their defaults)
     m_config.encFilterType = Harness::ENC_FILT_DEFAULT_FLAGS;
     m_config.encFilterParam = 200;  // EMA alpha=200
     m_config.encSmaWindow = 8;      // SMA window=8

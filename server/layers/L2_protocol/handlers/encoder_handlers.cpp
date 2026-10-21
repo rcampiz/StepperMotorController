@@ -466,7 +466,7 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
   // CTRL:ENC:FILT:RESET
   if (strcmp(sub, "RESET") == 0) {
     ICommandDispatcher::EncFilterParams cfg = {};
-    cfg.filterFlags = Harness::ENC_FILT_DEFAULT_FLAGS;   // the Butterworth alone (bench tune 2026-10-21)
+    cfg.filterFlags = Harness::ENC_FILT_DEFAULT_FLAGS;   // the observer alone (bench tunes 2026-10-21)
     cfg.emaAlpha = 200;
     cfg.smaWindow = 8;
     cfg.measWindowMs = 40;

@@ -117,7 +117,7 @@ def _restore_requests(cfg: Dict[str, Any]) -> List[C.Request]:
         C.enc_filter_biquad(bool(g("biquad_enabled", False)), int(g("biquad_cutoff_hz", 10))),
         C.enc_filter_notch(bool(g("notch_enabled", False)), int(g("notch_center_hz", 25)), int(g("notch_q10", 50))),
         C.enc_filter_holt(bool(g("holt_enabled", False)), int(g("holt_alpha", 51)), int(g("holt_beta", 13))),
-        C.enc_filter_observer(bool(g("observer_enabled", False)), int(g("observer_bw_hz", 20))),
+        C.enc_filter_observer(bool(g("observer_enabled", False)), int(g("observer_bw_hz", 10))),
     ]
 
 
