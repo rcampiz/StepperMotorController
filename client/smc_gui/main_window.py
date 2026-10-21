@@ -705,7 +705,8 @@ class MainWindow(QMainWindow):
         if self._bridge is None:
             return
         self._pending_rating = profile.rated_current_a or None   # set once the board has it
-        if profile.resonance_bands_rpm:
+        # the profile's bands only where the board has no avoider model (its bands win)
+        if profile.resonance_bands_rpm and self._controller_panel.stick.snap_targets:
             self._controller_panel.stick.bands_rpm = list(profile.resonance_bands_rpm)
         self._call_all(requests, "GENERIC", last_tag="APPLY_PARAMS")
 

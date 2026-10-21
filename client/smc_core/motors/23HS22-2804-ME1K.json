@@ -13,6 +13,6 @@
   "tsw_us": 48,
   "microsteps": 8,
   "idle_release_ms": 3000,
-  "resonance_bands_rpm": [[55, 66], [105, 122]],
-  "notes": "The project's motor and the firmware's current and overcurrent defaults. 2026-10-20: motion currents 25 % under 1.33/1.56 A; overcurrent 78 A (OCD_TH 2), the lowest that never flagged on switching transients in the bench soaks (26 A flags ~24 times a minute running). Bench 2026-10-18 at 12.5 V: 64 mA holding at 0.39 A, run 1.72 A is ~25 % under the earlier 2.03 A with no stall to 250 RPM; the two bands are mechanical and the same in every microstep mode. Chopper timings at chip defaults (T_FAST/TON_MIN/TOFF_MIN 0): 2 us minimum on/off times inflate the 60 RPM band 3-4x."
+  "resonance_bands_rpm": [[35, 48], [70, 95]],
+  "notes": "The project's motor and the firmware's current and overcurrent defaults. 2026-10-20: motion currents 25 % under 1.33/1.56 A; overcurrent 78 A (OCD_TH 2), the lowest that never flagged on switching transients in the bench soaks (26 A flags ~24 times a minute running). Bench 2026-10-18 at 12.5 V: 64 mA holding at 0.39 A, run 1.72 A is ~25 % under the earlier 2.03 A with no stall to 250 RPM; the two bands are mechanical and the same in every microstep mode. Chopper timings at chip defaults (T_FAST/TON_MIN/TOFF_MIN 0): 2 us minimum on/off times inflate the 60 RPM band 3-4x. 2026-10-21 (resonance_profile, current mode 1/16, unloaded): the resonance follows the run current, f_n = 137 Hz x I^0.51; at run 1.01 A the bands (avoider band + margin, +-15 %) are 35-48 RPM (k = 4) and 70-95 RPM (k = 2); the 55-66 / 105-122 RPM bands were an earlier setup's. A board with the firmware avoider configured supplies its own bands."
 }

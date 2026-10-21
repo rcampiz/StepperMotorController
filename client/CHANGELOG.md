@@ -12,6 +12,13 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
 ## [Unreleased]
 
 ### Added
+- Fast band crossing for the gamepad (`drive_map.cross_band`): a slewed speed inside a
+  resonance band whose stick target lies beyond it is sent as the band's far edge at once, so
+  the chip's ramp crosses it in ~15 ms instead of the slew lingering; a target inside a band is
+  approached normally (the firmware avoider holds there). Bands from each board's `CTRL:RES?`
+  (`bands_from_res`: the avoider band + its 3 % margin; `Fleet.refresh_bands()` at open, per
+  wheel), else the motor profile's. Bench 2026-10-21, 50 <-> 120 RPM at 150 RPM/s with the
+  avoider on: peak ringing up 7.3 -> 6.0 counts, down 5.6 -> 4.8 (rms -23 % / -9 %).
 - `ramp_profile` scenario: ramps through the resonance at each acceleration (set stopped: the
   powerSTEP01 takes a new one only then, bench 2026-10-21) and ramp current; ringing, extra lag
   and lost steps per cell (docs/bench/ramp_map_2026-10-21.png: the slope decides the ringing,
@@ -52,6 +59,9 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
   closing the fleet hands them back to their menus (`smc_core.kinematics.indicator`).
 
 ### Changed
+- The default gamepad resonance bands are empty (the fixed 55-66 / 105-122 RPM list was an older
+  setup's); the 23HS22 profile's bands are the measured 35-48 and 70-95 RPM at 1.01 A; a profile's
+  bands no longer replace a board avoider's.
 - The simulator's encoder filter starts as the firmware's new default, the 10 Hz observer alone.
 - The simulator's encoder filter starts as the firmware's new default, the 10 Hz Butterworth alone.
 - The GUI and the fleet move the link to 1000000 baud (firmware 0.6.4 receives it clean; bench:

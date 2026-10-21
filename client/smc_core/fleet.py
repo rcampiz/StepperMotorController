@@ -92,6 +92,8 @@ class Fleet:
                         liveness=self.liveness, clock=clock, name=role)
             for role in ROLES}
         self._telemetry: Dict[str, Tuple[float, dict]] = {}
+        self.bands: Dict[str, List[Tuple[float, float]]] = {}   # per wheel, RPM (refresh_bands)
+        self.cross_bands = True                     # drive() crosses them fast
         self.faults: List[Tuple[str, str]] = []     # (role, why) that stopped the base
         self._stopping = False
         self._opened = False                        # resets before open() are the boot itself
@@ -135,6 +137,19 @@ class Fleet:
             self.close()
             raise FleetError("board on the wrong corner (role: (found, expected)): %s" % wrong)
         self._opened = True
+        self.refresh_bands()
+
+    def refresh_bands(self) -> Dict[str, List[Tuple[float, float]]]:
+        """Each wheel's resonance bands from its board's avoider (CTRL:RES?); empty for a board
+        without a model. Call again after CTRL:RES:CFG or a run-current change."""
+        from .drive_map import bands_from_res
+        for role, b in self.boards.items():
+            try:
+                r = b.request(C.res_query(), timeout=2.0)
+                self.bands[role] = bands_from_res(r.data if r.success else {})
+            except Exception:
+                self.bands[role] = []
+        return dict(self.bands)
 
     def close(self, estop: bool = True) -> None:
         self.release_lcds()
@@ -236,12 +251,24 @@ class Fleet:
         return {r: b.request(C.fault_clear()) for r, b in self.boards.items()}
 
     # --- driving --------------------------------------------------------------------------
-    def drive(self, twist: K.Twist) -> float:
+    def drive(self, twist: K.Twist, target: Optional[K.Twist] = None) -> float:
         """Run every wheel for a body twist (coalesced: only the newest twist is sent).
-        Returns the scale applied to stay under the motor speed limit."""
+        Returns the scale applied to stay under the motor speed limit. With `target` (where the
+        slew is heading), a wheel inside one of its resonance bands with its target beyond it
+        goes to the band's far edge at once (drive_map.cross_band)."""
+        from .drive_map import cross_band
         cmds, scale = K.motor_commands(twist, self.config.geometry)
+        tcmds = K.motor_commands(target, self.config.geometry)[0] if target is not None else cmds
+        per_rpm = 60.0 / self.config.geometry.full_steps_per_rev
         for role in ROLES:
             sps, direction = cmds[role]
+            bands = self.bands.get(role) if self.cross_bands else None
+            if bands and sps > 0:
+                rpm = sps * per_rpm * (1 if direction else -1)
+                tsps, tdir = tcmds[role]
+                trpm = tsps * per_rpm * (1 if tdir else -1)
+                out = cross_band(rpm, trpm, bands)
+                sps, direction = abs(out) / per_rpm, (1 if out > 0 else 0)
             req = C.mot_run(sps, direction) if sps > 0 else C.mot_stop()
             if self._sent.get(role) != req.line:          # a wheel whose command did not change hears nothing
                 self.boards[role].set_latest("drive", req)

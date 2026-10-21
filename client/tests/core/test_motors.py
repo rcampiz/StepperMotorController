@@ -16,7 +16,7 @@ def test_the_project_motor_ships_as_a_profile():
     assert "23HS22-2804-ME1K" in names
     p = motors.load_profile("23HS22-2804-ME1K")
     assert p.rated_current_a == 2.8 and p.encoder_cpr == 4000 and p.drive_mode == "current"
-    assert p.resonance_bands_rpm == [(55.0, 66.0), (105.0, 122.0)]
+    assert p.resonance_bands_rpm == [(35.0, 48.0), (70.0, 95.0)]   # measured 2026-10-21 at run 1.01 A
     assert "NEMA 23" in p.label
 
 

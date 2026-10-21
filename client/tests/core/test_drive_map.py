@@ -19,7 +19,7 @@ def test_stick_shape_has_a_dead_zone_and_an_expo_curve():
 
 
 def test_resonance_bands_are_stepped_over():
-    m = StickMap(max_rpm=250)
+    m = StickMap(max_rpm=250, bands_rpm=[(55.0, 66.0), (105.0, 122.0)])   # profile bands
     assert m.snap_band(60.0) == 55.0 and m.snap_band(63.0) == 66.0     # nearer edge
     assert m.snap_band(-110.0) == -105.0 and m.snap_band(118.0) == 122.0
     assert m.snap_band(80.0) == 80.0 and m.snap_band(55.0) == 55.0     # edges and outside untouched
@@ -108,7 +108,8 @@ def test_single_motor_driver_stops_when_the_pad_goes_away(board):
 def test_band_avoidance_moves_a_demand_off_the_resonance(board):
     fake = board._fake
     pad = SoftwareGamepad()
-    drv = SingleMotorDriver(board, StickMap(max_rpm=100, expo=0.0, dead_zone=0.0, slew_rpm_per_s=10000))
+    drv = SingleMotorDriver(board, StickMap(max_rpm=100, expo=0.0, dead_zone=0.0, slew_rpm_per_s=10000,
+                                            bands_rpm=[(55.0, 66.0), (105.0, 122.0)]))   # profile bands
     cmd = drv.tick(pad.set(ly=0.6), dt=1.0)                  # 60 rpm: inside the 55-66 band
     assert cmd.rpm == 55.0
     assert wait(board, lambda: any(r.startswith("MOT:RUN 55.0 RPM") for r in fake.received))
@@ -119,7 +120,7 @@ class RecordingFleet:
         self.twists = []
         self.stops = 0
 
-    def drive(self, t):
+    def drive(self, t, target=None):
         self.twists.append(t)
         return 1.0
 
@@ -294,3 +295,54 @@ def test_holding_start_fills_the_estop_bar_in_steps_and_empties_on_release():
     drv.tick(start); now[0] = 4.6; drv.tick(start)
     drv.tick(None)                                           # pad gone mid-hold: the bar empties
     assert fleet.holds[-1] == 0
+
+
+# --- fast band crossing -----------------------------------------------------------------------
+from smc_core.drive_map import bands_from_res, cross_band
+
+
+def test_the_avoider_reports_become_bands_with_the_hysteresis_margin():
+    st = {"enabled": True, "f1a_hz": 137.1, "band_pct": 12, "harmonics": 7,
+          "rpm_k1": 165.7, "rpm_k2": 82.8, "rpm_k4": 41.4}
+    b = bands_from_res(st)
+    assert b == [(35.2, 47.6), (70.4, 95.2), (140.8, 190.6)]       # +-15 %
+    assert bands_from_res(dict(st, enabled=False)) == []
+    assert bands_from_res(dict(st, f1a_hz=0)) == []
+    assert bands_from_res(dict(st, harmonics=2)) == [(70.4, 95.2)]
+
+
+def test_a_sweep_through_a_band_jumps_to_its_far_edge():
+    bands = [(70.4, 95.2)]
+    assert cross_band(60.0, 120.0, bands) == 60.0                   # before the band: as is
+    assert cross_band(72.0, 120.0, bands) == 95.2                   # inside, target beyond: far edge
+    assert cross_band(90.0, 120.0, bands) == 95.2
+    assert cross_band(100.0, 120.0, bands) == 100.0                 # past it
+    assert cross_band(90.0, 40.0, bands) == 70.4                    # coming down: the lower edge
+    assert cross_band(-80.0, -120.0, bands) == -95.2                # reverse: the same, signed
+    assert cross_band(80.0, -50.0, bands) == 70.4                   # reversing: toward zero first
+
+
+def test_a_target_inside_the_band_is_approached_normally():
+    bands = [(70.4, 95.2)]
+    assert cross_band(75.0, 82.0, bands) == 75.0                    # holding there: the avoider's job
+    assert cross_band(82.0, 82.0, bands) == 82.0
+
+
+def test_the_single_motor_driver_sends_the_far_edge_while_the_slew_is_inside():
+    sent = []
+
+    class Board:
+        session_ready = False
+        def set_latest(self, kind, req): sent.append(req.line)
+
+    m = StickMap(max_rpm=150, dead_zone=0.0, expo=0.0, slew_rpm_per_s=200.0, bands_rpm=[(70.4, 95.2)],
+                 snap_targets=False)
+    d = SingleMotorDriver(Board(), m)
+    d.rpm = 68.0
+    d.tick(GamepadState(ly=0.8), dt=0.05)                           # target 120, slew -> 78: inside
+    assert d.last.rpm == 95.2 and sent[-1].startswith("MOT:RUN 95.2 RPM")
+    d.tick(GamepadState(ly=0.8), dt=0.05)                           # slew 88: still inside, hold the edge
+    assert d.last.rpm == 95.2
+    d.tick(GamepadState(ly=0.8), dt=0.05)                           # slew 98: past it, follow
+    assert d.last.rpm == 98.0
+

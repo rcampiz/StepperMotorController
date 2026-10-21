@@ -28,7 +28,49 @@ from . import commands as C
 from . import kinematics as K
 from .gamepad import GamepadState
 
-RESONANCE_BANDS_RPM: List[Tuple[float, float]] = [(55.0, 66.0), (105.0, 122.0)]
+# Resonance bands come from the board's resonance avoider (CTRL:RES?: bands_from_res) or, for
+# a board without one, from the motor profile; none by default. (The fixed list that stood here,
+# 55-66 and 105-122 RPM, was an older sweep's: the bench motor's bands at 1.01 A now sit at
+# 73-93 and 36-47 RPM, bench 2026-10-21.)
+RESONANCE_BANDS_RPM: List[Tuple[float, float]] = []
+CROSS_MARGIN = 0.03                  # beyond the avoider's band: its hysteresis margin
+
+
+def bands_from_res(status: dict, margin: float = CROSS_MARGIN) -> List[Tuple[float, float]]:
+    """The resonance bands (RPM) a board's avoider reports at its configured run current
+    (CTRL:RES?), widened by `margin` so a speed at an edge is clear of the avoider's hysteresis
+    too. Empty when the avoider is off or has no model."""
+    if not status or not status.get("enabled") or not float(status.get("f1a_hz") or 0) > 0:
+        return []
+    w = float(status.get("band_pct") or 8) / 100.0 + margin
+    mask = int(status.get("harmonics") or 7)
+    out = []
+    for bit, key in ((1, "rpm_k1"), (2, "rpm_k2"), (4, "rpm_k4")):
+        c = float(status.get(key) or 0)
+        if mask & bit and c > 0:
+            out.append((round(c * (1.0 - w), 1), round(c * (1.0 + w), 1)))
+    return sorted(out)
+
+
+def cross_band(rpm: float, target: float, bands: List[Tuple[float, float]]) -> float:
+    """Fast band crossing. A demanded speed inside a resonance band, heading for a target beyond
+    it, goes to the band's edge on the target's side at once: the chip's ramp (~5000 steps/s^2)
+    then crosses the band in ~15 ms instead of the slew lingering in it (bench 2026-10-21: the
+    ringing while crossing halves from ~9 counts at slew-like slopes to ~5). A target inside the
+    band is approached normally (holding there is the firmware avoider's job). Signed RPM; a
+    target of the other sign heads for zero first."""
+    if rpm == 0.0 or not bands:
+        return rpm
+    t = 0.0 if target * rpm < 0.0 else abs(target)
+    m = abs(rpm)
+    for lo, hi in bands:
+        if lo < m < hi:
+            if t >= hi:
+                m = hi
+            elif t <= lo:
+                m = lo
+            break
+    return math.copysign(m, rpm)
 CLEAR_HOLD_S = 3.0                   # START held this long clears the E-STOP (owner 2026-10-20)
 
 
@@ -66,8 +108,10 @@ class StickMap:
     max_rpm: float = 250.0
     min_rpm: float = 3.0             # below this the motor is stopped, not crawled
     slew_rpm_per_s: float = 400.0    # how fast the demanded speed may change
-    avoid_bands: bool = True
+    avoid_bands: bool = True         # cross the resonance bands fast (cross_band)
     bands_rpm: List[Tuple[float, float]] = field(default_factory=lambda: list(RESONANCE_BANDS_RPM))
+    snap_targets: bool = True        # a target inside a band moves to its nearer edge: only for
+                                     # profile bands (a board's avoider handles holds itself)
 
     def shape(self, axis: float) -> float:
         """Stick -1..1 -> -1..1 after the dead zone and the expo curve."""
@@ -81,7 +125,7 @@ class StickMap:
 
     def snap_band(self, rpm: float) -> float:
         """A speed inside a resonance band moves to the band's nearer edge."""
-        if not self.avoid_bands:
+        if not self.avoid_bands or not self.snap_targets:
             return rpm
         mag = abs(rpm)
         for lo, hi in self.bands_rpm:
@@ -133,6 +177,7 @@ class SingleMotorDriver:
         self.last: Optional[MotorCommand] = None
         self._was_connected = False
         self._buttons: frozenset = frozenset()
+        self._bands_asked = False
 
     def tick(self, state: Optional[GamepadState], dt: Optional[float] = None) -> Optional[MotorCommand]:
         dt = self.period_s if dt is None else dt
@@ -144,17 +189,32 @@ class SingleMotorDriver:
             return self.last
         self._was_connected = True
         self._edges(state)
+        self._load_bands()
         target = self.stick.target_rpm(state.ly)
         self.rpm = self.stick.slew(self.rpm, target, dt)
         if self.rpm == 0.0:
             if self.last is None or not self.last.stopped:
                 self._stop()
             return self.last
-        cmd = MotorCommand(self.rpm, 1 if self.rpm > 0 else 0)
+        out = cross_band(self.rpm, target, self.stick.bands_rpm) if self.stick.avoid_bands else self.rpm
+        cmd = MotorCommand(out, 1 if out > 0 else 0)
         if self.last is None or self.last.stopped or abs(cmd.rpm - self.last.rpm) >= 0.05 or cmd.direction != self.last.direction:
             self.board.set_latest("drive", C.mot_run_rpm(abs(cmd.rpm), cmd.direction))
             self.last = cmd
         return self.last
+
+    def _load_bands(self) -> None:
+        """Once the session is up: the board avoider's bands replace the profile's (asynchronous)."""
+        if self._bands_asked or not getattr(self.board, "session_ready", False) or not hasattr(self.board, "submit"):
+            return
+        self._bands_asked = True
+
+        def got(resp) -> None:
+            bands = bands_from_res(resp.data if getattr(resp, "success", False) else {})
+            if bands:
+                self.stick.bands_rpm = bands
+                self.stick.snap_targets = False
+        self.board.submit(C.res_query(), got)
 
     def _stop(self) -> None:
         self.rpm = 0.0
@@ -320,7 +380,7 @@ class BaseDriver:
             if self.last is None or self.last != t:
                 self.fleet.stop()
         else:
-            self.fleet.drive(t)
+            self.fleet.drive(t, target)                 # the target: each wheel crosses its bands fast
         self.last = t
         return t
 
