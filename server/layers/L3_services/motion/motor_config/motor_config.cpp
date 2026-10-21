@@ -79,6 +79,22 @@ const Harness::DriverCaps& MotorConfigManager::caps() const {
     return (m_driver != nullptr) ? m_driver->caps() : NO_DRIVER_CAPS;
 }
 
+Harness::DriverSettings MotorConfigManager::getAppliedSettings() const {
+    Harness::DriverSettings s = m_config.driver;
+    const float k = static_cast<float>(getCurrentScalePct()) / 100.0f;
+    if (k != 1.0f) {
+        Harness::DriveLevels* lv[2] = {&s.currentA, &s.duty};
+        for (Harness::DriveLevels* l : lv) {
+            l->hold *= k; l->run *= k; l->acc *= k; l->dec *= k;
+        }
+        float* d[4] = {&s.duty.hold, &s.duty.run, &s.duty.acc, &s.duty.dec};
+        for (float* v : d) {
+            if (*v > 1.0f) *v = 1.0f;                // a duty never above the supply
+        }
+    }
+    return s;
+}
+
 Harness::DriverSettings MotorConfigManager::getEffectiveSettings() const {
     return (m_driver != nullptr) ? m_driver->quantize(m_config.driver) : m_config.driver;
 }

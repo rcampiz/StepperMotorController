@@ -31,6 +31,34 @@ void EncoderProcessor::feedSample(uint16_t rawCount, uint32_t tickUs)
         m_lastEdgeUs = tickUs;
     }
     observerUpdate(tickUs);
+    rippleUpdate();
+}
+
+// ============================================================================
+// Ripple: the position's oscillation about its local trend
+// ============================================================================
+
+void EncoderProcessor::rippleUpdate()
+{
+    m_ripBuf[m_ripHead] = static_cast<uint32_t>(m_accumulatedCount);
+    m_ripHead = (m_ripHead + 1) % RIPPLE_WINDOW;
+    if (m_ripFill < RIPPLE_WINDOW) {
+        m_ripFill++;
+        return;
+    }
+    // The window's middle sample against the window's mean (a ramp's mean is its middle)
+    const uint32_t mid = m_ripBuf[(m_ripHead + RIPPLE_WINDOW / 2) % RIPPLE_WINDOW];
+    int32_t sum = 0;
+    for (int i = 0; i < RIPPLE_WINDOW; ++i) {
+        sum += static_cast<int32_t>(m_ripBuf[i] - mid);
+    }
+    const float dev = static_cast<float>(sum) / static_cast<float>(RIPPLE_WINDOW);
+    m_ripMs += (dev * dev - m_ripMs) / RIPPLE_AVG;
+}
+
+float EncoderProcessor::getRippleCounts() const
+{
+    return sqrtf(m_ripMs);
 }
 
 // ============================================================================
@@ -161,6 +189,8 @@ void EncoderProcessor::reset()
     m_lastRawCount = 0;
     m_lastEdgeUs = 0;
     m_obsSeeded = false;
+    m_ripFill = 0;
+    m_ripMs = 0.0f;
     m_velQuality = VelocityQuality::INVALID;
     resetFilters();
 }

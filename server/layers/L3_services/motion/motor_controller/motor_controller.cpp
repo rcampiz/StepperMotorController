@@ -523,7 +523,7 @@ bool MotorController::applyConfig()
 {
     // The saved settings, physical; the driver writes its chip and reports the settings it
     // could not put in force with the outputs on (powerSTEP01: microstep mode, drive mode)
-    m_inForce = motion.stepper.config.getDriverSettings();
+    m_inForce = motion.stepper.config.getAppliedSettings();   // the current scale applied
     m_speedOverrideActive = false;       // the saved config is the value to keep from here on
     const bool ok = m_driver->apply(m_inForce) == ApplyResult::APPLIED;
     m_resonance.resync(m_inForce.currentA.run);   // the apply wrote the configured run current
@@ -552,7 +552,12 @@ void MotorController::resonanceStep(const MotorStatus& status, int32_t followErr
     ResonanceInput in{};
     in.speedFsps = status.speedFsps;
     // Current mode only: the model was profiled on the run current
-    in.runA = (m_inForce.mode == Harness::DriveMode::CURRENT) ? m_inForce.currentA.run : 0.0f;
+    // on the driver's grid, as the chip has it (the scaled current can fall between steps)
+    float runA = m_inForce.currentA.run;
+    if (caps.currentStepA > 0.0f) {
+        runA = static_cast<float>(static_cast<int>(runA / caps.currentStepA + 0.5f)) * caps.currentStepA;
+    }
+    in.runA = (m_inForce.mode == Harness::DriveMode::CURRENT) ? runA : 0.0f;
     in.stepA = caps.currentStepA;
     in.maxA = caps.maxCurrentA;
     in.guardAvailable = (m_encoder != nullptr);
@@ -566,7 +571,7 @@ void MotorController::resonanceStep(const MotorStatus& status, int32_t followErr
 
 bool MotorController::applyConfigOutputsOff()
 {
-    m_inForce = motion.stepper.config.getDriverSettings();
+    m_inForce = motion.stepper.config.getAppliedSettings();
     m_speedOverrideActive = false;
     return applyWithOutputsOff();
 }

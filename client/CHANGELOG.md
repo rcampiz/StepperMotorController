@@ -12,6 +12,14 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
 ## [Unreleased]
 
 ### Added
+- Drive tab: the Resonance avoider box: its on/off (an A/B switch, not saved), state, run current
+  in force, the live ripple (`encoder.rip`), the resonant speeds, the current scale (one number,
+  applied and saved) and Recalibrate. Fleet tab: per wheel, the avoider's switch, run current and
+  ripple (the fast band crossing follows the switch). Encoder tab: the ripple on the slip plot.
+- `resonance_recal` scenario: re-measures the main resonance at the run current in force (after a
+  load or a scale change), ~35 s, and with `apply` updates the model's constant (bench
+  2026-10-21: peak at 80.2 / 80.4 RPM where the 7-current fit said 82.8; 137.1 -> 133.2 Hz at 1 A).
+  `cfg_scale` / `cfg_scale_query` builders.
 - Fast band crossing for the gamepad (`drive_map.cross_band`): a slewed speed inside a
   resonance band whose stick target lies beyond it is sent as the band's far edge at once, so
   the chip's ramp crosses it in ~15 ms instead of the slew lingering; a target inside a band is
@@ -59,6 +67,7 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
   closing the fleet hands them back to their menus (`smc_core.kinematics.indicator`).
 
 ### Changed
+- A routine "Parameters refreshed" no longer replaces the BOARD RESET warning in the status bar.
 - The default gamepad resonance bands are empty (the fixed 55-66 / 105-122 RPM list was an older
   setup's); the 23HS22 profile's bands are the measured 35-48 and 70-95 RPM at 1.01 A; a profile's
   bands no longer replace a board avoider's.

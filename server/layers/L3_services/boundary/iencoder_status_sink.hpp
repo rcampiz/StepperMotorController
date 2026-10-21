@@ -25,6 +25,7 @@ struct EncoderTelemetryData {
     uint16_t filterFlags = 0;
     uint8_t measWindowMs = 0;
     uint16_t sampleRateHz = 0;
+    uint16_t ripple10 = 0;        ///< position wobble about its trend, rms, 0.1 encoder counts
 };
 
 class IEncoderStatusSink {

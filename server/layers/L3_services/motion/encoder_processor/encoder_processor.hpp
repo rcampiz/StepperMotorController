@@ -80,6 +80,7 @@ public:
     uint16_t lastRawCount() const override { return m_lastRawCount; }
     int32_t getFilteredVelocity() const { return m_filteredVelocity; }
     VelocityQuality getQuality() const override { return m_velQuality; }
+    float getRippleCounts() const override;
     uint8_t getFilterFlags() const override { return m_filterFlags; }
 
 private:
@@ -143,6 +144,17 @@ private:
     float    m_obsVel = 0.0f;          // estimated velocity, counts/s
     uint32_t m_obsLastUs = 0;
     bool     m_obsSeeded = false;
+
+    // Ripple (the resonance as a number): each DMA sample's position against the mean of the
+    // RIPPLE_WINDOW samples centred on it (a straight run's own trend cancels), squared, then
+    // averaged over ~RIPPLE_AVG samples (100 ms at 2 kHz). Positions kept as the low 32 bits.
+    void rippleUpdate();
+    static constexpr int RIPPLE_WINDOW = 33;       // 16.5 ms at 2 kHz: more than a 100-150 Hz period
+    static constexpr float RIPPLE_AVG = 200.0f;
+    uint32_t m_ripBuf[RIPPLE_WINDOW] = {};
+    int      m_ripHead = 0;
+    int      m_ripFill = 0;
+    float    m_ripMs = 0.0f;                       // mean square, counts^2
 
     // Quality tracking
     uint32_t m_lastEdgeUs = 0;

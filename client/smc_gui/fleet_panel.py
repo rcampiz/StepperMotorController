@@ -154,7 +154,8 @@ class FleetPanel(QWidget):
         # Boards
         boards = QGroupBox("Boards")
         g = QGridLayout(boards)
-        for c, h in enumerate(["Wheel", "Address", "Expected serial", "Serial", "State", "Speed", "Age"]):
+        for c, h in enumerate(["Wheel", "Address", "Expected serial", "Serial", "State", "Speed", "Age",
+                               "Avoider", "Run A", "Ripple"]):
             lbl = QLabel(h); lbl.setStyleSheet("color: %s; font-size: 10px;" % theme.MUTED)
             g.addWidget(lbl, 0, c)
         self._addr: Dict[str, QComboBox] = {}
@@ -163,6 +164,10 @@ class FleetPanel(QWidget):
         self._state: Dict[str, QLabel] = {}
         self._speed: Dict[str, QLabel] = {}
         self._age: Dict[str, QLabel] = {}
+        self._res_on: Dict[str, QCheckBox] = {}
+        self._res_run: Dict[str, QLabel] = {}
+        self._res_rip: Dict[str, QLabel] = {}
+        self._res_status: Dict[str, dict] = {}          # CTRL:RES? replies (worker thread writes)
         for r, role in enumerate(ROLES, start=1):
             name = QLabel(role); name.setStyleSheet("color: %s; font-weight: bold;" % theme.CYAN)
             g.addWidget(name, r, 0)
@@ -170,9 +175,15 @@ class FleetPanel(QWidget):
             self._addr[role] = cb; g.addWidget(cb, r, 1)
             le = QLineEdit(); le.setPlaceholderText("any"); le.setMaximumWidth(110)
             self._want[role] = le; g.addWidget(le, r, 2)
-            for col, store in ((3, self._serial), (4, self._state), (5, self._speed), (6, self._age)):
+            for col, store in ((3, self._serial), (4, self._state), (5, self._speed), (6, self._age),
+                               (8, self._res_run), (9, self._res_rip)):
                 lbl = QLabel("--"); lbl.setStyleSheet("font-family: Consolas; color: %s;" % theme.TEXT)
                 store[role] = lbl; g.addWidget(lbl, r, col)
+            ck = QCheckBox(); ck.setEnabled(False)
+            ck.setToolTip("This wheel's resonance avoider (A/B switch, not saved); its state and run "
+                          "current beside it; Ripple: the resonance as a number (counts rms, ~1 quiet)")
+            ck.clicked.connect(lambda on, role=role: self._on_res_toggle(role, on))
+            self._res_on[role] = ck; g.addWidget(ck, r, 7)
         btns = QHBoxLayout()
         self._open_btn = QPushButton("Open fleet"); self._open_btn.clicked.connect(self._on_open_clicked)
         self._close_btn = QPushButton("Close"); self._close_btn.clicked.connect(self._on_close_clicked); self._close_btn.setEnabled(False)
@@ -193,7 +204,7 @@ class FleetPanel(QWidget):
         btns.addStretch()
         self._status = QLabel("closed"); self._status.setStyleSheet("color: %s;" % theme.MUTED)
         btns.addWidget(self._status)
-        g.addLayout(btns, 5, 0, 1, 7)
+        g.addLayout(btns, 5, 0, 1, 10)
         root.addWidget(boards)
 
         row = QHBoxLayout()
@@ -631,9 +642,17 @@ class FleetPanel(QWidget):
         if self._frames % 4:
             return
         fr = fleet.frame()
+        if self._frames % 20 == 0:
+            self._poll_res(fleet)
+        self._show_res(fleet)
         for role in ROLES:
             if role in fr.boards:
                 age, d = fr.boards[role]
+                rip = (d.get("encoder") or {}).get("rip")
+                if isinstance(rip, (int, float)):
+                    self._res_rip[role].setText("%.1f" % rip)
+                    self._res_rip[role].setStyleSheet("font-family: Consolas; color: %s;" % (
+                        theme.GREEN if rip < 2.0 else theme.YELLOW if rip < 3.5 else theme.RED))
                 m = d.get("motor", {})
                 state = d.get("state", "?")
                 self._state[role].setText(state)
@@ -645,6 +664,35 @@ class FleetPanel(QWidget):
         if mt is not None:
             self._measured.setText("measured: vx %.2f  vy %.2f  wz %.2f   (spread %.0f ms)" % (
                 mt.vx, mt.vy, mt.wz, fr.spread_s * 1000))
+
+    # --- resonance avoider, per wheel ---------------------------------------------------------
+    def _poll_res(self, fleet) -> None:
+        """Ask every board for its avoider's state (the reply lands on a worker thread: stored,
+        shown on the next tick)."""
+        for role, b in fleet.boards.items():
+            def got(resp, role=role):
+                if resp is not None and resp.success:
+                    self._res_status[role] = dict(resp.data)
+            try:
+                b.submit(C.res_query(), got)
+            except Exception:                            # noqa: BLE001 - a board gone: skip it
+                pass
+
+    def _show_res(self, fleet) -> None:
+        from smc_core.drive_map import bands_from_res
+        for role, st in list(self._res_status.items()):
+            ck = self._res_on[role]
+            ck.setEnabled(float(st.get("f1a_hz") or 0) > 0)
+            ck.setChecked(bool(st.get("enabled")))
+            state = str(st.get("state", "off"))
+            self._res_run[role].setText("%.2f %s" % (float(st.get("run_a", 0)), state[:5]))
+            fleet.bands[role] = bands_from_res(st)       # fast crossing follows the switch
+
+    def _on_res_toggle(self, role: str, on: bool) -> None:
+        fleet = self._bridge.fleet
+        if fleet is not None and role in fleet.boards:
+            fleet.boards[role].submit(C.res_config(bool(on)))
+            self._poll_res(fleet)
 
     # --- log -----------------------------------------------------------------------------
     @Slot(float, str, str)

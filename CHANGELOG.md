@@ -16,6 +16,17 @@ tags.
 ## [Unreleased]
 
 ### Added
+- `encoder.rip` in `DIAG:STAT?` and both telemetry pushes: the resonance as a number. The
+  Encoder task measures each DMA sample's position against the mean of the 33 samples centred on
+  it (a straight run cancels), rms over ~100 ms, in 0.1 counts: ~1 running quietly, ~5 in the
+  bench motor's resonance without the avoider, ~2 with it (bench 2026-10-21, 80 RPM). About
+  0.2 % CPU, 132 bytes. 50 Hz telemetry can show the 100-150 Hz resonance this way.
+- `DRV:CFG:SCALE <25-200 %>` / `DRV:CFG:SCALE?`: one number for every current level. Hold, run,
+  accel and decel (the duties in voltage mode) go in force x the scale at `DRV:CFG:APPLY`; the
+  stored levels stay as given (the LCD and the GUI edit those); `DRV:CFG:PHYS?` adds
+  `current_scale_pct` and the `applied_*_a` levels. The resonance avoider follows the scaled run
+  current (bench: 130 % moved the main band 82.8 -> 94.7 RPM by itself). Stored in the config
+  record's last spare byte.
 - The resonance avoider (`CTRL:RES?`, `CTRL:RES:CFG`, `CTRL:RES:SAVE`; stored in the config
   record's spare bytes, off in older records): the mechanical resonance follows the run current
   (bench f_n = 137 Hz x I^0.51), so the Motor task moves the run current live (TVAL_RUN alone,

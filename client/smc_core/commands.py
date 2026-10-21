@@ -704,6 +704,18 @@ def cfg_current(hold_a: float, run_a: float, acc_a: float, dec_a: float) -> Requ
     """Current-mode coil current references, amps (the driver rounds onto its grid)."""
     return request("DRV:CFG:CURRENT", *_levels("currents", (hold_a, run_a, acc_a, dec_a), None))
 
+@builds("DRV:CFG:SCALE")
+def cfg_scale(percent: int) -> Request:
+    """One number for every current level: hold, run, accel and decel go in force x percent / 100
+    at DRV:CFG:APPLY (the stored levels stay as given; the resonance avoider follows)."""
+    p = int(percent)
+    if not 25 <= p <= 200:
+        raise CommandError("current scale is 25..200 %")
+    return request("DRV:CFG:SCALE", p)
+
+@builds("DRV:CFG:SCALE?")
+def cfg_scale_query() -> Request: return request("DRV:CFG:SCALE?")
+
 @builds("DRV:CFG:DUTY")
 def cfg_duty(hold: float, run: float, acc: float, dec: float) -> Request:
     """Voltage-mode drive duty, 0..1 of the supply."""

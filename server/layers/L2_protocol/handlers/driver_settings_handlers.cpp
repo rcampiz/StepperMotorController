@@ -201,7 +201,46 @@ void CommandParser::cmdDrvPhysShow() {
   r.text("fault_action", cfg.faultAction == 0 ? "HardStop" : cfg.faultAction == 1 ? "HardHiZ" : "SoftStop");
   r.integer("idle_release_ms", cfg.idleReleaseMs);
   r.integer("full_steps_per_rev", m_dispatcher.getFullStepsPerRev());
+  // The levels above are the stored ones; APPLY puts them in force x the current scale
+  r.integer("current_scale_pct", m_dispatcher.configGetCurrentScalePct());
+  if (c.currentControl && c.currentSettable) {
+    const Harness::DriverSettings a = m_dispatcher.driverSettingsApplied();
+    r.num("applied_hold_a", a.currentA.hold);
+    r.num("applied_run_a", a.currentA.run);
+    r.num("applied_acc_a", a.currentA.acc);
+    r.num("applied_dec_a", a.currentA.dec);
+  }
   r.end();
+}
+
+// DRV:CFG:SCALE <percent 25-200> — one number for every current level: hold, run, accel and
+// decel (the duties in voltage mode) go in force x percent / 100 at DRV:CFG:APPLY (SAVE keeps
+// it). The stored levels stay as given; the resonance avoider follows the scaled run current.
+// DRV:CFG:SCALE? — the scale and the levels it puts in force.
+void CommandParser::cmdDrvScale(const ParsedCommand &cmd) {
+  const bool query = isQuery(cmd);
+  if (!query) {
+    if (cmd.argCount < 1) {
+      respondErr("Usage: DRV:CFG:SCALE <percent 25-200>");
+      return;
+    }
+    char *end = nullptr;
+    const long p = strtol(cmd.args[0], &end, 10);
+    if (end == cmd.args[0] || *end != '\0' || p < 25 || p > 200) {
+      respondOutOfRange("current scale, percent", 25.0, 200.0, "");
+      return;
+    }
+    m_dispatcher.configSetCurrentScalePct(static_cast<uint8_t>(p));
+  }
+  const Harness::DriverSettings a = m_dispatcher.driverSettingsApplied();
+  KvReply r(m_transport, m_format == ResponseFormat::JSON, query ? "DRV:CFG:SCALE?" : "DRV:CFG:SCALE",
+            KvReply::Shape::LINE, "SCALE");
+  r.integer("current_scale_pct", m_dispatcher.configGetCurrentScalePct());
+  r.num("hold_a", a.currentA.hold);
+  r.num("run_a", a.currentA.run);
+  r.num("acc_a", a.currentA.acc);
+  r.num("dec_a", a.currentA.dec);
+  r.end(query ? nullptr : NOT_SAVED);
 }
 
 // DRV:CFG:CURRENT <hold_A> <run_A> <acc_A> <dec_A> — current-mode references, amps

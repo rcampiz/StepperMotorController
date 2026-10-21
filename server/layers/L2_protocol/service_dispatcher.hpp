@@ -38,6 +38,9 @@ public:
     uint16_t getFullStepsPerRev() override;
     Harness::DriverSettings driverSettings() override;
     Harness::DriverSettings driverSettingsInForce() override;
+    uint8_t configGetCurrentScalePct() override;
+    void configSetCurrentScalePct(uint8_t pct) override;
+    Harness::DriverSettings driverSettingsApplied() override;
     Harness::ServiceStatus configSetDriverSettings(const Harness::DriverSettings& s) override;
     Harness::ServiceStatus configSaveToFlash() override;
     bool configLoadFromFlash() override;

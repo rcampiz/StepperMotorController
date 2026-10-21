@@ -35,6 +35,12 @@ public:
     /// Replace the stored settings (RAM; DRV:CFG:APPLY puts them in force, SAVE keeps them).
     /// OutOfRange when a changed value is outside the caps (Harness::*WithinCaps).
     virtual Harness::ServiceStatus configSetDriverSettings(const Harness::DriverSettings& s) = 0;
+    /// One number for every current level (DRV:CFG:SCALE): the levels are put in force x pct / 100
+    /// by DRV:CFG:APPLY; the stored ones stay as given. 100 = as given.
+    virtual uint8_t configGetCurrentScalePct() = 0;
+    virtual void configSetCurrentScalePct(uint8_t pct) = 0;
+    /// The settings APPLY puts in force (the scale applied), on the driver's grid
+    virtual Harness::DriverSettings driverSettingsApplied() = 0;
 
     // Flash persistence
     /// Ok, StoreFull (journal full while the motor moves: stop and save again) or FlashError.

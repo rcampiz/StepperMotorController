@@ -67,3 +67,19 @@ TEST(observer_keeps_its_bandwidth_and_reports_it) {
     p.getFilterConfig(c);
     EXPECT_EQ(c.observerBwHz, Harness::ENC_FILT_DEFAULT_OBSERVER_HZ);   // 0 = the default
 }
+
+TEST(ripple_reads_a_wobble_and_ignores_a_steady_run) {
+    Shaft s(10);
+    s.run(8000.0, 500);                            // a straight run: only the counter's steps
+    const float flat = s.p.getRippleCounts();
+    EXPECT_TRUE(flat < 0.6f);
+    // the same run with a 130 Hz wobble of 5 counts on the shaft
+    Services::EncoderProcessor p;
+    double pos = 0.0; uint32_t t = 1000;
+    for (int i = 0; i < 1000; ++i) {
+        pos += 8000.0 / RATE_HZ; t += PERIOD_US;
+        const double w = 5.0 * sin(2.0 * 3.14159265 * 130.0 * i / RATE_HZ);
+        p.feedSample(static_cast<uint16_t>(static_cast<int64_t>(floor(pos + w)) & 0xFFFF), t);
+    }
+    EXPECT_TRUE(p.getRippleCounts() > 2.5f && p.getRippleCounts() < 4.5f);   // rms of a 5-count sine: 3.5
+}

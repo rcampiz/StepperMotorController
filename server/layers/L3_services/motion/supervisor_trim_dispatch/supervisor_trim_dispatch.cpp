@@ -41,7 +41,13 @@ Services::ISupervisorTrimDispatcher::ResonanceStatus SupervisorTrimDispatch::get
     s.config = motion.configStore.getResonanceConfig();
     s.state = static_cast<uint8_t>(live.state());
     s.runInForceA = live.currentA();
-    s.runConfiguredA = motion.stepper.config.getDriverSettings().currentA.run;
+    // the run current in force: the stored one x the current scale (until the first apply:
+    // the stored one)
+    float applied = motion.stepper.controller.inForce().currentA.run;
+    if (!(applied > 0.0f)) applied = motion.stepper.config.getAppliedSettings().currentA.run;
+    const float stepA = motion.stepper.config.caps().currentStepA;     // as the chip has it
+    s.runConfiguredA = (stepA > 0.0f) ? static_cast<float>(static_cast<int>(applied / stepA + 0.5f)) * stepA
+                                      : applied;
     s.changes = live.changes();
     s.guardTrips = live.guardTrips();
     ResonanceAvoider model;                       // the stored model's speeds (pure maths)

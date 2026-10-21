@@ -38,6 +38,7 @@ struct EncoderTelemetry {
     uint8_t filterFlags;
     uint8_t measWindowMs;
     uint16_t sampleRateHz;
+    uint16_t ripple10;         // position wobble about its trend, rms, 0.1 counts (<= 999.9)
 };
 
 struct SystemTelemetry {

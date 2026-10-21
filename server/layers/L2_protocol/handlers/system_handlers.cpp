@@ -99,7 +99,7 @@ int renderStatusJson(char* buf, size_t bufSize,
         "\"thermal_warn\":%s,\"uvlo\":%s,\"stall_a\":%s,\"stall_b\":%s,"
         "\"faults\":%u,\"driver_raw\":%lu},"
         "\"encoder\":{\"count\":%s,\"velocity\":%ld,\"index_seen\":%s,"
-        "\"revolutions\":%ld,\"index_period_us\":%lu,\"vel_quality\":%u},"
+        "\"revolutions\":%ld,\"index_period_us\":%lu,\"vel_quality\":%u,\"rip\":%u.%u},"
         "\"control\":{\"following_error\":%ld,\"setpoint\":%ld,"
         "\"mode\":%u,\"tracking\":%s,"
         "\"trim_out\":%d,\"p\":%d,\"i\":%d,\"d\":%d,"
@@ -129,6 +129,7 @@ int renderStatusJson(char* buf, size_t bufSize,
         static_cast<long>(snap.encoder.revolutions),
         static_cast<unsigned long>(snap.encoder.indexPeriodUs),
         static_cast<unsigned>(snap.encoder.velocityQuality),
+        static_cast<unsigned>(snap.encoder.ripple10 / 10u), static_cast<unsigned>(snap.encoder.ripple10 % 10u),
         static_cast<long>(snap.control.followingError),
         static_cast<long>(snap.control.setpoint),
         static_cast<unsigned>(snap.control.mode),
@@ -161,13 +162,14 @@ int renderCompactJson(char* buf, size_t bufSize,
       "%s"
       "{\"state\":\"%s\",\"tick\":%lu,"
       "\"motor\":{\"position\":%ld,\"enc_at_pos\":%s,\"speed\":%lu,\"busy\":%s,\"hi_z\":%s},"
-      "\"encoder\":{\"count\":%s,\"velocity\":%ld},"
+      "\"encoder\":{\"count\":%s,\"velocity\":%ld,\"rip\":%u.%u},"
       "\"control\":{\"following_error\":%ld},"
       "\"heartbeat\":{\"remaining_ms\":%lu}}}",
       TELEMETRY_JSON_HEAD, v.stateStr, static_cast<unsigned long>(v.tick),
       static_cast<long>(snap.motor.position), encAtPosStr,
       static_cast<unsigned long>(snap.motor.speed), snap.motor.busy ? "true" : "false", snap.motor.hiZ ? "true" : "false",
       encCountStr, static_cast<long>(snap.encoder.velocity),
+      static_cast<unsigned>(snap.encoder.ripple10 / 10u), static_cast<unsigned>(snap.encoder.ripple10 % 10u),
       static_cast<long>(snap.control.followingError),
       static_cast<unsigned long>(v.hbRemainingMs));
 }

@@ -93,7 +93,8 @@ struct MotorConfig {
     uint8_t  resBandPct;          // avoided band half-width, % (0 = default)
     uint8_t  resBoostPct;         // largest raise, % (0 = default)
     uint8_t  resCutPct;           // largest cut, % (0 = default)
-    uint8_t  reserved5[1];        // zero
+    uint8_t  currentScalePct;     // every current level x this / 100 when applied (0 = 100);
+                                  // the record's last spare byte (2026-10-21)
 
     uint32_t crc32;               // CRC32 of everything above
 };
@@ -211,6 +212,12 @@ public:
     void setDriverSettings(const Harness::DriverSettings& s) { m_config.driver = s; }
     /// The settings as the driver will put them in force (its resolution cap and grid)
     Harness::DriverSettings getEffectiveSettings() const;
+    /// The stored settings with the current scale applied (hold/run/acc/dec currents and duties
+    /// x currentScalePct / 100): what DRV:CFG:APPLY puts in force. The stored levels stay as
+    /// given (the LCD and the GUI edit those).
+    Harness::DriverSettings getAppliedSettings() const;
+    uint8_t getCurrentScalePct() const { return (m_config.currentScalePct != 0) ? m_config.currentScalePct : 100; }
+    void setCurrentScalePct(uint8_t pct) { m_config.currentScalePct = (pct == 100) ? 0 : pct; }
     /// Protocol 2 chip units of the settings (the driver translates); false: no such units
     bool toLegacyUnits(Drivers::LegacyDriverUnits& out) const;
     /// Settings from protocol 2 chip units (the driver translates); false: not translated.

@@ -57,6 +57,8 @@ public:
     void requestResonanceReload() { m_resReload = true; }
     /// The avoider's state, for status replies (Comms task; word-sized reads)
     const ResonanceAvoider& resonance() const { return m_resonance; }
+    /// The settings last applied (the current scale included)
+    const Harness::DriverSettings& inForce() const { return m_inForce; }
 
     /// ESTOP path: force outputs to Hi-Z immediately (bypasses the command queue).
     void emergencyHiZ();

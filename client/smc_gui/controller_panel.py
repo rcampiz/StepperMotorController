@@ -149,7 +149,10 @@ class ControllerPanel(QGroupBox):
             self._max_rpm = QDoubleSpinBox(); self._max_rpm.setRange(1, 1500); self._max_rpm.setValue(250); self._max_rpm.setSuffix(" RPM")
             self._max_rpm.valueChanged.connect(lambda v: setattr(self.stick, "max_rpm", float(v)))
             settings.addWidget(self._max_rpm, 2, 1)
-            self._bands_cb = QCheckBox("Step over resonance bands (55-66, 105-122 RPM)")
+            self._bands_cb = QCheckBox("Cross resonance bands fast")
+            self._bands_cb.setToolTip("While the stick sweeps the speed through a resonance band, jump to its "
+                                      "far edge (the chip crosses it in ~15 ms). The bands come from the "
+                                      "board's resonance avoider, else from the motor profile")
             self._bands_cb.setChecked(True)
             self._bands_cb.toggled.connect(lambda on: setattr(self.stick, "avoid_bands", bool(on)))
             settings.addWidget(self._bands_cb, 3, 0, 1, 2)

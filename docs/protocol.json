@@ -197,6 +197,7 @@
     "revolutions",
     "index_period_us",
     "vel_quality",
+    "rip",
     "control",
     "following_error",
     "setpoint",
@@ -322,6 +323,10 @@
       {
         "type": "uint16_t",
         "name": "sampleRateHz"
+      },
+      {
+        "type": "uint16_t",
+        "name": "ripple10"
       }
     ],
     "SystemTelemetry": [
@@ -3379,6 +3384,46 @@
       "deprecated": ""
     },
     {
+      "name": "DRV:CFG:SCALE",
+      "prefix": "DRV",
+      "handler": "cmdDrvScale",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "DRV:CFG:SCALE <percent 25-200>"
+      ],
+      "ascii_ok": [],
+      "json": [],
+      "errors": [
+        "current scale, percent must be <caps>-<caps>"
+      ],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
+      "name": "DRV:CFG:SCALE?",
+      "prefix": "DRV",
+      "handler": "cmdDrvScale",
+      "file": "driver_settings_handlers.cpp",
+      "min_args": 0,
+      "usage": [
+        "DRV:CFG:SCALE <percent 25-200>"
+      ],
+      "ascii_ok": [],
+      "json": [],
+      "errors": [
+        "current scale, percent must be <caps>-<caps>"
+      ],
+      "note": "query of DRV:CFG:SCALE",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
       "name": "DRV:CFG:DUTY",
       "prefix": "DRV",
       "handler": "cmdDrvDuty",
@@ -4150,6 +4195,11 @@
             "acc_duty",
             "accel_fsps2",
             "alarms",
+            "applied_acc_a",
+            "applied_dec_a",
+            "applied_hold_a",
+            "applied_run_a",
+            "current_scale_pct",
             "dec_a",
             "dec_duty",
             "decel_fsps2",

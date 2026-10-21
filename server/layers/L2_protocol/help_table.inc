@@ -125,6 +125,8 @@
 "DRV:ENC_PPR <pulses_per_rev>",
 "DRV:CFG:CURRENT <hold_A> <run_A> <acc_A> <dec_A>",
 "DRV:CFG:CURRENT?",
+"DRV:CFG:SCALE <percent 25-200>",
+"DRV:CFG:SCALE?",
 "DRV:CFG:DUTY <hold> <run> <acc> <dec> (0..1)",
 "DRV:CFG:DUTY?",
 "DRV:CFG:USTEP <microsteps 1|2|4|...>",

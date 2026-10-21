@@ -35,6 +35,7 @@ SAMPLE_ARGS = {
     "lcd_reg": (0xBB, 0x19),
     "cfg_alarms": (["overcurrent", "stall"],),
     "cfg_query": ("CURRENT",),
+    "cfg_scale": (130,),
 }
 
 

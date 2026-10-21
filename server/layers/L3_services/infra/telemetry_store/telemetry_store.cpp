@@ -77,6 +77,7 @@ void TelemetryStore::writeEncoder(const EncoderTelemetryData& data)
     m_encoder.filterFlags = data.filterFlags;
     m_encoder.measWindowMs = data.measWindowMs;
     m_encoder.sampleRateHz = data.sampleRateHz;
+    m_encoder.ripple10 = data.ripple10;
     m_timestamp = m_clock->getTickMs();
     m_lock->release();
 }

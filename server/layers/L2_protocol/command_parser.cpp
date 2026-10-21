@@ -565,6 +565,8 @@ void CommandParser::dispatchDriver(const char *suffix,
       // Protocol 3: physical units; "<name>?" is the query of the same handler
       {"CFG:CURRENT", &CommandParser::cmdDrvCurrent},
       {"CFG:CURRENT?", &CommandParser::cmdDrvCurrent},
+      {"CFG:SCALE", &CommandParser::cmdDrvScale},
+      {"CFG:SCALE?", &CommandParser::cmdDrvScale},
       {"CFG:DUTY", &CommandParser::cmdDrvDuty},
       {"CFG:DUTY?", &CommandParser::cmdDrvDuty},
       {"CFG:USTEP", &CommandParser::cmdDrvUstepConfig},

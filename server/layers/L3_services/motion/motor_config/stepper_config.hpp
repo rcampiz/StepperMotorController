@@ -22,6 +22,9 @@ public:
     const Harness::DriverSettings& getDriverSettings() const { return m_mgr.getDriverSettings(); }
     void setDriverSettings(const Harness::DriverSettings& s) { m_mgr.setDriverSettings(s); }
     Harness::DriverSettings getEffectiveSettings() const { return m_mgr.getEffectiveSettings(); }
+    Harness::DriverSettings getAppliedSettings() const { return m_mgr.getAppliedSettings(); }
+    uint8_t getCurrentScalePct() const { return m_mgr.getCurrentScalePct(); }
+    void setCurrentScalePct(uint8_t pct) { m_mgr.setCurrentScalePct(pct); }
     bool toLegacyUnits(Drivers::LegacyDriverUnits& out) const { return m_mgr.toLegacyUnits(out); }
     bool setFromLegacyUnits(const Drivers::LegacyDriverUnits& in) { return m_mgr.setFromLegacyUnits(in); }
 

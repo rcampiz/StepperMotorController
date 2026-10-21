@@ -118,7 +118,7 @@ TEST(status_json_worst_case_fits_the_buffer_with_margin) {
     snap.motor.encoderAtPosition = INT64_MIN;
     snap.motor.statusReg = 0xFFFF; snap.motor.busy = true; snap.motor.hiZ = true;
     snap.encoder.count = INT64_MIN; snap.encoder.velocity = INT32_MIN;
-    snap.encoder.indexSeen = true; snap.encoder.revolutions = INT32_MIN;
+    snap.encoder.indexSeen = true; snap.encoder.revolutions = INT32_MIN; snap.encoder.ripple10 = 9999;
     snap.encoder.indexPeriodUs = UINT32_MAX; snap.encoder.velocityQuality = 255;
     snap.control.followingError = INT32_MIN; snap.control.setpoint = INT32_MIN;
     snap.control.mode = 255; snap.control.tracking = true;
@@ -414,7 +414,7 @@ TEST(compact_json_worst_case_fits_its_buffer_with_margin) {
     snap.motor.position = INT32_MIN; snap.motor.speed = UINT32_MAX;
     snap.motor.encoderAtPosition = INT64_MIN;
     snap.motor.busy = true; snap.motor.hiZ = true;
-    snap.encoder.count = INT64_MIN; snap.encoder.velocity = INT32_MIN;
+    snap.encoder.count = INT64_MIN; snap.encoder.velocity = INT32_MIN; snap.encoder.ripple10 = 9999;
     snap.control.followingError = INT32_MIN;
     Protocol::StatusJsonView v;
     v.stateStr = "RUNNING_XXXXXXXXXXXXXXXX"; v.tick = UINT32_MAX; v.hbRemainingMs = UINT32_MAX;
@@ -447,7 +447,7 @@ TEST(tlm_fmt_compact_switches_the_push_and_its_rate_floor_but_not_diag_stat) {
     EXPECT_TRUE(tlm.find("\"position\":1234") != std::string::npos);
     EXPECT_TRUE(tlm.find("\"following_error\":") != std::string::npos);
     EXPECT_TRUE(tlm.find("\"rx_overflow_lines\":") == std::string::npos);
-    EXPECT_TRUE(tlm.size() < 240);                                     // 230 with motor.enc_at_pos
+    EXPECT_TRUE(tlm.size() < 250);                                     // ~240 with motor.enc_at_pos and encoder.rip
     std::string stat = r.run("DIAG:STAT?");                            // the full object on request
     EXPECT_TRUE(stat.find("\"rx_overflow_lines\":") != std::string::npos);
     out = r.run("SYST:TLM:FMT?");
@@ -828,6 +828,10 @@ struct PhysicalConfig : FakeL3::FakeMotorConfigDispatcher {
     Harness::DriverCaps driverCaps() override { return Drivers::PowerStepSettings::caps(); }
     Harness::DriverSettings driverSettings() override { return s; }
     Harness::DriverSettings driverSettingsInForce() override { return Drivers::PowerStepSettings::quantize(s); }
+    uint8_t scalePct = 100;                             // DRV:CFG:SCALE: none
+    uint8_t configGetCurrentScalePct() override { return scalePct; }
+    void configSetCurrentScalePct(uint8_t pct) override { scalePct = pct; }
+    Harness::DriverSettings driverSettingsApplied() override { return driverSettingsInForce(); }
     Harness::ServiceStatus configSetDriverSettings(const Harness::DriverSettings& x) override { s = x; return Harness::ServiceStatus::Ok; }
     uint16_t getFullStepsPerRev() override { return 200; }
     template <class F> void legacy(F f) {
@@ -923,7 +927,13 @@ TEST(the_bench_boards_settings_read_back_in_physical_units) {
     EXPECT_TRUE(out.find("hold_duty=0.160156\r\n") != std::string::npos);    // KVAL 0x29 / 256
     EXPECT_TRUE(out.find("accel_fsps2=5005.89\r\ndecel_fsps2=5005.89\r\nmax_speed_fsps=1327.51\r\n"
                          "overcurrent_a=572.917\r\novercurrent_v=0.6875\r\nstall_threshold=0\r\n") != std::string::npos);
-    EXPECT_TRUE(out.find("fault_action=HardHiZ\r\nidle_release_ms=3000\r\nfull_steps_per_rev=200\r\nOK 22\r\n") != std::string::npos);
+    EXPECT_TRUE(out.find("fault_action=HardHiZ\r\nidle_release_ms=3000\r\nfull_steps_per_rev=200\r\n"
+                         "current_scale_pct=100\r\napplied_hold_a=0.312\r\napplied_run_a=1.326\r\n"
+                         "applied_acc_a=1.56\r\napplied_dec_a=1.56\r\nOK 27\r\n") != std::string::npos);
+    // DRV:CFG:SCALE: one number for every level, stored, in force at APPLY
+    EXPECT_TRUE(r.has("DRV:CFG:SCALE 130", "current_scale_pct=130"));
+    EXPECT_TRUE(r.has("DRV:CFG:SCALE?", "current_scale_pct=130"));
+    EXPECT_TRUE(r.has("DRV:CFG:SCALE 10", "OUT_OF_RANGE"));
 
 }
 

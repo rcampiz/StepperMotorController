@@ -396,6 +396,7 @@ class GraphPanel(QWidget):
         self._full_steps_per_rev = 200  # Updated from DRV:FULL_STEPS? response
         self._slip = SlipTracker()
         self._slip_deg = deque(maxlen=self.MAX_POINTS)
+        self._ripple_deg = deque(maxlen=self.MAX_POINTS)
         self._window_s = 30.0
 
         # Display-side filter state
@@ -507,6 +508,9 @@ class GraphPanel(QWidget):
         self._slip_plot.setXLink(self._plot)
         self._slip_plot.addItem(pg.InfiniteLine(pos=0, angle=0, pen=pg.mkPen(theme.GRID_MAJ)))
         self._slip_curve = self._slip_plot.plot(pen=pg.mkPen(color=theme.MAGENTA, width=2))
+        # The ripple (telemetry encoder.rip, rms counts, measured on the board at the encoder's
+        # sample rate): the resonance, which 50 Hz telemetry cannot show directly, in degrees
+        self._ripple_curve = self._slip_plot.plot(pen=pg.mkPen(color=theme.ORANGE, width=2))
         plots = QVBoxLayout()
         plots.setSpacing(2)
         plots.addWidget(self._plot, 1)
@@ -752,6 +756,8 @@ class GraphPanel(QWidget):
         else:
             slip = float("nan")
         self._slip_deg.append(slip)
+        rip = encoder.get("rip") if isinstance(encoder, dict) else None
+        self._ripple_deg.append(float(rip) * 360.0 / ENCODER_CPR if isinstance(rip, (int, float)) else float("nan"))
 
         # Apply display-side filter
         filtered_vel = self._apply_display_filter(vel)
@@ -769,10 +775,16 @@ class GraphPanel(QWidget):
         vel = np.fromiter(self._encoder_velocity, float)
         slip = np.fromiter(self._slip_deg, float)
 
+        rip = np.fromiter(self._ripple_deg, float)
         if math.isfinite(slip[-1]):
             steps = slip[-1] / (360.0 / self._full_steps_per_rev)
-            self._slip_label.setText("slip %+7.2f deg (%+.2f steps)" % (slip[-1], steps))
+            text = "slip %+7.2f deg (%+.2f steps)" % (slip[-1], steps)
+            if len(rip) and math.isfinite(rip[-1]):
+                text += "   ripple %.2f deg" % rip[-1]
+            self._slip_label.setText(text)
         self._slip_curve.setData(ts, slip, connect="finite")
+        if len(rip) == len(ts):
+            self._ripple_curve.setData(ts, rip, connect="finite")
 
         # Motor RPM (steps/s * 60 / full_steps_per_rev), encoder RPM (ticks/s * 60 / CPR)
         self._curves["motor_rpm"].setData(ts, spd * (60.0 / self._full_steps_per_rev))
@@ -798,6 +810,8 @@ class GraphPanel(QWidget):
         self._slip.reset()
         self._slip_deg.clear()
         self._slip_curve.setData([], [])
+        self._ripple_deg.clear()
+        self._ripple_curve.setData([], [])
         # Reset display filter state
         self._disp_ema_state = 0.0
         self._disp_sma_buf.clear()

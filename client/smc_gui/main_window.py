@@ -31,6 +31,7 @@ from smc_gui.connection_panel import ConnectionPanel
 from smc_gui.motor_panel import MotorControlPanel
 from smc_gui.telemetry_panel import TelemetryPanel
 from smc_gui.driver_panel import DriverPanel
+from smc_gui.resonance_panel import ResonancePanel
 from smc_gui.protection_panel import ProtectionPanel
 from smc_gui.stepmode_panel import StepModePanel
 from smc_gui.controller_panel import ControllerPanel
@@ -173,7 +174,17 @@ class MainWindow(QMainWindow):
         drive_v = QVBoxLayout(drive_page)
         drive_v.setContentsMargins(0, 0, 0, 0)
         drive_v.addWidget(self._motion_panel, 1)
+        self._resonance_panel = ResonancePanel()
+        self._resonance_panel.enable_requested.connect(self._on_res_enable)
+        self._resonance_panel.scale_requested.connect(self._on_res_scale)
+        self._resonance_panel.recal_requested.connect(
+            lambda: self._run_scenario("resonance_recal", {"apply": True}, "SCENARIO_RECAL"))
+        drive_v.addWidget(self._resonance_panel)
         drive_v.addWidget(self._controller_panel)
+        self._res_timer = QTimer(self)                # the avoider's state, once a second
+        self._res_timer.setInterval(1000)
+        self._res_timer.timeout.connect(self._poll_resonance)
+        self._res_timer.start()
         drive_scroll = QScrollArea()
         drive_scroll.setWidgetResizable(True)
         drive_scroll.setFrameShape(QScrollArea.NoFrame)
@@ -561,6 +572,8 @@ class MainWindow(QMainWindow):
         self._proto = identity.proto if identity is not None else None
         # until DRV:CAPS? confirms (or refuses): the protocol says which commands to send
         self._apply_caps(self._caps, D.supports_physical(self._proto))
+        self._resonance_panel.set_connected(True)
+        self._call(C.cfg_scale_query(), "RES_SCALE")
         if identity is not None:
             self.setWindowTitle(f"STM32 Motor Controller - {identity.serial} "
                                 f"(fw {identity.fw}, protocol {identity.proto})")
@@ -588,6 +601,7 @@ class MainWindow(QMainWindow):
 
         # Update UI state
         self._connection_panel.set_connected(False)
+        self._resonance_panel.set_connected(False)
         self._motor_panel.setEnabled(False)
         self._connect_action.setEnabled(True)
         self._disconnect_action.setEnabled(False)
@@ -845,7 +859,29 @@ class MainWindow(QMainWindow):
         self._bridge.job(upload, "FLASH_UPLOAD_SLOT")
 
     @Slot(str, object)
+    @Slot()
+    def _poll_resonance(self):
+        if self._bridge is not None and self._board is not None and self._board.session_ready:
+            self._call(C.res_query(), "RES")
+
+    @Slot(bool)
+    def _on_res_enable(self, on: bool):
+        if self._bridge is not None:
+            self._call(C.res_config(on), "RES_SET")
+            self._call(C.res_query(), "RES")
+
+    @Slot(int)
+    def _on_res_scale(self, pct: int):
+        if self._bridge is not None:
+            self._call_all([C.cfg_scale(pct), C.cfg_apply()], "GENERIC", last_tag="APPLY_PARAMS")
+            self._call(C.cfg_scale_query(), "RES_SCALE")
+            self._call(C.res_query(), "RES")
+
     def _on_job_done(self, tag: str, result):
+        if tag == "SCENARIO_RECAL":
+            self._resonance_panel.recal_done(result)
+            self._poll_resonance()
+            return
         if tag == "SCENARIO_SYSID":
             self._sysid_panel.on_scenario_result(result)
             return
@@ -908,6 +944,13 @@ class MainWindow(QMainWindow):
     @Slot(str, str, object)
     def _on_response_received(self, tag: str, command: str, response):
         """Route worker responses to appropriate UI handlers."""
+        if tag in ("RES", "RES_SCALE", "RES_SET"):     # polled: quiet on errors (an older board)
+            if response is not None and response.success:
+                if tag == "RES":
+                    self._resonance_panel.update_status(response.data)
+                elif tag == "RES_SCALE":
+                    self._resonance_panel.update_scale(response.data)
+            return
         if tag == "MEM":                     # polled every 2 s: the panel shows its own errors
             if response is None:
                 self._memory_panel.show_error("no response")
@@ -972,7 +1015,8 @@ class MainWindow(QMainWindow):
             dbg = V.motor_debug(response)
             self._driver_panel.update_driver_params(dbg)
             self._telemetry_panel.show_raw_response("MOTOR_DEBUG", dbg["text"])
-            self._status_bar.showMessage("Parameters refreshed", 2000)
+            if not self._status_bar.currentMessage().startswith("BOARD RESET"):   # keep the warning
+                self._status_bar.showMessage("Parameters refreshed", 2000)
 
         elif tag == "POLL_UI_MODE":
             mode = str((response.data or {}).get("message", "")).upper()
@@ -1125,6 +1169,9 @@ class MainWindow(QMainWindow):
         self._status_strip.update_status(data)
         self._telemetry_panel.update_data(data)
         self._graph_panel.update_data(data)
+        enc = data.get("encoder")
+        if isinstance(enc, dict):
+            self._resonance_panel.update_ripple(enc.get("rip"))
         self._motion_panel.update_telemetry(data)
         self.status_updated.emit(data)
 

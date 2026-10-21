@@ -73,6 +73,7 @@ class FakeBoard:
                            "holt_enabled": False, "holt_alpha": 51, "holt_beta": 13,
                            "observer_enabled": True, "observer_bw_hz": 10}
         self.sysid_sine = None                     # (base_sps, amp_sps, f_hz, dur_ms) of the last SINE
+        self.scale_pct = 100
         self.res_cfg = {"enabled": False, "state": "off", "run_a": 0.0, "run_cfg_a": 0.0, "f1a_hz": 0.0,
                         "exponent": 0.0, "band_pct": 8, "boost_pct": 40, "cut_pct": 30, "harmonics": 7,
                         "rpm_k1": 0.0, "rpm_k2": 0.0, "rpm_k4": 0.0, "changes": 0, "guard_trips": 0}
@@ -148,7 +149,7 @@ class FakeBoard:
                       "mot_status": 0, "status_reg": "7E03", "cmd_err": False, "ocd": False,
                       "thermal_sd": False, "thermal_warn": False, "uvlo": False,
                       "stall_a": False, "stall_b": False},
-            "encoder": {"count": self._enc_count(), "velocity": self.speed, "index_seen": False,
+            "encoder": {"count": self._enc_count(), "velocity": self.speed, "rip": 0.6, "index_seen": False,
                         "revolutions": 0, "index_period_us": 0, "vel_quality": 0},
             "control": {"following_error": 0, "setpoint": self.position, "mode": 0,
                         "tracking": False, "trim_out": 0, "p": 0, "i": 0, "d": 0,
@@ -777,6 +778,13 @@ class FakeBoard:
             self.res_cfg[k] = (v not in ("0", "OFF")) if k == "enabled" else float(v)
         self._ok("CTRL:RES:CFG", "Resonance avoider %s" % ("on" if self.res_cfg["enabled"] else "off"))
 
+    def _c_DRV_CFG_SCALE(self, name, args):
+        self.scale_pct = int(args[0]) if args else 100
+        self._ok("DRV:CFG:SCALE", data={"current_scale_pct": self.scale_pct})
+
+    def _c_DRV_CFG_SCALE_Q(self, name, args):
+        self._ok("DRV:CFG:SCALE?", data={"current_scale_pct": self.scale_pct})
+
     def _c_CTRL_RES_SAVE(self, name, args):
         self._ok("CTRL:RES:SAVE", "Resonance config saved")
 
@@ -970,7 +978,7 @@ class FakeBoard:
                             st = {"state": st["state"], "tick": st["tick"],
                                   "motor": {k: st["motor"][k]
                                             for k in ("position", "enc_at_pos", "speed", "busy", "hi_z")},
-                                  "encoder": {k: st["encoder"][k] for k in ("count", "velocity")},
+                                  "encoder": {k: st["encoder"][k] for k in ("count", "velocity", "rip")},
                                   "control": {"following_error": st["control"]["following_error"]},
                                   "heartbeat": {"remaining_ms": st["heartbeat"]["remaining_ms"]}}
                         self.t.feed_line(json.dumps({"kind": "telemetry", "data": st},

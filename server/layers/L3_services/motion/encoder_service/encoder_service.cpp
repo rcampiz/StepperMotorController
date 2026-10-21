@@ -124,6 +124,8 @@ void EncoderService::sample()
     telem.filterFlags = m_processor->getFilterFlags();
     telem.measWindowMs = m_measWindowMs;
     telem.sampleRateHz = m_sampleRateHz;
+    const float rip = m_processor->getRippleCounts() * 10.0f + 0.5f;
+    telem.ripple10 = (rip >= 9999.0f) ? 9999u : static_cast<uint16_t>(rip);
     Services::g_telemetryStore.writeEncoder(telem);
 }
 

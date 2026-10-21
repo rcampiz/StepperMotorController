@@ -75,6 +75,18 @@ Harness::DriverSettings ServiceDispatcher::driverSettingsInForce() {
     return m_config->driverSettingsInForce();
 }
 
+uint8_t ServiceDispatcher::configGetCurrentScalePct() {
+    return m_config->configGetCurrentScalePct();
+}
+
+void ServiceDispatcher::configSetCurrentScalePct(uint8_t pct) {
+    m_config->configSetCurrentScalePct(pct);
+}
+
+Harness::DriverSettings ServiceDispatcher::driverSettingsApplied() {
+    return m_config->driverSettingsApplied();
+}
+
 Harness::ServiceStatus ServiceDispatcher::configSetDriverSettings(const Harness::DriverSettings& s) {
     return m_config->configSetDriverSettings(s);
 }

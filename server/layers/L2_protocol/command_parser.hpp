@@ -440,6 +440,7 @@ private:
   void cmdDrvCaps();                                  // DRV:CAPS?
   void cmdDrvPhysShow();                              // DRV:CFG:PHYS?
   void cmdDrvCurrent(const ParsedCommand &cmd);       // DRV:CFG:CURRENT[?]
+  void cmdDrvScale(const ParsedCommand &cmd);       // DRV:CFG:SCALE <percent> / DRV:CFG:SCALE?
   void cmdDrvDuty(const ParsedCommand &cmd);          // DRV:CFG:DUTY[?]
   void cmdDrvUstepConfig(const ParsedCommand &cmd);   // DRV:CFG:USTEP[?]
   void cmdDrvAccel(const ParsedCommand &cmd);         // DRV:CFG:ACCEL[?]

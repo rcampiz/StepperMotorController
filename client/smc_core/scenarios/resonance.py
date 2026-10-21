@@ -438,3 +438,71 @@ def ramp_profile(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     ctx.check("grid measured", len(rows) == len(params["accels_fsps2"]) * len(params["ramp_currents_a"]))
     ctx.check("no lost steps", all(abs(r["lost_steps"]) < 0.5 for r in rows if not r["glitch"]))
 
+
+@scenario("resonance_recal",
+          "Quick recalibration of the resonance avoider's model at the run current in force (after "
+          "a load, or a current scale): sweeps +-span_pct around the predicted main resonance "
+          "(harmonic 2), finds the peak with the 2 kHz capture and, with apply, updates the "
+          "model's constant (f_n at 1 A) keeping its exponent (CTRL:RES:CFG + SAVE). The avoider is "
+          "off meanwhile and restored. Needs a model (resonance_profile with apply). ~30 s.",
+          params={"span_pct": 25.0, "step_pct": 2.5, "settle_s": 0.35, "samples": 1024,
+                  "rate_hz": 2000, "apply": False, "peak_factor": 1.4},
+          moves_motor=True)
+def resonance_recal(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
+    geom = _chip_geometry(ctx)
+    full, cpr = geom["full_steps_per_rev"], geom["encoder_cpr"] or 4000
+    rate, samples = int(params["rate_hz"]), int(params["samples"])
+    st = ctx.call(C.res_query())
+    ctx.require("read the avoider", st.success, st.error_message or "")
+    s0 = dict(st.data)
+    f1a_old, expo = float(s0.get("f1a_hz") or 0), float(s0.get("exponent") or 0)
+    run_a = float(s0.get("run_cfg_a") or 0)
+    ctx.require("a model to recalibrate", f1a_old > 0 and expo > 0 and run_a > 0,
+                "run resonance_profile with apply first")
+    centre = float(s0.get("rpm_k2") or 0)
+    span, step = float(params["span_pct"]) / 100.0, float(params["step_pct"]) / 100.0
+    n = int(round(2 * span / step))
+    rpms = [round(centre * (1.0 - span + i * step), 1) for i in range(n + 1)]
+    rate0 = int((ctx.call(C.enc_filter_query()).data or {}).get("sample_rate_hz", 1000))
+    rows: List[Dict[str, Any]] = []
+    try:
+        ctx.call(C.res_config(False))
+        ctx.require("sample rate", ctx.call(C.enc_sample_rate(rate)).success)
+        ctx.call(C.fault_clear())
+        ctx.require("enable", ctx.call(C.mot_enable()).success)
+        first = True
+        for rpm in rpms:
+            ctx.require(f"run {rpm}", ctx.call(C.mot_run_rpm(rpm, 1)).success)
+            ctx.sleep((1.0 if first else float(params["settle_s"])) + samples / float(rate) + 0.05)
+            first = False
+            r = _measure(ctx, samples, cpr, full, rate, samples / float(rate) + 0.05)
+            if r is not None:
+                r.update({"run_a": run_a, "rpm": rpm, "harmonic": harmonic_of(r["peak_hz"], rpm, full)})
+                rows.append(r)
+    finally:
+        ctx.call(C.cap_resume())
+        ctx.call(C.mot_stop())
+        ctx.call(C.enc_sample_rate(rate0))
+        ctx.call(C.res_config(bool(s0.get("enabled"))))
+        ctx.call(C.mot_disable())
+    ctx.measure("rows", rows)
+    peaks = [r for r in find_resonances(rows, full, float(params["peak_factor"])) if r["harmonic"] == 2]
+    ctx.measure("f1a_old", f1a_old)
+    if not peaks:
+        ctx.measure("why", "no clear harmonic-2 peak in the sweep (the resonance may be gone or far off)")
+        ctx.check("a resonance found", False)
+        return
+    best = max(peaks, key=lambda r: r["ripple"])
+    fn = best["fn_hz"]
+    f1a_new = fn / run_a ** expo
+    ctx.measure("peak_rpm", best["rpm"])
+    ctx.measure("fn_hz", fn)
+    ctx.measure("f1a_new", round(f1a_new, 1))
+    ctx.measure("shift_pct", round((f1a_new / f1a_old - 1.0) * 100.0, 1))
+    ctx.check("a resonance found", True)
+    if params.get("apply"):
+        r = ctx.call(C.res_config(bool(s0.get("enabled")), round(f1a_new, 1), expo))
+        ctx.require("model updated", r.success, r.error_message or "")
+        ctx.require("saved", ctx.call(C.res_save()).success)
+        ctx.measure("applied", True)
+

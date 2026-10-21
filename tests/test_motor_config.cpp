@@ -5,6 +5,7 @@
  *        the driver's settings in physical units; V1-V4 records (powerSTEP01 register values)
  *        are migrated once at load through the driver's own translation.
  */
+#include <math.h>
 #include "minitest.hpp"
 #include "harness/defs/harness_l3_l4.hpp"
 #include "L3_services/motion/motor_config/motor_config.hpp"
@@ -141,6 +142,30 @@ TEST(a_record_saved_before_the_stage_fields_reads_every_stage_at_its_default) {
     EXPECT_EQ(g.biquadCutoffHz, 0);                  // 0 = the processor's 10 Hz
     EXPECT_EQ(g.padeGainPct, 0); EXPECT_EQ(g.holtAlpha, 0); EXPECT_EQ(g.notchQ10, 0);
     EXPECT_EQ(g.sampleRateHz, 1000); EXPECT_EQ(g.measWindowMs, 40);
+}
+
+TEST(the_current_scale_multiplies_every_level_when_applied_and_is_stored) {
+    FakeConfigStore store;
+    PowerStepModel drv;
+    {
+        Services::MotorConfigManager cfg;
+        cfg.init(store, &drv);
+        Harness::DriverSettings s = cfg.getDriverSettings();
+        s.currentA = {0.3f, 1.0f, 1.2f, 1.2f};
+        s.duty = {0.2f, 0.5f, 0.9f, 0.9f};
+        cfg.setDriverSettings(s);
+        EXPECT_EQ(cfg.getCurrentScalePct(), 100);                    // default: as given
+        cfg.setCurrentScalePct(130);
+        const Harness::DriverSettings a = cfg.getAppliedSettings();
+        EXPECT_TRUE(fabsf(a.currentA.run - 1.3f) < 1e-4f && fabsf(a.currentA.hold - 0.39f) < 1e-4f);
+        EXPECT_TRUE(fabsf(a.currentA.acc - 1.56f) < 1e-4f && fabsf(a.currentA.dec - 1.56f) < 1e-4f);
+        EXPECT_TRUE(a.duty.acc == 1.0f && fabsf(a.duty.run - 0.65f) < 1e-4f);   // a duty stops at 1
+        EXPECT_TRUE(cfg.getDriverSettings().currentA.run == 1.0f);   // the stored level stays
+        EXPECT_TRUE(cfg.saveToFlash());
+    }
+    Services::MotorConfigManager again;
+    EXPECT_TRUE(again.init(store, &drv));
+    EXPECT_EQ(again.getCurrentScalePct(), 130);
 }
 
 TEST(current_mode_runs_at_most_1_16_and_conversions_follow) {

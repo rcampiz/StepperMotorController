@@ -52,6 +52,29 @@ Harness::DriverSettings ConfigDispatch::driverSettingsInForce() {
     return motion.stepper.config.getEffectiveSettings();
 }
 
+uint8_t ConfigDispatch::configGetCurrentScalePct() {
+    return motion.stepper.config.getCurrentScalePct();
+}
+
+void ConfigDispatch::configSetCurrentScalePct(uint8_t pct) {
+    motion.stepper.config.setCurrentScalePct(pct);
+}
+
+Harness::DriverSettings ConfigDispatch::driverSettingsApplied() {
+    const Harness::DriverSettings a = motion.stepper.config.getAppliedSettings();
+    const Harness::DriverCaps& c = motion.stepper.config.caps();
+    Harness::DriverSettings q = a;
+    if (c.currentStepA > 0.0f) {                     // the current levels on the driver's grid
+        float* lv[4] = {&q.currentA.hold, &q.currentA.run, &q.currentA.acc, &q.currentA.dec};
+        for (float* v : lv) {
+            float x = static_cast<float>(static_cast<int>(*v / c.currentStepA + 0.5f)) * c.currentStepA;
+            if (c.maxCurrentA > 0.0f && x > c.maxCurrentA) x = c.maxCurrentA;
+            *v = x;
+        }
+    }
+    return q;
+}
+
 namespace {
 /// Every value the edit changed is one the driver can take (unchanged ones are not judged:
 /// a migrated or default field the caps would refuse does not block an unrelated edit)

@@ -54,6 +54,10 @@ public:
 
     /** @brief Get active filter flags bitmask */
     virtual uint8_t getFilterFlags() const = 0;
+
+    /** @brief The position's wobble about its local trend, rms encoder counts (the resonance;
+     *         0 when the processor does not measure it) */
+    virtual float getRippleCounts() const { return 0.0f; }
 };
 
 } // namespace Services
