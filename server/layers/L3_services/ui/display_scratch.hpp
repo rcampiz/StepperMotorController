@@ -83,7 +83,7 @@ public:
     }
 
     static uint8_t* data() {
-        static uint8_t s_mask[BYTES];
+        alignas(4) static uint8_t s_mask[BYTES];   // aligned: the indicator stores whole pixels
         return s_mask;
     }
 

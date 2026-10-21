@@ -67,6 +67,15 @@ tags.
   20 Hz cutoff came back as 10 Hz after a restart (bench 2026-10-21: 20 Hz now survives one).
 
 ### Changed
+- LCD motion indicator: a VHS / synthwave look. A violet backdrop with scanlines and speckle,
+  and two tracking bands (cyan and pink bars, a bright line, a tear and noise that re-roll)
+  rolling down behind the dial; hot-pink rings with a yellow inner line, yellow chevrons, a white
+  arrow with a cyan / red split that fills with the speed; the readout and the "hold CENTER 2s"
+  hint in the 8 x 12 font on dark plates (the 6 x 8 hint was hard to read on the panel). One row
+  composer draws every pixel; a tick repaints only what changed plus the bands' rows (~6k px),
+  the bands without the tearing-edge wait. While the arrow redraws, the bands wait up to 100 ms.
+  Bench, arrow sweeping: 14.1 frames/s (16.0 before); arrow still: the bands take 25 % of the
+  Display task's time (lowest priority).
 - LCD motion indicator: the rotation chevrons span all three rings (22 px base centred on the
   ring band, 20 px long; they were 14 px on the outer ring alone and looked tiny).
 - The default encoder velocity filter is the tracking observer alone at 10 Hz (32 ms lag,

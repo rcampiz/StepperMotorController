@@ -1,6 +1,6 @@
 /**
  * @file indicator_service.cpp
- * @brief Motion indicator: eased target, span rows, repaint of what changed only.
+ * @brief Motion indicator: eased target, one row composer, repaint of what changed only.
  */
 
 #include "L3_services/infra/indicator_service/indicator_service.hpp"
@@ -29,6 +29,48 @@ constexpr float HEAD_LEN = 26.0f;
 constexpr float HEAD_HALF_W = 18.0f;
 constexpr float SHAFT_HALF_W = 5.0f;
 constexpr float OUTLINE = 2.0f;
+
+constexpr int SCREEN_W = Services::Canvas::WIDTH;
+constexpr int SCREEN_H = Services::Canvas::HEIGHT;
+
+// The VHS tracking bands: rows, speed (px/s, downward), top row at t = 0, tear (px either way)
+constexpr int BAND_H[IndicatorService::BAND_COUNT] = {12, 6};
+constexpr uint32_t BAND_SPEED[IndicatorService::BAND_COUNT] = {24, 36};   // was 55, 90: too fast (owner 2026-10-21)
+constexpr uint32_t BAND_START[IndicatorService::BAND_COUNT] = {30, 200};
+constexpr int BAND_TEAR[IndicatorService::BAND_COUNT] = {9, 5};
+constexpr int BAND_STRIPE = 7;               // px per colour bar inside a band
+
+// The backdrop's colours (8-bit; packed per row, the odd rows a scanline darker)
+struct Rgb { int r, g, b; };
+constexpr Rgb VHS_LO = {20, 0, 40};
+constexpr Rgb VHS_HI = {70, 10, 100};
+constexpr Rgb SPECKLE = {200, 160, 255};
+constexpr Rgb BAND_CYAN = {5, 217, 232};
+constexpr Rgb BAND_HOT = {255, 0, 128};
+constexpr Rgb TRACK_LINE = {235, 220, 255};
+constexpr Rgb NOISE = {230, 230, 255};       // not white: the arrow's outline is
+constexpr int BAND_MIX = 115;                // 256ths of the bar colour over the backdrop
+constexpr int SPECKLE_PER_ROW = 7;           // ~3 % of the backdrop's pixels
+constexpr int NOISE_PER_ROW = 29;            // ~12 % of a band's
+
+const char HINT_TEXT[] = "hold CENTER 2s: menu";
+static_assert(sizeof HINT_TEXT - 1 == IndicatorService::HINT_CHARS, "the hint plate fits the hint");
+
+inline Rgb mix(Rgb a, Rgb b, int q8) {
+    return {a.r + (b.r - a.r) * q8 / 256, a.g + (b.g - a.g) * q8 / 256, a.b + (b.b - a.b) * q8 / 256};
+}
+
+inline uint16_t pack565(Rgb c, bool scanline) {
+    if (scanline) c = {c.r * 205 / 256, c.g * 205 / 256, c.b * 205 / 256};
+    return indicatorRgb(static_cast<uint8_t>(c.r), static_cast<uint8_t>(c.g), static_cast<uint8_t>(c.b));
+}
+
+/// 16 bits of noise for a pixel and a seed: integer only, a few cycles
+inline uint32_t hash16(uint32_t x, uint32_t y, uint32_t seed) {
+    uint32_t v = (x * 73856093u) ^ (y * 19349663u) ^ (seed * 83492791u);
+    v = (v ^ (v >> 13)) * 0x5BD1E995u;
+    return (v ^ (v >> 15)) & 0xFFFFu;
+}
 
 inline int floorToInt(float v) {
     int i = static_cast<int>(v);
@@ -104,6 +146,7 @@ void IndicatorService::invalidate() {
 void IndicatorService::tick(uint32_t nowMs) {
     const uint32_t t = m_target;
     if (m_lcd == nullptr || (t & (1u << 31)) == 0) return;      // nothing requested yet
+    m_synced = false;
 
     // The share of the remaining distance covered: EASE per 50 ms, for the time since the last
     // tick (bounded: a long gap simply arrives)
@@ -131,17 +174,14 @@ void IndicatorService::tick(uint32_t nowMs) {
     m_speed = ease(m_speed, tSpeed, k);
     m_turn = ease(m_turn, tTurn, k);
 
-    if (!m_screenValid) {
-        m_lcd->waitForVSync();
-        m_lcd->fillScreen(BG_COLOR);
-        m_lcd->blitTextLine(CX - 60, HINT_Y, 120, 8, "hold CENTER 2s: menu", HINT_COLOR, BG_COLOR);
+    const bool opened = !m_screenValid;
+    if (opened) {
         m_arrowShown = m_ringsShown = false;
         m_arrowAngle = m_arrowFill = -1;
         memset(m_ringW, 0, sizeof m_ringW);
         memset(m_ringLit, 0, sizeof m_ringLit);
         m_chevDir = 0;
         m_readout[0] = '\0';
-        m_screenValid = true;
     }
 
     // What the panel should show now
@@ -168,7 +208,30 @@ void IndicatorService::tick(uint32_t nowMs) {
         ringsDirty = ringsShown && (widths[i] != m_ringW[i] || lit[i] != m_ringLit[i]);
     }
 
-    if (arrowDirty || ringsDirty) {
+    // The bands move on the clock, and everything painted this tick shows them where they are
+    // now; a tick that repaints the dial's square leaves them where they are unless they have
+    // waited BAND_MAX_WAIT_MS (the arrow first: bench 2026-10-21, 17.7 -> 10.3 frames/s with both)
+    const bool squareDirty = arrowDirty || ringsDirty;
+    const bool stepBands = opened || !squareDirty || (nowMs - m_bandStepMs >= BAND_MAX_WAIT_MS);
+    int16_t oldTop[BAND_COUNT];
+    for (uint8_t i = 0; i < BAND_COUNT; i++) {
+        oldTop[i] = m_bandTop[i];
+        if (stepBands) {
+            m_bandTop[i] = static_cast<int16_t>((BAND_START[i] + static_cast<uint64_t>(nowMs) * BAND_SPEED[i] / 1000u) %
+                                                static_cast<uint32_t>(SCREEN_H));
+        }
+    }
+    if (stepBands) {
+        m_bandFrame++;
+        m_bandStepMs = nowMs;
+    }
+
+    if (opened) {
+        paintRows(0, SCREEN_H - 1, 0, SCREEN_W - 1);              // the backdrop, the dial, the plates
+        m_screenValid = true;
+    }
+
+    if (squareDirty) {
         if (arrowShown) buildArrow(static_cast<uint16_t>(angle1024), static_cast<float>(fillPx));
         if (ringsShown) { buildRings(widths); buildChevrons(chevDir); }
         // The state the frame draws (the lit rings and the chevrons were the previous frame's)
@@ -179,10 +242,28 @@ void IndicatorService::tick(uint32_t nowMs) {
         memcpy(m_ringW, widths, sizeof m_ringW);
         memcpy(m_ringLit, lit, sizeof m_ringLit);
         m_chevDir = chevDir;
-        renderFrame(ringsDirty, arrowDirty, ringsShown, arrowShown);
+        // One window: the square around what changed (the arrow disc lies inside either). It was
+        // a window per span, ~380 small transfers a frame, ~148 ms on the bench (2026-10-20)
+        const int half = ringsDirty ? ZONE_OUT : ARROW_R;
+        paintRows(CY - half, CY + half, CX - half, CX + half);
     }
     renderReadout(arrowShown ? static_cast<int16_t>(m_speed + 0.5f) : -1,
                   tDir != 0 ? static_cast<int16_t>(m_turn + 0.5f) : -1, tDir);
+
+    // The bands: the rows each left and the rows it reached (its noise re-rolls every step)
+    if (stepBands && !opened) {
+        for (uint8_t i = 0; i < BAND_COUNT; i++) {
+            const int moved = (m_bandTop[i] - oldTop[i] + SCREEN_H) % SCREEN_H;
+            if (oldTop[i] < 0) {
+                paintBandRows(m_bandTop[i], BAND_H[i]);
+            } else if (moved <= BAND_H[i]) {
+                paintBandRows(oldTop[i], moved + BAND_H[i]);
+            } else {
+                paintBandRows(oldTop[i], BAND_H[i]);
+                paintBandRows(m_bandTop[i], BAND_H[i]);
+            }
+        }
+    }
 }
 
 // ------------------------------------------------------------------------------------------
@@ -222,6 +303,7 @@ void IndicatorService::buildRings(const uint8_t* widths) {
         int32_t ri = ro - widths[i];
         m_ringOut2[i] = ro * ro;
         m_ringIn2[i] = ri * ri;
+        m_ringGlow2[i] = (widths[i] >= 3) ? (ri + 1) * (ri + 1) : ri * ri;   // a 1 px line once wide
     }
 }
 
@@ -241,110 +323,233 @@ void IndicatorService::buildChevrons(int8_t dir) {
 }
 
 // ------------------------------------------------------------------------------------------
-void IndicatorService::renderFrame(bool rings, bool arrow, bool ringsShown, bool arrowShown) {
-    // One window per frame: the square around what changed (the arrow disc, or the whole ring
-    // zone) goes out as one stream, row after row. It was a window per span, ~380 small transfers
-    // a frame with their column/row setup each, ~148 ms a frame on the bench (2026-10-20). Every
-    // pixel of the square is worked out, the ring zone's included (the arrow square's corners
-    // reach it), so the stream rewrites what is already there.
-    (void)arrow;                                     // the arrow disc lies inside either square
-    // Many rows per stream call: the frame is built in the shared title-mask buffer (no screen
-    // with a title mask is up in remote mode; they rebuild after), ~20 arrow rows a call instead
-    // of one (each call costs its own lock and DMA set-up)
+void IndicatorService::sync() {
+    if (!m_synced) {
+        m_lcd->waitForVSync();                                  // the tick's first write starts on the tearing edge
+        m_synced = true;
+    }
+}
+
+void IndicatorService::composeRow(int y, int x0, int x1, uint8_t* buf) const {
+    // The panel takes each pixel high byte first: one 16-bit store of the swapped colour (the
+    // buffer is 4-aligned and a row is a whole number of pixels)
+    uint16_t* const px = reinterpret_cast<uint16_t*>(buf) - x0;            // px[x]
+    auto swapped = [](uint16_t c) { return static_cast<uint16_t>((c >> 8) | (c << 8)); };
+    auto set = [&](int x, uint16_t colour) { px[x] = swapped(colour); };
+    auto fill = [&](int a, int b, uint16_t colour) {
+        if (a < x0) a = x0;
+        if (b > x1) b = x1;
+        const uint16_t v = swapped(colour);
+        for (int x = a; x <= b; x++) px[x] = v;
+    };
+    const int dy = y - CY;
+    const int32_t dy2 = static_cast<int32_t>(dy) * dy;
+
+    // The inset this row: the disc, or a plate (they never share a row); the bands pass behind
+    const int32_t disc2 = static_cast<int32_t>(DISC_R) * DISC_R;
+    const int32_t zoneOut2 = static_cast<int32_t>(ZONE_OUT) * ZONE_OUT;
+    int ia = SCREEN_W, ib = SCREEN_W - 1;                       // none
+    if (dy2 <= disc2) {
+        const int xe = Graphics::isqrt16(disc2 - dy2);
+        ia = CX - xe;
+        ib = CX + xe;
+    } else if (y >= READOUT_T && y <= READOUT_B) {
+        ia = READOUT_L; ib = READOUT_R;
+    } else if (y >= HINT_T && y <= HINT_B) {
+        ia = HINT_L; ib = HINT_R;
+    }
+
+    // --- the backdrop, either side of the inset ---------------------------------------------
+    const bool scan = (y & 1) != 0;
+    const int wave = (Graphics::sin_q15(static_cast<uint16_t>((y * 18) & 0x3FF)) + 32768) * 154 / 65536;  // 0..0.6
+    const Rgb base = mix(VHS_LO, VHS_HI, wave);
+    const uint16_t cBase = pack565(base, scan);
+    const uint16_t cSpeck = pack565(SPECKLE, scan);
+    int band = -1, r = 0;
+    for (int i = 0; i < BAND_COUNT && band < 0; i++) {
+        if (m_bandTop[i] < 0) continue;
+        const int rr = (y - m_bandTop[i] + SCREEN_H) % SCREEN_H;
+        if (rr < BAND_H[i]) { band = i; r = rr; }
+    }
+    auto backdrop = [&](int a, int b) {
+        if (a < x0) a = x0;
+        if (b > x1) b = x1;
+        if (a > b) return;
+        // The speckle and the noise: so many dots a row at hashed columns (a hash a dot, not a
+        // hash a pixel); a pure function of the pixel, so overlapping repaints agree
+        auto scatter = [&](int count, uint32_t seed, uint16_t colour) {
+            const uint16_t v = swapped(colour);
+            for (int k = 0; k < count; k++) {
+                const int x = static_cast<int>(hash16(static_cast<uint32_t>(k), static_cast<uint32_t>(y), seed) % SCREEN_W);
+                if (x >= a && x <= b) px[x] = v;
+            }
+        };
+        if (band < 0) {
+            fill(a, b, cBase);
+            scatter(SPECKLE_PER_ROW, 0, cSpeck);
+            return;
+        }
+        if (r == 0) {                                           // the bright tracking line
+            fill(a, b, pack565(TRACK_LINE, scan));
+            return;
+        }
+        const uint16_t sBar[2] = {swapped(pack565(mix(base, BAND_HOT, BAND_MIX), scan)),
+                                  swapped(pack565(mix(base, BAND_CYAN, BAND_MIX), scan))};
+        const int tear = BAND_TEAR[band];
+        const int shift = static_cast<int>(hash16(static_cast<uint32_t>(r), m_bandFrame, static_cast<uint32_t>(band + 1)) %
+                                           static_cast<uint32_t>(2 * tear + 1)) - tear + 10 * BAND_STRIPE;
+        int bar = ((a + shift) / BAND_STRIPE) & 1;              // the colour bars, a run at a time
+        int x = a;
+        int run = BAND_STRIPE - (a + shift) % BAND_STRIPE;
+        while (x <= b) {
+            const int end = (x + run - 1 < b) ? x + run - 1 : b;
+            for (const uint16_t v = sBar[bar]; x <= end; x++) px[x] = v;
+            bar ^= 1;
+            run = BAND_STRIPE;
+        }
+        scatter(NOISE_PER_ROW, m_bandFrame + 7u, pack565(NOISE, scan));
+    };
+    backdrop(x0, ia - 1);
+    backdrop(ib + 1, x1);
+    if (ia > ib || ib < x0 || ia > x1) return;
+
+    // --- a plate: a dark panel with text in the medium font ---------------------------------
+    auto text = [&](const char* s, int n, int tx, int ty, uint16_t fg, bool shadow) {
+        const int gy = y - ty;
+        for (int c = 0; c < n && s[c] != '\0'; c++) {
+            const uint8_t* g = m_lcd->mediumGlyphRows(s[c]);
+            if (g == nullptr) continue;
+            const uint8_t cur = (gy >= 0 && gy < TEXT_H) ? g[gy] : 0;
+            const uint8_t under = (shadow && gy >= 1 && gy <= TEXT_H) ? static_cast<uint8_t>(g[gy - 1] >> 1) : 0;
+            for (int b = 0; b < TEXT_W; b++) {
+                const int x = tx + c * TEXT_W + b;
+                if (x < x0 || x > x1) continue;
+                const uint8_t m = static_cast<uint8_t>(0x80u >> b);
+                if (cur & m) set(x, fg);
+                else if (under & m) set(x, READOUT_SHADOW);
+            }
+        }
+    };
+    if (dy2 > disc2) {
+        if (y >= READOUT_T && y <= READOUT_B) {
+            const bool edge = (y == READOUT_T || y == READOUT_B);
+            fill(ia, ib, edge ? PLATE_RIM : DIAL_BG);
+            if (!edge) { fill(ia, ia, PLATE_RIM); fill(ib, ib, PLATE_RIM); }
+            text(m_readout, READOUT_CHARS, READOUT_X, READOUT_Y, READOUT_COLOR, true);
+        } else {
+            fill(ia, ib, DIAL_BG);
+            text(HINT_TEXT, HINT_CHARS, HINT_X, HINT_Y, HINT_COLOR, false);
+        }
+        return;
+    }
+
+    // --- the dial: the dark disc and its rim --------------------------------------------------
+    if (dy2 <= zoneOut2) {
+        const int xi = Graphics::isqrt16(zoneOut2 - dy2);
+        fill(ia, CX - xi - 1, DISC_RIM);
+        fill(CX - xi, CX + xi, DIAL_BG);
+        fill(CX + xi + 1, ib, DISC_RIM);
+    } else {
+        fill(ia, ib, DISC_RIM);
+    }
+
+    // The rings and the chevrons, in the ring zone outside ZONE_IN
+    const int32_t arrow2 = static_cast<int32_t>(ARROW_R) * ARROW_R;
+    const int32_t zoneIn2 = static_cast<int32_t>(ZONE_IN) * ZONE_IN;
+    const float yc = static_cast<float>(y) + 0.5f;
+    if (m_ringsShown && dy2 <= zoneOut2) {
+        Row chev[4] = {};
+        if (m_chevDir != 0) {
+            for (int k = 0; k < 4; k++) chev[k].on = polySpan(m_chev[k], 3, yc, chev[k].x0, chev[k].x1);
+        }
+        const int xo = Graphics::isqrt16(zoneOut2 - dy2);
+        const int xin = (dy2 < zoneIn2) ? Graphics::isqrt16(zoneIn2 - dy2) : -1;
+        const int bands[2][2] = {{CX - xo, xin < 0 ? CX + xo : CX - xin - 1}, {xin < 0 ? 1 : CX + xin + 1, xin < 0 ? 0 : CX + xo}};
+        for (const auto& bnd : bands) {
+            const int lo = bnd[0] < x0 ? x0 : bnd[0];
+            const int hi = bnd[1] > x1 ? x1 : bnd[1];
+            for (int x = lo; x <= hi; x++) {
+                const int dx = x - CX;
+                const int32_t d2 = static_cast<int32_t>(dx) * dx + dy2;
+                if (d2 <= arrow2) continue;                     // the arrow disc's own pixels
+                bool onChev = false;
+                for (int k = 0; k < 4 && !onChev; k++) onChev = chev[k].on && x >= chev[k].x0 && x <= chev[k].x1;
+                if (onChev) { set(x, CHEVRON_COLOR); continue; }
+                for (uint8_t i = 0; i < RING_COUNT; i++) {
+                    if (d2 <= m_ringOut2[i] && d2 > m_ringIn2[i]) {
+                        set(x, !m_ringLit[i] ? RING_UNLIT : (d2 <= m_ringGlow2[i] ? RING_GLOW : RING_LIT));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // The arrow: the RGB split behind, the outline, then inside it the speed fill
+    if (m_arrowShown && dy2 <= arrow2) {
+        Row oh = {}, os = {}, ih = {}, is = {};
+        oh.on = polySpan(m_outerHead, 3, yc, oh.x0, oh.x1);
+        os.on = polySpan(m_outerShaft, 4, yc, os.x0, os.x1);
+        ih.on = polySpan(m_innerHead, 3, yc, ih.x0, ih.x1);
+        is.on = polySpan(m_innerShaft, 4, yc, is.x0, is.x1);
+        const Row* outline[2] = {&oh, &os};
+        const Row* inside[2] = {&ih, &is};
+        for (const Row* o : outline) if (o->on) fill(o->x0 - GHOST_PX, o->x1 - GHOST_PX, GHOST_LEFT);
+        for (const Row* o : outline) if (o->on) fill(o->x0 + GHOST_PX, o->x1 + GHOST_PX, GHOST_RIGHT);
+        for (const Row* o : outline) if (o->on) fill(o->x0, o->x1, ARROW_COLOR);
+        const float rowAlong = (yc - m_tailY) * m_axisY;
+        for (const Row* o : inside) {
+            if (!o->on) continue;
+            const int lo = o->x0 < x0 ? x0 : o->x0;
+            const int hi = o->x1 > x1 ? x1 : o->x1;
+            for (int x = lo; x <= hi; x++) {
+                const float along = (static_cast<float>(x) + 0.5f - m_tailX) * m_axisX + rowAlong;
+                set(x, (along <= m_fillLen && m_fillLen > 0.5f) ? FILL_COLOR : DIAL_BG);
+            }
+        }
+    }
+}
+
+void IndicatorService::paintRows(int top, int bottom, int x0, int x1, bool onTearingEdge) {
+    if (top < 0) top = 0;
+    if (bottom > SCREEN_H - 1) bottom = SCREEN_H - 1;
+    if (x0 < 0) x0 = 0;
+    if (x1 > SCREEN_W - 1) x1 = SCREEN_W - 1;
+    if (top > bottom || x0 > x1) return;
+    // Many rows per stream call: the rows are built in the shared title-mask buffer (no screen
+    // with a title mask is up in remote mode; they rebuild after), each call costs its own lock
+    // and DMA set-up
     (void)UI::SharedTitleMask::claim(UI::SharedTitleMask::Owner::INDICATOR_ROWS);
     uint8_t* const block = UI::SharedTitleMask::data();
-    uint8_t* buf = block;
-    auto set = [&](int i, uint16_t colour) {
-        buf[i * 2] = static_cast<uint8_t>(colour >> 8);
-        buf[i * 2 + 1] = static_cast<uint8_t>(colour & 0xFF);
-    };
-
-    const int half = rings ? ZONE_OUT : ARROW_R;
-    const int x0 = CX - half, x1 = CX + half;
-    const int top = CY - half, bottom = CY + half;
     const int w = x1 - x0 + 1;
     const int rowBytes = w * 2;
     const int rowsPerBlock = static_cast<int>(UI::SharedTitleMask::BYTES) / rowBytes;
-    static_assert(static_cast<int>(UI::SharedTitleMask::BYTES) >= (2 * ZONE_OUT + 1) * 2, "a row fits the block");
-    int inBlock = 0;
-    const int32_t arrow2 = static_cast<int32_t>(ARROW_R) * ARROW_R;
-    const int32_t zoneIn2 = static_cast<int32_t>(ZONE_IN) * ZONE_IN;
-    const int32_t zoneOut2 = static_cast<int32_t>(ZONE_OUT) * ZONE_OUT;
+    static_assert(static_cast<int>(UI::SharedTitleMask::BYTES) >= SCREEN_W * 2, "a row fits the block");
 
-    m_lcd->waitForVSync();                                     // start on the tearing edge
+    if (onTearingEdge) sync();
     m_lcd->streamBitmapStart(static_cast<uint16_t>(x0), static_cast<uint16_t>(top),
                              static_cast<uint16_t>(w), static_cast<uint16_t>(bottom - top + 1));
+    int inBlock = 0;
     for (int y = top; y <= bottom; y++) {
-        const int dy = y - CY;
-        const int32_t dy2 = static_cast<int32_t>(dy) * dy;
-        const float yc = static_cast<float>(y) + 0.5f;
-
-        // This row's shape edges, worked out once
-        Row chev[4] = {};
-        if (ringsShown && m_chevDir != 0 && dy2 <= zoneOut2) {
-            for (int k = 0; k < 4; k++) chev[k].on = polySpan(m_chev[k], 3, yc, chev[k].x0, chev[k].x1);
-        }
-        Row oh = {}, os = {}, ih = {}, is = {};
-        if (arrowShown && dy2 <= arrow2) {
-            oh.on = polySpan(m_outerHead, 3, yc, oh.x0, oh.x1);
-            os.on = polySpan(m_outerShaft, 4, yc, os.x0, os.x1);
-            ih.on = polySpan(m_innerHead, 3, yc, ih.x0, ih.x1);
-            is.on = polySpan(m_innerShaft, 4, yc, is.x0, is.x1);
-        }
-        const float rowAlong = (yc - m_tailY) * m_axisY;
-
-        // Background, then only where the shapes are: the ring band's x ranges, the arrow's spans
-        for (int i = 0; i < w; i++) set(i, BG_COLOR);
-        auto clip = [&](int a, int b, int& lo, int& hi) { lo = a < x0 ? x0 : a; hi = b > x1 ? x1 : b; return lo <= hi; };
-
-        if (ringsShown && dy2 <= zoneOut2) {                     // the ring zone, outside ZONE_IN
-            const int xo = Graphics::isqrt16(zoneOut2 - dy2);
-            const int xi = (dy2 < zoneIn2) ? Graphics::isqrt16(zoneIn2 - dy2) : -1;
-            const int bands[2][2] = {{CX - xo, xi < 0 ? CX + xo : CX - xi - 1}, {xi < 0 ? 1 : CX + xi + 1, xi < 0 ? 0 : CX + xo}};
-            for (const auto& bnd : bands) {
-                int lo, hi;
-                if (!clip(bnd[0], bnd[1], lo, hi)) continue;
-                for (int x = lo; x <= hi; x++) {
-                    const int dx = x - CX;
-                    const int32_t d2 = static_cast<int32_t>(dx) * dx + dy2;
-                    if (d2 <= arrow2) continue;                     // the arrow disc's own pixels
-                    uint16_t c = BG_COLOR;
-                    bool onChev = false;
-                    for (int k = 0; k < 4 && !onChev; k++) onChev = chev[k].on && x >= chev[k].x0 && x <= chev[k].x1;
-                    if (onChev) {
-                        c = CHEVRON_COLOR;
-                    } else {
-                        for (uint8_t i = 0; i < RING_COUNT; i++) {
-                            if (d2 <= m_ringOut2[i] && d2 > m_ringIn2[i]) { c = m_ringLit[i] ? RING_LIT : RING_UNLIT; break; }
-                        }
-                    }
-                    set(x - x0, c);
-                }
-            }
-        }
-        if (arrowShown && dy2 <= arrow2) {                        // the arrow: outline, then inside
-            int lo, hi;
-            const Row* outline[2] = {&oh, &os};
-            const Row* inside[2] = {&ih, &is};
-            for (const Row* r : outline) {
-                if (r->on && clip(r->x0, r->x1, lo, hi)) for (int x = lo; x <= hi; x++) set(x - x0, ARROW_COLOR);
-            }
-            for (const Row* r : inside) {
-                if (!r->on || !clip(r->x0, r->x1, lo, hi)) continue;
-                for (int x = lo; x <= hi; x++) {
-                    const float along = (static_cast<float>(x) + 0.5f - m_tailX) * m_axisX + rowAlong;
-                    set(x - x0, (along <= m_fillLen && m_fillLen > 0.5f) ? FILL_COLOR : BG_COLOR);
-                }
-            }
-        }
+        composeRow(y, x0, x1, block + inBlock * rowBytes);
         if (++inBlock == rowsPerBlock) {
             m_lcd->streamBitmapData(block, static_cast<size_t>(inBlock) * rowBytes);
             inBlock = 0;
         }
-        buf = block + inBlock * rowBytes;
     }
     if (inBlock > 0) m_lcd->streamBitmapData(block, static_cast<size_t>(inBlock) * rowBytes);
     m_lcd->streamBitmapEnd();
+}
+
+void IndicatorService::paintBandRows(int top, int count) {
+    // No wait for the tearing edge (~8 ms spun on average): a band caught mid-scan looks torn,
+    // which is what a tracking band looks like anyway
+    if (top + count <= SCREEN_H) {
+        paintRows(top, top + count - 1, 0, SCREEN_W - 1, false);
+    } else {                                                    // wraps past the bottom
+        paintRows(top, SCREEN_H - 1, 0, SCREEN_W - 1, false);
+        paintRows(0, top + count - 1 - SCREEN_H, 0, SCREEN_W - 1, false);
+    }
 }
 
 void IndicatorService::renderReadout(int16_t speedPct, int16_t turnPct, int8_t dir) {
@@ -354,9 +559,21 @@ void IndicatorService::renderReadout(int16_t speedPct, int16_t turnPct, int8_t d
     if (turnPct >= 0) snprintf(r, sizeof r, "R %3d%% %s", turnPct, dir > 0 ? "CW " : "CCW");
     else snprintf(r, sizeof r, "R   --    ");
     snprintf(buf, sizeof buf, "%s   %s", v, r);
-    if (strcmp(buf, m_readout) == 0) return;
+    // Only the characters that changed (a digit or two while the speed eases), with their
+    // shadow row; the plate's rim and margin never change
+    const int wasLen = static_cast<int>(strlen(m_readout)), nowLen = static_cast<int>(strlen(buf));
+    int first = -1, last = -1;
+    for (int i = 0; i < READOUT_CHARS; i++) {
+        const char was = (i < wasLen) ? m_readout[i] : ' ';     // a fresh plate shows blanks
+        const char now = (i < nowLen) ? buf[i] : ' ';
+        if (was != now) {
+            if (first < 0) first = i;
+            last = i;
+        }
+    }
+    if (first < 0) return;
     snprintf(m_readout, sizeof m_readout, "%s", buf);
-    m_lcd->blitTextLine(CX - 66, READOUT_Y, 132, 8, buf, RING_LIT, BG_COLOR);
+    paintRows(READOUT_Y, READOUT_Y + TEXT_H, READOUT_X + first * TEXT_W, READOUT_X + (last + 1) * TEXT_W - 1);
 }
 
 } // namespace Services

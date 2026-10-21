@@ -476,6 +476,7 @@ TEST(setting_pages_explain_the_selected_row) {
 }
 
 TEST(motion_indicator_shows_heading_speed_and_turn_magnitudes) {
+    using Ind = Services::IndicatorService;
     Rig rig;
     Services::IndicatorService ind;
     ind.init(&rig.lcd);
@@ -484,40 +485,55 @@ TEST(motion_indicator_shows_heading_speed_and_turn_magnitudes) {
     settle(ind);
     EXPECT_TRUE(ind.currentSpeed() == 73.0f && ind.currentTurn() == 40.0f && ind.currentAngle() == 45.0f);
     rig.dump("indicator");
-    const uint32_t lit40 = rig.panel.countColor(0x079F, 20, 60, 200, 32);    // top band: rings only
-    const uint32_t unlit40 = rig.panel.countColor(0x3B31, 20, 60, 200, 200);
+    const uint32_t lit40 = rig.panel.countColor(Ind::RING_LIT, 20, 60, 200, 32);    // top band: rings only
+    const uint32_t unlit40 = rig.panel.countColor(Ind::RING_UNLIT, 20, 60, 200, 200);
     EXPECT_TRUE(lit40 > 0 && unlit40 > 0);                // one full ring, one partial, one hairline
-    EXPECT_TRUE(rig.panel.countColor(0xF8DB, 60, 100, 120, 120) > 150);     // magenta outline
-    const uint32_t fill73 = rig.panel.countColor(0x079F, 70, 110, 100, 100);
-    EXPECT_TRUE(fill73 > 200);                            // cyan fill
-    EXPECT_TRUE(rig.panel.countColor(0xF8DB, 20, 50, 200, 30) > 20);         // the top chevron
-    EXPECT_TRUE(rig.panel.countColor(0x4A8D, 0, 300, 240, 20) > 20);         // the way-out hint
-    // settled and unchanged: nothing is sent
-    const uint32_t before = rig.panel.pixelsWritten;
-    settle(ind, 5);
-    EXPECT_EQ(rig.panel.pixelsWritten, before);
-    // a speed change repaints only the arrow's square (one window), a little at a time
+    EXPECT_TRUE(rig.panel.countColor(Ind::ARROW_COLOR, 60, 100, 120, 120) > 150);   // white outline
+    EXPECT_TRUE(rig.panel.countColor(Ind::GHOST_LEFT, 60, 100, 120, 120) > 40);     // the RGB split
+    EXPECT_TRUE(rig.panel.countColor(Ind::GHOST_RIGHT, 60, 100, 120, 120) > 40);
+    const uint32_t fill73 = rig.panel.countColor(Ind::FILL_COLOR, 70, 110, 100, 100);
+    EXPECT_TRUE(fill73 > 200);                            // the speed fill
+    EXPECT_TRUE(rig.panel.countColor(Ind::CHEVRON_COLOR, 20, 50, 200, 30) > 20);    // the top chevron
+    EXPECT_TRUE(rig.panel.countColor(Ind::HINT_COLOR, 0, Ind::HINT_Y, 240, Ind::TEXT_H) > 200);   // the hint
+    EXPECT_TRUE(rig.panel.countColor(Ind::READOUT_COLOR, 0, Ind::READOUT_Y, 240, Ind::TEXT_H) > 150);
+    EXPECT_TRUE(rig.panel.countColor(Ind::DISC_RIM) > 300);                          // the dial's rim
+    // settled: only the VHS bands' rows are sent, and they move down the screen
+    const int16_t top0 = ind.bandTop(0);
+    uint32_t before = rig.panel.pixelsWritten;
+    indTick(ind);
+    const uint32_t bandsOnly = rig.panel.pixelsWritten - before;
+    printf("  indicator: one tick of the VHS bands %u px\n", bandsOnly);
+    EXPECT_TRUE(bandsOnly > 0 && bandsOnly <= 30u * 240u);
+    EXPECT_TRUE(ind.bandTop(0) != top0);
+    // a speed change repaints the arrow's square (one window), a little at a time, plus the bands
+    before = rig.panel.pixelsWritten;
+    const int16_t top1 = ind.bandTop(0);
     ind.draw({45, 1, true, 20, 40});
     indTick(ind);
     const uint32_t first = rig.panel.pixelsWritten - before;
+    EXPECT_EQ(ind.bandTop(0), top1);                      // the arrow first: the bands wait
+    for (uint32_t i = 0; i < Ind::BAND_MAX_WAIT_MS / 50u; i++) indTick(ind);   // ...BAND_MAX_WAIT_MS at most
+    EXPECT_TRUE(ind.bandTop(0) != top1);
     printf("  indicator: one easing step of the arrow %u px\n", first);
-    const uint32_t square = (2u * Services::IndicatorService::ARROW_R + 1) * (2u * Services::IndicatorService::ARROW_R + 1);
-    EXPECT_TRUE(first >= square && first < square + 2000u);   // the arrow's square and the readout, not the rings
+    const uint32_t square = (2u * Ind::ARROW_R + 1) * (2u * Ind::ARROW_R + 1);
+    const uint32_t plate = (Ind::READOUT_R - Ind::READOUT_L + 1u) * (Ind::READOUT_B - Ind::READOUT_T + 1u);
+    EXPECT_TRUE(first >= square && first <= square + plate + 30u * 240u);   // not the rings
     EXPECT_TRUE(ind.currentSpeed() > 20.0f && ind.currentSpeed() < 73.0f);  // eased, not jumped
     settle(ind);
     rig.dump("indicator_20");
-    EXPECT_TRUE(rig.panel.countColor(0x079F, 70, 110, 100, 100) < fill73);
+    EXPECT_TRUE(rig.panel.countColor(Ind::FILL_COLOR, 70, 110, 100, 100) < fill73);
     // full turn: every ring lit, no hairline left
     ind.draw({45, -1, true, 20, 100});
     settle(ind);
     rig.dump("indicator_full");
-    EXPECT_TRUE(rig.panel.countColor(0x3B31, 20, 60, 200, 200) == 0);
-    EXPECT_TRUE(rig.panel.countColor(0x079F, 20, 60, 200, 32) > lit40);
+    EXPECT_TRUE(rig.panel.countColor(Ind::RING_UNLIT, 20, 60, 200, 200) == 0);
+    EXPECT_TRUE(rig.panel.countColor(Ind::RING_LIT, 20, 60, 200, 32) > lit40);
     // nothing to show: the zones go dark
     ind.clear();
     settle(ind);
-    EXPECT_TRUE(rig.panel.countColor(0x079F, 20, 60, 200, 200) == 0);
-    EXPECT_TRUE(rig.panel.countColor(0xF8DB, 20, 60, 200, 200) == 0);
+    EXPECT_TRUE(rig.panel.countColor(Ind::RING_LIT, 20, 60, 200, 200) == 0);
+    EXPECT_TRUE(rig.panel.countColor(Ind::ARROW_COLOR, 20, 60, 200, 200) == 0);
+    EXPECT_TRUE(rig.panel.countColor(Ind::CHEVRON_COLOR, 20, 60, 200, 200) == 0);
 }
 
 TEST(estop_page_shows_the_latch_and_fills_the_clear_bar) {
