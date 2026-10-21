@@ -667,3 +667,19 @@ TEST(the_indicator_eases_on_time_not_on_frames) {
     EXPECT_NEAR(slow.currentSpeed(), fast.currentSpeed(), 0.5);
     EXPECT_TRUE(slow.currentAngle() > 80.0f);               // 0.55^5 of the way left: nearly there
 }
+
+TEST(the_arrow_appears_pointing_where_the_base_goes) {
+    // 2026-10-20: from a stop (angle 0, no arrow) a flick left drew the arrow pointing up and
+    // swung it round; it now appears at its heading, and later turns still ease
+    Rig rig;
+    Services::IndicatorService ind;
+    ind.init(&rig.lcd);
+    ind.draw({0, 0, false, 0, 0});                       // stopped: no arrow
+    ind.tick(1000);
+    ind.draw({270, 0, true, 30, 0});                     // flick left
+    ind.tick(1050);
+    EXPECT_NEAR(ind.currentAngle(), 270.0, 0.01);
+    ind.draw({180, 0, true, 30, 0});                     // then down: eased, not jumped
+    ind.tick(1100);
+    EXPECT_TRUE(ind.currentAngle() < 270.0f && ind.currentAngle() > 180.0f);
+}

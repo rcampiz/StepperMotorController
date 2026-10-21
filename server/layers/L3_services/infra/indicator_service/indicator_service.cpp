@@ -119,6 +119,10 @@ void IndicatorService::tick(uint32_t nowMs) {
     const auto tSpeed = static_cast<float>(tTrans ? ((t >> 12) & 0x7Fu) : 0u);
     const auto tTurn = static_cast<float>(tDir != 0 ? ((t >> 19) & 0x7Fu) : 0u);
 
+    // The arrow appears pointing where the base goes (it swung round from up, the angle of the
+    // stopped base: owner 2026-10-20); once it shows, it eases toward a new heading
+    if (tTrans && !m_arrowShown) m_angle = tAngle;
+
     // Ease toward the target; the angle the short way round
     float d = wrapDiff(tAngle - m_angle);
     m_angle = (d < 0.5f && d > -0.5f) ? tAngle : m_angle + d * k;
