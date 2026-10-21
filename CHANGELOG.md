@@ -25,6 +25,11 @@ tags.
   loop's following error uses the same pair.
 
 ### Changed
+- The default encoder velocity filter is one 10 Hz Butterworth low-pass on the 40 ms window
+  (config defaults, `CTRL:ENC:FILT:RESET`): 36 ms of lag instead of 208 ms for 0.5 RPM of
+  steady-state noise instead of 0.1 (bench tune 2026-10-21, against the true velocity from the
+  unfiltered count; docs/bench/encoder_filter_tune_2026-10-21.png). A board with a saved filter
+  keeps it; `CTRL:ENC:FILT:RESET` then `CTRL:ENC:FILT:SAVE` moves it to the new default.
 - The serial link runs clean up to 2 Mbaud: the USART2 receive ISR runs at NVIC 1, above the
   FreeRTOS critical sections and the SEGGER RTT lock, and defers its one RTOS call (the Comms
   task's wake) to a spare vector at NVIC 6. At NVIC 6 it lost bytes received back to back

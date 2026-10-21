@@ -25,6 +25,8 @@ using Harness::ENC_FILT_PADE;
 using Harness::ENC_FILT_BIQUAD;
 using Harness::ENC_FILT_NOTCH;
 using Harness::ENC_FILT_HOLT;
+using Harness::ENC_FILT_DEFAULT_FLAGS;
+using Harness::ENC_FILT_DEFAULT_BIQUAD_HZ;
 
 class EncoderProcessor : public Services::IEncoderProcessing {
 public:
@@ -83,12 +85,12 @@ private:
     uint16_t m_lastRawCount = 0;
 
     // Filter configuration
-    uint8_t m_filterFlags = ENC_FILT_EMA | ENC_FILT_SMA | ENC_FILT_PADE | ENC_FILT_BIQUAD;
+    uint8_t m_filterFlags = ENC_FILT_DEFAULT_FLAGS;
     uint8_t m_emaAlpha = 200;
     uint8_t m_smaWindow = 8;
     uint8_t m_padeGainPct = 25;
     uint8_t m_padeMaxCorr = 50;
-    uint8_t m_biquadCutoffHz = 5;
+    uint8_t m_biquadCutoffHz = ENC_FILT_DEFAULT_BIQUAD_HZ;
     uint8_t m_notchCenterHz = 25;
     uint8_t m_notchQ10 = 50;
     uint8_t m_holtAlpha = 51;

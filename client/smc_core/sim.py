@@ -65,8 +65,9 @@ class FakeBoard:
         self.tlm_compact = False
         self.enc_rate = 1000
         # encoder filter chain as CTRL:ENC:FILT? reports it; each stage adds lag in the sine model
-        self.enc_filter = {"meas_window_ms": 40, "sample_rate_hz": 1000, "ema_enabled": True, "ema_alpha": 100,
-                           "sma_enabled": True, "sma_window": 8, "pade_enabled": True, "pade_gain": 25,
+        # (firmware default since 2026-10-21: the 10 Hz Butterworth alone)
+        self.enc_filter = {"meas_window_ms": 40, "sample_rate_hz": 1000, "ema_enabled": False, "ema_alpha": 100,
+                           "sma_enabled": False, "sma_window": 8, "pade_enabled": False, "pade_gain": 25,
                            "pade_max_corr": 50, "biquad_enabled": True, "biquad_cutoff_hz": 10,
                            "notch_enabled": False, "notch_center_hz": 25, "notch_q10": 50,
                            "holt_enabled": False, "holt_alpha": 51, "holt_beta": 13}

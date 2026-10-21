@@ -434,15 +434,14 @@ void CommandParser::cmdEncFilterSub(const char *sub, const ParsedCommand &cmd) {
   // CTRL:ENC:FILT:RESET
   if (strcmp(sub, "RESET") == 0) {
     ICommandDispatcher::EncFilterParams cfg = {};
-    cfg.filterFlags = ICommandDispatcher::EncFilterParams::FILT_EMA | ICommandDispatcher::EncFilterParams::FILT_SMA |
-                      ICommandDispatcher::EncFilterParams::FILT_PADE | ICommandDispatcher::EncFilterParams::FILT_BIQUAD;
+    cfg.filterFlags = Harness::ENC_FILT_DEFAULT_FLAGS;   // the Butterworth alone (bench tune 2026-10-21)
     cfg.emaAlpha = 200;
     cfg.smaWindow = 8;
     cfg.measWindowMs = 40;
     cfg.sampleRateHz = 1000;
     cfg.padeGainPct = 25;
     cfg.padeMaxCorr = 50;
-    cfg.biquadCutoffHz = 5;
+    cfg.biquadCutoffHz = Harness::ENC_FILT_DEFAULT_BIQUAD_HZ;
     cfg.notchCenterHz = 0;
     cfg.notchQ10 = 0;
     cfg.holtAlpha = 0;

@@ -20,6 +20,14 @@ constexpr uint8_t ENC_FILT_BIQUAD = 0x08;  // bit 3: Butterworth 2nd-order IIR l
 constexpr uint8_t ENC_FILT_NOTCH  = 0x10;  // bit 4: Notch (band-reject) filter
 constexpr uint8_t ENC_FILT_HOLT   = 0x20;  // bit 5: Holt's double exponential smoothing
 
+// The default chain (config defaults, CTRL:ENC:FILT:RESET, the processor before any config):
+// one 2nd-order Butterworth low-pass at 10 Hz on the 40 ms measurement window. Bench tune
+// 2026-10-21 (docs/bench/encoder_filter_tune_2026-10-21.png), against the true velocity from
+// the unfiltered count: 36 ms lag, 0.5 RPM steady-state noise; the EMA+SMA+Pade+Butterworth
+// chain before it lagged 208 ms (0.1 RPM), no filter 14 ms (2.1 RPM).
+constexpr uint8_t ENC_FILT_DEFAULT_FLAGS     = ENC_FILT_BIQUAD;
+constexpr uint8_t ENC_FILT_DEFAULT_BIQUAD_HZ = 10;
+
 /**
  * @brief Composable encoder filter configuration
  *

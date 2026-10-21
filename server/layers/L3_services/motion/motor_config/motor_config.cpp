@@ -8,6 +8,7 @@
  */
 
 #include "L3_services/motion/motor_config/motor_config.hpp"
+#include "harness/pins/encoder_filter_config.hpp"
 #include <stddef.h>
 #include <string.h>
 #include <limits.h>
@@ -131,8 +132,8 @@ void MotorConfigManager::applyDefaults() {
 
     m_config.faultAction = 1;  // HardHiZ - safest option
 
-    // Encoder velocity filter - EMA+SMA+Padé+Butterworth enabled by default
-    m_config.encFilterType = 0x0F;  // EMA|SMA|PADE|BIQUAD
+    // Encoder velocity filter: the Butterworth alone (its cutoff is not stored: 10 Hz at boot)
+    m_config.encFilterType = Harness::ENC_FILT_DEFAULT_FLAGS;
     m_config.encFilterParam = 200;  // EMA alpha=200
     m_config.encSmaWindow = 8;      // SMA window=8
     m_config.encMeasWindowMs = 40;  // 40ms measurement window

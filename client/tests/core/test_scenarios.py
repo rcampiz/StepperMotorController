@@ -121,6 +121,8 @@ def test_position_capture_reads_the_rings_and_finds_the_oscillation(board):
 
 def test_filter_bode_measures_lag_and_recommends_the_least_lagging_quiet_chain(board):
     fake = board._fake
+    # the pre-2026-10-21 default chain (EMA+SMA+Pade+Butterworth): a heavy chain to beat and restore
+    fake.enc_filter.update(ema_enabled=True, sma_enabled=True, pade_enabled=True)
     r = run(board, "filter_bode", freqs_hz=[0.5, 1.0, 2.0], cycles=2, mode="search", apply=False)
     assert r.ok, (r.summary, r.checks, r.error)
     bode = r.measurements["bode"]
