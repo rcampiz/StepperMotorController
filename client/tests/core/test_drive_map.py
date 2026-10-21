@@ -258,3 +258,15 @@ def test_the_single_motor_driver_clears_its_fault_after_a_3_s_start_hold():
     now[0] = 3.0
     drv.tick(start)
     assert sent == ["ESTOP", "SYST:FAULT:CLEAR"]
+
+
+def test_full_stick_is_full_speed_in_every_direction():
+    # 2026-10-20: the expo curve acted per axis, so a full diagonal showed ~75 % on the LCD
+    base = BaseMap()
+    full = K.Twist(vx=base.max_vx, vy=base.max_vy, wz=base.max_wz)
+    for lx, ly in ((0.0, 1.0), (-1.0, 0.0), (-0.7071, -0.7071), (0.6, 0.8)):
+        t = base.twist(GamepadState(lx=lx, ly=ly))
+        assert K.indicator(t, full)[3] == 100, (lx, ly, t)
+    half = base.twist(GamepadState(lx=-0.5, ly=-0.5))       # a half diagonal: the same as half straight
+    straight = base.twist(GamepadState(ly=-0.7071))
+    assert K.indicator(half, full)[3] == K.indicator(straight, full)[3]

@@ -243,8 +243,14 @@ class BaseMap:
             rt, _ = self.triggers[1].gate(state.rt)
             wz = self.stick.shape(lt - rt) * self.max_wz               # LT = counter-clockwise = +wz
         lx, ly = self.left.gate(state.lx, state.ly)
-        return K.Twist(vx=self.stick.shape(ly) * self.max_vx,
-                       vy=-self.stick.shape(lx) * self.max_vy,          # stick right = move right = -vy (left positive)
+        # The expo curve acts on how far the stick is pushed, in any direction (it acted on each
+        # axis, so a full diagonal came out at ~75 %; owner 2026-10-20): full stick is full speed
+        m = math.hypot(lx, ly)
+        if m > 0.0:
+            k = self.stick.shape(min(1.0, m)) / m
+            lx, ly = lx * k, ly * k
+        return K.Twist(vx=ly * self.max_vx,
+                       vy=-lx * self.max_vy,                            # stick right = move right = -vy (left positive)
                        wz=wz)
 
 

@@ -56,6 +56,9 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
   protocol number decides compatibility (a board on an unknown protocol is refused).
 
 ### Fixed
+- A full diagonal on the move stick drove (and showed on the LCD) at ~75 %: the expo curve acted
+  on each axis; it acts on how far the stick is pushed, so full stick is full speed in every
+  direction.
 - The base crept with the pad untouched: the PowerA 1414135-02 rests up to 0.11 off centre
   (and LT at 0.03), at the edge of the old 0.08 per-axis dead zone. The move stick now has a
   round dead zone with hysteresis (starts past 0.20, stops inside 0.15; the triggers 0.12 /
