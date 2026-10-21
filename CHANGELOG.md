@@ -67,6 +67,8 @@ tags.
   20 Hz cutoff came back as 10 Hz after a restart (bench 2026-10-21: 20 Hz now survives one).
 
 ### Changed
+- LCD motion indicator: the rotation chevrons span all three rings (22 px base centred on the
+  ring band, 20 px long; they were 14 px on the outer ring alone and looked tiny).
 - The default encoder velocity filter is the tracking observer alone at 10 Hz (32 ms lag,
   0.39 RPM noise against the 10 Hz Butterworth's 38 ms / 0.42 RPM; bench 2026-10-21). A board
   with a saved chain keeps it (`CTRL:ENC:FILT:RESET` + `CTRL:ENC:FILT:SAVE` moves it over).

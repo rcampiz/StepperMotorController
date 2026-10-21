@@ -47,7 +47,14 @@ public:
     static constexpr int16_t RING_OUT_R = 95;      ///< outer edge of the outer ring
     static constexpr int16_t RING_PITCH = 6;       ///< outer edge to outer edge
     static constexpr int16_t RING_W_MAX = 4;       ///< a ring's width when its step is complete
-    static constexpr int16_t CHEV = 14;            ///< chevron length and width
+    /// Chevrons span all the rings: the base covers the band from the inner ring's inside edge
+    /// to the outer ring's outside edge with a little to spare, centred on the band (they were
+    /// 14 px on the outer ring alone and looked tiny, owner 2026-10-21)
+    static constexpr int16_t RING_IN_R = RING_OUT_R - (RING_COUNT - 1) * RING_PITCH - RING_W_MAX;
+    static constexpr int16_t CHEV_BASE = (RING_OUT_R - RING_IN_R) + 6;      ///< radial width
+    static constexpr int16_t CHEV_LEN = 20;                                 ///< tangential length
+    static_assert((RING_OUT_R + RING_IN_R) / 2 + CHEV_BASE / 2 <= 102 &&
+                  (RING_OUT_R + RING_IN_R) / 2 - CHEV_BASE / 2 >= 75, "chevrons inside the ring zone");
     static constexpr int16_t ZONE_OUT = 102;       ///< ring zone: rings and chevrons
     static constexpr int16_t ZONE_IN = 75;
     static constexpr int16_t ARROW_R = 72;         ///< arrow disc (inside ZONE_IN)

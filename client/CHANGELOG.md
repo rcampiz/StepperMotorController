@@ -67,6 +67,8 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
   closing the fleet hands them back to their menus (`smc_core.kinematics.indicator`).
 
 ### Changed
+- Fleet: the controller's Max RPM starts at 400 (was 100) and the base's motor-speed ceiling at
+  1334 steps/s, 400 RPM (was 1000).
 - A routine "Parameters refreshed" no longer replaces the BOARD RESET warning in the status bar.
 - The default gamepad resonance bands are empty (the fixed 55-66 / 105-122 RPM list was an older
   setup's); the 23HS22 profile's bands are the measured 35-48 and 70-95 RPM at 1.01 A; a profile's

@@ -227,16 +227,16 @@ void IndicatorService::buildRings(const uint8_t* widths) {
 
 void IndicatorService::buildChevrons(int8_t dir) {
     if (dir == 0) return;
-    const float mid = RING_OUT_R - RING_W_MAX / 2.0f;
+    const float mid = (RING_OUT_R + RING_IN_R) / 2.0f;              // the middle of the ring band
     for (uint8_t k = 0; k < 4; k++) {
         const uint16_t a = static_cast<uint16_t>(k * 256);      // 0, 90, 180, 270 degrees
         const float s = sinDeg1024(a), c = cosDeg1024(a);
         const float cx = CX + mid * s, cy = CY - mid * c;       // on the ring, clockwise from up
         const float rx = s, ry = -c;                            // radial, outward
         const float tx = (dir > 0) ? c : -c, ty = (dir > 0) ? s : -s;   // tangent, turn direction
-        m_chev[k][0][0] = cx + tx * CHEV;          m_chev[k][0][1] = cy + ty * CHEV;
-        m_chev[k][1][0] = cx + rx * (CHEV / 2.0f); m_chev[k][1][1] = cy + ry * (CHEV / 2.0f);
-        m_chev[k][2][0] = cx - rx * (CHEV / 2.0f); m_chev[k][2][1] = cy - ry * (CHEV / 2.0f);
+        m_chev[k][0][0] = cx + tx * CHEV_LEN;           m_chev[k][0][1] = cy + ty * CHEV_LEN;
+        m_chev[k][1][0] = cx + rx * (CHEV_BASE / 2.0f); m_chev[k][1][1] = cy + ry * (CHEV_BASE / 2.0f);
+        m_chev[k][2][0] = cx - rx * (CHEV_BASE / 2.0f); m_chev[k][2][1] = cy - ry * (CHEV_BASE / 2.0f);
     }
 }
 

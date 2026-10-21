@@ -138,7 +138,7 @@ class ControllerPanel(QGroupBox):
         settings.addWidget(self._drive_cb, 1, 0, 1, 2)
         if self.mode == "base":
             settings.addWidget(QLabel("Max:"), 2, 0)
-            self._max_rpm = QDoubleSpinBox(); self._max_rpm.setRange(5, 600); self._max_rpm.setValue(100)
+            self._max_rpm = QDoubleSpinBox(); self._max_rpm.setRange(5, 600); self._max_rpm.setValue(400)
             self._max_rpm.setSuffix(" RPM"); self._max_rpm.setSingleStep(10)
             self._max_rpm.setToolTip("Motor speed at full stick or full trigger; no motor goes faster "
                                      "(a diagonal or a move with a turn is scaled down)")

@@ -214,7 +214,7 @@ class FleetPanel(QWidget):
         self._radius = self._spin(gg, 0, "Wheel radius", 0.01, 0.5, 0.048, " m", 3)
         self._lx = self._spin(gg, 1, "Half wheelbase", 0.01, 1.0, 0.15, " m", 3)
         self._ly = self._spin(gg, 2, "Half track", 0.01, 1.0, 0.17, " m", 3)
-        self._max_sps = self._spin(gg, 3, "Max motor speed", 50, 15000, 1000, " st/s", 0)
+        self._max_sps = self._spin(gg, 3, "Max motor speed", 50, 15000, 1334, " st/s", 0)   # 400 RPM
         for sb in (self._radius, self._lx, self._ly, self._max_sps):   # the controller's Max RPM follows
             sb.valueChanged.connect(self._apply_max_rpm)
         self._inv: Dict[str, QCheckBox] = {}
