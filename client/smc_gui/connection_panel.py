@@ -18,7 +18,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCore import Signal, Slot
 
 from smc_core.transport.serial import VcpTransport
-from smc_core.board import BoardConfig
+from smc_core.board import BOOT_BAUD, BoardConfig
 
 VNUCLEO_DEFAULT = "tcp://127.0.0.1:5761"
 
@@ -78,6 +78,7 @@ class ConnectionPanel(QWidget):
         self._baud_combo.setToolTip("Serial link rate after connecting. The board boots at 115200; the "
                                     "session switches to this rate (and back on disconnect). Firmware "
                                     "before 0.6.4 is clean only up to 460800")
+        self._baud_combo.currentTextChanged.connect(self._follow_link_rate)
         inner.addWidget(self._baud_combo)
 
         inner.addSpacing(20)
@@ -126,12 +127,12 @@ class ConnectionPanel(QWidget):
         self._tlm_spin = QSpinBox()
         self._tlm_spin.setRange(20, 5000)
         self._tlm_spin.setSingleStep(50)
-        self._tlm_spin.setValue(BoardConfig.telemetry_period_ms)
+        self._tlm_spin.setValue(self.FAST_TELEMETRY_MS)
         self._tlm_spin.setSuffix(" ms")
         self._tlm_spin.setToolTip(
-            "Telemetry push period. A full status line is ~900 bytes: 100 ms uses ~78 % of "
-            "115200 baud on its own (docs/review/LINK_BUDGET.md); the firmware floors the period "
-            "at 139 ms for full lines and 42 ms for compact ones.")
+            "Telemetry push period; follows the Link rate (20 ms = 50 Hz on a fast link, 200 ms "
+            "at 115200). A full status line is ~900 bytes: at 115200 the firmware floors the "
+            "period at 139 ms (42 ms compact); at 1 Mbaud 20 ms uses under half the link.")
         inner.addWidget(self._tlm_spin)
         self._tlm_compact_cb = QCheckBox("Compact")
         self._tlm_compact_cb.setChecked(BoardConfig.telemetry_compact)
@@ -142,6 +143,14 @@ class ConnectionPanel(QWidget):
         inner.addWidget(self._tlm_compact_cb)
 
         inner.addStretch()
+
+    FAST_TELEMETRY_MS = 20    # 50 Hz: bench 2026-10-21 at 1 Mbaud, 266 samples in 5.8 s (7x 115200)
+
+    @Slot(str)
+    def _follow_link_rate(self, text: str):
+        """The telemetry period goes with the link: as fast as the link carries."""
+        fast = int(text) > BOOT_BAUD
+        self._tlm_spin.setValue(self.FAST_TELEMETRY_MS if fast else BoardConfig.telemetry_period_ms)
 
     @property
     def baudrate(self) -> int:

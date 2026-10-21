@@ -4,6 +4,9 @@ Real-time graph panel for motor and encoder telemetry.
 Plots motor speed and encoder velocity over time using pyqtgraph, and under it the slip: how
 far the shaft is from where it was commanded, in degrees (smc_core.slip), on its own scale so a
 lost step (1.8 degrees) shows. The time window is 10, 30 or 60 s.
+Samples are placed on the board's own clock (the telemetry "tick", microseconds), not on when
+the PC happened to read them, and the plots are redrawn at most ~30 times a second however fast
+telemetry arrives (50 Hz at 20 ms on a fast link).
 Provides configurable display-side filtering for velocity data.
 
 Filter types:
@@ -26,9 +29,10 @@ from PySide6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
     QSpinBox, QDoubleSpinBox, QSlider, QStackedWidget, QCheckBox,
 )
-from PySide6.QtCore import Slot, Signal, Qt, QSettings
+from PySide6.QtCore import Slot, Signal, Qt, QSettings, QTimer
 from PySide6.QtGui import QFont
 
+import numpy as np
 import pyqtgraph as pg
 
 from smc_core.slip import SlipTracker
@@ -370,13 +374,23 @@ class GraphPanel(QWidget):
     capture_requested = Signal()
     """Panel with real-time plots for motor speed and encoder velocity."""
 
-    MAX_POINTS = 600  # ~60 seconds at 0.1s polling
+    MAX_POINTS = 3600  # 60 s at 50 Hz (20 ms telemetry on a fast link), with margin
+    REDRAW_MS = 33     # plots repaint at most this often; samples are kept as they arrive
+    TICK_WRAP = 1 << 32  # the telemetry tick: microseconds, 32 bits (wraps every 71.6 min)
 
     def __init__(self, parent=None):
         super().__init__(parent)
 
         self._t0 = None  # First sample timestamp (for relative X axis)
+        self._t = 0.0           # seconds since the first sample, on the board's clock
+        self._last_tick = None  # previous telemetry tick (us), None: not known
+        self._last_host = 0.0   # previous sample's PC arrival time (time.monotonic)
         self._timestamps = deque(maxlen=self.MAX_POINTS)
+        self._dirty = False
+        self._redraw_timer = QTimer(self)
+        self._redraw_timer.setInterval(self.REDRAW_MS)
+        self._redraw_timer.timeout.connect(self._redraw)
+        self._redraw_timer.start()
         self._motor_speed = deque(maxlen=self.MAX_POINTS)
         self._encoder_velocity = deque(maxlen=self.MAX_POINTS)
         self._full_steps_per_rev = 200  # Updated from DRV:FULL_STEPS? response
@@ -688,15 +702,32 @@ class GraphPanel(QWidget):
         if "full_steps_per_rev" in data:
             self._full_steps_per_rev = data["full_steps_per_rev"]
 
-    @Slot(dict)
-    def update_data(self, data: dict):
-        self._dial.update_telemetry(data)
-        """Append new telemetry sample and redraw plots."""
+    def _sample_time(self, data: dict) -> float:
+        """Seconds since the first sample: the board's tick deltas (exact spacing), the PC's
+        clock when there is no tick or the two disagree by half a second (a board reset, a
+        long gap)."""
         now = time.monotonic()
+        tick = data.get("tick")
+        tick = tick if isinstance(tick, int) else None
         if self._t0 is None:
             self._t0 = now
+            self._t = 0.0
+        else:
+            host_dt = now - self._last_host
+            if tick is not None and self._last_tick is not None:
+                dt = ((tick - self._last_tick) % self.TICK_WRAP) / 1e6
+                self._t += dt if abs(dt - host_dt) < 0.5 else host_dt
+            else:
+                self._t += host_dt
+        self._last_tick = tick
+        self._last_host = now
+        return self._t
 
-        t = now - self._t0
+    @Slot(dict)
+    def update_data(self, data: dict):
+        """Append one telemetry sample; the plots follow on the next redraw."""
+        self._dial.update_telemetry(data)
+        t = self._sample_time(data)
         self._timestamps.append(t)
 
         motor = data.get("motor", {})
@@ -714,44 +745,47 @@ class GraphPanel(QWidget):
         count = encoder.get("count") if isinstance(encoder, dict) else None
         if isinstance(pos, (int, float)) and isinstance(count, (int, float)):
             slip = self._slip.update(int(pos), int(count))
-            steps = slip / (360.0 / self._full_steps_per_rev)
-            self._slip_label.setText("slip %+7.2f deg (%+.2f steps)" % (slip, steps))
         else:
             slip = float("nan")
         self._slip_deg.append(slip)
-        self._slip_curve.setData(list(self._timestamps), list(self._slip_deg), connect="finite")
 
         # Apply display-side filter
         filtered_vel = self._apply_display_filter(vel)
         self._encoder_velocity.append(filtered_vel)
+        self._dirty = True
 
-        # Update all four curves
-        ts = list(self._timestamps)
-        spd_list = list(self._motor_speed)
-        vel_list = list(self._encoder_velocity)
+    @Slot()
+    def _redraw(self):
+        """Repaint the curves from the kept samples (the redraw timer; only after new data)."""
+        if not self._dirty or not self._timestamps:
+            return
+        self._dirty = False
+        ts = np.fromiter(self._timestamps, float)
+        spd = np.fromiter(self._motor_speed, float)
+        vel = np.fromiter(self._encoder_velocity, float)
+        slip = np.fromiter(self._slip_deg, float)
 
-        # Motor RPM (steps/s * 60 / full_steps_per_rev)
-        fpr = self._full_steps_per_rev
-        motor_rpm = [v * 60.0 / fpr for v in spd_list]
-        self._curves["motor_rpm"].setData(ts, motor_rpm)
+        if math.isfinite(slip[-1]):
+            steps = slip[-1] / (360.0 / self._full_steps_per_rev)
+            self._slip_label.setText("slip %+7.2f deg (%+.2f steps)" % (slip[-1], steps))
+        self._slip_curve.setData(ts, slip, connect="finite")
 
-        # Encoder RPM (ticks/s * 60 / CPR)
-        enc_rpm = [v * 60.0 / ENCODER_CPR for v in vel_list]
-        self._curves["enc_rpm"].setData(ts, enc_rpm)
-
-        # Motor speed (steps/s)
-        self._curves["motor_spd"].setData(ts, spd_list)
-
-        # Encoder velocity (ticks/s)
-        self._curves["enc_vel"].setData(ts, vel_list)
+        # Motor RPM (steps/s * 60 / full_steps_per_rev), encoder RPM (ticks/s * 60 / CPR)
+        self._curves["motor_rpm"].setData(ts, spd * (60.0 / self._full_steps_per_rev))
+        self._curves["enc_rpm"].setData(ts, vel * (60.0 / ENCODER_CPR))
+        self._curves["motor_spd"].setData(ts, spd)
+        self._curves["enc_vel"].setData(ts, vel)
 
         # Rolling X window (10 / 30 / 60 s), data scrolls from right to left
+        t = ts[-1]
         self._plot.setXRange(max(0, t - self._window_s), t, padding=0)
 
     @Slot()
     def clear(self):
         """Clear all data and reset plots."""
         self._t0 = None
+        self._last_tick = None
+        self._dirty = False
         self._timestamps.clear()
         self._motor_speed.clear()
         self._encoder_velocity.clear()
