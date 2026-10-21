@@ -1,0 +1,205 @@
+"""
+Resonance profile: where the mechanical resonance sits against the run current.
+
+A stepper and its load act as a mass on a magnetic spring: the run current sets the spring's
+stiffness, so the natural frequency f_n moves with it (bench 2026-10-21: ~132 Hz at 1.01 A,
+116 Hz at 0.78 A, ~104 Hz at 0.62 A, close to f_n ~ sqrt(I)). The steps excite it at harmonics
+of the electrical frequency f_e = rpm / 60 x full_steps / 4; a resonance shows where k x f_e
+crosses f_n. This scenario maps the ripple over (run current, speed) with the 2 kHz position
+capture (the raw encoder against the chip's step count, no velocity filter), finds the peaks,
+names their harmonic and fits f_n = f_ref x (I / I_ref) ^ exponent: the model the firmware's
+resonance avoider needs. The analysis functions are pure (host-tested).
+"""
+
+import math
+from typing import Any, Dict, List, Optional, Sequence, Tuple
+
+from .. import commands as C
+from .. import views as V
+from . import ScenarioContext, scenario
+from .motion import _chip_geometry, _dft_peak_hz
+
+HARMONIC_TOL = 0.08          # a peak belongs to harmonic k when within 8 % of k x f_e
+
+
+def electrical_hz(rpm: float, full_steps_per_rev: int = 200) -> float:
+    """The motor's electrical frequency: one cycle per 4 full steps."""
+    return rpm / 60.0 * full_steps_per_rev / 4.0
+
+
+def harmonic_of(peak_hz: float, rpm: float, full_steps_per_rev: int = 200,
+                harmonics: Sequence[int] = (1, 2, 4)) -> Optional[int]:
+    """Which harmonic of the electrical frequency a wobble is (None: none of `harmonics`)."""
+    fe = electrical_hz(rpm, full_steps_per_rev)
+    if fe <= 0.0:
+        return None
+    best = min(harmonics, key=lambda k: abs(peak_hz - k * fe))
+    return best if abs(peak_hz - best * fe) <= HARMONIC_TOL * best * fe else None
+
+
+def find_resonances(rows: List[Dict[str, Any]], full_steps_per_rev: int = 200,
+                    factor: float = 1.5) -> List[Dict[str, Any]]:
+    """The resonant points of a profile: per current, the local maxima of the ripple that stand
+    `factor` above that current's median. The speed is refined by a parabola through the peak
+    and its neighbours, the natural frequency is the harmonic x f_e at that speed."""
+    out: List[Dict[str, Any]] = []
+    for cur in sorted({r["run_a"] for r in rows}):
+        line = sorted((r for r in rows if r["run_a"] == cur and r.get("ok", True)),
+                      key=lambda r: r["rpm"])
+        if len(line) < 3:
+            continue
+        rip = [r["ripple"] for r in line]
+        med = sorted(rip)[len(rip) // 2]
+        for i, r in enumerate(line):
+            left = rip[i - 1] if i > 0 else -1.0
+            right = rip[i + 1] if i + 1 < len(rip) else -1.0
+            if not (rip[i] >= left and rip[i] >= right and rip[i] >= factor * med):
+                continue
+            rpm = float(r["rpm"])
+            if 0 < i < len(line) - 1:                     # parabolic refinement of the speed
+                denom = left - 2.0 * rip[i] + right
+                step = line[i + 1]["rpm"] - r["rpm"]
+                if denom < 0.0:
+                    rpm += 0.5 * (left - right) / denom * step
+            k = harmonic_of(r["peak_hz"], r["rpm"], full_steps_per_rev)
+            if k is None:
+                continue
+            out.append({"run_a": cur, "rpm": round(rpm, 1), "harmonic": k,
+                        "fn_hz": round(k * electrical_hz(rpm, full_steps_per_rev), 1),
+                        "ripple": rip[i], "median": med})
+    return out
+
+
+def fit_model(resonances: List[Dict[str, Any]], i_ref: float) -> Optional[Dict[str, Any]]:
+    """f_n = f_ref x (I / i_ref) ^ exponent, least squares in log-log over the resonances.
+    One resonance per current at least two currents apart; None when there is not enough."""
+    pts = [(r["run_a"], r["fn_hz"]) for r in resonances if r["run_a"] > 0 and r["fn_hz"] > 0]
+    if len({p[0] for p in pts}) < 2:
+        return None
+    xs = [math.log(p[0] / i_ref) for p in pts]
+    ys = [math.log(p[1]) for p in pts]
+    n = len(pts)
+    mx, my = sum(xs) / n, sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    if sxx <= 0.0:
+        return None
+    b = sum((x - mx) * (y - my) for x, y in zip(xs, ys)) / sxx
+    a = my - b * mx
+    f_ref = math.exp(a)
+    resid = [p[1] - f_ref * (p[0] / i_ref) ** b for p in pts]
+    return {"f_ref_hz": round(f_ref, 1), "i_ref_a": round(i_ref, 3), "exponent": round(b, 3),
+            "rms_resid_hz": round((sum(e * e for e in resid) / n) ** 0.5, 1), "points": n}
+
+
+def resonant_rpm(model: Dict[str, Any], current_a: float, harmonic: int,
+                 full_steps_per_rev: int = 200) -> float:
+    """The speed at which harmonic `harmonic` meets the natural frequency at `current_a`."""
+    fn = model["f_ref_hz"] * (current_a / model["i_ref_a"]) ** model["exponent"]
+    return fn / harmonic * 4.0 / full_steps_per_rev * 60.0
+
+
+def _capture_tail(ctx: ScenarioContext, samples: int) -> Tuple[List[Tuple[int, int]], Dict[str, Any]]:
+    f = ctx.call(C.cap_freeze())
+    ctx.require("freeze", f.success, f.error_message or "")
+    info = dict(f.data)
+    n = int(info.get("samples", 0))
+    off = max(0, n - samples)
+    rows: List[Tuple[int, int]] = []
+    while off < n:
+        d = ctx.call(C.cap_data(off, min(256, n - off)))
+        ctx.require(f"read {off}", d.success, d.error_message or "")
+        chunk = V.capture_rows(d)
+        if not chunk:
+            break
+        rows.extend(chunk)
+        off += len(chunk)
+    ctx.call(C.cap_resume())
+    return rows, info
+
+
+def _ripple(rows: List[Tuple[int, int]], info: Dict[str, Any], cpr: int, full: int,
+            rate: float) -> Dict[str, Any]:
+    enc = V.unwrap16([r[0] for r in rows])
+    syn = V.unwrap16([r[1] for r in rows])
+    cpp = cpr / float(full * int(info.get("pulses_per_full_step", 8)))
+    err = [(e - enc[0]) - (s - syn[0]) * cpp for e, s in zip(enc, syn)]
+    m = sum(err) / len(err)
+    err = [x - m for x in err]
+    std = (sum(x * x for x in err) / len(err)) ** 0.5
+    pk_hz, pk_amp = _dft_peak_hz(err, float(info.get("rate_hz", rate)))
+    travel_enc = enc[-1] - enc[0]
+    travel_cmd = (syn[-1] - syn[0]) * cpp
+    return {"ripple": round(std, 2), "p2p": round(max(err) - min(err), 1),
+            "peak_hz": round(pk_hz, 1), "peak_amp": round(pk_amp, 2),
+            "ok": abs(travel_enc - travel_cmd) <= 0.02 * abs(travel_cmd) + 4}
+
+
+@scenario("resonance_profile",
+          "Map the position ripple over run current and speed with the 2 kHz capture (the raw "
+          "encoder against the chip's step count), find the resonant peaks, name their harmonic "
+          "of the electrical frequency and fit the natural frequency against current "
+          "(f_n = f_ref x (I / I_ref) ^ exponent). The motor keeps running across the speeds of "
+          "one current; each current is applied stopped (DRV:CFG:APPLY). Accel, decel and hold "
+          "currents are not changed; everything is restored. Current mode, forward only.",
+          params={"current_fractions": [0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.15], "rpm_from": 30,
+                  "rpm_to": 150, "rpm_step": 5, "settle_s": 0.35, "samples": 1024,
+                  "rate_hz": 2000, "first_settle_s": 1.0, "peak_factor": 1.5},
+          moves_motor=True)
+def resonance_profile(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
+    geom = _chip_geometry(ctx)
+    full, cpr = geom["full_steps_per_rev"], geom["encoder_cpr"] or 4000
+    rate, samples = int(params["rate_hz"]), int(params["samples"])
+    cur = ctx.call(C.cfg_query("CURRENT"))
+    ctx.require("read the currents", cur.success and "run_a" in (cur.data or {}),
+                cur.error_message or "no run_a (current mode only)")
+    c0 = dict(cur.data)
+    cap = max(c0["run_a"], c0["acc_a"], c0["dec_a"])        # never above what the ramps use
+    currents = sorted({round(min(cap, c0["run_a"] * float(f)), 3) for f in params["current_fractions"]})
+    rpms = list(range(int(params["rpm_from"]), int(params["rpm_to"]) + 1, int(params["rpm_step"])))
+    rate0 = int((ctx.call(C.enc_filter_query()).data or {}).get("sample_rate_hz", 1000))
+    ctx.measure("original_currents", c0)
+    ctx.measure("currents_a", currents)
+    rows: List[Dict[str, Any]] = []
+    try:
+        ctx.require("sample rate", ctx.call(C.enc_sample_rate(rate)).success)
+        for ia in currents:
+            ctx.call(C.mot_stop())
+            ctx.sleep(0.4)
+            ctx.require(f"set {ia} A", ctx.call(C.cfg_current(c0["hold_a"], ia, c0["acc_a"], c0["dec_a"])).success)
+            ctx.require(f"apply {ia} A", ctx.call(C.cfg_apply()).success)
+            ia_used = float((ctx.call(C.cfg_query("CURRENT")).data or {}).get("run_a", ia))
+            ctx.call(C.fault_clear())
+            ctx.require("enable", ctx.call(C.mot_enable()).success)
+            first = True
+            for rpm in rpms:
+                ctx.require(f"run {rpm}", ctx.call(C.mot_run_rpm(rpm, 1)).success)
+                ctx.sleep((float(params["first_settle_s"]) if first else float(params["settle_s"]))
+                          + samples / float(rate) + 0.05)
+                first = False
+                cap_rows, info = _capture_tail(ctx, samples)
+                if len(cap_rows) < 64:
+                    continue
+                r = _ripple(cap_rows, info, cpr, full, rate)
+                r.update({"run_a": round(ia_used, 3), "rpm": rpm,
+                          "harmonic": harmonic_of(r["peak_hz"], rpm, full)})
+                rows.append(r)
+                if not r["ok"]:
+                    ctx.check(f"no lost steps at {ia_used:.2f} A {rpm} RPM", False)
+                    break                                  # this current is too weak here
+    finally:
+        ctx.call(C.cap_resume())
+        ctx.call(C.mot_stop())
+        ctx.sleep(0.4)
+        ctx.call(C.cfg_current(c0["hold_a"], c0["run_a"], c0["acc_a"], c0["dec_a"]))
+        ctx.call(C.cfg_apply())
+        ctx.call(C.enc_sample_rate(rate0))
+        ctx.call(C.mot_disable())
+    ctx.measure("rows", rows)
+    res = find_resonances(rows, full, float(params["peak_factor"]))
+    ctx.measure("resonances", res)
+    model = fit_model(res, c0["run_a"])
+    ctx.measure("model", model)
+    if model is not None:
+        ctx.measure("predicted_rpm_at_run_current",
+                    {k: round(resonant_rpm(model, c0["run_a"], k, full), 1) for k in (1, 2, 4)})
+    ctx.check("profile measured", len(rows) >= len(rpms))
