@@ -501,6 +501,18 @@ class FakeBoard:
         self.indicator = (int(args[0]), int(args[1]), args[2] not in ("0", "false"), pct[0], pct[1])
         self._ok(name, "")
 
+    def _c_UI_ESTOP_HOLD(self, name, args):
+        try:
+            pct = int(args[0])
+        except (IndexError, ValueError):
+            self._err(name, "INVALID_PARAM", "pct must be 0-100")
+            return
+        if not 0 <= pct <= 100:
+            self._err(name, "INVALID_PARAM", "pct must be 0-100")
+            return
+        self.estop_hold = pct                       # the E-STOP page's bar, as the host last set it
+        self._ok(name, "")
+
     def _c_UI_DISP_BITMAP_RLE(self, name, args):
         self._start_binary(name, int(args[4]), "CRC" in args[5:])
 

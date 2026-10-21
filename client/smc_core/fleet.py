@@ -249,6 +249,13 @@ class Fleet:
         self._show_motion(twist)
         return scale
 
+    def show_clear_hold(self, pct: int) -> None:
+        """Every board's E-STOP page fills its bar with the operator's clear hold (a pad's START
+        held, 0-100 %; latest-wins). The page empties the bar when the updates stop."""
+        req = C.estop_hold(max(0, min(100, int(pct))))
+        for b in self.boards.values():
+            b.set_latest("estop_hold", req)
+
     def set_max_rpm(self, rpm: float) -> None:
         """Cap every motor at `rpm` (live: the next drive() uses it). A twist that would run a
         motor faster is scaled down as a whole, so the base keeps its direction and turn ratio."""

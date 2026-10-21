@@ -190,3 +190,18 @@ def test_driving_shows_the_base_motion_on_every_lcd_and_close_gives_them_back(fo
         assert "LOCAL" in (f.boards["RR"].request(C.ui_mode_query(), timeout=2.0).raw or "")
     finally:
         f.close(estop=False)
+
+
+def test_the_clear_hold_reaches_every_boards_estop_page(four):
+    procs, _ = four
+    f = make_fleet(procs)
+    try:
+        f.estop()
+        f.show_clear_hold(40)
+        for b in f.boards.values():                          # every board takes it (no refusal)
+            r = b.request(C.estop_hold(40), timeout=2.0)
+            assert r.success, r.raw
+        f.show_clear_hold(0)
+        f.rearm()
+    finally:
+        f.close(estop=False)

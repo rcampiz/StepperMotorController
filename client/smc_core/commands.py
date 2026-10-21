@@ -538,6 +538,15 @@ def lcd_vcom(code: int) -> Request:
     return lcd_reg(VCOM_REG, int(code))
 
 
+@builds("UI:ESTOP:HOLD")
+def estop_hold(pct: int) -> Request:
+    """The host's clear hold on the E-STOP page, 0-100 %: a pad's START held fills the page's bar
+    as the board's CENTER hold does; the bar empties by itself when the updates stop."""
+    if not 0 <= int(pct) <= 100:
+        raise CommandError("percent must be 0..100")
+    return request("UI:ESTOP:HOLD", int(pct))
+
+
 @builds("UI:DISP:INDICATOR")
 def disp_indicator(angle: int, rotation_dir: int, has_translation: bool,
                    speed_pct: int = 100, rot_pct: int = 100) -> Request:

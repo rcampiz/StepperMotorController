@@ -56,6 +56,8 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
   protocol number decides compatibility (a board on an unknown protocol is refused).
 
 ### Fixed
+- Holding START fills the E-STOP page's bar on the LCD (UI:ESTOP:HOLD, 5 % steps, every board
+  of the fleet), and it empties on release or when the pad goes.
 - Spin boxes show their up/down arrows (cyan triangles; the styled buttons had lost Qt's own).
 - The controller pads draw the dead zone (a dashed ring) and dim the dot inside it: a pad at rest
   sits a little off centre (the PowerA in the upper right) and that is ignored, not a fault.

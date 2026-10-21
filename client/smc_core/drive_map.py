@@ -33,7 +33,8 @@ CLEAR_HOLD_S = 3.0                   # START held this long clears the E-STOP (o
 
 
 class StartHold:
-    """START held for CLEAR_HOLD_S: true once per hold (the press itself is the E-STOP)."""
+    """START held for CLEAR_HOLD_S: true once per hold (the press itself is the E-STOP).
+    percent: how far the hold is, in 5 % steps, for the E-STOP page's bar (UI:ESTOP:HOLD)."""
 
     def __init__(self, hold_s: float = CLEAR_HOLD_S):
         self.hold_s = hold_s
@@ -50,6 +51,11 @@ class StartHold:
             self._fired = True
             return True
         return False
+
+    def percent(self, now: float) -> int:
+        if self._down is None:
+            return 0
+        return int(min(1.0, (now - self._down) / self.hold_s) * 20) * 5
 
 
 @dataclass
@@ -120,6 +126,7 @@ class SingleMotorDriver:
         self.board = board
         self._clock = clock
         self._start_hold = StartHold()
+        self._hold_shown = 0
         self.stick = stick or StickMap()
         self.period_s = period_s
         self.rpm = 0.0                       # what is being demanded now (after slew)
@@ -159,8 +166,13 @@ class SingleMotorDriver:
         self._buttons = state.buttons
         if "START" in pressed:
             self.board.estop()
-        if self._start_hold.update("START" in state.buttons, self._clock()):
+        now = self._clock()
+        if self._start_hold.update("START" in state.buttons, now):
             self.board.submit(C.fault_clear())          # START held 3 s: clear the E-STOP
+        pct = self._start_hold.percent(now)
+        if pct != self._hold_shown:                     # the E-STOP page's bar fills with the hold
+            self.board.set_latest("estop_hold", C.estop_hold(pct))
+            self._hold_shown = pct
         if "B" in pressed:
             self._stop()
         if "Y" in pressed:
@@ -264,6 +276,7 @@ class BaseDriver:
         self.slew = slew                                # None: the twist follows the pad at once
         self._clock = clock
         self._start_hold = StartHold()
+        self._hold_shown = 0
         self._t: Optional[float] = None
         self._cur = K.Twist()
         if hasattr(fleet, "lcd_full_scale"):          # full stick / full trigger = 100 % on the LCDs
@@ -282,6 +295,8 @@ class BaseDriver:
             if self._was_connected:
                 self._halt()                            # pad gone: stop at once
             self._was_connected = False
+            self._start_hold.update(False, now)
+            self._show_hold(0)
             return self.last
         self._was_connected = True
         pressed = state.buttons - self._buttons
@@ -292,6 +307,7 @@ class BaseDriver:
         if self._start_hold.update("START" in state.buttons, now) and self.on_action:
             self._cur = K.Twist()
             self.on_action("rearm")                     # START held 3 s: clear the E-STOP
+        self._show_hold(self._start_hold.percent(now))
         if "X" in pressed and self.on_action: self.on_action("rearm")
         if "Y" in pressed and self.on_action: self.on_action("enable")
         if "B" in pressed:
@@ -307,6 +323,12 @@ class BaseDriver:
             self.fleet.drive(t)
         self.last = t
         return t
+
+    def _show_hold(self, pct: int) -> None:
+        """The E-STOP pages' bars fill with the START hold (only changes are sent)."""
+        if pct != self._hold_shown and hasattr(self.fleet, "show_clear_hold"):
+            self.fleet.show_clear_hold(pct)
+        self._hold_shown = pct
 
     def _halt(self) -> None:
         self._cur = K.Twist()

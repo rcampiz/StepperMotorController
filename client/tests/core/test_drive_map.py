@@ -270,3 +270,27 @@ def test_full_stick_is_full_speed_in_every_direction():
     half = base.twist(GamepadState(lx=-0.5, ly=-0.5))       # a half diagonal: the same as half straight
     straight = base.twist(GamepadState(ly=-0.7071))
     assert K.indicator(half, full)[3] == K.indicator(straight, full)[3]
+
+
+def test_holding_start_fills_the_estop_bar_in_steps_and_empties_on_release():
+    now = [0.0]
+    class HoldFleet(RecordingFleet):
+        def __init__(self):
+            super().__init__()
+            self.holds = []
+        def show_clear_hold(self, pct): self.holds.append(pct)
+    fleet = HoldFleet()
+    drv = BaseDriver(fleet, slew=None, clock=lambda: now[0])
+    drv.on_action = lambda a: None
+    start = GamepadState(buttons=frozenset({"START"}), packet=1)
+    for t in (0.0, 0.75, 1.5, 3.0, 3.5):
+        now[0] = t
+        drv.tick(start)
+    assert fleet.holds == [25, 50, 100]                      # 0 % at the press: nothing sent yet
+    now[0] = 3.6
+    drv.tick(GamepadState(packet=2))                         # let go: the bar empties
+    assert fleet.holds[-1] == 0
+    now[0] = 4.0
+    drv.tick(start); now[0] = 4.6; drv.tick(start)
+    drv.tick(None)                                           # pad gone mid-hold: the bar empties
+    assert fleet.holds[-1] == 0
