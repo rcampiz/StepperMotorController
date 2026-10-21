@@ -12,6 +12,10 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
 ## [Unreleased]
 
 ### Added
+- `ramp_profile` scenario: ramps through the resonance at each acceleration (set stopped: the
+  powerSTEP01 takes a new one only then, bench 2026-10-21) and ramp current; ringing, extra lag
+  and lost steps per cell (docs/bench/ramp_map_2026-10-21.png: the slope decides the ringing,
+  ~11 counts at 300 steps/s^2, ~5 at 5000; the ramp current hardly).
 - `resonance_profile` (with `apply`: stores the fitted model in the avoider) and
   `resonance_check` (the same speeds with the avoider off and on) scenarios; `res_query`,
   `res_config`, `res_save` builders; captures with a jump no shaft can make are taken again.

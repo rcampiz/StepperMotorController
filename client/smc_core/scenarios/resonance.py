@@ -293,3 +293,148 @@ def resonance_check(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
     ctx.check("no lost steps", all(r["ok"] or r["glitch"] for r in out["off"] + out["on"]))
     ctx.check("no corrupt captures left", not any(r["glitch"] for r in out["off"] + out["on"]))
     ctx.check("both passes measured", len(out["off"]) == len(out["on"]) == len(params["rpm_list"]))
+
+
+# ---------------------------------------------------------------------------------------------
+# Ramps through the resonance: how the slope and the ramp current excite it
+# ---------------------------------------------------------------------------------------------
+# A ramp sweeps the excitation (k x the electrical frequency) through f_n: the rotor, a damped
+# mass on a magnetic spring, rings up while the sweep is near f_n. Slow sweeps linger and build
+# it up; fast ones pass before it grows but load the rotor harder (the lag during the ramp is
+# torque spent accelerating). The powerSTEP01 takes a new acceleration only while stopped
+# (bench 2026-10-21), its ramp currents (TVAL_ACC / TVAL_DEC) at any time.
+
+OSC_WINDOW = 40              # samples (20 ms at 2 kHz): the slow part removed to leave the ringing
+
+
+def _moving_mean(x: List[float], n: int) -> List[float]:
+    out, acc, q = [], 0.0, []
+    half = n // 2
+    pad = [x[0]] * half + list(x) + [x[-1]] * (n - half)
+    for i, v in enumerate(pad):
+        acc += v
+        q.append(v)
+        if len(q) > n:
+            acc -= q.pop(0)
+        if i >= n:
+            out.append(acc / n)
+    return out[:len(x)]
+
+
+def analyse_ramp(enc: List[float], cmd: List[float], rate_hz: float, low_cps: float,
+                 high_cps: float, counts_per_full_step: float) -> Dict[str, Any]:
+    """One up-and-down ramp captured at rate_hz: encoder and commanded counts, sample by sample.
+    Windows from the commanded speed; in each, the ringing (error minus its 20 ms mean: peak
+    and rms, counts) and the lag the ramp adds to the cruise lag (full steps)."""
+    n = len(enc)
+    err = [e - c for e, c in zip(enc, cmd)]
+    slow = _moving_mean(err, OSC_WINDOW)
+    osc = [e - s_ for e, s_ in zip(err, slow)]
+    sp = [0.0] * n                                    # commanded speed, counts/s, over 5 ms
+    k = max(1, int(rate_hz * 0.005))
+    for i in range(k, n):
+        sp[i] = (cmd[i] - cmd[i - k]) * rate_hz / k
+    for i in range(k):
+        sp[i] = sp[k] if n > k else 0.0
+    lo, hi = low_cps * 1.05, high_cps * 0.95
+    rising = [i for i in range(1, n) if lo < sp[i] < hi and sp[i] >= sp[i - 1]]
+    falling = [i for i in range(1, n) if lo < sp[i] < hi and sp[i] < sp[i - 1]]
+    cruise_low = [i for i in range(n) if abs(sp[i] - low_cps) <= 0.03 * low_cps]
+    base = sum(slow[i] for i in cruise_low[:200]) / max(1, len(cruise_low[:200])) if cruise_low else slow[0]
+
+    def window(idx: List[int], extra: int = 0) -> Dict[str, float]:
+        if not idx:
+            return {"peak": 0.0, "rms": 0.0, "lag_fs": 0.0}
+        a, b = idx[0], min(n, idx[-1] + extra)
+        seg = osc[a:b]
+        lag = max((abs(slow[i] - base) for i in range(a, b)), default=0.0)
+        return {"peak": round(max(abs(v) for v in seg), 2),
+                "rms": round((sum(v * v for v in seg) / len(seg)) ** 0.5, 2),
+                "lag_fs": round(lag / counts_per_full_step, 3)}
+
+    ring = int(rate_hz * 0.15)                        # 150 ms of ringing after each ramp
+    up, down = window(rising, ring), window(falling, ring)
+    end_err = sum(slow[-200:]) / min(200, n)
+    return {"up": up, "down": down,
+            "peak": max(up["peak"], down["peak"]), "lag_fs": max(up["lag_fs"], down["lag_fs"]),
+            "lost_steps": round((end_err - base) / counts_per_full_step, 2),
+            "ramp_samples": [len(rising), len(falling)]}
+
+
+@scenario("ramp_profile",
+          "Ramps through the resonance: for each acceleration (set stopped: the chip takes a new "
+          "one only then) and ramp current (TVAL_ACC = TVAL_DEC), cruise at rpm_low, ramp to "
+          "rpm_high, hold, ramp back, all inside one 2 kHz capture; measures the ringing during "
+          "each ramp and after it, the lag the ramp adds (fraction of a full step: the torque "
+          "margin used) and lost steps. The resonance avoider is off meanwhile; accel, decel, "
+          "currents, sample rate and the avoider are restored.",
+          params={"accels_fsps2": [300, 600, 1200, 2500, 5000, 10000],
+                  "ramp_currents_a": [0.86, 1.01, 1.17, 1.33, 1.48, 1.64],
+                  "rpm_low": 50, "rpm_high": 120, "hold_s": 0.25, "rate_hz": 2000,
+                  "max_current_a": 1.7},
+          moves_motor=True)
+def ramp_profile(ctx: ScenarioContext, params: Dict[str, Any]) -> None:
+    geom = _chip_geometry(ctx)
+    full, cpr = geom["full_steps_per_rev"], geom["encoder_cpr"] or 4000
+    cpfs = cpr / float(full)
+    rate = int(params["rate_hz"])
+    cur = ctx.call(C.cfg_query("CURRENT"))
+    ctx.require("read the currents", cur.success and "run_a" in (cur.data or {}), cur.error_message or "")
+    c0 = dict(cur.data)
+    phys = ctx.call(C.driver_physical()).data or {}
+    acc0, dec0 = float(phys.get("accel_fsps2", 5000)), float(phys.get("decel_fsps2", 5000))
+    res0 = ctx.call(C.res_query())
+    res_on = bool((res0.data or {}).get("enabled")) if res0.success else False
+    rate0 = int((ctx.call(C.enc_filter_query()).data or {}).get("sample_rate_hz", 1000))
+    low_cps = float(params["rpm_low"]) / 60.0 * cpr
+    high_cps = float(params["rpm_high"]) / 60.0 * cpr
+    rows: List[Dict[str, Any]] = []
+    try:
+        if res_on:
+            ctx.call(C.res_config(False))
+        ctx.require("sample rate", ctx.call(C.enc_sample_rate(rate)).success)
+        for ia in params["ramp_currents_a"]:
+            ia = min(float(ia), float(params["max_current_a"]))
+            for acc in params["accels_fsps2"]:
+                ctx.call(C.mot_stop())
+                ctx.sleep(0.6)
+                ctx.call(C.cfg_accel(float(acc)))
+                ctx.call(C.cfg_decel(float(acc)))
+                ctx.call(C.cfg_current(c0["hold_a"], c0["run_a"], ia, ia))
+                ctx.require(f"apply {acc} / {ia}", ctx.call(C.cfg_apply()).success)
+                ctx.call(C.fault_clear())
+                ctx.require("enable", ctx.call(C.mot_enable()).success)
+                ramp_s = (high_cps - low_cps) / cpfs / float(acc)
+                ctx.require("cruise", ctx.call(C.mot_run_rpm(float(params["rpm_low"]), 1)).success)
+                ctx.sleep(max(1.0, float(params["rpm_low"]) / 60.0 * full / float(acc) + 0.6))
+                ctx.call(C.mot_run_rpm(float(params["rpm_high"]), 1))
+                ctx.sleep(ramp_s + float(params["hold_s"]))
+                ctx.call(C.mot_run_rpm(float(params["rpm_low"]), 1))
+                ctx.sleep(ramp_s + 0.2)
+                cap_rows, info = _capture_tail(ctx, 4096)
+                if len(cap_rows) < 256:
+                    continue
+                enc = V.unwrap16([r[0] for r in cap_rows]); syn = V.unwrap16([r[1] for r in cap_rows])
+                cpp = cpr / float(full * int(info.get("pulses_per_full_step", 8)))
+                e = [x - enc[0] for x in enc]
+                c = [(x - syn[0]) * cpp for x in syn]
+                a = analyse_ramp(e, c, float(info.get("rate_hz", rate)), low_cps, high_cps, cpfs)
+                a.update({"accel_fsps2": float(acc), "ramp_a": ia, "glitch": capture_glitch(
+                    [x - y for x, y in zip(e, c)])})
+                rows.append(a)
+    finally:
+        ctx.call(C.cap_resume())
+        ctx.call(C.mot_stop())
+        ctx.sleep(0.6)
+        ctx.call(C.cfg_accel(acc0))
+        ctx.call(C.cfg_decel(dec0))
+        ctx.call(C.cfg_current(c0["hold_a"], c0["run_a"], c0["acc_a"], c0["dec_a"]))
+        ctx.call(C.cfg_apply())
+        ctx.call(C.enc_sample_rate(rate0))
+        if res_on:
+            ctx.call(C.res_config(True))
+        ctx.call(C.mot_disable())
+    ctx.measure("rows", rows)
+    ctx.check("grid measured", len(rows) == len(params["accels_fsps2"]) * len(params["ramp_currents_a"]))
+    ctx.check("no lost steps", all(abs(r["lost_steps"]) < 0.5 for r in rows if not r["glitch"]))
+

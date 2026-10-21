@@ -49,3 +49,29 @@ def test_a_flat_profile_has_no_resonance_and_no_model():
             for i in (0.6, 1.0) for rpm in range(30, 151, 5)]
     assert R.find_resonances(rows) == []
     assert R.fit_model([], 1.0) is None
+
+
+def test_a_ramp_is_cut_into_windows_and_its_ringing_and_lag_measured():
+    rate, cpfs = 2000.0, 20.0
+    low, high, acc = 3333.0, 8000.0, 30000.0           # counts/s, counts/s^2
+    cmd, v, x, phase = [], low, 0.0, 0
+    for i in range(4096):                               # cruise, up, hold, down, cruise
+        t = i / rate
+        if 0.3 <= t and phase == 0: phase = 1
+        if phase == 1:
+            v = min(high, v + acc / rate)
+            if v >= high: phase, t_hold = 2, t
+        elif phase == 2 and t - t_hold > 0.25: phase = 3
+        elif phase == 3:
+            v = max(low, v - acc / rate)
+        x += v / rate
+        cmd.append(x)
+    ring = [6.0 * math.sin(2 * math.pi * 130 * i / rate) if 800 < i < 1300 else 0.0 for i in range(4096)]
+    lag = [-4.0 if 600 < i < 920 else 0.0 for i in range(4096)]   # the ramp's extra lag
+    enc = [c + r + l for c, r, l in zip(cmd, ring, lag)]
+    a = R.analyse_ramp(enc, cmd, rate, low, high, cpfs)
+    assert a["ramp_samples"][0] > 50 and a["ramp_samples"][1] > 50
+    assert 4.0 < a["peak"] < 8.0                        # the 6-count ringing
+    assert 0.1 < a["lag_fs"] < 0.3                      # 4 counts = 0.2 full step
+    assert abs(a["lost_steps"]) < 0.1
+
