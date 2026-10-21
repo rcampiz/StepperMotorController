@@ -12,6 +12,12 @@
 using Board::UartHardware;
 namespace Pins = Board::Pins;
 
+// NVIC 1: above the FreeRTOS critical sections (5) and the SEGGER RTT lock (2). The receive ISR
+// makes no RTOS call (the Comms task's wake is deferred, the out-of-band ESTOP is atomics and one
+// GPIO write); bench 2026-10-20: at NVIC 6 back-to-back bytes were lost from 921600 baud up.
+static_assert(configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY > 2, "the receive ISR must stay above the RTOS");
+constexpr uint8_t UART_RX_IRQ_PRIORITY = 1;
+
 bool Harness::initCommsBoard(Harness::CommsBoardHw& hw, Harness::CommsChannel type)
 {
     switch (type) {
@@ -20,7 +26,7 @@ bool Harness::initCommsBoard(Harness::CommsBoardHw& hw, Harness::CommsChannel ty
             Pins::VCP_UART::INSTANCE, Pins::VCP_UART::PORT,
             Pins::VCP_UART::TX_PIN, Pins::VCP_UART::RX_PIN,
             Pins::VCP_UART::AF, Pins::VCP_UART::APB1_CLOCK_HZ, 115200,
-            configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 1);
+            UART_RX_IRQ_PRIORITY);
         hw.channel = &uartHw;
     } break;
 

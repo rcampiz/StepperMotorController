@@ -16,6 +16,11 @@ tags.
 ## [Unreleased]
 
 ### Changed
+- The serial link runs clean up to 2 Mbaud: the USART2 receive ISR runs at NVIC 1, above the
+  FreeRTOS critical sections and the SEGGER RTT lock, and defers its one RTOS call (the Comms
+  task's wake) to a spare vector at NVIC 6. At NVIC 6 it lost bytes received back to back
+  from 921600 up (blamed on the ST-LINK before). `SYST:BAUD` adds 1000000 and 2000000 (exact
+  dividers). The out-of-band ESTOP byte is handled in the same ISR as before.
 - `UI:ESTOP:HOLD <pct>`: the host's clear hold fills the E-STOP page's bar, as the board's own
   CENTER hold does (a pad's START held for 3 s); the bar empties when the updates stop.
 - The LCD arrow appears pointing where the base goes: from a stop it swung round from up (the

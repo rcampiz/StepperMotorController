@@ -560,15 +560,16 @@ void CommandParser::cmdGetFormat() {
 
 void CommandParser::cmdSetBaud(const ParsedCommand &cmd) {
   if (cmd.argCount < 1) {
-    respondErr("Usage: SYST:BAUD <115200|230400|460800|921600>");
+    respondErr("Usage: SYST:BAUD <115200|230400|460800|921600|1000000|2000000>");
     return;
   }
 
   auto rate = static_cast<uint32_t>(strtoul(cmd.args[0], nullptr, 10));
 
   // Whitelist supported rates
-  if (rate != 115200 && rate != 230400 && rate != 460800 && rate != 921600) {
-    respondErr("Supported: 115200, 230400, 460800, 921600");
+  if (rate != 115200 && rate != 230400 && rate != 460800 && rate != 921600 && rate != 1000000 &&
+      rate != 2000000) {   // 1M and 2M: exact dividers on the 42 MHz APB1 (and on the ST-LINK)
+    respondErr("Supported: 115200, 230400, 460800, 921600, 1000000, 2000000");
     return;
   }
 

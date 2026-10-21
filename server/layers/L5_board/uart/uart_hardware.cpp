@@ -24,6 +24,15 @@ bool Board::UartHardware::init() {
 volatile uint32_t g_usart2IrqCount = 0;
 volatile uint32_t g_usart2RxCount = 0;
 
+// The Comms task's wake, deferred from the receive ISR (UartHardware::WAKE_IRQn; USART6 itself
+// is not used on this board)
+extern "C" void USART6_IRQHandler(void) {
+    Board::UartHardware* instance = Board::UartHardware::getInstance();
+    if (instance != nullptr) {
+        instance->handleWakeIRQ();
+    }
+}
+
 // USART2 IRQ Handler
 extern "C" void USART2_IRQHandler(void) {
     g_usart2IrqCount++;

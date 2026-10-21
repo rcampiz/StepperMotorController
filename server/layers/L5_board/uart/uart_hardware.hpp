@@ -192,8 +192,10 @@ public:
             if (Platform::IMicrosecondClock* us = Harness::microsecondClock()) {
                 m_lastRxUs = us->getTickUs();
             }
+            // The Comms task's wake is an RTOS call, not allowed at this ISR's priority (above
+            // configMAX_SYSCALL_INTERRUPT_PRIORITY): hand it to the wake vector, RTOS-safe
             if (m_wakeNotifier != nullptr) {
-                m_wakeNotifier->notifyFromISR(m_wakeTask);   // RTOS-safe: USART2 IRQ is at NVIC 6
+                NVIC_SetPendingIRQ(WAKE_IRQn);
             }
         }
 
@@ -212,6 +214,18 @@ public:
             }
         }
     }
+
+    /// The deferred Comms-task wake (WAKE_IRQn, NVIC 6): runs after the receive ISR, may call the RTOS
+    void handleWakeIRQ() {
+        if (m_wakeNotifier != nullptr) {
+            m_wakeNotifier->notifyFromISR(m_wakeTask);
+        }
+    }
+
+    /// A spare vector (USART6 is not used on this board) software-pended by the receive ISR to
+    /// wake the Comms task at an RTOS-safe priority
+    static constexpr IRQn_Type WAKE_IRQn = USART6_IRQn;
+    static constexpr uint8_t WAKE_IRQ_PRIORITY = 6;   // configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY + 1
 
     static UartHardware* getInstance() { return s_instance; }
 
@@ -315,9 +329,14 @@ private:
         m_usart->CR2 = 0;
         m_usart->CR3 = 0;
 
-        // NVIC
+        // NVIC: the receive ISR above everything that masks (FreeRTOS critical sections at 5,
+        // SEGGER RTT/SystemView locks at 2), so back-to-back bytes are read in time at 1-2 Mbaud
+        // (bench 2026-10-20: at NVIC 6 bytes were lost from 921600 up); the wake it defers runs
+        // at the RTOS-safe priority
         NVIC_SetPriority(USART2_IRQn, m_irqPriority);
         NVIC_EnableIRQ(USART2_IRQn);
+        NVIC_SetPriority(WAKE_IRQn, WAKE_IRQ_PRIORITY);
+        NVIC_EnableIRQ(WAKE_IRQn);
 
         // Enable USART
         m_usart->CR1 |= USART_CR1_UE;

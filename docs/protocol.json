@@ -917,7 +917,7 @@
       "file": "system_handlers.cpp",
       "min_args": 1,
       "usage": [
-        "SYST:BAUD <115200|230400|460800|921600>"
+        "SYST:BAUD <115200|230400|460800|921600|1000000|2000000>"
       ],
       "ascii_ok": [
         "<plain lines>"
@@ -931,7 +931,7 @@
         }
       ],
       "errors": [
-        "Supported: 115200, 230400, 460800, 921600"
+        "Supported: 115200, 230400, 460800, 921600, 1000000, 2000000"
       ],
       "note": "",
       "multiline": false,

@@ -10,12 +10,13 @@ client (`smc_core`) accepts 2 and 3 and uses the protocol 3 commands when the bo
 ## 1. Transport and framing
 
 - Byte stream over the ST-LINK virtual COM port: USART2, 8N1, **115200** baud by default.
-  `SYST:BAUD` can select 230400/460800/921600 (with the revert rule of section 4). Bench
-  2026-10-20 on the ST-LINK V2-1 VCP: 460800 is clean both ways, and the GUI and the fleet
-  move the link there after session setup (and back to 115200 on close). Above it the
-  board, not the adapter, loses bytes it receives back to back (the VCP carries 2 Mbaud
-  board-to-host intact): the receive path takes one interrupt per byte. The firmware accepts
-  no rate below 115200. Another adapter must be verified before a client raises the rate.
+  `SYST:BAUD` can select 230400/460800/921600/1000000/2000000 (with the revert rule of
+  section 4); the GUI and the fleet move the link to a fast rate after session setup (and
+  back to 115200 on close). Bench 2026-10-20 on the ST-LINK V2-1 VCP: up to 2 Mbaud clean
+  both ways once the receive interrupt ran above the RTOS (at NVIC 6 the board lost bytes
+  received back to back from 921600 up; the adapter was never the cause). 1000000 and
+  2000000 divide exactly on both ends. The firmware accepts no rate below 115200; another
+  adapter must be verified before a client raises the rate.
 - A command is one line: printable ASCII (0x20..0x7E), terminated by CR, LF or CRLF.
   Maximum **127 characters** per line, **8 arguments** of at most **31
   characters** each, separated by spaces. The command word is upper-cased by the parser;
@@ -290,7 +291,7 @@ step mode 0-7, the same texts as before.
 | `SYST:HB:TIMEOUT` | 1 | SYST:HB:TIMEOUT <timeout_ms> | ASCII: `OK <plain lines>`; JSON `SET_HEARTBEAT` keys: `accepted`, `enabled`, `requested` | `Watchdog can be disarmed only with the motor in Hi-Z (MOT:DIS); widen it instead` | `cmdSetHeartbeat` (safety_handlers.cpp) |
 | `SYST:TLM:RATE` | 1 | SYST:TLM:RATE <ms> | ASCII: `OK <plain lines>`; JSON `TLM_RATE` keys: `accepted`, `enabled`, `min_ms`, `requested` | — | `cmdTelemetryRate` (system_handlers.cpp) |
 | `SYST:TLM:FMT` | 1 | SYST:TLM:FMT <FULL\|COMPACT> | ASCII: `OK <plain lines>`; JSON `TLM_FMT` keys: `format`, `min_ms`, `period_ms` | `Telemetry format must be FULL or COMPACT` | `cmdTelemetryFormat` (system_handlers.cpp) |
-| `SYST:BAUD` | 1 | SYST:BAUD <115200\|230400\|460800\|921600> | ASCII: `OK <plain lines>`; JSON `SET_BAUD` keys: `baud` | `Supported: 115200, 230400, 460800, 921600` | `cmdSetBaud` (system_handlers.cpp) |
+| `SYST:BAUD` | 1 | SYST:BAUD <115200\|230400\|460800\|921600\|1000000\|2000000> | ASCII: `OK <plain lines>`; JSON `SET_BAUD` keys: `baud` | `Supported: 115200, 230400, 460800, 921600, 1000000, 2000000` | `cmdSetBaud` (system_handlers.cpp) |
 | `SYST:EVT:EN` | 0 | — | ASCII: `OK <formatted text>` | `Invalid mask (0-255)` | `cmdEventEnable` (system_handlers.cpp) |
 | `SYST:DELAY` | 1 | SYST:DELAY <ms> | ASCII: `OK <formatted text>`; JSON `SYST:DELAY` keys: `transport_delay_ms` | `Delay must be 0-1000 ms` | `cmdSystDelay` (system_handlers.cpp) |
 | `SYST:ESTOP` | 0 | — | ASCII: `OK <formatted text>`; JSON `SYST:ESTOP` keys: `latency_us`, `message`, `oob_hiz_us`, `oob_pin_us` | — | `cmdEstop` (motion_handlers.cpp) |

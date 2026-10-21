@@ -149,6 +149,13 @@ static inline void NVIC_DisableIRQ(int IRQn)
     }
 }
 
+static inline void NVIC_SetPendingIRQ(int IRQn)
+{
+    if (IRQn >= 0) {
+        NVIC->ISPR[(uint32_t)IRQn >> 5UL] = (1UL << ((uint32_t)IRQn & 0x1FUL));
+    }
+}
+
 static inline void NVIC_ClearPendingIRQ(int IRQn)
 {
     if (IRQn >= 0) {
