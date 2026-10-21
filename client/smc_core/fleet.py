@@ -20,7 +20,7 @@ DEV:ROLE (broken on current firmware, finding 1) is not needed.
 
 import time
 from dataclasses import dataclass, field, replace
-from typing import Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Callable, Dict, List, Mapping, Optional, Tuple
 
 from . import commands as C
 from . import kinematics as K
@@ -29,6 +29,9 @@ from .codec import Event, Response
 from .transport import open_transport
 
 ROLES = K.ROLES
+#: A brake this hard (0..1, the pad's trigger past its dead zone) stops the wheel and holds it:
+#: the last of the trigger's travel is a firm hold, not a crawl
+BRAKE_HOLD = 0.97
 FAULT_EVENTS = ("FAULT", "STALL")
 
 
@@ -251,18 +254,27 @@ class Fleet:
         return {r: b.request(C.fault_clear()) for r, b in self.boards.items()}
 
     # --- driving --------------------------------------------------------------------------
-    def drive(self, twist: K.Twist, target: Optional[K.Twist] = None, hold: Iterable[str] = ()) -> float:
+    def drive(self, twist: K.Twist, target: Optional[K.Twist] = None,
+              brake: Optional[Mapping[str, float]] = None) -> float:
         """Run every wheel for a body twist (coalesced: only the newest twist is sent).
         Returns the scale applied to stay under the motor speed limit. With `target` (where the
         slew is heading), a wheel inside one of its resonance bands with its target beyond it
-        goes to the band's far edge at once (drive_map.cross_band). The wheels in `hold` stop
-        (the driver's deceleration ramp) and hold their position: a brake on that side."""
+        goes to the band's far edge at once (drive_map.cross_band). `brake` slows wheels by
+        role, 0..1: the wheel runs at (1 - brake) of its speed, and from BRAKE_HOLD on it stops
+        (the driver's deceleration ramp) and holds its position."""
         from .drive_map import cross_band
         cmds, scale = K.motor_commands(twist, self.config.geometry)
         tcmds = K.motor_commands(target, self.config.geometry)[0] if target is not None else cmds
         per_rpm = 60.0 / self.config.geometry.full_steps_per_rev
+        brake = brake or {}
         for role in ROLES:
             sps, direction = cmds[role]
+            b = brake.get(role, 0.0)
+            if b > 0.0:                                   # slower with the pull; target too
+                keep = 0.0 if b >= BRAKE_HOLD else 1.0 - b
+                sps *= keep
+                tcmds = dict(tcmds)
+                tcmds[role] = (tcmds[role][0] * keep, tcmds[role][1])
             bands = self.bands.get(role) if self.cross_bands else None
             if bands and sps > 0:
                 rpm = sps * per_rpm * (1 if direction else -1)
@@ -270,7 +282,7 @@ class Fleet:
                 trpm = tsps * per_rpm * (1 if tdir else -1)
                 out = cross_band(rpm, trpm, bands)
                 sps, direction = abs(out) / per_rpm, (1 if out > 0 else 0)
-            req = C.mot_run(sps, direction) if sps > 0 and role not in hold else C.mot_stop()
+            req = C.mot_run(sps, direction) if sps >= 1.0 else C.mot_stop()
             if self._sent.get(role) != req.line:          # a wheel whose command did not change hears nothing
                 self.boards[role].set_latest("drive", req)
                 self._sent[role] = req.line

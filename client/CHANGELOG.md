@@ -68,11 +68,12 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
 
 ### Changed
 - Fleet controller: the right stick turns the base (its right half clockwise, its left half
-  counter-clockwise, with the push; its y does nothing), and the triggers are brakes: LT stops
-  and holds the left wheels (FL, RL), RT the right ones (FR, RR), while pulled past their dead
-  zone; the other side keeps the twist, and letting go runs them again. `Fleet.drive(hold=...)`,
-  `BaseMap.held()`; `BaseMap.turn = "triggers"` keeps the old trigger turn (no brakes). The GUI's
-  right pad is the turn stick and its status line shows "brake L" / "brake R".
+  counter-clockwise, with the push; its y does nothing), and the triggers are gradual brakes: LT
+  slows the left wheels (FL, RL) with its pull past the dead zone, RT the right ones (FR, RR);
+  the wheel runs at (1 - pull) of its speed, and the last 3 % of travel stops and holds it. The
+  other side keeps the twist; letting go runs them again. `Fleet.drive(brake={role: 0..1})`,
+  `fleet.BRAKE_HOLD`, `BaseMap.brakes()`; `BaseMap.turn = "triggers"` keeps the old trigger turn
+  (no brakes). The GUI's right pad is the turn stick and its status line shows "brake L 60%".
 - Fleet: the controller's Max RPM starts at 400 (was 100) and the base's motor-speed ceiling at
   1334 steps/s, 400 RPM (was 1000).
 - A routine "Parameters refreshed" no longer replaces the BOARD RESET warning in the status bar.

@@ -71,20 +71,24 @@ def test_a_body_twist_drives_the_four_wheels_and_reads_back(four):
         f.close()
 
 
-def test_held_wheels_stop_and_the_others_keep_driving(four):
-    """A brake a side (the pad's triggers): the held wheels stop, the others keep the twist,
-    and letting go runs them again."""
+def test_braked_wheels_slow_with_the_brake_and_hold_at_full(four):
+    """A brake a side (the pad's triggers): half a brake runs those wheels at half speed, a
+    full one stops and holds them, the others keep the twist throughout; letting go runs
+    them again."""
     procs, _ = four
     f = make_fleet(procs)
-    speed = lambda r: f.frame().boards.get(r, (0, {}))[1].get("motor", {}).get("speed", 0)
+    speed = lambda r: abs(f.frame().boards.get(r, (0, {}))[1].get("motor", {}).get("speed", 0))
     try:
         f._all(C.fault_clear())
-        f.drive(K.Twist(vx=0.2), hold=("FL", "RL"))
-        assert pump(f, lambda: speed("FR") != 0 and speed("RR") != 0, timeout=5.0)
-        assert speed("FL") == 0 and speed("RL") == 0
-        assert f._sent["FL"] == C.mot_stop().line
+        f.drive(K.Twist(vx=0.2), brake={"FL": 0.5, "RL": 0.5})
+        assert pump(f, lambda: speed("FR") > 0 and 0.4 < speed("FL") / speed("FR") < 0.6, timeout=5.0), \
+            (speed("FL"), speed("FR"))
+        f.drive(K.Twist(vx=0.2), brake={"FL": 1.0, "RL": 1.0})
+        assert f._sent["FL"] == C.mot_stop().line and f._sent["RL"] == C.mot_stop().line
+        assert pump(f, lambda: speed("FL") == 0 and speed("RL") == 0, timeout=5.0)
+        assert speed("FR") > 0 and speed("RR") > 0
         f.drive(K.Twist(vx=0.2))                                # let go
-        assert pump(f, lambda: speed("FL") != 0 and speed("RL") != 0, timeout=5.0)
+        assert pump(f, lambda: speed("FL") > 0 and speed("RL") > 0, timeout=5.0)
     finally:
         f.close()
 

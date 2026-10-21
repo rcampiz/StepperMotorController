@@ -121,9 +121,9 @@ class RecordingFleet:
         self.holds = []
         self.stops = 0
 
-    def drive(self, t, target=None, hold=()):
+    def drive(self, t, target=None, brake=None):
         self.twists.append(t)
-        self.holds.append(tuple(hold))
+        self.holds.append(dict(brake or {}))
         return 1.0
 
     def stop(self):
@@ -147,7 +147,7 @@ def test_base_driver_maps_the_left_stick_and_the_right_stick_to_a_twist_and_butt
     assert t.wz == pytest.approx(-0.5)                         # right half: clockwise; its y does nothing
     drv.base.turn = "triggers"                                # the 2026-10-20 option: the triggers turn
     t = drv.tick(GamepadState(ly=0.5, lx=0.5, lt=0.5, rx=-0.5, packet=12))
-    assert t.wz == pytest.approx(1.0) and fleet.holds[-1] == ()  # LT counter-clockwise, no brake
+    assert t.wz == pytest.approx(1.0) and fleet.holds[-1] == {}  # LT counter-clockwise, no brake
     drv.base.turn = "right_stick"
     drv.tick(GamepadState(packet=2))                          # centred: one stop
     assert fleet.stops == 1
@@ -160,22 +160,24 @@ def test_base_driver_maps_the_left_stick_and_the_right_stick_to_a_twist_and_butt
     assert fleet.stops == 2
 
 
-def test_the_triggers_hold_a_side_while_the_base_drives():
-    # owner 2026-10-21: LT holds the left wheels (FL, RL), RT the right ones (FR, RR), like a brake
+def test_the_triggers_brake_a_side_with_their_pull():
+    # owner 2026-10-21: LT brakes the left wheels (FL, RL), RT the right ones (FR, RR), gradually
     fleet = RecordingFleet()
     drv = BaseDriver(fleet, slew=None)
+    gate = lambda v: (v - 0.08) / 0.92                         # the trigger gate's rescale
     drv.tick(GamepadState(ly=0.8, packet=1))
-    assert fleet.holds[-1] == ()
+    assert fleet.holds[-1] == {}
     drv.tick(GamepadState(ly=0.8, lt=0.6, packet=2))
-    assert fleet.holds[-1] == ("FL", "RL")
+    assert set(fleet.holds[-1]) == {"FL", "RL"}
+    assert fleet.holds[-1]["FL"] == pytest.approx(gate(0.6)) == fleet.holds[-1]["RL"]
     drv.tick(GamepadState(ly=0.8, lt=0.6, rt=1.0, packet=3))
-    assert fleet.holds[-1] == ("FL", "RL", "FR", "RR")
-    drv.tick(GamepadState(ly=0.8, rt=0.10, packet=4))          # RT eased to within its gate: still held
-    assert fleet.holds[-1] == ("FR", "RR")
-    drv.tick(GamepadState(ly=0.8, rt=0.05, packet=5))          # let go: the right side drives again
-    assert fleet.holds[-1] == ()
+    assert fleet.holds[-1]["FR"] == pytest.approx(1.0) and fleet.holds[-1]["RR"] == pytest.approx(1.0)
+    drv.tick(GamepadState(ly=0.8, rt=0.10, packet=4))          # RT eased to within its gate: a light brake
+    assert set(fleet.holds[-1]) == {"FR", "RR"} and fleet.holds[-1]["FR"] < 0.05
+    drv.tick(GamepadState(ly=0.8, rt=0.05, packet=5))          # let go
+    assert fleet.holds[-1] == {}
     drv.tick(GamepadState(lt=0.03, packet=6))                  # a resting trigger is no brake
-    assert drv.held == ()
+    assert drv.brakes == {}
 
 
 def test_a_pad_resting_off_centre_does_not_move_the_base_and_the_gate_has_hysteresis():

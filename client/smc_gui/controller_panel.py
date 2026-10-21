@@ -5,8 +5,8 @@ mapped through smc_core.drive_map, and shown as two live stick pads with the but
 Two modes. "motor": the left stick's vertical axis drives the connected board (MOT:RUN in
 RPM, resonance bands stepped over), B stops, Y enables, X clears the fault, START E-STOPs.
 "base": the left stick moves the base (vx/vy), the right stick's x turns it (right half
-clockwise, left half counter-clockwise), the triggers brake a side (LT holds the left wheels,
-RT the right ones). The on-screen pads stand in for the sticks. The Fleet page owns the driver.
+clockwise, left half counter-clockwise), the triggers brake a side with their pull (LT the left
+wheels, RT the right ones; full pull stops and holds them). The on-screen pads stand in for the sticks. The Fleet page owns the driver.
 """
 
 import math
@@ -204,9 +204,9 @@ class ControllerPanel(QGroupBox):
             self._right.set(state.rx, state.ry, True)
             src = "on-screen stick" if self._use_soft else getattr(self._pad, "name", "pad")
             words = sorted(state.buttons)
-            if self.mode == "base":                  # the side brakes, while pulled
-                words += ["brake L"] if state.lt > TRIGGER_DEAD_ZONE else []
-                words += ["brake R"] if state.rt > TRIGGER_DEAD_ZONE else []
+            if self.mode == "base":                  # the side brakes, with their pull
+                words += ["brake L %d%%" % round(state.lt * 100)] if state.lt > TRIGGER_DEAD_ZONE else []
+                words += ["brake R %d%%" % round(state.rt * 100)] if state.rt > TRIGGER_DEAD_ZONE else []
             self._status.setText("%s: %s" % (src, " ".join(words) or "ok"))
             self._last_seen = now
         else:

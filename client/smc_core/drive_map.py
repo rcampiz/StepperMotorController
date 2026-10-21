@@ -12,8 +12,9 @@ or the pad goes away.
 Base (fleet): the left stick moves the base (vx up, vy left) through a round dead zone with
 hysteresis, the right stick's x turns it (right half clockwise, left half counter-clockwise,
 with the push), and the twist is rate limited (quick, bounded speed-up and slow-down; B, START
-or a lost pad stop at once). The triggers are brakes: LT stops the left wheels (FL, RL) and
-holds them while it is pulled, RT the right ones (FR, RR); the other side keeps the twist. The fleet
+or a lost pad stop at once). The triggers are brakes, gradual: LT slows the left wheels (FL, RL)
+with its pull and stops and holds them at full pull, RT the right ones (FR, RR); the other side
+keeps the twist. The fleet
 scales the four wheels together, so bands are not avoided there (four wheels cannot all dodge
 at once).
 
@@ -24,7 +25,7 @@ does), X = re-arm (fleet) / clear fault (motor).
 import math
 import time
 from dataclasses import dataclass, field
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from . import commands as C
 from . import kinematics as K
@@ -328,14 +329,19 @@ class BaseMap:
                        vy=-lx * self.max_vy,                            # stick right = move right = -vy (left positive)
                        wz=wz)
 
-    def held(self, state: GamepadState) -> Tuple[str, ...]:
-        """The wheels the triggers hold (owner 2026-10-21: a brake a side): LT the left ones,
-        RT the right ones, while pulled past their gates. None while the triggers turn the base."""
+    def brakes(self, state: GamepadState) -> Dict[str, float]:
+        """How hard each wheel is braked, 0..1 (owner 2026-10-21: a brake a side, gradual): LT
+        the left wheels, RT the right ones, with the pull past their gates (full pull = 1:
+        stopped and held). Only the braked wheels; none while the triggers turn the base."""
         if self.turn != "right_stick":
-            return ()
+            return {}
         lt, _ = self.triggers[0].gate(state.lt)
         rt, _ = self.triggers[1].gate(state.rt)
-        return (("FL", "RL") if lt > 0.0 else ()) + (("FR", "RR") if rt > 0.0 else ())
+        out: Dict[str, float] = {}
+        for roles, pull in ((("FL", "RL"), lt), (("FR", "RR"), rt)):
+            if pull > 0.0:
+                out.update({r: min(1.0, pull) for r in roles})
+        return out
 
 
 class BaseDriver:
@@ -354,7 +360,7 @@ class BaseDriver:
         if hasattr(fleet, "lcd_full_scale"):          # full stick / full trigger = 100 % on the LCDs
             fleet.lcd_full_scale = K.Twist(vx=self.base.max_vx, vy=self.base.max_vy, wz=self.base.max_wz)
         self.last: Optional[K.Twist] = None
-        self.held: Tuple[str, ...] = ()                # the wheels the triggers hold now
+        self.brakes: Dict[str, float] = {}            # how hard the triggers brake each wheel now
         self._buttons: frozenset = frozenset()
         self._was_connected = False
         self.on_action: Optional[Callable[[str], None]] = None      # "estop" / "rearm" / "enable" to run off-thread
@@ -387,15 +393,15 @@ class BaseDriver:
             self._halt()                                # B: stop at once, no ramp
             return self.last
         target = self.base.twist(state)
-        self.held = self.base.held(state)
+        self.brakes = self.base.brakes(state)
         t = self.slew.step(self._cur, target, dt) if self.slew is not None else target
         self._cur = t
         if t == K.Twist():
             if self.last is None or self.last != t:
                 self.fleet.stop()
         else:
-            # the target: each wheel crosses its bands fast; the held wheels stop and hold
-            self.fleet.drive(t, target, hold=self.held)
+            # the target: each wheel crosses its bands fast; the braked wheels slow with the pull
+            self.fleet.drive(t, target, brake=self.brakes)
         self.last = t
         return t
 
