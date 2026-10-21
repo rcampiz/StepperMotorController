@@ -9,6 +9,7 @@ RT clockwise); the on-screen right pad's x stands in for the triggers. The Fleet
 the driver.
 """
 
+import math
 import time
 from typing import Optional
 
@@ -18,9 +19,12 @@ from PySide6.QtWidgets import (
     QCheckBox, QDoubleSpinBox, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget,
 )
 
-from smc_core.drive_map import StickMap
+from smc_core.drive_map import StickGate, StickMap
 from smc_core.gamepad import GamepadState, IGamepad, SoftwareGamepad, XInputGamepad
 from smc_gui import theme
+
+
+TRIGGER_DEAD_ZONE = 0.12               # = drive_map.BaseMap's trigger gates (start)
 
 
 class StickPad(QWidget):
@@ -33,6 +37,8 @@ class StickPad(QWidget):
         self._x = 0.0
         self._y = 0.0
         self._live = False
+        self.dead_zone = 0.0            # drawn as a ring: inside it the stick is ignored
+        self.active = True              # False: the stick is inside its dead zone (dot drawn dim)
         self.setFixedSize(96, 96)
 
     def set(self, x: float, y: float, live: bool = True) -> None:
@@ -64,10 +70,17 @@ class StickPad(QWidget):
         p.setPen(QPen(QColor(theme.GRID), 1))
         p.drawLine(w // 2, 2, w // 2, w - 2)
         p.drawLine(2, w // 2, w - 2, w // 2)
-        cx = w / 2.0 + self._x * (w / 2.0 - 6)
-        cy = w / 2.0 - self._y * (w / 2.0 - 6)
-        p.setPen(QPen(QColor(theme.MAGENTA if self._live else theme.DIM), 2))
-        p.setBrush(QBrush(QColor(theme.MAGENTA if self._live else theme.DIM)))
+        span = w / 2.0 - 6
+        if self.dead_zone > 0:
+            # The dead zone: a stick resting in here (a pad rarely rests dead centre) moves nothing
+            p.setPen(QPen(QColor(theme.GRID_MAJ), 1, Qt.DashLine))
+            p.setBrush(Qt.NoBrush)
+            p.drawEllipse(QPointF(w / 2.0, w / 2.0), self.dead_zone * span, self.dead_zone * span)
+        cx = w / 2.0 + self._x * span
+        cy = w / 2.0 - self._y * span
+        lit = self._live and self.active
+        p.setPen(QPen(QColor(theme.MAGENTA if lit else theme.DIM), 2))
+        p.setBrush(QBrush(QColor(theme.MAGENTA if lit else theme.DIM)))
         p.drawEllipse(QPointF(cx, cy), 5, 5)
         p.setPen(QPen(QColor(theme.MUTED)))
         p.drawText(QRectF(0, w - 14, w, 12), Qt.AlignCenter, self._label)
@@ -108,6 +121,12 @@ class ControllerPanel(QGroupBox):
             self._right.moved.connect(lambda x, y: self._on_screen(lt=max(0.0, -x), rt=max(0.0, x)))
         else:
             self._right.moved.connect(lambda x, y: self._on_screen(rx=x, ry=y))
+        # The dead zones the drivers apply, drawn on the pads (a pad at rest sits a little off centre)
+        if self.mode == "base":
+            self._left.dead_zone = StickGate().enter
+            self._right.dead_zone = TRIGGER_DEAD_ZONE
+        else:
+            self._left.dead_zone = self.stick.dead_zone
         top.addWidget(self._left)
         top.addWidget(self._right)
         settings = QGridLayout()
@@ -177,6 +196,11 @@ class ControllerPanel(QGroupBox):
             state = self._soft.poll()
         now = time.monotonic()
         if state is not None:
+            if self.mode == "base":
+                self._left.active = math.hypot(state.lx, state.ly) > self._left.dead_zone
+                self._right.active = max(state.lt, state.rt) > TRIGGER_DEAD_ZONE
+            else:
+                self._left.active = abs(state.ly) > self._left.dead_zone
             self._left.set(state.lx, state.ly, True)
             if self.mode == "base":
                 self._right.set(state.rt - state.lt, 0.0, True)    # the turn: right = RT, left = LT

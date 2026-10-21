@@ -9,6 +9,8 @@ the panels' `restyle()` for the few widgets that style themselves once. The choi
 kept in QSettings ("ui/theme").
 """
 
+import os
+import tempfile
 from typing import Dict
 
 _DARK: Dict[str, object] = dict(
@@ -69,6 +71,32 @@ TRACES = ["#00f0ff", "#ff18d8", "#ffe400", "#28ff40", "#ff8000", "#9846ff", "#ff
 QSS = ""
 
 
+def _arrow_image(up: bool, colour: str) -> str:
+    """A small spin-box arrow (styled buttons lose Qt's own) in `colour`, drawn once into the
+    temp folder; the stylesheet points at it. "" when it cannot be drawn (no Qt GUI)."""
+    path = os.path.join(tempfile.gettempdir(), "smc_gui",
+                        "arrow_%s_%s.png" % ("up" if up else "down", colour.lstrip("#")))
+    if not os.path.exists(path):
+        try:
+            from PySide6.QtCore import QPointF, Qt
+            from PySide6.QtGui import QColor, QImage, QPainter, QPolygonF
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            img = QImage(10, 6, QImage.Format_ARGB32)
+            img.fill(Qt.transparent)
+            p = QPainter(img)
+            p.setRenderHint(QPainter.Antialiasing)
+            p.setPen(Qt.NoPen)
+            p.setBrush(QColor(colour))
+            pts = [QPointF(0, 6), QPointF(10, 6), QPointF(5, 0)] if up else [QPointF(0, 0), QPointF(10, 0), QPointF(5, 6)]
+            p.drawPolygon(QPolygonF(pts))
+            p.end()
+            if not img.save(path):
+                return ""
+        except Exception:                                   # noqa: BLE001 - no GUI: Qt's default
+            return ""
+    return path.replace("\\", "/")
+
+
 def _build_qss() -> str:
     g = globals()
     BG, BASE, PANEL, SCAN, GRID, GRID_MAJ = g["BG"], g["BASE"], g["PANEL"], g["SCAN"], g["GRID"], g["GRID_MAJ"]
@@ -115,6 +143,12 @@ QLineEdit, QSpinBox, QDoubleSpinBox, QComboBox, QTextEdit, QPlainTextEdit, QList
 QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled {{ color: {DIM}; border-color: {GRID}; }}
 QComboBox QAbstractItemView {{ background: {PANEL}; color: {TEXT}; selection-background-color: {GRID}; selection-color: {CYAN}; }}
 QSpinBox::up-button, QSpinBox::down-button, QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{ background: {PANEL}; border-left: 1px solid {GRID}; width: 16px; }}
+QSpinBox::up-button:hover, QSpinBox::down-button:hover, QDoubleSpinBox::up-button:hover, QDoubleSpinBox::down-button:hover {{ background: {GRID}; }}
+/* Styled buttons lose Qt's own arrows: draw them, in the neon (they were invisible, 2026-10-20) */
+QSpinBox::up-arrow, QDoubleSpinBox::up-arrow {{ image: url("{_arrow_image(True, CYAN)}"); width: 10px; height: 6px; }}
+QSpinBox::down-arrow, QDoubleSpinBox::down-arrow {{ image: url("{_arrow_image(False, CYAN)}"); width: 10px; height: 6px; }}
+QSpinBox::up-arrow:disabled, QDoubleSpinBox::up-arrow:disabled {{ image: url("{_arrow_image(True, DIM)}"); }}
+QSpinBox::down-arrow:disabled, QDoubleSpinBox::down-arrow:disabled {{ image: url("{_arrow_image(False, DIM)}"); }}
 QHeaderView::section {{ background: {PANEL}; color: {CYAN}; border: 1px solid {GRID}; padding: 3px; }}
 
 QCheckBox::indicator, QRadioButton::indicator {{ width: 14px; height: 14px; border: 1px solid {GRID_MAJ}; background: {BASE}; }}
