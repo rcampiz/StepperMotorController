@@ -2724,6 +2724,28 @@
       "deprecated": ""
     },
     {
+      "name": "UI:ESTOP:HOLD",
+      "prefix": "UI",
+      "handler": "cmdUiEstopHold",
+      "file": "display_handlers.cpp",
+      "min_args": 1,
+      "usage": [
+        "UI:ESTOP:HOLD <pct 0-100>"
+      ],
+      "ascii_ok": [
+        ""
+      ],
+      "json": [],
+      "errors": [
+        "pct must be 0-100"
+      ],
+      "note": "",
+      "multiline": false,
+      "binary": false,
+      "persists": false,
+      "deprecated": ""
+    },
+    {
       "name": "UI:MODE?",
       "prefix": "UI",
       "handler": "cmdUIGetMode",

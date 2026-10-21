@@ -24,6 +24,8 @@ public:
     virtual void bitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
                           const uint8_t* data, uint32_t len) = 0;
     virtual void indicator(uint16_t angle, int8_t rotation, bool translation, uint8_t speedPct, uint8_t rotPct) = 0;
+    /// The host's clear hold on the E-STOP page (any task): the page's bar shows it while fresh
+    virtual void estopHold(uint8_t pct) = 0;
     /// A panel tuning register (VCOM, voltages, gamma); false if not allowed
     virtual bool panelRegister(uint8_t reg, const uint8_t* data, uint8_t len) = 0;
 

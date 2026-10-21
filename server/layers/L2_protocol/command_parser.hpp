@@ -381,6 +381,7 @@ private:
   void cmdDispBitmap(const ParsedCommand &cmd);
   void cmdDispBitmapB64(const ParsedCommand &cmd);
   void cmdDispIndicator(const ParsedCommand &cmd);
+  void cmdUiEstopHold(const ParsedCommand &cmd);
   void cmdLcdReg(const ParsedCommand &cmd);
   void cmdDispBitmapRle(const ParsedCommand &cmd);
 

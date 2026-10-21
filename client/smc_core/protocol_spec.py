@@ -123,6 +123,7 @@ COMMANDS: Dict[str, CommandSpec] = {
     'UI:FLASH:ERASE_ALL': CommandSpec('UI:FLASH:ERASE_ALL', 'cmdFlashEraseAll', 0, '', '', False, False, False),
     'UI:FLASH:TEST': CommandSpec('UI:FLASH:TEST', 'cmdFlashTest', 0, '', '', False, False, False),
     'UI:MODE': CommandSpec('UI:MODE', 'cmdUIMode', 1, '', '', False, False, False),
+    'UI:ESTOP:HOLD': CommandSpec('UI:ESTOP:HOLD', 'cmdUiEstopHold', 1, 'UI:ESTOP:HOLD <pct 0-100>', '', False, False, False),
     'UI:MODE?': CommandSpec('UI:MODE?', 'cmdUIGetMode', 0, '', '', False, False, False),
     'DBG:MOTOR': CommandSpec('DBG:MOTOR', 'MOTOR_DEBUG', 0, '', 'MOTOR_DEBUG', True, False, False),
     'DBG:UNLOCK': CommandSpec('DBG:UNLOCK', 'debugUnlock', 0, '', '', False, False, False),

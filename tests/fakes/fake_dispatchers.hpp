@@ -41,8 +41,7 @@ struct FakeMotorConfigDispatcher : Services::IMotorConfigDispatcher {
     bool configLoadFromFlash()  override { calls.push_back("configLoadFromFlash"); return bool{}; }
     bool configFactoryReset()  override { calls.push_back("configFactoryReset"); return bool{}; }
     bool configIsValid()  override { calls.push_back("configIsValid"); return bool{}; }
-    bool chipUnits = true;   ///< false: a driver without protocol 2 chip units
-    bool configHasChipUnits() override { return chipUnits; }
+    bool configHasChipUnits()  override { calls.push_back("configHasChipUnits"); return bool{}; }
     void configSetKval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec)  override { calls.push_back("configSetKval"); }
     void configSetDriveMode(uint8_t mode)  override { calls.push_back("configSetDriveMode"); }
     void configSetTval(uint8_t hold, uint8_t run, uint8_t acc, uint8_t dec)  override { calls.push_back("configSetTval"); }
@@ -151,6 +150,7 @@ struct FakeDisplayDispatcher : Services::IDisplayDispatcher {
     void displayLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color)  override { calls.push_back("displayLine"); }
     void displayBitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint8_t* data, uint32_t len)  override { calls.push_back("displayBitmap"); }
     void displayIndicator(uint16_t angle, int8_t rotation, bool translation, uint8_t speedPct, uint8_t rotPct)  override { calls.push_back("displayIndicator"); }
+    void displayEstopHold(uint8_t pct)  override { calls.push_back("displayEstopHold"); }
     bool displayPanelRegister(uint8_t reg, const uint8_t* data, uint8_t len)  override { calls.push_back("displayPanelRegister"); return bool{}; }
     bool displayStreamStart(uint16_t x, uint16_t y, uint16_t w, uint16_t h)  override { calls.push_back("displayStreamStart"); return bool{}; }
     void displayStreamData(const uint8_t* data, uint32_t len)  override { calls.push_back("displayStreamData"); }

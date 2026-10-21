@@ -400,6 +400,7 @@ step mode 0-7, the same texts as before.
 | `UI:FLASH:ERASE_ALL` | 0 | — | ASCII: `OK All image slots erased` | `Flash erase failed`<br>`Flash not available` | `cmdFlashEraseAll` (display_handlers.cpp) |
 | `UI:FLASH:TEST` | 0 | — | `OK <status>` | `Flash not available` | `cmdFlashTest` (display_handlers.cpp) |
 | `UI:MODE` | 1 | — | `OK <status>` | `Unknown mode (use LOCAL or REMOTE)` | `cmdUIMode` (display_handlers.cpp) |
+| `UI:ESTOP:HOLD` | 1 | UI:ESTOP:HOLD <pct 0-100> | ASCII: `OK ` | `pct must be 0-100` | `cmdUiEstopHold` (display_handlers.cpp) |
 | `UI:MODE?` | 0 | — | `OK <status>` | — | `cmdUIGetMode` (display_handlers.cpp) |
 
 ### DBG

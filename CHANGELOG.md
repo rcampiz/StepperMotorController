@@ -16,6 +16,8 @@ tags.
 ## [Unreleased]
 
 ### Changed
+- `UI:ESTOP:HOLD <pct>`: the host's clear hold fills the E-STOP page's bar, as the board's own
+  CENTER hold does (a pad's START held for 3 s); the bar empties when the updates stop.
 - The LCD arrow appears pointing where the base goes: from a stop it swung round from up (the
   stopped base's angle); later turns still ease.
 - The LCD motion indicator keeps up: it eases on the clock (the same speed at any frame rate;

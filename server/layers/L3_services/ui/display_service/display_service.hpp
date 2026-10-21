@@ -68,6 +68,7 @@ public:
     void line(int16_t x0, int16_t y0, int16_t x1, int16_t y1, uint16_t color) override;
     void bitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h, const uint8_t* data, uint32_t len) override;
     void indicator(uint16_t angle, int8_t rotation, bool translation, uint8_t speedPct, uint8_t rotPct) override;
+    void estopHold(uint8_t pct) override;
     bool panelRegister(uint8_t reg, const uint8_t* data, uint8_t len) override;
     bool streamStart(uint16_t x, uint16_t y, uint16_t w, uint16_t h) override;
     void streamData(const uint8_t* data, uint32_t len) override;
@@ -129,6 +130,11 @@ private:
     UI::JoyDirection m_prevRaw = UI::JoyDirection::NONE;
     uint32_t m_lastTapMs = 0;
     bool     m_clearing = false;     ///< CENTER held (armed) on the E-STOP page
+    // The host's clear hold (UI:ESTOP:HOLD: a pad's START held), written by the Comms task
+    static constexpr uint32_t HOST_HOLD_STALE_MS = 400;   ///< the bar empties when updates stop
+    volatile uint32_t m_hostHoldMs = 0;
+    volatile uint8_t  m_hostHoldPct = 0;
+    uint8_t  m_hostHoldShown = 0;
     uint32_t m_clearStartMs = 0;
     bool m_clearArmed = false;       ///< CENTER released once since the page came up
     // A CENTER press waits DOUBLE_TAP_MS before it reaches the screen: if a second press
@@ -139,6 +145,7 @@ private:
     void triggerEstop();
     void attemptClear();
     void estopTick(UI::UIMode mode);
+    void hostHoldTick();
     uint32_t m_lastInputMs = 0;      ///< for the saver's quiet time
     UI::UIMode m_lastMode = UI::UIMode::LOCAL;  ///< to repaint when remote mode ends
     bool     m_bootHandoff = false;  ///< boot colour test -> saver after BOOT_SCREEN_MS

@@ -381,6 +381,25 @@ void CommandParser::cmdDispIndicator(const ParsedCommand &cmd) {
   respondOk("");
 }
 
+// UI:ESTOP:HOLD <pct 0-100> — the host's clear hold on the E-STOP page: a pad's START held fills
+// the page's bar as the board's own CENTER hold does (the host sends SYST:FAULT:CLEAR when it is
+// full). LOCAL or REMOTE; nothing shows without an E-STOP page; the bar empties by itself when the
+// updates stop (the link went, the button was let go).
+void CommandParser::cmdUiEstopHold(const ParsedCommand &cmd) {
+  if (cmd.argCount < 1) {
+    respondErr("Usage: UI:ESTOP:HOLD <pct 0-100>");
+    return;
+  }
+  char *end = nullptr;
+  const long pct = strtol(cmd.args[0], &end, 10);
+  if (end == cmd.args[0] || *end != '\0' || pct < 0 || pct > 100) {
+    respondErr("INVALID_PARAM", "pct must be 0-100");
+    return;
+  }
+  m_dispatcher.displayEstopHold(static_cast<uint8_t>(pct));
+  respondOk("");
+}
+
 void CommandParser::cmdDispBitmapRle(const ParsedCommand &cmd) {
   if (!m_dispatcher.displayIsRemoteMode()) {
     respondErr("Not in REMOTE mode");

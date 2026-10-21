@@ -324,6 +324,16 @@ struct BoundRig {
 };
 }
 
+TEST(ui_estop_hold_passes_the_hosts_clear_hold_to_the_display) {
+    // 2026-10-20: a pad's START held fills the E-STOP page's bar, as the board's CENTER hold does
+    BoundRig r;
+    EXPECT_TRUE(r.run("UI:ESTOP:HOLD 40").find("\nOK") != std::string::npos);   // after the echo
+    EXPECT_TRUE(r.l3.display.calls.back() == "displayEstopHold");
+    EXPECT_TRUE(r.run("UI:ESTOP:HOLD 101").find("ERROR INVALID_PARAM") != std::string::npos);
+    EXPECT_TRUE(r.run("UI:ESTOP:HOLD x").find("ERROR INVALID_PARAM") != std::string::npos);
+    EXPECT_TRUE(r.run("UI:ESTOP:HOLD").find("ERROR USAGE") != std::string::npos);
+}
+
 TEST(dev_role_query_has_its_own_handler_and_reply) {           // F15
     BoundRig r;
     r.run("FMT JSON");
@@ -605,6 +615,8 @@ struct CapEncoder : FakeL3::FakeEncoderDispatcher {
 
 /// The motor config dispatcher of a board with a powerSTEP01: its capabilities set the limits
 struct PowerStepConfig : FakeL3::FakeMotorConfigDispatcher {
+    bool chipUnits = true;   ///< a powerSTEP01 translates protocol 2 chip units; false: a driver that cannot
+    bool configHasChipUnits() override { return chipUnits; }
     Harness::DriverCaps driverCaps() override { return Drivers::PowerStepSettings::caps(); }
 };
 
@@ -797,6 +809,8 @@ namespace {
 /// A board with a powerSTEP01: the settings stored physical, quantised by the driver's own
 /// engine; the protocol 2 aliases go through its translation, as L3 does
 struct PhysicalConfig : FakeL3::FakeMotorConfigDispatcher {
+    bool chipUnits = true;   ///< a powerSTEP01 translates protocol 2 chip units; false: a driver that cannot
+    bool configHasChipUnits() override { return chipUnits; }
     Harness::DriverSettings s{};
     PhysicalConfig() {
         Drivers::LegacyDriverUnits u{};                 // the bench board's saved config (V4)

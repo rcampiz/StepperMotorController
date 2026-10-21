@@ -428,6 +428,7 @@ void DisplayService::tick()
     }
 
     estopTick(mode);
+    hostHoldTick();
 
     // Panel sleep: the saver's last stage, a black frame and no more traffic (the controller
     // keeps refreshing it from its memory). DISPOFF/SLPIN are not used: this glass shows WHITE
@@ -529,6 +530,30 @@ void DisplayService::bitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h, cons
 bool DisplayService::panelRegister(uint8_t reg, const uint8_t* data, uint8_t len)
 {
     return m_lcd != nullptr && m_lcd->writePanelRegister(reg, data, len);
+}
+
+void DisplayService::estopHold(uint8_t pct)
+{
+    // Comms task: two stores; the Display task reads them on its next tick (a torn pair only
+    // shows one tick of an old value)
+    m_hostHoldMs = m_clock->getTickMs();
+    m_hostHoldPct = pct;
+}
+
+void DisplayService::hostHoldTick()
+{
+    // The host's clear hold fills the E-STOP page's bar while it is fresh and CENTER is not held
+    // here (the board's own hold draws it then)
+    if (m_screenManager.current() != &m_estopScreen || m_clearing) {
+        m_hostHoldShown = 0;
+        return;
+    }
+    const uint32_t age = m_clock->getTickMs() - m_hostHoldMs;
+    const uint8_t pct = (age <= HOST_HOLD_STALE_MS) ? m_hostHoldPct : 0;
+    if (pct != m_hostHoldShown) {
+        m_estopScreen.setProgress(pct);
+        m_hostHoldShown = pct;
+    }
 }
 
 void DisplayService::indicator(uint16_t angle, int8_t rotation, bool translation, uint8_t speedPct, uint8_t rotPct)

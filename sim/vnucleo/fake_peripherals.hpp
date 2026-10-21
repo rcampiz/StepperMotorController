@@ -121,6 +121,8 @@ public:
     void line(int16_t, int16_t, int16_t, int16_t, uint16_t) override { ++draws; }
     void bitmap(uint16_t, uint16_t, uint16_t, uint16_t, const uint8_t*, uint32_t) override { ++draws; }
     void indicator(uint16_t angle, int8_t rotation, bool translation, uint8_t speedPct, uint8_t rotPct) override { ++draws; }
+    void estopHold(uint8_t pct) override { lastEstopHold = pct; }
+    std::atomic<uint8_t> lastEstopHold{0};   ///< the host's clear hold (UI:ESTOP:HOLD), as last sent
     bool panelRegister(uint8_t reg, const uint8_t*, uint8_t len) override { lastPanelReg = reg; return len > 0; }
     uint8_t lastPanelReg = 0;
     bool streamStart(uint16_t, uint16_t, uint16_t, uint16_t) override { ++draws; return true; }

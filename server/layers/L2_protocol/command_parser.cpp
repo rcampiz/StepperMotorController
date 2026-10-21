@@ -485,7 +485,8 @@ void CommandParser::dispatchUI(const char *suffix, const ParsedCommand &cmd) {
     respondErr("UNKNOWN_CMD", "Unknown UI:FLASH command");
     return;
   }
-  static const CmdEntry t1[] = {{"MODE", &CommandParser::cmdUIMode}};
+  static const CmdEntry t1[] = {{"MODE", &CommandParser::cmdUIMode},
+                                {"ESTOP:HOLD", &CommandParser::cmdUiEstopHold}};
   static const CmdEntry0 t0[] = {{"MODE?", &CommandParser::cmdUIGetMode}};
   if (dispatch1(suffix, t1, NCMD(t1), cmd))
     return;
