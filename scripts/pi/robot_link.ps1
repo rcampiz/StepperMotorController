@@ -30,7 +30,10 @@ param(
     [string]$Result = ""
 )
 
-$ErrorActionPreference = "Stop"
+# Continue, not Stop: in Windows PowerShell 5.1 a native program's stderr (git, ssh, scp warnings)
+# becomes an error record, and Stop turned a harmless git warning into the end of the setup
+# (2026-10-22). Every step checks its own outcome; the elevated network task stops on errors.
+$ErrorActionPreference = "Continue"
 $Repo = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $StateDir = Join-Path $env:LOCALAPPDATA "StepperMotorController"
 $StateFile = Join-Path $StateDir "robot_link.json"
@@ -258,6 +261,7 @@ function Invoke-Elevated([string]$task, [string]$public = "", [string]$private =
 
 function Run-ElevatedTask {
     # Runs as administrator: one network change, its outcome written to $Result
+    $ErrorActionPreference = "Stop"
     $msg = "ok"
     try {
         switch ($Task) {
@@ -531,9 +535,10 @@ function Ensure-PiAccess([string]$address, [string]$user) {
 
 function Invoke-PiSetup($state) {
     Head "Setting up the Pi (pi_setup.sh)"
-    $dirty = (& git -C $Repo status --porcelain 2>$null | Out-String).Trim()
+    $dirty = (& git -C $Repo status --porcelain 2>&1 | Where-Object { $_ -is [string] } | Out-String).Trim()
     if ($dirty) { Warn "uncommitted changes on this PC are not sent (the Pi gets the commits)" }
     $bundle = Join-Path $env:TEMP "smc.bundle"
+    if (Test-Path $bundle) { Remove-Item $bundle -Force }
     & git -C $Repo bundle create $bundle --all 2>&1 | Out-Null
     if (-not (Test-Path $bundle)) { Bad "git bundle failed (is git installed?)"; return $false }
     $mode = Get-StateValue $state "mode" "ics"
