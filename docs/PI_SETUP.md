@@ -109,8 +109,10 @@ then the menu shows:
   connection modify netplan-eth0 -ipv4.addresses 192.168.50.2/24 ipv4.dhcp-timeout 0`.
 - **Boards:** udev rules naming each Nucleo by its ST-LINK serial, `/dev/smc-FL`, `/dev/smc-FR`,
   `/dev/smc-RL`, `/dev/smc-RR` (`/etc/udev/rules.d/99-smc-boards.rules`), from
-  `~/.config/smc/boards.conf`. The first run writes that file with the serials it sees; set
-  `FL=<serial>` and so on, then re-run setup.
+  **`scripts/pi/boards.conf` in the repository** (`FL=<serial>` and so on), so every Pi names
+  the boards on its first run. A Pi's own `~/.config/smc/boards.conf` overrides a role (for a
+  board only that Pi has). The setup lists every ST-LINK it sees and warns about one with no
+  wheel; set it in `scripts/pi/boards.conf`, commit, and re-run setup.
 - **VNC** (desktop image): `raspi-config nonint do_vnc 0` (WayVNC on Trixie) and a 1920x1080
   desktop when no monitor is plugged in.
 - **The robot GUI on the Pi:** a "Robot GUI" icon on the desktop and in the menu
@@ -188,7 +190,7 @@ aarch64, cloud-init 25.2. Imaged 2026-10-22 with Raspberry Pi Imager 2.x.
 | Wi-Fi (`wlan0`) | `192.168.0.133/24` by DHCP from the home router (can change; the launcher finds it again by mDNS), MAC 88:a2:9e:13:8e:94 |
 | Cable (`eth0`) | `192.168.50.2/24` beside DHCP (fixed-address mode), MAC 88:a2:9e:13:8e:92 |
 | NetworkManager profiles | `netplan-eth0`, `netplan-wlan0-Camper2400MHz` (generated from Imager's `/boot/firmware/network-config`) |
-| Boards | one NUCLEO-F401RE so far: ST-LINK serial `066CFF545150898367165515`, `/dev/ttyACM0` |
+| Boards | one NUCLEO-F401RE so far: ST-LINK serial `066CFF545150898367165515`, `/dev/ttyACM0` (in `scripts/pi/boards.conf`) |
 
 **The PC.** Windows 11; the cable on `Ethernet` (Realtek PCIe, 1 Gbps) at `192.168.50.1/24`,
 internet on `Wi-Fi`. Link mode: fixed addresses (the Pi has its own internet over Wi-Fi). State in

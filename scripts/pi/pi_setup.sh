@@ -18,7 +18,8 @@ REPO_URL="https://github.com/rcampiz/StepperMotorController.git"
 REPO="${SMC_REPO:-$HOME/StepperMotorController}"
 BUNDLE=""; LINK=""; DRY=0; UPGRADE=1
 STATIC_ADDR="192.168.50.2/24"
-BOARDS_CONF="$HOME/.config/smc/boards.conf"
+BOARDS_CONF="$HOME/.config/smc/boards.conf"     # this Pi's own, overrides a role
+REPO_BOARDS="$REPO/scripts/pi/boards.conf"      # every Pi's, in the repository
 UDEV_RULES="/etc/udev/rules.d/99-smc-boards.rules"
 VNC_SIZE="1920x1080"
 
@@ -182,35 +183,48 @@ mapfile -t STLINKS < <(for d in /dev/ttyACM*; do
 done)
 for l in "${STLINKS[@]+"${STLINKS[@]}"}"; do ok "ST-LINK ${l#* } on ${l%% *}"; done
 [ ${#STLINKS[@]} = 0 ] && ok "no Nucleo plugged in now"
-if [ ! -f "$BOARDS_CONF" ]; then
-    run mkdir -p "$(dirname "$BOARDS_CONF")"
-    if [ "$DRY" = 0 ]; then
+# The repository's list first, then this Pi's own file over it
+declare -A SERIAL=()
+read_boards() {
+    while IFS='=' read -r role serial || [ -n "$role" ]; do
+        role="${role//[[:space:]]/}"; serial="${serial//[[:space:]]/}"
+        case "$role" in FL|FR|RL|RR) [ -n "$serial" ] && SERIAL[$role]="$serial" ;; esac
+    done < "$1"
+}
+[ -f "$REPO_BOARDS" ] && read_boards "$REPO_BOARDS"
+[ -f "$BOARDS_CONF" ] && read_boards "$BOARDS_CONF"
+if [ ${#SERIAL[@]} = 0 ]; then
+    if [ ! -f "$BOARDS_CONF" ] && [ "$DRY" = 0 ]; then
+        mkdir -p "$(dirname "$BOARDS_CONF")"
         {
-            echo "# Which Nucleo is which wheel: ROLE=ST-LINK serial (udevadm info -q property -n /dev/ttyACM0 | grep SERIAL_SHORT)."
-            echo "# Fill in, then re-run setup (Robot.bat > [5]): pi_setup.sh writes $UDEV_RULES from it."
+            echo "# This Pi's boards, over the repository's (scripts/pi/boards.conf): ROLE=ST-LINK serial."
+            echo "# Better in the repository (every Pi gets it); here for a board only this Pi has."
             for r in FL FR RL RR; do echo "#$r="; done
             for l in "${STLINKS[@]+"${STLINKS[@]}"}"; do echo "# seen now: ${l#* } on ${l%% *}"; done
         } > "$BOARDS_CONF"
     fi
-    warn "fill in $BOARDS_CONF (which ST-LINK serial is which wheel), then re-run setup"
+    warn "no board has a wheel yet: set ROLE=serial in scripts/pi/boards.conf (on the PC, commit) and re-run setup"
 fi
-if [ -f "$BOARDS_CONF" ]; then
-    RULES=""
-    while IFS='=' read -r role serial; do
-        case "$role" in FL|FR|RL|RR) ;; *) continue ;; esac
-        [ -n "$serial" ] || continue
-        RULES+="SUBSYSTEM==\"tty\", ATTRS{idVendor}==\"0483\", ATTRS{serial}==\"$serial\", SYMLINK+=\"smc-$role\", GROUP=\"dialout\", MODE=\"0660\""$'\n'
-    done < "$BOARDS_CONF"
-    if [ -n "$RULES" ]; then
-        if [ -f "$UDEV_RULES" ] && [ "$(cat "$UDEV_RULES")" = "${RULES%$'\n'}" ]; then
-            ok "$UDEV_RULES up to date"
-        elif [ "$DRY" = 1 ]; then
-            echo "    (dry run) write $UDEV_RULES:"; printf '%s' "$RULES" | sed 's/^/      /'
-        else
-            printf '%s' "$RULES" | $SUDO tee "$UDEV_RULES" >/dev/null
-            $SUDO udevadm control --reload-rules && $SUDO udevadm trigger --subsystem-match=tty
-            ok "$UDEV_RULES written"
-        fi
+for l in "${STLINKS[@]+"${STLINKS[@]}"}"; do
+    s="${l#* }"; known=0
+    for r in "${!SERIAL[@]}"; do [ "${SERIAL[$r]}" = "$s" ] && known=1; done
+    [ "$known" = 1 ] || warn "ST-LINK $s (${l%% *}) has no wheel in scripts/pi/boards.conf"
+done
+RULES=""
+for role in FL FR RL RR; do
+    serial="${SERIAL[$role]:-}"
+    [ -n "$serial" ] || continue
+    RULES+="SUBSYSTEM==\"tty\", ATTRS{idVendor}==\"0483\", ATTRS{serial}==\"$serial\", SYMLINK+=\"smc-$role\", GROUP=\"dialout\", MODE=\"0660\""$'\n'
+done
+if [ -n "$RULES" ]; then
+    if [ -f "$UDEV_RULES" ] && [ "$(cat "$UDEV_RULES")" = "${RULES%$'\n'}" ]; then
+        ok "$UDEV_RULES up to date"
+    elif [ "$DRY" = 1 ]; then
+        echo "    (dry run) write $UDEV_RULES:"; printf '%s' "$RULES" | sed 's/^/      /'
+    else
+        printf '%s' "$RULES" | $SUDO tee "$UDEV_RULES" >/dev/null
+        $SUDO udevadm control --reload-rules && $SUDO udevadm trigger --subsystem-match=tty
+        ok "$UDEV_RULES written"
     fi
 fi
 

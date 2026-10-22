@@ -35,7 +35,7 @@ jobs:
               test -d /home/robot/StepperMotorController/.git
               test -x /home/robot/StepperMotorController/client/.venv/bin/python
               /home/robot/StepperMotorController/client/.venv/bin/python -c "import serial, numpy, PySide6, pygame"
-              test -f /home/robot/.config/smc/boards.conf
+              test -f /etc/udev/rules.d/99-smc-boards.rules || test -f /home/robot/.config/smc/boards.conf
             '
 
   launcher-selftest:
