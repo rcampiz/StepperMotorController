@@ -550,6 +550,7 @@ function Invoke-PiSetup($state) {
     & scp.exe -q $script ($HostAlias + ":/tmp/smc_pi_setup.sh")
     if ($LASTEXITCODE -ne 0) { Bad "copying to the Pi failed"; return $false }
     Ok "repository bundle and pi_setup.sh copied"
+    Say "  The Pi asks for its password once, now (sudo): type it in this window." "Yellow"
     & ssh.exe -t $HostAlias ("bash /tmp/smc_pi_setup.sh --bundle /tmp/smc.bundle --link " + $mode)
     if ($LASTEXITCODE -ne 0) { Bad "pi_setup.sh reported a problem (see above)"; return $false }
     Set-StateValue $state "setupDone" (Get-Date -Format s)

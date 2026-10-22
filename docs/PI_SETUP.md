@@ -90,6 +90,8 @@ then the menu shows:
 
 **`pi_setup.sh` on the Pi** (idempotent; `--dry-run` says what it would do):
 
+- **The Pi's password, once, first** (for sudo: Imager 2.x gives the user no passwordless sudo).
+  Nothing else in the run asks for it.
 - `apt` update and full-upgrade, git, python3-venv, pip, build tools (skipped with a note when the
   Pi has no internet).
 - The repository at `~/StepperMotorController`: cloned from the bundle, or fast-forwarded to it
@@ -207,4 +209,5 @@ internet on `Wi-Fi`. Link mode: fixed addresses (the Pi has its own internet ove
 4. **The launcher hung at "SSH to the Pi".** ssh read the console's input. Fixed: the checks run
    `ssh -n`.
 5. **sudo's password prompt went unnoticed** partway through the run (after the copy, before
-   `apt`), so the setup sat waiting.
+   `apt`), so the setup sat waiting. Fixed: `pi_setup.sh` asks for it first, saying so, and
+   keeps sudo fresh to the end, so it never asks again in the middle.

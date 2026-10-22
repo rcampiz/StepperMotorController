@@ -48,6 +48,21 @@ run()  {   # run a command, or say it in a dry run
 SUDO="sudo"
 [ "$(id -u)" = 0 ] && SUDO=""
 have() { command -v "$1" >/dev/null 2>&1; }
+
+# sudo once, here, with a prompt that says what it wants: Imager 2.x gives the user no
+# passwordless sudo, and the prompt sudo printed partway through the run (after the copy, before
+# apt) went unnoticed (2026-10-22). Kept fresh in the background, so a long upgrade does not let
+# it lapse and ask again.
+if [ -n "$SUDO" ] && [ "$DRY" = 0 ]; then
+    if ! sudo -n true 2>/dev/null; then
+        echo ""
+        echo "==> sudo: type the Pi's password for $USER (nothing shows as you type), then Enter"
+        sudo -p "    password: " -v || { echo "    FAIL  sudo refused: nothing was changed"; exit 1; }
+    fi
+    ( while kill -0 $$ 2>/dev/null; do sudo -n -v 2>/dev/null; sleep 60; done ) &
+    SUDO_KEEPALIVE=$!
+    trap 'kill "$SUDO_KEEPALIVE" 2>/dev/null' EXIT
+fi
 online() { getent hosts deb.debian.org >/dev/null 2>&1 && timeout 5 bash -c 'exec 3<>/dev/tcp/deb.debian.org/80' 2>/dev/null; }
 
 # ---------------------------------------------------------------------------------------------
