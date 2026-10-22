@@ -509,7 +509,7 @@ function Invoke-Ssh([string[]]$sshArgs) {
 
 function Ensure-PiAccess([string]$address, [string]$user) {
     Head "SSH to the Pi"
-    $r = Invoke-Ssh @("-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=accept-new", $HostAlias, "true")
+    $r = Invoke-Ssh @("-n", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=accept-new", $HostAlias, "true")
     if ($r.Code -eq 0) { Ok ("ssh " + $HostAlias + " works (key accepted)"); return $true }
     if ($r.Text -match "REMOTE HOST IDENTIFICATION HAS CHANGED|Host key verification failed") {
         Warn "the Pi's host key changed (normal after re-imaging the card)"
@@ -524,7 +524,7 @@ function Ensure-PiAccess([string]$address, [string]$user) {
         $pub = (Get-Content ($KeyFile + ".pub") -Raw).Trim()
         $remote = 'umask 077; mkdir -p ~/.ssh; touch ~/.ssh/authorized_keys; k="$(cat)"; grep -qxF "$k" ~/.ssh/authorized_keys || echo "$k" >> ~/.ssh/authorized_keys'
         $pub | & ssh.exe -o StrictHostKeyChecking=accept-new -o PubkeyAuthentication=no ($user + "@" + $address) $remote
-        $r = Invoke-Ssh @("-o", "BatchMode=yes", "-o", "ConnectTimeout=8", $HostAlias, "true")
+        $r = Invoke-Ssh @("-n", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", $HostAlias, "true")
         if ($r.Code -eq 0) { Ok "key copied; ssh robot works"; return $true }
         Bad "still refused. If Imager set 'public-key only', paste this PC's key there (shown above) and re-image."
         return $false
@@ -553,7 +553,7 @@ function Invoke-PiSetup($state) {
     & ssh.exe -t $HostAlias ("bash /tmp/smc_pi_setup.sh --bundle /tmp/smc.bundle --link " + $mode)
     if ($LASTEXITCODE -ne 0) { Bad "pi_setup.sh reported a problem (see above)"; return $false }
     Set-StateValue $state "setupDone" (Get-Date -Format s)
-    $name = (Invoke-Ssh @("-o", "BatchMode=yes", "-o", "ConnectTimeout=8", $HostAlias, "hostname")).Text.Trim()
+    $name = (Invoke-Ssh @("-n", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", $HostAlias, "hostname")).Text.Trim()
     if ($name) { Set-StateValue $state "hostname" $name }
     if ($mode -eq "static" -and (Get-StateValue $state "piAddress") -ne $StaticPi) {
         Say ("  waiting for the Pi at " + $StaticPi + " ...")
@@ -561,7 +561,7 @@ function Invoke-PiSetup($state) {
         if (Test-Port22 $StaticPi) {
             Set-StateValue $state "piAddress" $StaticPi
             Ensure-SshConfig $StaticPi (Get-StateValue $state "user")
-            & ssh.exe -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new $HostAlias true 2>&1 | Out-Null
+            & ssh.exe -n -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new $HostAlias true 2>&1 | Out-Null
         } else { Warn ("the Pi does not answer at " + $StaticPi + " yet: [5] > d to check") }
     }
     Save-State $state
@@ -686,7 +686,7 @@ function Run-Diagnose {
     if ($ics.Count -gt 0) { Say ("  sharing: " + (($ics | ForEach-Object { $_.Name + " (" + $_.Kind + ")" }) -join ", ")) }
     $ip = Find-Pi $eth $state
     if ($ip) {
-        $r = Invoke-Ssh @("-o", "BatchMode=yes", "-o", "ConnectTimeout=8", $HostAlias, "cat /etc/os-release | grep PRETTY; hostname -I; ls /dev/smc-* 2>/dev/null || echo 'no /dev/smc-* boards'")
+        $r = Invoke-Ssh @("-n", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", $HostAlias, "cat /etc/os-release | grep PRETTY; hostname -I; ls /dev/smc-* 2>/dev/null || echo 'no /dev/smc-* boards'")
         if ($r.Code -eq 0) { Say $r.Text } else { Warn ("ssh: " + $r.Text.Trim()) }
     }
 }
