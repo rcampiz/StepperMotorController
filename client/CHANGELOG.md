@@ -12,6 +12,16 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
 ## [Unreleased]
 
 ### Added
+- `start_gui.py`: the GUI from nothing but Python, on a PC or the Raspberry Pi. It makes
+  `client/.venv` (once), lists the missing packages with their download size and installs them
+  from pypi.org when you say yes, offers on Linux the system pieces (libxcb-cursor0 for Qt's X11
+  plugin, the `input` group for a gamepad, python3-venv, an applications-menu entry), each asked
+  first, and starts the GUI. It asks in the terminal, or in a small tkinter window when started
+  from the menu, and remembers a "no". `--check` says what it would do. On Raspberry Pi OS
+  Bookworm (glibc 2.36, no Qt for Python build) it says so and points to Trixie or the CLI.
+- "Pair a controller..." in the controller group: the Bluetooth pairing steps for this system;
+  Windows opens its Bluetooth settings, Linux (the Pi) finds, pairs, trusts and connects a PS4 /
+  PS5 pad through bluetoothctl (`smc_core.bt_pair`) on a worker thread and shows its log.
 - PS4 (and PS5, Switch Pro, any SDL2-mapped) pads over USB or Bluetooth, on Windows and on Linux
   (the Raspberry Pi 5): `SdlGamepad` through pygame-ce (`gui` extra, `gamepad` extra), read in
   the Xbox layout so every mapping holds (Cross A, Circle B, Square X, Triangle Y, Options
@@ -75,6 +85,9 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
   closing the fleet hands them back to their menus (`smc_core.kinematics.indicator`).
 
 ### Changed
+- The `gui` extra and requirements.txt take PySide6-Essentials (QtCore / QtGui / QtWidgets /
+  QtSvg, all the GUI uses; ~85 MB on the Pi against ~265 MB for the full PySide6, which still
+  satisfies them).
 - Fleet controller: the right stick turns the base (its right half clockwise, its left half
   counter-clockwise, with the push; its y does nothing), and the triggers are gradual brakes: LT
   slows the left wheels (FL, RL) with its pull past the dead zone, RT the right ones (FR, RR);

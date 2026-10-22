@@ -17,7 +17,7 @@ from typing import Optional
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QBrush, QColor, QMouseEvent, QPainter, QPen
 from PySide6.QtWidgets import (
-    QCheckBox, QDoubleSpinBox, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QVBoxLayout, QWidget,
+    QCheckBox, QDoubleSpinBox, QGridLayout, QGroupBox, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
 
 from smc_core.drive_map import StickGate, StickMap
@@ -172,6 +172,11 @@ class ControllerPanel(QGroupBox):
         self._legend.setWordWrap(True)
         self._legend.setStyleSheet("color: %s; font-size: 10px;" % theme.MUTED)
         settings.addWidget(self._legend, 4, 0, 1, 2)
+        pair = QPushButton("Pair a controller...")
+        pair.setToolTip("How to pair a PS4 / PS5 controller over Bluetooth here (Windows: opens the "
+                        "Bluetooth settings; the Raspberry Pi: finds and pairs it for you)")
+        pair.clicked.connect(self.open_pairing)
+        settings.addWidget(pair, 5, 0, 1, 2)
         top.addLayout(settings, 1)
         v.addLayout(top)
 
@@ -182,6 +187,10 @@ class ControllerPanel(QGroupBox):
         return (("L stick move   R stick turn   %s brake left/right   " % trig if self.mode == "base" else "") +
                 "%s stop   %s enable   %s %s   %s e-stop (hold 3 s: clear)" % (
                     n("B"), n("Y"), n("X"), "re-arm" if self.mode == "base" else "clear fault", n("START")))
+
+    def open_pairing(self) -> None:
+        from smc_gui.pairing_dialog import PairingDialog
+        PairingDialog(self).exec()
 
     # --- input sources ---------------------------------------------------------------
     def use_gamepad(self, pad: IGamepad) -> None:

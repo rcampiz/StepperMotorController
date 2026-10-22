@@ -51,6 +51,23 @@ python -m smc_cli fleet estop --config fleet.json
 python -m pytest -q tests
 ```
 
+## Starting the GUI on a new machine (a PC or the Raspberry Pi)
+
+```
+python3 start_gui.py          # Windows: py start_gui.py
+python3 start_gui.py --check  # what it would set up, changing nothing
+```
+
+`start_gui.py` needs nothing but Python. It makes `client/.venv` (once), lists the packages the
+GUI is missing with their download size and installs them from pypi.org when you say yes, and on
+Linux offers the system pieces (Qt's X11 library libxcb-cursor0, the `input` group for a gamepad,
+python3-venv when needed, an applications-menu entry), each asked first. Then it starts the GUI.
+It asks in the terminal, or in a small window when started from the menu. A "no" to an optional
+step is remembered.
+
+The Raspberry Pi needs Raspberry Pi OS based on Debian Trixie (glibc 2.41): Qt for Python has no
+build for Bookworm (glibc 2.36). The command line (`python3 -m smc_cli`) runs on both.
+
 ## Gamepads
 
 The Drive tab and the Fleet page drive from a pad (`smc_core/gamepad.py`): an Xbox pad through
@@ -62,7 +79,9 @@ OPTIONS); the light bar turns hot pink when the GUI has the pad. A pad that drop
 range, asleep) reads as no controller, which stops the base, and is picked up again within a
 second of coming back.
 
-Pairing a PS4 pad over Bluetooth (once; afterwards the PS button wakes it and it reconnects):
+Pairing a PS4 pad over Bluetooth (once; afterwards the PS button wakes it and it reconnects). The
+GUI has the steps too: the controller group's "Pair a controller..." button, which opens Windows'
+Bluetooth settings, or on Linux finds, pairs, trusts and connects the pad for you (bluetoothctl):
 
 - Hold SHARE and PS together until the light bar double-flashes (pairing mode).
 - Windows: Settings > Bluetooth & devices > Add device > Bluetooth, pick "Wireless Controller".
