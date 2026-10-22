@@ -133,6 +133,12 @@ def _axis(raw: int) -> float:
 SDL_BUTTONS = ((0, "A"), (1, "B"), (2, "X"), (3, "Y"), (4, "BACK"), (5, "GUIDE"), (6, "START"),
                (7, "LTHUMB"), (8, "RTHUMB"), (9, "LB"), (10, "RB"), (11, "DPAD_UP"), (12, "DPAD_DOWN"),
                (13, "DPAD_LEFT"), (14, "DPAD_RIGHT"), (20, "TOUCHPAD"))
+#: SDL hints for the PlayStation pads' full Bluetooth reports (battery, light bar, rumble)
+BLUETOOTH_FULL_REPORTS = ("SDL_JOYSTICK_HIDAPI_PS4_RUMBLE", "SDL_JOYSTICK_HIDAPI_PS5_RUMBLE")
+#: SDL2's battery bands, as a person reads them
+BATTERY_TEXT = {"empty": "battery empty, 5 % or less", "low": "battery low, 20 % or less",
+                "medium": "battery medium, 70 % or less", "full": "battery full", "max": "battery full",
+                "wired": "wired"}
 SDL_AXES = 6                     # left x, left y, right x, right y, left trigger, right trigger
 
 
@@ -174,6 +180,10 @@ class SdlGamepad(IGamepad):
             os.environ.setdefault("PYGAME_HIDE_SUPPORT_PROMPT", "1")
             # The window with the focus is Qt's, not SDL's: deliver the pad's input regardless
             os.environ.setdefault("SDL_JOYSTICK_ALLOW_BACKGROUND_EVENTS", "1")
+            # A DualShock 4 / DualSense over Bluetooth sends a short report (no battery: it read
+            # "empty", bench 2026-10-22) until the host asks for the full one; these hints ask
+            for hint in BLUETOOTH_FULL_REPORTS:
+                os.environ.setdefault(hint, "1")
             import pygame
             from pygame._sdl2 import controller
         except ImportError:
@@ -289,7 +299,7 @@ class AutoGamepad(IGamepad):
             return "none"
         if isinstance(p, SdlGamepad):
             b = p.battery
-            return p.pad_name + (" (%s)" % ("wired" if b == "wired" else "battery " + b) if b else "")
+            return p.pad_name + (" (%s)" % BATTERY_TEXT.get(b, "battery " + b) if b else "")
         return "Xbox (XInput)" if isinstance(p, XInputGamepad) else p.name
 
     @property

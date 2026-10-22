@@ -99,6 +99,15 @@ def test_a_bluetooth_pad_is_found_read_lost_and_found_again(fake_sdl):
     assert pad.poll() is not None                                    # back
 
 
+def test_bluetooth_playstation_pads_are_asked_for_their_full_reports(fake_sdl, monkeypatch):
+    # over Bluetooth a DualShock 4 sends no battery until asked: it read "empty" (bench 2026-10-22)
+    from smc_core import gamepad
+    for hint in gamepad.BLUETOOTH_FULL_REPORTS:
+        monkeypatch.delenv(hint, raising=False)
+    SdlGamepad()
+    assert all(gamepad.os.environ.get(h) == "1" for h in gamepad.BLUETOOTH_FULL_REPORTS)
+
+
 def test_without_pygame_the_sdl_pad_says_why(monkeypatch):
     monkeypatch.setitem(sys.modules, "pygame", None)                 # import fails
     pad = SdlGamepad()
@@ -121,7 +130,7 @@ def test_the_gui_pad_takes_xinput_first_then_sdl(fake_sdl):
     fake_sdl.append(ps4)
     auto = AutoGamepad([xbox, sdl])
     assert auto.poll() is not None and auto.active is sdl and auto.playstation
-    assert auto.name == "PS4 Controller (battery medium)"
+    assert auto.name == "PS4 Controller (battery medium, 70 % or less)"
     xbox.state = GamepadState(ly=0.5)
     assert auto.poll().ly == 0.5 and auto.active is xbox and not auto.playstation
     xbox.state = None
