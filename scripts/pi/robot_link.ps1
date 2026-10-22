@@ -19,7 +19,8 @@
     Windows PowerShell 5.1 (what a double-clicked .bat gets): no newer syntax.
 
 .PARAMETER Action
-    menu (default), desktop (VNC straight away), setup, undo, diagnose, selftest, dryrun
+    menu (default), desktop (VNC straight away), setup, undo, diagnose, selftest, dryrun,
+    card (prepare a freshly imaged SD card)
 #>
 [CmdletBinding()]
 param(
@@ -45,6 +46,16 @@ $StaticPc = "192.168.50.1"
 $StaticPi = "192.168.50.2"
 # Raspberry Pi Foundation / Raspberry Pi Trading MAC prefixes (OUI)
 $PiOuis = @("B8-27-EB", "DC-A6-32", "E4-5F-01", "28-CD-C1", "D8-3A-DD", "2C-CF-67", "88-A2-9E")
+# What [6] adds to a freshly imaged card's cloud-init user-data, between these markers. First boot
+# then turns SSH on and gives the cable its fixed address with an unbounded DHCP wait (as
+# pi_setup.sh does), so the Pi answers at 192.168.50.2 from the start and a bare cable cannot time
+# its connection out (2026-10-22). The Ethernet profile by type: netplan-eth0 binds no interface.
+$CardBegin = "# >>> smc: added by Robot.bat [6] (docs/PI_SETUP.md section 1)"
+$CardEnd = "# <<< smc"
+$CardRuncmd = @'
+- [ systemctl, enable, --now, ssh ]
+- [ sh, -c, 'for u in $(nmcli -g UUID,TYPE connection show | sed -n "s/:802-3-ethernet$//p"); do nmcli connection modify "$u" +ipv4.addresses PI_ADDR/24 ipv4.dhcp-timeout infinity ipv4.may-fail yes; nmcli connection up "$u" || true; done' ]
+'@
 
 # ------------------------------------------------------------------------------------------------
 # Small helpers
@@ -138,6 +149,48 @@ function Get-Prefix24([string]$ip) {
 # ------------------------------------------------------------------------------------------------
 # 1. The SSH key and config
 # ------------------------------------------------------------------------------------------------
+function Find-Line([System.Collections.Generic.List[string]]$lines, [string]$pattern, [int]$from = 0) {
+    for ($i = $from; $i -lt $lines.Count; $i++) { if ($lines[$i] -match $pattern) { return $i } }
+    return -1
+}
+
+function Add-CardConfig([string]$text, [string]$key) {
+    # Imager 2.x's user-data with this PC's key under its user, and the first-boot commands in
+    # runcmd. Idempotent: the marked block is replaced, the key added once. $null when the text
+    # has no "user:" block (not a card Imager customised).
+    $lines = New-Object System.Collections.Generic.List[string]
+    $skip = $false
+    foreach ($l in (($text -replace "`r`n", "`n").TrimEnd("`n") -split "`n")) {
+        if ($l.Trim() -eq $CardBegin) { $skip = $true; continue }
+        if ($skip) { if ($l.Trim() -eq $CardEnd) { $skip = $false }; continue }
+        $lines.Add($l)
+    }
+    $u = Find-Line $lines '^user:\s*$'
+    if ($u -lt 0) { return $null }
+    if ($key -and -not (($lines -join "`n").Contains($key))) {
+        $k = Find-Line $lines '^\s+ssh_authorized_keys:\s*$' $u
+        if ($k -lt 0) {
+            $lines.Insert($u + 1, '    - "' + $key + '"')
+            $lines.Insert($u + 1, "  ssh_authorized_keys:")
+        } else {
+            $lines.Insert($k + 1, '    - "' + $key + '"')
+        }
+    }
+    $r = Find-Line $lines '^runcmd:\s*$'
+    if ($r -lt 0) { $lines.Add("runcmd:"); $r = $lines.Count - 1 }
+    $indent = "  "
+    if ($r + 1 -lt $lines.Count -and $lines[$r + 1] -match '^(\s*)- ') { $indent = $Matches[1] }
+    $block = @($CardBegin) + @(($CardRuncmd.Replace("PI_ADDR", $StaticPi) -replace "`r`n", "`n").Trim() -split "`n") + @($CardEnd)
+    for ($i = $block.Count - 1; $i -ge 0; $i--) { $lines.Insert($r + 1, $indent + $block[$i]) }
+    return (($lines -join "`n") + "`n")
+}
+
+function Get-CardValue([string]$text, [string]$pattern) {
+    $m = [regex]::Match($text, $pattern, "Multiline")
+    if ($m.Success) { return $m.Groups[1].Value }
+    return $null
+}
+
 function Ensure-SshKey([switch]$DryRun) {
     Head "SSH key"
     if (-not (Get-Command ssh.exe -ErrorAction SilentlyContinue)) {
@@ -622,6 +675,61 @@ function Ensure-Ready {
     return $state
 }
 
+function Prepare-Card {
+    Head "Prepare a freshly imaged SD card"
+    Say "  After Raspberry Pi Imager 2.x has written the card (with its customisation), with the card"
+    Say "  still in this PC: this adds this PC's SSH key and the cable's fixed address to its first boot."
+    if (-not (Ensure-SshKey)) { return }
+    $vols = @(Get-Volume -ErrorAction SilentlyContinue | Where-Object { $_.FileSystemLabel -eq "bootfs" -and $_.DriveLetter })
+    if ($vols.Count -eq 0) {
+        Bad "no 'bootfs' drive: is the card in this PC? (take it out and put it back if Imager ejected it)"
+        return
+    }
+    $v = $vols[0]
+    if ($vols.Count -gt 1) {
+        for ($i = 0; $i -lt $vols.Count; $i++) { Say ("   [" + ($i + 1) + "] " + $vols[$i].DriveLetter + ": (" + [math]::Round($vols[$i].Size / 1MB) + " MB)") }
+        $n = 0
+        while ($n -lt 1 -or $n -gt $vols.Count) { [int]::TryParse((Read-Host "  Which card?").Trim(), [ref]$n) | Out-Null }
+        $v = $vols[$n - 1]
+    }
+    $root = [string]$v.DriveLetter + ":\"
+    $ud = Join-Path $root "user-data"
+    if (-not (Test-Path (Join-Path $root "cmdline.txt"))) { Bad ($root + " is not a Raspberry Pi boot partition (no cmdline.txt)"); return }
+    if (-not (Test-Path $ud)) {
+        Bad ($root + " has no user-data: not a Trixie card customised by Imager 2.x (re-image with customisation on)")
+        return
+    }
+    $old = [IO.File]::ReadAllText($ud)
+    $key = (Get-Content ($KeyFile + ".pub") -Raw).Trim()
+    $new = Add-CardConfig $old $key
+    if (-not $new) { Bad ($ud + " has no user block: customise the card in Imager (username, SSH) and write it again"); return }
+    $state = Load-State
+    $name = Get-CardValue $new '^hostname:\s*"?([^"\r\n]+?)"?\s*$'
+    $user = Get-CardValue $new '^\s+name:\s*"?([^"\r\n]+?)"?\s*$'
+    if ($new -eq ($old -replace "`r`n", "`n")) {
+        Ok ("already prepared: " + $ud)
+    } else {
+        Say ("  Card " + $root + " (hostname " + $name + ", user " + $user + "): adds to its first boot")
+        if (-not $old.Contains($key)) { Say "   - this PC's SSH key for that user" }
+        Say "   - SSH on"
+        Say ("   - the cable's address " + $StaticPi + "/24 beside DHCP, with no DHCP time-out")
+        if (-not (Ask ("Write that to " + $ud + "?"))) { Warn "not changed"; return }
+        $backup = $ud + ".orig"
+        if (-not (Test-Path $backup)) { Copy-Item $ud $backup }
+        [IO.File]::WriteAllText($ud, $new, (New-Object System.Text.UTF8Encoding($false)))
+        Ok ("written (Imager's original kept as " + $backup + ")")
+    }
+    # A new card is a new Pi: the next double-click finds it and runs the one-time setup
+    if ($name) { Set-StateValue $state "hostname" $name }
+    if ($user) { Set-StateValue $state "user" $user }
+    Set-StateValue $state "setupDone" $null
+    Set-StateValue $state "piAddress" $null
+    Save-State $state
+    Say ""
+    Say "  Next: eject the card (Safely Remove), put it in the Pi, cable PC to Pi, power the Pi." "White"
+    Say "  Wait 2-3 minutes (the first boot), then [5] > s here, or double-click Robot.bat." "White"
+}
+
 function Open-Terminal {
     if (-not (Ensure-Ready)) { return }
     if (Get-Command wt.exe -ErrorAction SilentlyContinue) { Start-Process wt.exe -ArgumentList @("ssh", $HostAlias) }
@@ -714,6 +822,7 @@ function Show-Menu {
         Say "  [3] Robot GUI on this PC, boards on the Pi"
         Say "  [4] VS Code on the Pi (Remote-SSH)"
         Say "  [5] Re-run setup / diagnostics"
+        Say "  [6] Prepare a new SD card (after Raspberry Pi Imager)"
         Say "  [q] Quit"
         $c = (Read-Host "  Choose").Trim().ToLower()
         switch ($c) {
@@ -729,6 +838,7 @@ function Show-Menu {
                 elseif ($s -eq "u") { Undo-Network (Load-State) }
                 elseif ($s -eq "l") { Switch-Link }
             }
+            "6" { Prepare-Card }
             "q" { return }
             default { }
         }
@@ -748,6 +858,20 @@ function Run-SelfTest {
     Check "MAC: a Pi 4" (Test-PiMac "dc:a6:32:12:34:56")
     Check "MAC: not a Pi" (-not (Test-PiMac "A0-AD-9F-89-CC-43"))
     Check "subnet prefix" ((Get-Prefix24 "192.168.137.1") -eq "192.168.137.")
+    # Imager 2.x's user-data, as written on the bench card (2026-10-22)
+    $imager = "#cloud-config`nhostname: `"CampizRobot`"`nuser:`n  name: `"rcampiz`"`n  shell: /bin/bash`n" +
+              "  ssh_authorized_keys:`n    - `"ssh-ed25519 AAAAold other`"`n  sudo: null`nssh_pwauth: false`n" +
+              "runcmd:`n  - [ systemctl, enable, --now, ssh ]`n"
+    $key = "ssh-ed25519 AAAAnew robot-link@PC"
+    $c1 = Add-CardConfig $imager $key
+    Check "card: the key added once, beside the other" (([regex]::Matches($c1, [regex]::Escape($key))).Count -eq 1 -and $c1.Contains("AAAAold"))
+    Check "card: the fixed address in runcmd" ($c1.Contains("+ipv4.addresses 192.168.50.2/24 ipv4.dhcp-timeout infinity") -and $c1.Contains("`n  " + $CardBegin + "`n"))
+    Check "card: idempotent" ((Add-CardConfig $c1 $key) -eq $c1)
+    Check "card: Imager's lines kept" ($c1.Contains("  - [ systemctl, enable, --now, ssh ]`n") -and $c1.Contains("hostname: `"CampizRobot`""))
+    $c2 = Add-CardConfig "#cloud-config`nuser:`n  name: pi`n" $key
+    Check "card: no runcmd or keys yet" ($c2.Contains("user:`n  ssh_authorized_keys:`n    - `"" + $key + "`"`n  name: pi") -and $c2.Contains("runcmd:`n  " + $CardBegin))
+    Check "card: not an Imager card" ($null -eq (Add-CardConfig "#cloud-config`n" $key))
+    Check "card: hostname read" ((Get-CardValue $c1 '^hostname:\s*"?([^"\r\n]+?)"?\s*$') -eq "CampizRobot")
     if ($script:selfTestFail -gt 0) { exit 1 }
 }
 
@@ -761,5 +885,6 @@ switch ($Action.ToLower()) {
     "diagnose" { Run-Diagnose }
     "dryrun"   { Run-Setup -DryRun | Out-Null }
     "selftest" { Run-SelfTest }
+    "card"     { Prepare-Card }
     default    { Show-Menu }
 }

@@ -24,9 +24,9 @@ container in CI, `.github/workflows/pi-setup.yml`); the first real card is its f
 **Desktop or Lite.** Desktop if you want the Pi's desktop over VNC (and the robot GUI running on
 the Pi itself); Lite otherwise. Default to **Raspberry Pi OS (64-bit)**, the desktop one, for now.
 
-**The PC's key first.** Double-click `scripts/pi/Robot.bat` once before imaging: it makes this
-PC's SSH key (`%USERPROFILE%\.ssh\id_ed25519`), prints the public key and puts it on the
-clipboard. With no cable plugged in it stops there, saying there is no link: that is expected.
+**A new Pi, in short:** write the card with Imager (below), leave it in the PC, `Robot.bat` >
+**[6] Prepare a new SD card**, put the card in the Pi, cable and power, wait 2-3 minutes, then
+`Robot.bat` again: it finds the Pi and runs the setup, which asks for the Pi's password once.
 
 **Raspberry Pi Imager** (2.0 or later: older ones cannot customise Trixie):
 
@@ -37,16 +37,26 @@ clipboard. With no cable plugged in it stops there, saying there is no link: tha
    - Username and password: yours (the launcher asks for the username on its first run)
    - Wi-Fi: optional (the cable is enough; Wi-Fi lets the Pi reach the internet on its own)
    - Locale and time zone: yours
-   - **SSH: enabled, "Allow public-key authentication only"**, and paste the public key the
-     launcher printed (`ssh-ed25519 AAAA... robot-link@<PC>`). With password authentication
-     instead, the launcher copies the key on its first connection (the Pi's password, once).
-3. Write, put the card in the Pi, connect the cable PC to Pi, power the Pi.
+   - **SSH: enabled.** "Allow public-key authentication only" with this PC's key
+     (`%USERPROFILE%\.ssh\id_ed25519.pub`, `ssh-ed25519 AAAA... robot-link@<PC>`; [6] makes it
+     if missing and puts it on the clipboard), or password authentication: [6] adds the key to
+     the card either way.
+3. Write. Leave the card in the PC.
+4. **`Robot.bat` > [6] Prepare a new SD card.** It finds the card's `bootfs` drive and adds to
+   the first boot (cloud-init `user-data`, between `# >>> smc` and `# <<< smc` markers; Imager's
+   original kept as `user-data.orig`): this PC's SSH key for the card's user, SSH on, and the
+   cable's fixed address `192.168.50.2/24` with no DHCP time-out (what `pi_setup.sh` sets, see
+   section 2), so the Pi answers on the cable from its first boot. It asks before writing, and
+   only writes that one file on the drive named `bootfs`. It also records the card's hostname
+   and user, and marks the setup as not done, so the next double-click runs it for the new Pi.
+5. Eject the card, put it in the Pi, connect the cable PC to Pi, power the Pi.
 
-**Why there is no `image_sd.ps1`.** Trixie moved first-boot customisation to cloud-init, which
-only Imager 2.0 writes, and Imager's command line for it is not documented well enough to trust
+**Why Imager stays manual.** Trixie moved first-boot customisation to cloud-init, which only
+Imager 2.0 writes, and Imager's command line for it is not documented well enough to trust
 unattended (there are open reports of customisation not being applied). Writing a card is also
-the one step where a wrong disk choice destroys data. Imaging stays manual; the GUI above takes a
-minute.
+the one step where a wrong disk choice destroys data. So Imager writes the card and does the
+customisation it knows; [6] only adds to the file Imager wrote (checked with `cloud-init schema`
+on the bench Pi, 2026-10-22).
 
 ## 2. The first double-click
 
@@ -59,6 +69,7 @@ then the menu shows:
 [3] Robot GUI on this PC, boards on the Pi
 [4] VS Code on the Pi (Remote-SSH)
 [5] Re-run setup / diagnostics
+[6] Prepare a new SD card (after Raspberry Pi Imager)
 ```
 
 **The setup, step by step** (also from [5] > s):
@@ -131,6 +142,7 @@ then the menu shows:
 - **[5] Re-run setup / diagnostics:** `s` setup again, `d` diagnostics only (the link, sharing,
   the Pi's OS, addresses and boards), `u` undo the network changes, `l` switch the link between
   fixed addresses and sharing the PC's internet (undoes the current one, then runs the setup).
+- **[6] Prepare a new SD card:** section 1, step 4.
 
 The launcher remembers what it set up in `%LOCALAPPDATA%\StepperMotorController\robot_link.json`
 (the adapter, the link mode, the Pi's address and username).
