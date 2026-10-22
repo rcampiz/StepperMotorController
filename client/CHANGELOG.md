@@ -12,6 +12,16 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
 ## [Unreleased]
 
 ### Added
+- The window's tabs (Dashboard, Encoder, Graph, Drive...) show one of the fleet's boards while the
+  fleet is open: "Show in the tabs" on the Fleet page (FL at first; FR, RL, RR, none). The window
+  views the board without owning it (MainWindow.view_fleet_board: it is neither opened nor
+  closed there, "Disconnect" just lets it go) and what moves the motor stays with the Fleet page
+  (the Motor panel, the Drive tab's controller and scenarios are off), so the two never fight over
+  a wheel; settings and diagnostics work as usual. `Board.unsubscribe()`, `BoardBridge.detach()`.
+- Encoder filter panel: the tracking observer ("Observer (best)", its bandwidth), and the
+  firmware's default chain as the panel's own (the 10 Hz observer alone, the best measured; it
+  started from the old EMA + SMA + Pade + 5 Hz Butterworth, which Apply would have sent back).
+  Reset asks the board for its defaults and reads them back.
 - `start_gui.py`: the GUI from nothing but Python, on a PC or the Raspberry Pi. It makes
   `client/.venv` (once), lists the missing packages with their download size and installs them
   from pypi.org when you say yes, offers on Linux the system pieces (libxcb-cursor0 for Qt's X11
