@@ -150,6 +150,9 @@ if [ "$LINK" = "static" ]; then
     else
         CON="$(nmcli -g GENERAL.CONNECTION device show eth0 2>/dev/null)"
         [ -n "$CON" ] || CON="$(nmcli -t -f NAME,DEVICE connection show | sed -n 's/:eth0$//p' | head -1)"
+        # Not active (a bare cable whose DHCP wait already failed, as on the bench Pi, 2026-10-22):
+        # the Ethernet profile all the same (netplan-eth0 binds no interface name)
+        [ -n "$CON" ] || CON="$(nmcli -t -f NAME,TYPE connection show | sed -n 's/:802-3-ethernet$//p' | head -1)"
         if [ -z "$CON" ]; then
             warn "no NetworkManager profile for eth0: set $STATIC_ADDR by hand"
             PROBLEMS=$((PROBLEMS+1))
