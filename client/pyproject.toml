@@ -11,7 +11,9 @@ license = {text = "MIT"}
 dependencies = ["pyserial>=3.5"]
 
 [project.optional-dependencies]
-gui = ["PySide6>=6.5", "pyqtgraph>=0.13", "numpy>=1.24", "scipy>=1.10", "Pillow>=10.0"]
+# pygame-ce: SDL2 for the PS4 / PS5 pad (USB or Bluetooth) on Windows and on the Raspberry Pi 5
+gui = ["PySide6>=6.5", "pyqtgraph>=0.13", "numpy>=1.24", "scipy>=1.10", "Pillow>=10.0", "pygame-ce>=2.5"]
+gamepad = ["pygame-ce>=2.5"]
 rtt = ["pylink-square>=1.0"]
 dev = ["pytest>=7.0"]
 

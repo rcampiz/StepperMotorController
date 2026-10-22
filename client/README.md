@@ -51,6 +51,39 @@ python -m smc_cli fleet estop --config fleet.json
 python -m pytest -q tests
 ```
 
+## Gamepads
+
+The Drive tab and the Fleet page drive from a pad (`smc_core/gamepad.py`): an Xbox pad through
+XInput (Windows), or a PS4 DualShock 4 / PS5 DualSense / any pad SDL2 maps, over USB or
+Bluetooth, through pygame-ce (Windows and Linux, the Raspberry Pi 5 included; `pip install
+pygame-ce`, part of the `gui` extra). The GUI takes whichever answers, XInput first, shows its
+name and battery and names the buttons the pad's way (a PS4: ✕ ○ □ △, L1/R1, L2/R2,
+OPTIONS); the light bar turns hot pink when the GUI has the pad. A pad that drops (out of
+range, asleep) reads as no controller, which stops the base, and is picked up again within a
+second of coming back.
+
+Pairing a PS4 pad over Bluetooth (once; afterwards the PS button wakes it and it reconnects):
+
+- Hold SHARE and PS together until the light bar double-flashes (pairing mode).
+- Windows: Settings > Bluetooth & devices > Add device > Bluetooth, pick "Wireless Controller".
+- Raspberry Pi 5 (Raspberry Pi OS Bookworm; the kernel's hid-playstation driver):
+
+  ```
+  bluetoothctl
+  power on
+  agent on
+  default-agent
+  scan on            # wait for "Wireless Controller" and its address
+  pair XX:XX:XX:XX:XX:XX
+  trust XX:XX:XX:XX:XX:XX
+  connect XX:XX:XX:XX:XX:XX
+  scan off
+  quit
+  ```
+
+  The user running the GUI must be in the `input` group (the default user is) to read the
+  pad. The light bar needs the pad's hidraw node too; without it the pad still drives.
+
 ## Rules (enforced by tests/test_frontend_rules.py and test_identical_output.py)
 
 1. A frontend never formats a command line or parses a reply line. It builds a Request

@@ -12,6 +12,14 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
 ## [Unreleased]
 
 ### Added
+- PS4 (and PS5, Switch Pro, any SDL2-mapped) pads over USB or Bluetooth, on Windows and on Linux
+  (the Raspberry Pi 5): `SdlGamepad` through pygame-ce (`gui` extra, `gamepad` extra), read in
+  the Xbox layout so every mapping holds (Cross A, Circle B, Square X, Triangle Y, Options
+  START, L2 / R2 the triggers). A pad that drops is looked for again every second; the light bar
+  turns hot pink when the GUI has it. `AutoGamepad` (what the GUI uses) takes XInput first, then
+  SDL; one pad is shared by the Drive tab and the Fleet page. The controller group shows the
+  pad's name and battery and names the buttons the pad's way (a PS4: ○ stop, △ enable, □ re-arm,
+  OPTIONS e-stop, L2/R2 brakes). README: pairing over Bluetooth on Windows and the Pi.
 - Drive tab: the Resonance avoider box: its on/off (an A/B switch, not saved), state, run current
   in force, the live ripple (`encoder.rip`), the resonant speeds, the current scale (one number,
   applied and saved) and Recalibrate. Fleet tab: per wheel, the avoider's switch, run current and

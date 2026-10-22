@@ -1,5 +1,6 @@
 """
-Controller group: a wired Xbox pad (XInput) or the on-screen stick, polled from a timer,
+Controller group: an Xbox pad (XInput), a PS4 / PS5 pad over USB or Bluetooth (SDL, also on the
+Raspberry Pi 5) or the on-screen stick, polled from a timer,
 mapped through smc_core.drive_map, and shown as two live stick pads with the button legend.
 
 Two modes. "motor": the left stick's vertical axis drives the connected board (MOT:RUN in
@@ -20,8 +21,24 @@ from PySide6.QtWidgets import (
 )
 
 from smc_core.drive_map import StickGate, StickMap
-from smc_core.gamepad import GamepadState, IGamepad, SoftwareGamepad, XInputGamepad
+from smc_core.gamepad import GamepadState, IGamepad, SoftwareGamepad, default_gamepad
 from smc_gui import theme
+
+
+# On a PlayStation pad the buttons wear Sony's names (SDL reads them in the Xbox layout)
+PS_NAMES = {"A": "✕", "B": "○", "X": "□", "Y": "△", "START": "OPTIONS", "BACK": "SHARE",
+            "GUIDE": "PS", "LB": "L1", "RB": "R1", "LTHUMB": "L3", "RTHUMB": "R3"}
+
+_shared_pad: Optional[IGamepad] = None
+
+
+def shared_gamepad() -> IGamepad:
+    """One pad for every controller group (the Drive tab's and the Fleet page's): SDL opens
+    the device once."""
+    global _shared_pad
+    if _shared_pad is None:
+        _shared_pad = default_gamepad()
+    return _shared_pad
 
 
 TRIGGER_DEAD_ZONE = 0.12               # = drive_map.BaseMap's trigger gates (start): a brake past it
@@ -96,9 +113,8 @@ class ControllerPanel(QGroupBox):
     def __init__(self, mode: str = "motor", parent=None):
         super().__init__("Controller" if mode == "motor" else "Controller (base)", parent)
         self.mode = mode
-        self._pad: IGamepad = XInputGamepad()
-        if not getattr(self._pad, "available", False):
-            self._pad = SoftwareGamepad()
+        self._pad: IGamepad = shared_gamepad()
+        self._legend_ps: Optional[bool] = None         # the legend's button names as drawn
         self._soft = SoftwareGamepad()
         self._use_soft = False
         self.stick = StickMap()
@@ -152,13 +168,20 @@ class ControllerPanel(QGroupBox):
             self._bands_cb.setChecked(True)
             self._bands_cb.toggled.connect(lambda on: setattr(self.stick, "avoid_bands", bool(on)))
             settings.addWidget(self._bands_cb, 3, 0, 1, 2)
-        legend = QLabel(("L stick move   R stick turn   LT/RT brake left/right   " if self.mode == "base" else "") +
-                        "B stop   Y enable   X %s   START e-stop (hold 3 s: clear)" % (
-                            "re-arm" if self.mode == "base" else "clear fault"))
-        legend.setStyleSheet("color: %s; font-size: 10px;" % theme.MUTED)
-        settings.addWidget(legend, 4, 0, 1, 2)
+        self._legend = QLabel(self.legend_text(False))
+        self._legend.setWordWrap(True)
+        self._legend.setStyleSheet("color: %s; font-size: 10px;" % theme.MUTED)
+        settings.addWidget(self._legend, 4, 0, 1, 2)
         top.addLayout(settings, 1)
         v.addLayout(top)
+
+    def legend_text(self, playstation: bool) -> str:
+        """What each control does, in the pad's own names."""
+        n = (lambda b: PS_NAMES.get(b, b)) if playstation else (lambda b: b)
+        trig = "L2/R2" if playstation else "LT/RT"
+        return (("L stick move   R stick turn   %s brake left/right   " % trig if self.mode == "base" else "") +
+                "%s stop   %s enable   %s %s   %s e-stop (hold 3 s: clear)" % (
+                    n("B"), n("Y"), n("X"), "re-arm" if self.mode == "base" else "clear fault", n("START")))
 
     # --- input sources ---------------------------------------------------------------
     def use_gamepad(self, pad: IGamepad) -> None:
@@ -203,7 +226,11 @@ class ControllerPanel(QGroupBox):
             self._left.set(state.lx, state.ly, True)
             self._right.set(state.rx, state.ry, True)
             src = "on-screen stick" if self._use_soft else getattr(self._pad, "name", "pad")
-            words = sorted(state.buttons)
+            ps = bool(getattr(self._pad, "playstation", False)) and not self._use_soft
+            if ps != self._legend_ps:
+                self._legend.setText(self.legend_text(ps))
+                self._legend_ps = ps
+            words = sorted(PS_NAMES.get(b, b) if ps else b for b in state.buttons)
             if self.mode == "base":                  # the side brakes, with their pull
                 words += ["brake L %d%%" % round(state.lt * 100)] if state.lt > TRIGGER_DEAD_ZONE else []
                 words += ["brake R %d%%" % round(state.rt * 100)] if state.rt > TRIGGER_DEAD_ZONE else []
@@ -212,5 +239,7 @@ class ControllerPanel(QGroupBox):
         else:
             self._left.set(0, 0, False)
             self._right.set(0, 0, False)
-            self._status.setText("no controller (plug in a wired Xbox pad, or drag a stick)")
+            why = getattr(self._pad, "error", "")
+            self._status.setText("no controller: an Xbox pad, or a PS4 pad over USB or Bluetooth, or drag a stick" +
+                                 (" (%s)" % why if why else ""))
         self.state_changed.emit(state if self.driving else None)

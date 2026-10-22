@@ -20,6 +20,9 @@ pylink-square>=1.0.0
 # Image Processing
 Pillow>=10.0.0
 
+# Gamepads: SDL2 for a PS4 / PS5 pad over USB or Bluetooth (Windows and Raspberry Pi 5)
+pygame-ce>=2.5
+
 # Development Dependencies (optional)
 # pytest>=7.0.0
 # black>=23.0.0
