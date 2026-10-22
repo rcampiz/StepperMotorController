@@ -32,7 +32,8 @@ clipboard. With no cable plugged in it stops there, saying there is no link: tha
 
 1. Device: Raspberry Pi 4. OS: Raspberry Pi OS (64-bit). Storage: the SD card.
 2. Customisation:
-   - Hostname: `robot`
+   - Hostname: any (the launcher learns it after the first setup; the PC's alias is `robot`
+     whatever it is). The bench Pi is `CampizRobot` (section 6).
    - Username and password: yours (the launcher asks for the username on its first run)
    - Wi-Fi: optional (the cable is enough; Wi-Fi lets the Pi reach the internet on its own)
    - Locale and time zone: yours
@@ -167,3 +168,43 @@ with a liveness session that stops every board if the PC goes silent, and menu i
   192.168.50.2/24 ipv4.dhcp-timeout 0`.
 - The SSH key and the `Host robot` block in `~/.ssh/config` are harmless to keep; delete the block
   between the `# >>> robot` and `# <<< robot` markers to remove it.
+
+## 6. This robot's Pi (the bench record)
+
+What the bench Pi is and how its first setup went, so the next card (or the next PC) starts from
+known facts. Passwords are not recorded here.
+
+**The Pi.** Raspberry Pi 4 Model B, Raspberry Pi OS (64-bit) with desktop, Debian 13 trixie on
+aarch64, cloud-init 25.2. Imaged 2026-10-22 with Raspberry Pi Imager 2.x.
+
+| | |
+|---|---|
+| Hostname | `CampizRobot` (`CampizRobot.local` by mDNS; the PC's alias is still `robot`) |
+| User | `rcampiz` |
+| Imager customisation | SSH public-key only, with this PC's key (`robot-link@CAMPIZFAMILY`); Wi-Fi `Camper2400MHz` (country US); time zone America/New_York; keyboard us |
+| sudo | asks for the password: Imager 2.x writes `sudo: null` for the user, so there is no passwordless rule (the old `010_pi-nopasswd` file is not there). One password covered the other SSH sessions too (Trixie's `/etc/sudoers.d/010_global-tty`). |
+| Wi-Fi (`wlan0`) | `192.168.0.133/24` by DHCP from the home router (can change; the launcher finds it again by mDNS), MAC 88:a2:9e:13:8e:94 |
+| Cable (`eth0`) | `192.168.50.2/24` beside DHCP (fixed-address mode), MAC 88:a2:9e:13:8e:92 |
+| NetworkManager profiles | `netplan-eth0`, `netplan-wlan0-Camper2400MHz` (generated from Imager's `/boot/firmware/network-config`) |
+| Boards | one NUCLEO-F401RE so far: ST-LINK serial `066CFF545150898367165515`, `/dev/ttyACM0` |
+
+**The PC.** Windows 11; the cable on `Ethernet` (Realtek PCIe, 1 Gbps) at `192.168.50.1/24`,
+internet on `Wi-Fi`. Link mode: fixed addresses (the Pi has its own internet over Wi-Fi). State in
+`%LOCALAPPDATA%\StepperMotorController\robot_link.json`.
+
+**What the first setup ran into** (each fixed in the scripts, so a new host does not):
+
+1. **The first card had SSH off.** The Pi answered ping on the cable but refused port 22.
+   Re-imaged with SSH on, public-key only, the launcher's key pasted.
+2. **The cable lost every address.** With nothing on the cable handing out DHCP,
+   NetworkManager's default 45 s DHCP wait failed `netplan-eth0`, and the failed connection
+   dropped its IPv6 link-local address too, so the PC could not find the Pi at all. The Pi was
+   reached over Wi-Fi (`CampizRobot.local`) instead, and `pi_setup.sh` now adds the fixed address
+   with an unbounded DHCP wait (section 2).
+3. **The launcher stopped on a git warning.** Windows PowerShell 5.1 turned git's stderr ("could
+   not open directory client/.pytest_cache/") into a terminating error. Fixed: native programs'
+   stderr no longer ends the setup.
+4. **The launcher hung at "SSH to the Pi".** ssh read the console's input. Fixed: the checks run
+   `ssh -n`.
+5. **sudo's password prompt went unnoticed** partway through the run (after the copy, before
+   `apt`), so the setup sat waiting.
