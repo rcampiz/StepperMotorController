@@ -1,7 +1,7 @@
 """
 Generate the saver's pixel-art stepper for the LCD: the bench motor, a StepperOnline
 23HS22-2804-ME1K (NEMA 23; its magnetic encoder sits inside the rear cap, so nothing shows of it
-from the front; from the back, its raised cover and wires), as server/layers/L3_services/ui/screens/saver_motor_sprite.hpp, and a preview PNG.
+from the front: the owner wants the front facing), as server/layers/L3_services/ui/screens/saver_motor_sprite.hpp, and a preview PNG.
 
 Drawn after the owner's CAD render (2026-10-22) at the panel's own resolution, in an oblique
 view: the front face square to the viewer on the right (light aluminium cap, four mounting holes,
@@ -29,13 +29,13 @@ PALETTE = [
     ("face", (224, 224, 229)),
     ("cap_side", (192, 192, 199)),
     ("cap_shade", (156, 156, 165)),
-    ("clip", (40, 40, 46)),
+    ("hole", (112, 112, 122)),
     ("body_top", (78, 78, 85)),
     ("body", (30, 30, 34)),
     ("body_edge", (54, 54, 60)),
-    ("wire_green", (90, 170, 60)),
-    ("wire_brown", (130, 80, 40)),
-    ("wire_yellow", (220, 200, 60)),
+    ("shaft", (206, 208, 215)),
+    ("shaft_hi", (250, 250, 253)),
+    ("screw", (138, 138, 148)),
     ("shade", (70, 70, 78)),
 ]
 IDX = {name: i for i, (name, _) in enumerate(PALETTE)}
@@ -46,9 +46,9 @@ CAP = 4                     # a cap's depth in slices (the oblique halves depth)
 BODY = 17                   # the black body's
 BODY_INSET, BODY_CH = 1, 4  # the body sits a pixel in
 DEPTH = CAP + BODY + CAP
-CABLE = 9                   # the encoder's wires below the cap
-W = F + DEPTH + 3
-H = F + DEPTH + CABLE + 3
+SHAFT = 9                   # 21 mm of shaft, toward the viewer
+W = F + DEPTH + SHAFT + 3
+H = F + DEPTH + SHAFT + 3
 X0, Y0 = DEPTH + 1, DEPTH + 1   # the front face's top-left
 
 
@@ -94,7 +94,7 @@ def draw():
     for k in range(CAP - 1, 0, -1):
         slice_(k, 0, CH, "cap_hi", "cap_side", edge="cap_shade" if k == CAP - 1 else None)
 
-    # the rear face (toward the viewer): the cap, a bevel, the encoder's raised cover, its wires
+    # the front face: the cap, a bevel, the holes, the side screws, the boss
     for y in range(Y0, Y0 + F):
         for x in range(X0, X0 + F):
             if inside(x, y, X0, Y0, F, CH):
@@ -104,26 +104,32 @@ def draw():
                         (X0 + i, Y0 + F - 1, "cap_shade"), (X0 + F - 1, Y0 + i, "cap_shade")):
             if inside(x, y, X0, Y0, F, CH):
                 px(x, y, c)
-    cx, cy = X0 + (F - 1) / 2.0, Y0 + (F - 1) / 2.0 - 2
-    for y in range(Y0, Y0 + F):                  # the encoder's cover: a raised disc, its edge lit above
-        for x in range(X0, X0 + F):              # left, shaded below right, a shadow cast on the cap
+    cx, cy = X0 + (F - 1) / 2.0, Y0 + (F - 1) / 2.0
+    for hx, hy in ((X0 + 6, Y0 + 6), (X0 + F - 7, Y0 + 6), (X0 + 6, Y0 + F - 7), (X0 + F - 7, Y0 + F - 7)):
+        for y in range(hy - 3, hy + 4):          # the mounting holes: a shaded bore, a lit rim below right
+            for x in range(hx - 3, hx + 4):
+                d = math.hypot(x - hx, y - hy)
+                if d <= 2.6:
+                    px(x, y, "hole" if (x - hx) + (y - hy) < 1 else "cap_shade")
+    for sx, sy in ((X0 + 2, Y0 + 17), (X0 + 2, Y0 + F - 18), (X0 + F - 3, Y0 + 15), (X0 + F - 3, Y0 + F - 16)):
+        for y in range(sy - 1, sy + 2):          # the screws in the cap's sides (Phillips)
+            for x in range(sx - 1, sx + 2):
+                px(x, y, "screw")
+        px(sx, sy, "shade")
+    for y in range(Y0, Y0 + F):                  # the boss: a raised disc, its groove shaded below right
+        for x in range(X0, X0 + F):
             d = math.hypot(x - cx, y - cy)
-            ds = math.hypot(x - cx - 1.5, y - cy - 1.5)
-            if d <= 16.5:
-                lit = (x - cx) + (y - cy) < 0
-                px(x, y, ("cap_hi" if lit else "cap_shade") if d > 15.3 else "cap_side")
-            elif ds <= 16.5:
-                px(x, y, "cap_shade")
-    # the wires: green, brown, yellow out of the cover's lower edge, through the clip at the cap's edge
-    wx = int(cx) + 6
-    top = int(cy + math.sqrt(16.5 ** 2 - 6 ** 2))
-    for i, colour in enumerate(("wire_green", "wire_brown", "wire_yellow")):
-        for y in range(top, Y0 + F + CABLE):
-            px(wx + i, y, colour)
-    for y in range(Y0 + F - 6, Y0 + F - 1):      # the clip
-        for x in range(wx - 2, wx + 5):
-            if y in (Y0 + F - 6, Y0 + F - 2) or x in (wx - 2, wx + 4):
-                px(x, y, "clip")
+            if 15.6 <= d <= 16.8:
+                px(x, y, "cap_shade" if (x - cx) + (y - cy) > -4 else "cap_hi")
+    # the shaft: a cylinder coming toward the viewer (down and right), its end lit
+    for i in range(SHAFT + 1):
+        for y in range(int(cy) - 5 + i, int(cy) + 6 + i):
+            for x in range(int(cx) - 5 + i, int(cx) + 6 + i):
+                d = math.hypot(x - (cx + i), y - (cy + i))
+                if d <= 3.6:
+                    end = i == SHAFT
+                    px(x, y, ("shaft_hi" if (x - cx - i) + (y - cy - i) < -1.5 else "shaft") if end else
+                       ("shaft" if (x - cx - i) - (y - cy - i) > 0 else "cap_shade"))
     # the rim lights: the silhouette's top and left edges cyan, its bottom edge hot pink
     def clear(x, y):
         return not (0 <= x < W and 0 <= y < H) or g[y][x] == 0
