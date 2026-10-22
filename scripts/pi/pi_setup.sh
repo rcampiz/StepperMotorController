@@ -21,6 +21,7 @@ STATIC_ADDR="192.168.50.2/24"
 BOARDS_CONF="$HOME/.config/smc/boards.conf"     # this Pi's own, overrides a role
 REPO_BOARDS="$REPO/scripts/pi/boards.conf"      # every Pi's, in the repository
 UDEV_RULES="/etc/udev/rules.d/99-smc-boards.rules"
+PAD_RULES="/etc/udev/rules.d/70-smc-gamepads.rules"
 VNC_SIZE="1920x1080"
 
 while [ $# -gt 0 ]; do
@@ -229,6 +230,29 @@ if [ -n "$RULES" ]; then
         $SUDO udevadm control --reload-rules && $SUDO udevadm trigger --subsystem-match=tty
         ok "$UDEV_RULES written"
     fi
+fi
+
+# ---------------------------------------------------------------------------------------------
+say "Gamepads (a PS4 / PS5 controller for the GUI on the Pi)"
+# SDL reads a Sony pad's hidraw node for its full reports (battery level, every button); Debian
+# leaves hidraw to root, and SDL then falls back to the plain joystick: no battery. Sony's HID
+# devices are named BUS:054C:PRODUCT.N over USB and Bluetooth alike.
+PAD_TEXT='# Sony DualShock 4 / DualSense raw HID for the robot GUI (SDL): USB and Bluetooth
+KERNEL=="hidraw*", KERNELS=="*:054C:*", MODE="0660", GROUP="input", TAG+="uaccess"'
+if [ -f "$PAD_RULES" ] && [ "$(cat "$PAD_RULES")" = "$PAD_TEXT" ]; then
+    ok "$PAD_RULES up to date"
+elif [ "$DRY" = 1 ]; then
+    echo "    (dry run) write $PAD_RULES"
+else
+    printf '%s\n' "$PAD_TEXT" | $SUDO tee "$PAD_RULES" >/dev/null
+    $SUDO udevadm control --reload-rules 2>/dev/null && $SUDO udevadm trigger --subsystem-match=hidraw 2>/dev/null
+    ok "$PAD_RULES written (a pad already connected: reconnect it)"
+fi
+if ! id -nG "$USER" | tr ' ' '\n' | grep -qx input; then
+    run $SUDO usermod -aG input "$USER"
+    ok "$USER added to input (gamepads; takes effect at the next login)"
+else
+    ok "$USER is in input"
 fi
 
 # ---------------------------------------------------------------------------------------------

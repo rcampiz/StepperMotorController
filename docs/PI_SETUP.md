@@ -124,6 +124,10 @@ then the menu shows:
   the boards on its first run. A Pi's own `~/.config/smc/boards.conf` overrides a role (for a
   board only that Pi has). The setup lists every ST-LINK it sees and warns about one with no
   wheel; set it in `scripts/pi/boards.conf`, commit, and re-run setup.
+- **Gamepads:** a PS4 / PS5 controller's raw HID readable by the user (`/etc/udev/rules.d/70-smc-gamepads.rules`,
+  Sony's vendor id over USB and Bluetooth) and the `input` group, so the GUI on the Pi gets the
+  battery level and every button, not only the plain joystick. Pair it from the GUI (Controller
+  panel > Pair a controller...) or plug it into the Pi by USB.
 - **VNC** (desktop image): `raspi-config nonint do_vnc 0` (WayVNC on Trixie) and a 1920x1080
   desktop when no monitor is plugged in.
 - **The robot GUI on the Pi:** a "Robot GUI" icon on the desktop and in the menu
