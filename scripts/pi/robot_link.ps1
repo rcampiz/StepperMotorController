@@ -386,7 +386,7 @@ function Undo-Network($state) {
     }
     Set-StateValue $state "mode" $null
     Save-State $state
-    Say "  On the Pi (static mode only): sudo nmcli connection delete robot-direct"
+    Say "  On the Pi (fixed mode only): sudo nmcli connection modify netplan-eth0 -ipv4.addresses 192.168.50.2/24 ipv4.dhcp-timeout 0"
 }
 
 # ------------------------------------------------------------------------------------------------
