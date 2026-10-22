@@ -15,8 +15,8 @@
  *    a grid line left or reached (a floor row is one colour or one line, its verticals fixed),
  *    the sun's box every other frame, the title's box while it shows, and the rows the bands
  *    left and reached. With the title, a pixel-art NEMA23 with its encoder hovers over the floor
- *    (Hotline Miami's bob, a shadow that breathes with its height; owner 2026-10-22), repainted
- *    on the frames the title leaves. At the bottom, on a dark plate, what it is and the way out ("SCREEN
+ *    like a Hotline Miami pickup (a bob, an outline flashing neon colours, a shadow that breathes
+ *    with its height; owner 2026-10-22), repainted on the frames the title leaves, its columns only. At the bottom, on a dark plate, what it is and the way out ("SCREEN
  *    SAVER" / "PRESS ANY BUTTON TO EXIT": someone walking up to the panel may not know).
  *  - HOTLINE: a diagonal stripe band and a blocky SMC card with chromatic aberration,
  *    relaid every 2 s, with VHS glitch slices in between.
@@ -83,11 +83,12 @@ private:
     bool m_motorShown = false;             // the hovering motor as drawn: shown, its bob, its alpha
     int16_t m_motorBob = 0;
     uint16_t m_motorAlpha = 0;
+    uint8_t m_motorInk = 0;                // the outline's flash colour as drawn
     void synthNewScene();
     void synthFullPaint(Services::ICanvas& lcd);
     bool floorLine(int16_t r, float phase) const;          // floor row r (1 = under the horizon) is a grid line
-    void floorRow(int16_t y, uint8_t* buf) const;          // a whole floor row, the bands over it
-    void synthRows(Services::ICanvas& lcd, int16_t first, int16_t last);   // sky or floor, whole rows
+    void floorRow(int16_t y, int16_t xa, int16_t xb, uint8_t* buf) const;   // floor columns [xa, xb], buf[0] = xa
+    void synthRows(Services::ICanvas& lcd, int16_t first, int16_t last, int16_t xa = 0, int16_t xb = 239);  // sky or floor
     void synthSunBox(Services::ICanvas& lcd);
     void synthTwinkle(Services::ICanvas& lcd);
     void synthTitle(Services::ICanvas& lcd, uint16_t t);

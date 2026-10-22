@@ -70,9 +70,11 @@ tags.
 - LCD saver: with the title, a pixel-art stepper hovers over the scene: the bench's StepperOnline
   23HS22-2804-ME1K front facing (light caps, black body, the mounting holes, side screws, boss
   and shaft toward the viewer), drawn after the owner's CAD renders, 87 x 87 at the panel's
-  resolution, cyan and hot-pink rim lights. It bobs on the clock
+  resolution, its edge flashing the title's colours in turn like a Hotline Miami pickup (every
+  350 ms). It bobs on the clock
   (Hotline Miami's hover, +-3 px over 1.6 s) with a shadow on the floor that narrows as it rises,
-  fades with the title, and repaints on the frames the title leaves. scripts/lcd/gen_motor_sprite.py
+  fades with the title, and repaints on the frames the title leaves, its own columns only (bench:
+  12.5-14 frames/s with the title, 20 without). scripts/lcd/gen_motor_sprite.py
   makes the sprite; scripts/lcd/step_sprite.py renders one from a STEP file instead (cascadio,
   trimesh) for when the manufacturer's model is to hand.
 - LCD saver: the bands follow the clock (IScreen::setNowMs, from the ScreenManager) at 1.5x the

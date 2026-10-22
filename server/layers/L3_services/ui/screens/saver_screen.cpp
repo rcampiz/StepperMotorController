@@ -503,6 +503,14 @@ constexpr uint32_t MOTOR_PERIOD_MS = 1600;
 constexpr int16_t MOTOR_SHADOW_Y = EXIT_PLATE_T - 5;            // the shadow's centre row
 constexpr int16_t MOTOR_Y = MOTOR_SHADOW_Y - 6 - MOTOR_BOB - MOTOR_H;   // the sprite's top at rest
 constexpr int16_t MOTOR_ROWS_T = MOTOR_Y - MOTOR_BOB, MOTOR_ROWS_B = MOTOR_SHADOW_Y + 3;
+constexpr int16_t MOTOR_SHADOW_RX = 34 + 3 * MOTOR_BOB;          // the shadow's widest half
+constexpr int16_t MOTOR_COLS_L = (MOTOR_X < W / 2 - MOTOR_SHADOW_RX ? MOTOR_X : W / 2 - MOTOR_SHADOW_RX) - 1;
+constexpr int16_t MOTOR_COLS_R = (MOTOR_X + MOTOR_W - 1 > W / 2 + MOTOR_SHADOW_RX ? MOTOR_X + MOTOR_W - 1
+                                                                                 : W / 2 + MOTOR_SHADOW_RX) + 1;
+static_assert(MOTOR_COLS_L >= 0 && MOTOR_COLS_R < W, "the motor's columns are on the panel");
+// A Hotline Miami pickup: the outline flashes the title's colours in turn
+constexpr uint16_t MOTOR_INK[3] = {rgb(255, 60, 200), rgb(255, 250, 120), rgb(90, 255, 255)};
+constexpr uint32_t MOTOR_INK_MS = 350;
 static_assert(MOTOR_ROWS_T > TITLE_Y_MIN + TITLE_Y_SPAN + 2 * BOX_HH, "the motor clears the title's box");
 
 // The title as last prepared (synthPrepareTitle): the box repaint and the band rows that
@@ -741,7 +749,7 @@ void SaverScreen::overlayMotor(int16_t y, int16_t xa, int16_t xb, uint8_t* buf) 
     // The shadow on the floor: an ellipse, narrower and fainter the higher the motor is
     const int16_t dy = static_cast<int16_t>(y - MOTOR_SHADOW_Y);
     if (y > m_horizon && dy >= -2 && dy <= 2) {
-        const int32_t rx = 34 + 3 * m_motorBob;                    // bob > 0: lower, wider
+        const int32_t rx = MOTOR_SHADOW_RX - 3 * MOTOR_BOB + 3 * m_motorBob;   // bob > 0: lower, wider
         const int32_t span = rx * (3 - (dy < 0 ? -dy : dy)) / 3;
         const int dark = (110 + 12 * m_motorBob) * static_cast<int>(m_motorAlpha) / 256;
         for (int16_t x = static_cast<int16_t>(W / 2 - span); x <= W / 2 + span; x++) {
@@ -757,7 +765,7 @@ void SaverScreen::overlayMotor(int16_t y, int16_t xa, int16_t xb, uint8_t* buf) 
     for (int16_t x = a; x <= b; x++) {
         const uint8_t i = MotorSprite::at(static_cast<int16_t>((x - MOTOR_X) / MOTOR_SCALE), sy);
         if (i == 0) continue;
-        const uint16_t c = MotorSprite::PALETTE[i];
+        const uint16_t c = (i <= 3) ? MOTOR_INK[m_motorInk] : MotorSprite::PALETTE[i];   // 1-3: the outline, the rims
         put(x, m_motorAlpha >= 256 ? c : mix(under(x), c, m_motorAlpha));
     }
 }
@@ -787,41 +795,38 @@ bool SaverScreen::floorLine(int16_t r, float phase) const
     return n > 0 && off > -0.5f && off <= 0.5f;
 }
 
-void SaverScreen::floorRow(int16_t y, uint8_t* row) const
+void SaverScreen::floorRow(int16_t y, int16_t xa, int16_t xb, uint8_t* row) const
 {
     const Palette& P = PALETTES[m_palette];
+    auto put = [&](int16_t x, uint16_t c) {
+        row[(x - xa) * 2] = static_cast<uint8_t>(c >> 8);
+        row[(x - xa) * 2 + 1] = static_cast<uint8_t>(c & 0xFF);
+    };
     const int16_t rows = static_cast<int16_t>(H - m_horizon - 1);
     const int16_t r = static_cast<int16_t>(y - m_horizon);
     const uint16_t bg = mix(P.floorFar, P.floorNear, r * 256 / rows);
     const int fade = 80 + r * 176 / rows;                                // far lines dimmer
     const uint16_t line = mix(bg, P.grid, fade);
     const bool horizontal = floorLine(r, m_phase);
-    for (int16_t x = 0; x < W; x++) {
-        const uint16_t c = horizontal ? line : bg;
-        row[x * 2] = static_cast<uint8_t>(c >> 8);
-        row[x * 2 + 1] = static_cast<uint8_t>(c & 0xFF);
-    }
+    for (int16_t x = xa; x <= xb; x++) put(x, horizontal ? line : bg);
     const float span = GRID_STEP * static_cast<float>(r) / static_cast<float>(rows > 0 ? rows : 1) *
                        (static_cast<float>(rows) / 119.0f);              // same spacing whatever the horizon
     if (!horizontal && span >= 7.0f) {
         for (int j = -14; j <= 14; j++) {
             const int x = static_cast<int>(W / 2 + j * span + (j >= 0 ? 0.5f : -0.5f));
-            if (x >= 0 && x < W) {
-                row[x * 2] = static_cast<uint8_t>(line >> 8);
-                row[x * 2 + 1] = static_cast<uint8_t>(line & 0xFF);
-            }
+            if (x >= xa && x <= xb) put(static_cast<int16_t>(x), line);
         }
     }
-    overlayMotor(y, 0, W - 1, row);
-    m_vhs.row(y).apply(row, 0, 0, W - 1);
+    overlayMotor(y, xa, xb, row);
+    m_vhs.row(y).apply(row, xa, xa, xb);
     // The exit hint over the floor and the bands: a dark plate (the floor seen through it),
     // the lines in the medium font
     if (y >= EXIT_PLATE_T && y <= EXIT_PLATE_B && m_canvas != nullptr) {
-        for (int16_t x = EXIT_PLATE_L; x <= EXIT_PLATE_R; x++) {
-            const uint16_t c = static_cast<uint16_t>((row[x * 2] << 8) | row[x * 2 + 1]);
-            const uint16_t d = mix(c, 0, 170);
-            row[x * 2] = static_cast<uint8_t>(d >> 8);
-            row[x * 2 + 1] = static_cast<uint8_t>(d & 0xFF);
+        const int16_t pa = EXIT_PLATE_L > xa ? EXIT_PLATE_L : xa;
+        const int16_t pb = EXIT_PLATE_R < xb ? EXIT_PLATE_R : xb;
+        for (int16_t x = pa; x <= pb; x++) {
+            const uint16_t c = static_cast<uint16_t>((row[(x - xa) * 2] << 8) | row[(x - xa) * 2 + 1]);
+            put(x, mix(c, 0, 170));
         }
         for (int line = 0; line < 2; line++) {
             const int16_t gy = static_cast<int16_t>(y - EXIT_LINE_Y[line]);
@@ -833,24 +838,30 @@ void SaverScreen::floorRow(int16_t y, uint8_t* row) const
                 const uint8_t* g = m_canvas->mediumGlyphRows(text[i]);
                 if (g == nullptr) continue;
                 for (int16_t b = 0; b < EXIT_CHAR_W; b++) {
-                    if ((g[gy] & (0x80u >> b)) == 0) continue;
                     const int16_t x = static_cast<int16_t>(x0 + i * EXIT_CHAR_W + b);
-                    row[x * 2] = static_cast<uint8_t>(EXIT_INK[line] >> 8);
-                    row[x * 2 + 1] = static_cast<uint8_t>(EXIT_INK[line] & 0xFF);
+                    if ((g[gy] & (0x80u >> b)) != 0 && x >= xa && x <= xb) put(x, EXIT_INK[line]);
                 }
             }
         }
     }
 }
 
-void SaverScreen::synthRows(Services::ICanvas& lcd, int16_t first, int16_t last)
+void SaverScreen::synthRows(Services::ICanvas& lcd, int16_t first, int16_t last, int16_t xa, int16_t xb)
 {
-    // Whole rows: the sky's above the horizon, the floor's below it
+    // Rows (columns [xa, xb]): the sky's above the horizon, the floor's below it
     if (first < 0) first = 0;
     if (last > H - 1) last = H - 1;
-    if (first <= m_horizon) synthUpperRows(lcd, first, last < m_horizon ? last : m_horizon);
+    const int16_t w = static_cast<int16_t>(xb - xa + 1);
+    const int16_t up = last < m_horizon ? last : m_horizon;
+    if (first <= up) {
+        streamRows(lcd, xa, first, w, static_cast<int16_t>(up - first + 1),
+                   [&](int16_t y, uint8_t* buf) { composeUpper(y, xa, xb, buf); });
+    }
     const int16_t f = first > m_horizon ? first : static_cast<int16_t>(m_horizon + 1);
-    if (f <= last) streamRows(lcd, 0, f, W, static_cast<int16_t>(last - f + 1), [&](int16_t y, uint8_t* buf) { floorRow(y, buf); });
+    if (f <= last) {
+        streamRows(lcd, xa, f, w, static_cast<int16_t>(last - f + 1),
+                   [&](int16_t y, uint8_t* buf) { floorRow(y, xa, xb, buf); });
+    }
 }
 
 void SaverScreen::synthSunBox(Services::ICanvas& lcd)
@@ -955,11 +966,13 @@ void SaverScreen::renderSynthwave(Services::ICanvas& lcd)
         const bool show = m_titleAlpha > 0;
         const int16_t bob = show ? sinApprox(static_cast<int32_t>(m_nowMs % MOTOR_PERIOD_MS * 1024 / MOTOR_PERIOD_MS),
                                              MOTOR_BOB) : 0;
-        if (show != m_motorShown || (show && (bob != m_motorBob || m_titleAlpha != m_motorAlpha))) {
+        const uint8_t ink = static_cast<uint8_t>((m_nowMs / MOTOR_INK_MS) % 3);
+        if (show != m_motorShown || (show && (bob != m_motorBob || m_titleAlpha != m_motorAlpha || ink != m_motorInk))) {
             m_motorShown = show;
             m_motorBob = bob;
             m_motorAlpha = m_titleAlpha;
-            synthRows(lcd, MOTOR_ROWS_T, MOTOR_ROWS_B);
+            m_motorInk = ink;
+            synthRows(lcd, MOTOR_ROWS_T, MOTOR_ROWS_B, MOTOR_COLS_L, MOTOR_COLS_R);
         }
     }
     // The floor rows a grid line left or reached, in runs (it was the whole floor every frame,
