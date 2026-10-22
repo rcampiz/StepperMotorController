@@ -67,16 +67,21 @@ then the menu shows:
    Pi's address on every setup (nothing else in the file is touched).
 2. **The network link,** on the wired adapter with a link light (asked only if there are two).
    It asks before changing anything:
-   - **The PC has internet on another adapter (Wi-Fi):** Windows Internet Connection Sharing
+   When the PC has internet on another adapter it asks which of the two (and remembers):
+   - **Share the PC's internet:** Windows Internet Connection Sharing
      from that adapter to the cable, through the `HNetCfg.HNetShare` COM interface (the one the
      adapter's Properties > Sharing tab uses). Windows gives the cable `192.168.137.1` and hands
      the Pi an address by DHCP and internet through the cable. Needs administrator rights
      (Windows asks, for this step only).
-   - **No internet on the PC:** fixed private addresses, PC `192.168.50.1/24` on the cable, Pi
-     `192.168.50.2/24` (set on the Pi by `pi_setup.sh`).
-3. **Finding the Pi:** the last known address, `robot.local` (mDNS), then a ping sweep of the
-   cable's subnet and the ARP table for Raspberry Pi MAC prefixes (B8:27:EB, DC:A6:32, E4:5F:01,
-   28:CD:C1, D8:3A:DD, 2C:CF:67, 88:A2:9E), each checked for SSH. It says what it found and why
+   - **Fixed addresses** (always, when the PC has no internet; the better choice when the Pi has
+     its own internet over Wi-Fi): PC `192.168.50.1/24` on the cable, Pi `192.168.50.2/24` (set
+     on the Pi by `pi_setup.sh`).
+3. **Finding the Pi:** the last known address, `<hostname>.local` (mDNS: `robot.local` until
+   the Pi's own name is known; it also finds the Pi over Wi-Fi), `192.168.50.2`, then a ping
+   sweep of the cable's subnet and the ARP table for Raspberry Pi MAC prefixes (B8:27:EB,
+   DC:A6:32, E4:5F:01, 28:CD:C1, D8:3A:DD, 2C:CF:67, 88:A2:9E), and before the cable has any
+   IPv4, the Pi's IPv6 link-local address (every node on the cable asked, the Pi's MAC kept),
+   each checked for SSH. After a fixed-address setup the `robot` alias moves to `192.168.50.2`. It says what it found and why
    not (no link light, a Pi without SSH, nothing answering yet).
 4. **The key on the Pi** if it is not there (the Pi's password, once), then this PC's repository
    sent as a git bundle (the Pi gets exactly the PC's commits, internet or not; uncommitted
@@ -90,13 +95,15 @@ then the menu shows:
   (left alone, with a warning, if the Pi's clone has its own commits); `origin` points at GitHub.
 - `scripts/setup/bringup.sh --skip-firmware --install`: the client's venv with the GUI.
 - `dialout` group membership (the Nucleos' serial ports).
-- **Fixed-address mode only:** a NetworkManager profile `robot-direct` on eth0 with DHCP **and**
-  `192.168.50.2/24` beside it, and an unbounded DHCP wait. Why this and not a static profile:
-  the same profile keeps working when the Pi is later plugged into a router (DHCP gives it an
-  address as usual, the fixed one stays beside it, harmlessly, on a subnet the router does not
-  use), and on the bare cable, where no DHCP ever answers, the unbounded wait keeps the
-  connection (and so the fixed address) up instead of timing out. Undo: `sudo nmcli connection
-  delete robot-direct`.
+- **Fixed-address mode only:** `192.168.50.2/24` added to the cable's own NetworkManager profile
+  (`netplan-eth0` on Trixie; NetworkManager writes it back to netplan) beside DHCP, with an
+  unbounded DHCP wait. Why this and not a static profile: DHCP stays, so the Pi still gets an
+  address when it is later plugged into a router (the fixed one sits beside it, harmlessly, on a
+  subnet the router does not use); and on the bare cable, where no DHCP ever answers, the
+  unbounded wait keeps the connection up. With the default 45 s wait the bench Pi's cable
+  connection failed and dropped every address, IPv6 included (2026-10-22). Applied in place
+  (`nmcli device reapply`), so the SSH session running the setup is not cut. Undo: `sudo nmcli
+  connection modify netplan-eth0 -ipv4.addresses 192.168.50.2/24 ipv4.dhcp-timeout 0`.
 - **Boards:** udev rules naming each Nucleo by its ST-LINK serial, `/dev/smc-FL`, `/dev/smc-FR`,
   `/dev/smc-RL`, `/dev/smc-RR` (`/etc/udev/rules.d/99-smc-boards.rules`), from
   `~/.config/smc/boards.conf`. The first run writes that file with the serials it sees; set
@@ -156,6 +163,7 @@ with a liveness session that stops every board if the PC goes silent, and menu i
 - **On the PC:** `Robot.bat` > [5] > `u` turns Internet Connection Sharing off (ICS mode) or
   removes 192.168.50.1 and puts the adapter back on DHCP (fixed mode). By hand: the wired
   adapter's Properties > Sharing tab (ICS), or its IPv4 settings back to automatic.
-- **On the Pi** (fixed mode only): `sudo nmcli connection delete robot-direct`.
+- **On the Pi** (fixed mode only): `sudo nmcli connection modify netplan-eth0 -ipv4.addresses
+  192.168.50.2/24 ipv4.dhcp-timeout 0`.
 - The SSH key and the `Host robot` block in `~/.ssh/config` are harmless to keep; delete the block
   between the `# >>> robot` and `# <<< robot` markers to remove it.

@@ -18,7 +18,6 @@ REPO_URL="https://github.com/rcampiz/StepperMotorController.git"
 REPO="${SMC_REPO:-$HOME/StepperMotorController}"
 BUNDLE=""; LINK=""; DRY=0; UPGRADE=1
 STATIC_ADDR="192.168.50.2/24"
-NM_PROFILE="robot-direct"
 BOARDS_CONF="$HOME/.config/smc/boards.conf"
 UDEV_RULES="/etc/udev/rules.d/99-smc-boards.rules"
 VNC_SIZE="1920x1080"
@@ -123,21 +122,35 @@ fi
 # ---------------------------------------------------------------------------------------------
 say "The direct link"
 if [ "$LINK" = "static" ]; then
-    # The PC has no internet to share, so no DHCP on the cable: the Pi needs a fixed address there.
-    # Its own profile, not the default one: DHCP stays (a router still gives an address when the Pi
-    # is plugged into one) and 192.168.50.2/24 is added beside it; the DHCP wait is unbounded, so a
-    # cable with no DHCP server does not take the connection (and the fixed address) down.
+    # No DHCP on the cable, so the Pi needs a fixed address there: added to the cable's own
+    # profile (netplan-eth0 on Trixie) beside DHCP, not a profile of its own. DHCP stays, so a
+    # router still gives an address when the Pi is plugged into one (the fixed one sits beside
+    # it on a subnet the router does not use), and the DHCP wait is unbounded, so a bare cable
+    # does not time the connection (and the fixed address) out. Applied in place (device
+    # reapply): the cable is not taken down, nor this setup's SSH session with it.
     if ! have nmcli; then
         warn "NetworkManager (nmcli) is not here: set $STATIC_ADDR on eth0 by hand"
         PROBLEMS=$((PROBLEMS+1))
-    elif nmcli -t -f NAME connection show 2>/dev/null | grep -qx "$NM_PROFILE"; then
-        ok "profile $NM_PROFILE present (DHCP + $STATIC_ADDR)"
     else
-        run $SUDO nmcli connection add type ethernet ifname eth0 con-name "$NM_PROFILE" \
-            ipv4.method auto ipv4.addresses "$STATIC_ADDR" ipv4.dhcp-timeout infinity \
-            ipv4.may-fail yes ipv6.method auto connection.autoconnect-priority 10
-        run $SUDO nmcli connection up "$NM_PROFILE"
-        ok "profile $NM_PROFILE: DHCP + $STATIC_ADDR on eth0 (undo: sudo nmcli connection delete $NM_PROFILE)"
+        CON="$(nmcli -g GENERAL.CONNECTION device show eth0 2>/dev/null)"
+        [ -n "$CON" ] || CON="$(nmcli -t -f NAME,DEVICE connection show | sed -n 's/:eth0$//p' | head -1)"
+        if [ -z "$CON" ]; then
+            warn "no NetworkManager profile for eth0: set $STATIC_ADDR by hand"
+            PROBLEMS=$((PROBLEMS+1))
+        elif nmcli -g ipv4.addresses connection show "$CON" | tr ',' '\n' | sed 's/ //g' | grep -qx "$STATIC_ADDR"; then
+            ok "$CON: DHCP + $STATIC_ADDR (already)"
+        else
+            run $SUDO nmcli connection modify "$CON" +ipv4.addresses "$STATIC_ADDR" ipv4.dhcp-timeout infinity ipv4.may-fail yes
+            if [ "$DRY" = 1 ] || $SUDO nmcli device reapply eth0 2>/dev/null; then
+                ok "$CON: DHCP + $STATIC_ADDR on eth0"
+            else
+                # Not applicable in place: reconnect the cable once this setup is done
+                $SUDO systemd-run --on-active=3 --unit=smc-link-up nmcli connection up "$CON" >/dev/null 2>&1 ||
+                    (sleep 3; $SUDO nmcli connection up "$CON") >/dev/null 2>&1 &
+                ok "$CON: DHCP + $STATIC_ADDR, applied in a few seconds (the cable reconnects)"
+            fi
+            note "undo the fixed address: sudo nmcli connection modify $CON -ipv4.addresses $STATIC_ADDR ipv4.dhcp-timeout 0"
+        fi
     fi
 else
     ok "ICS (or none given): DHCP from the PC, nothing to set"

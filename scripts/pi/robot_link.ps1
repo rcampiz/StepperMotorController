@@ -313,6 +313,18 @@ function Ensure-Network($state, [switch]$DryRun) {
     $inet = Get-InternetAdapter $eth.Name
     $mode = Get-StateValue $state "mode"
     $ics = Get-IcsState
+    $pref = Get-StateValue $state "linkPreference"
+    if ($inet -and -not $pref -and -not $DryRun) {
+        Say ("  This PC has internet on '" + $inet.Name + "'. How should the cable to the Pi be addressed?")
+        Say ("   [1] fixed addresses: PC " + $StaticPc + ", Pi " + $StaticPi + " (best when the Pi has its own internet, e.g. Wi-Fi)")
+        Say ("   [2] share this PC's internet with the Pi (Internet Connection Sharing; the Pi gets DHCP)")
+        $n = ""
+        while ($n -notin @("1", "2")) { $n = (Read-Host "  Choose").Trim() }
+        $pref = "ics"
+        if ($n -eq "1") { $pref = "static" }
+        Set-StateValue $state "linkPreference" $pref
+    }
+    if ($pref -eq "static") { $inet = $null }
     if ($inet) {
         Ok ("internet on: " + $inet.Name + " -> share it to " + $eth.Name + " (ICS)")
         $sharing = ($ics | Where-Object { $_.Name -eq $inet.Name -and $_.Kind -eq "public" }) -and
@@ -343,7 +355,7 @@ function Ensure-Network($state, [switch]$DryRun) {
         if ($have) {
             Ok ("fixed address " + $StaticPc + "/24 on " + $eth.Name)
         } else {
-            Say "  No connection on this PC has internet, so the link uses fixed private addresses:"
+            Say "  The link uses fixed private addresses:"
             Say ("  PC " + $StaticPc + "/24 on '" + $eth.Name + "', Pi " + $StaticPi + "/24 (set on the Pi by pi_setup.sh).")
             Say "  Undo: Robot.bat > [5] > undo."
             if ($DryRun) { Say "  (dry run: not changed)" "DarkGray"; return $eth }
@@ -381,9 +393,13 @@ function Undo-Network($state) {
 # 3. Finding the Pi
 # ------------------------------------------------------------------------------------------------
 function Test-Port22([string]$address, [int]$timeoutMs = 1500) {
-    $c = New-Object System.Net.Sockets.TcpClient
+    $family = [System.Net.Sockets.AddressFamily]::InterNetwork
+    if ($address -match ":") { $family = [System.Net.Sockets.AddressFamily]::InterNetworkV6 }
+    $c = New-Object System.Net.Sockets.TcpClient($family)
     try {
-        $iar = $c.BeginConnect($address, 22, $null, $null)
+        $target = $address
+        if ($address -match ":") { $target = [System.Net.IPAddress]::Parse($address) }
+        $iar = $c.BeginConnect($target, 22, $null, $null)
         if ($iar.AsyncWaitHandle.WaitOne($timeoutMs) -and $c.Connected) { return $true }
         return $false
     } catch { return $false } finally { $c.Close() }
@@ -400,6 +416,20 @@ function Resolve-Mdns([string]$name) {
     return $null
 }
 
+function Find-PiIpv6($eth) {
+    # Before the cable has IPv4 (no sharing, no fixed address yet) the Pi still has an IPv6
+    # link-local address: ask every node on the cable, keep a Raspberry Pi MAC that has SSH
+    & ping.exe -6 -n 2 -w 1000 ("ff02::1%" + $eth.ifIndex) | Out-Null
+    $n = @(Get-NetNeighbor -InterfaceIndex $eth.ifIndex -AddressFamily IPv6 -ErrorAction SilentlyContinue |
+           Where-Object { $_.IPAddress -like "fe80*" -and $_.State -ne "Unreachable" -and (Test-PiMac $_.LinkLayerAddress) })
+    foreach ($x in $n) {
+        $a = $x.IPAddress + "%" + $eth.ifIndex
+        if (Test-Port22 $a) { Ok ("found the Pi over IPv6 at " + $a + " (" + $x.LinkLayerAddress + ")"); return $a }
+        Bad ("a Raspberry Pi is on the cable (" + $x.LinkLayerAddress + ") but SSH does not answer: enabled in Imager? first boot takes 2-3 min")
+    }
+    return $null
+}
+
 function Find-Pi($eth, $state) {
     Head "Finding the Pi"
     $tried = @()
@@ -408,18 +438,22 @@ function Find-Pi($eth, $state) {
         $tried += $last
         if (Test-Port22 $last) { Ok ("the Pi answers at " + $last + " (last time's address)"); return $last }
     }
-    $ip = Resolve-Mdns "robot.local"
+    $mdns = (Get-StateValue $state "hostname" "robot") + ".local"
+    $ip = Resolve-Mdns $mdns
     if ($ip) {
-        if (Test-Port22 $ip) { Ok ("robot.local -> " + $ip + ", SSH answers"); return $ip }
-        Warn ("robot.local -> " + $ip + " but SSH does not answer (SSH not enabled in Imager? still booting?)")
+        if (Test-Port22 $ip) { Ok ($mdns + " -> " + $ip + ", SSH answers"); return $ip }
+        Warn ($mdns + " -> " + $ip + " but SSH does not answer (SSH not enabled in Imager? still booting?)")
     } else {
-        Say "  robot.local does not resolve (mDNS); scanning the cable's subnet"
+        Say ("  " + $mdns + " does not resolve (mDNS); scanning the cable")
     }
+    if ($eth -and (Test-Port22 $StaticPi)) { Ok ("the Pi answers at " + $StaticPi); return $StaticPi }
     if (-not $eth) { return $null }
     $mine = Get-NetIPAddress -InterfaceIndex $eth.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue |
         Where-Object { $_.IPAddress -notlike "169.254.*" } | Select-Object -First 1
     if (-not $mine) {
-        Warn ("'" + $eth.Name + "' has no address yet (only a link-local one): run the network step ([5])")
+        $v6 = Find-PiIpv6 $eth
+        if ($v6) { return $v6 }
+        Warn ("'" + $eth.Name + "' has no address yet (only a link-local one) and no Pi answers over IPv6")
         return $null
     }
     $prefix = Get-Prefix24 $mine.IPAddress
@@ -445,6 +479,8 @@ function Find-Pi($eth, $state) {
             return $a
         }
     }
+    $v6 = Find-PiIpv6 $eth
+    if ($v6) { return $v6 }
     if ($pis.Count -gt 0) {
         Bad ("a Raspberry Pi is on the cable at " + ($pis -join ", ") + " but SSH does not answer: was SSH enabled in Imager? (first boot can take 2-3 minutes)")
     } elseif ($alive.Count -gt 0) {
@@ -512,6 +548,17 @@ function Invoke-PiSetup($state) {
     & ssh.exe -t $HostAlias ("bash /tmp/smc_pi_setup.sh --bundle /tmp/smc.bundle --link " + $mode)
     if ($LASTEXITCODE -ne 0) { Bad "pi_setup.sh reported a problem (see above)"; return $false }
     Set-StateValue $state "setupDone" (Get-Date -Format s)
+    $name = (Invoke-Ssh @("-o", "BatchMode=yes", "-o", "ConnectTimeout=8", $HostAlias, "hostname")).Text.Trim()
+    if ($name) { Set-StateValue $state "hostname" $name }
+    if ($mode -eq "static" -and (Get-StateValue $state "piAddress") -ne $StaticPi) {
+        Say ("  waiting for the Pi at " + $StaticPi + " ...")
+        for ($i = 0; $i -lt 20 -and -not (Test-Port22 $StaticPi); $i++) { Start-Sleep -Seconds 3 }
+        if (Test-Port22 $StaticPi) {
+            Set-StateValue $state "piAddress" $StaticPi
+            Ensure-SshConfig $StaticPi (Get-StateValue $state "user")
+            & ssh.exe -o BatchMode=yes -o ConnectTimeout=8 -o StrictHostKeyChecking=accept-new $HostAlias true 2>&1 | Out-Null
+        } else { Warn ("the Pi does not answer at " + $StaticPi + " yet: [5] > d to check") }
+    }
     Save-State $state
     return $true
 }
