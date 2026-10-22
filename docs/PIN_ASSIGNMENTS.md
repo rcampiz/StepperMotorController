@@ -162,6 +162,20 @@ PC9 <------ EZ (index pulse, EXTI9, CN10-1)
 are the UART pins. Those traces are cut on the encoder board and the on-board pulls keep
 the receiver enabled; the STM32 drives nothing for them.
 
+**The motor's encoder cable to the encoder (receiver) board**, by wire colour, as wired on the
+bench (recorded 2026-10-22):
+
+| Wire | Encoder board terminal | Signal |
+|---|---|---|
+| Red | 3V3 | encoder supply |
+| Black | GND | ground |
+| Brown | EA+ | channel A |
+| Orange | EA- | channel A, complement |
+| Blue | EB+ | channel B |
+| Green | EB- | channel B, complement |
+| Yellow | EZ+ | index |
+| White | EZ- | index, complement |
+
 ### VCP UART (protocol and early debug)
 
 ```
