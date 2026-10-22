@@ -108,3 +108,42 @@ def test_test_mode_drives_the_boards_you_have_with_virtual_ones_in_the_empty_slo
         finally:
             p.shutdown()
             app.processEvents()
+
+
+def test_the_window_tabs_show_a_fleet_board_and_leave_its_motion_to_the_fleet(tmp_path):
+    """Owner 2026-10-22: with the fleet open, the Dashboard, Encoder, Graph and the other tabs
+    showed nothing. They show the board picked on the Fleet page (FL at first): its telemetry and
+    settings, while motion (the Motor panel, scenarios) stays with the Fleet page; closing the
+    fleet lets it go."""
+    from PySide6.QtWidgets import QApplication
+    from smc_gui.main_window import MainWindow
+    app = QApplication.instance() or QApplication([])
+    with vnucleo.boards(4, log_dir=str(tmp_path)) as procs:
+        w = MainWindow()
+        p = w._fleet_panel
+        try:
+            p.set_addresses({r: procs[i][0] for i, r in enumerate(ROLES)},
+                            {"FL": "VN000001", "FR": "VN000002", "RL": "VN000003", "RR": "VN000004"})
+            p.open_fleet()
+            assert pump(app, lambda: p.opened, timeout=15.0), p._status.text()
+            fleet = p._bridge.fleet
+            assert pump(app, lambda: w.fleet_role == "FL")
+            assert w._board is fleet.boards["FL"] and not w._board_owned
+            assert not w._motor_panel.isEnabled()                       # motion: the Fleet page's
+            done = []
+            w._on_job_done = lambda tag, result: done.append(result)
+            w._run_scenario("bringup", {}, "T")
+            assert done and isinstance(done[0], RuntimeError) and "Fleet page" in str(done[0])
+            assert pump(app, lambda: bool(w._board.last_status), timeout=5.0)   # telemetry reaches the tabs
+            subs_fl = len(fleet.boards["FL"]._subs["telemetry"])
+            p.set_view_role("RR")
+            assert pump(app, lambda: w.fleet_role == "RR")
+            assert w._board is fleet.boards["RR"]
+            assert len(fleet.boards["FL"]._subs["telemetry"]) == subs_fl - 1    # the window let FL go
+            p.close_fleet()
+            assert pump(app, lambda: not p.opened, timeout=10.0)
+            assert w._board is None and w.fleet_role is None
+        finally:
+            p.shutdown()
+            w.close()
+            app.processEvents()

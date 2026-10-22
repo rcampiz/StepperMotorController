@@ -114,6 +114,8 @@ class MainWindow(QMainWindow):
 
         self._board: Optional[Board] = None
         self._bridge: Optional[BoardBridge] = None
+        self._board_owned = True             # False: the fleet's board, viewed (not opened or closed here)
+        self.fleet_role: Optional[str] = None   # which of the fleet's boards the tabs show
         self._port_label = ""
         self._remote_mode_sent = False
         # Dead-man token for the board's heartbeat (CLIENT_REVIEW B: liveness is a core
@@ -236,6 +238,8 @@ class MainWindow(QMainWindow):
         # Fleet: four boards (FL/FR/RL/RR) driven as one base, the Pi's role on this PC
         self._fleet_panel = FleetPanel()
         self._fleet_panel.release_port = self._release_port_for_fleet
+        self._fleet_panel.view_board.connect(self.view_fleet_board)
+        self._fleet_panel.view_none.connect(self.stop_viewing_fleet)
         self._right_tabs.addTab(self._fleet_panel, "Fleet")
 
         splitter.addWidget(self._right_tabs)
@@ -449,6 +453,25 @@ class MainWindow(QMainWindow):
         self._liveness.max_age_s = max(0.2, 4 * period_ms / 1000.0)
         board = Board(transport, config, liveness=self._liveness, name=label)
         self._stick_driver = SingleMotorDriver(board, self._controller_panel.stick)
+        bridge = self._wire_bridge(board)
+
+        self._status_bar.showMessage(f"Connecting to {label}...")
+        self._liveness.touch()
+        self._liveness_timer.start()
+        try:
+            board.open()
+        except Exception as e:  # noqa: BLE001 - the port could not be opened
+            bridge.detach()
+            self._liveness_timer.stop()
+            QMessageBox.critical(self, "Connection Error", str(e))
+            self._status_bar.showMessage("Connection failed")
+            return False
+        self._board, self._bridge, self._port_label = board, bridge, label
+        self._board_owned, self.fleet_role = True, None
+        return True
+
+    def _wire_bridge(self, board: Board) -> BoardBridge:
+        """A bridge from `board` to this window's slots."""
         bridge = BoardBridge(board, self)
         bridge.connected.connect(lambda identity: self.connected.emit())
         bridge.session.connect(self._on_session)
@@ -465,24 +488,49 @@ class MainWindow(QMainWindow):
         bridge.response.connect(self._on_response_received)
         bridge.job_done.connect(self._on_job_done)
         bridge.progress.connect(self._display_panel.update_progress)
+        return bridge
 
-        self._status_bar.showMessage(f"Connecting to {label}...")
-        self._liveness.touch()
-        self._liveness_timer.start()
-        try:
-            board.open()
-        except Exception as e:  # noqa: BLE001 - the port could not be opened
-            self._liveness_timer.stop()
-            QMessageBox.critical(self, "Connection Error", str(e))
-            self._status_bar.showMessage("Connection failed")
-            return False
-        self._board, self._bridge, self._port_label = board, bridge, label
+    def view_fleet_board(self, board: Board, role: str) -> bool:
+        """The tabs (Dashboard, Encoder, Graph, Drive...) show one of the fleet's boards (owner
+        2026-10-22). The Fleet page owns it: it is neither opened nor closed here, and what moves
+        the motor (the Motor panel, the Drive tab's controller, scenarios) stays with the Fleet
+        page, so the two never fight over a wheel. Settings and diagnostics work as usual."""
+        if self._board is board:
+            return True
+        if self._board is not None:
+            if self._board_owned:
+                self._status_bar.showMessage(
+                    f"Disconnect {self._port_label} to show the fleet's {role} in the tabs", 8000)
+                return False
+            self.stop_viewing_fleet()
+        self._board, self._bridge = board, self._wire_bridge(board)
+        self._port_label = f"{role} (fleet)"
+        self._board_owned, self.fleet_role = False, role
+        self._stick_driver = None
+        self._controller_panel.set_driving(False)
+        self._on_connected()
+        self._on_session(board.identity)
+        self._motor_panel.setEnabled(False)          # motion: the Fleet page's
+        self._status_bar.showMessage(
+            f"Showing the fleet's {role} in the tabs (motion stays with the Fleet page)", 8000)
         return True
+
+    def stop_viewing_fleet(self) -> None:
+        """Let go of the fleet's board the tabs show (the fleet keeps it)."""
+        if self._board is None or self._board_owned:
+            return
+        self._bridge.detach()
+        self._board = None
+        self._bridge = None
+        self._board_owned, self.fleet_role = True, None
+        self._status_strip.set_link(None)
+        self._status_strip.clear()
+        self.disconnected.emit()
 
     def _release_port_for_fleet(self, address: str) -> bool:
         """Fleet test mode is about to open `address`: if this window's own link holds it,
         disconnect so the fleet can open the port. True when the link was released."""
-        if self._board is None or not address:
+        if self._board is None or not address or not self._board_owned:
             return False
         if self._port_label.strip().upper() != address.strip().upper():
             return False
@@ -493,7 +541,12 @@ class MainWindow(QMainWindow):
     @Slot()
     def _on_disconnect_clicked(self):
         """Stop the board and close the port. The firmware watchdog stays armed: with
-        heartbeats gone the board stops the motor after its timeout."""
+        heartbeats gone the board stops the motor after its timeout. A fleet board the tabs
+        show is only let go: the fleet keeps it."""
+        if not self._board_owned:
+            self.stop_viewing_fleet()
+            self._fleet_panel.set_view_role(None)
+            return
         self._liveness_timer.stop()
         if self._board is not None:
             self._board.close()
@@ -681,6 +734,10 @@ class MainWindow(QMainWindow):
         if self._bridge is None:
             self._on_job_done(tag, RuntimeError("not connected"))
             return
+        if not self._board_owned:
+            self._on_job_done(tag, RuntimeError(
+                f"the Fleet page drives {self.fleet_role}: scenarios run on a board this window connects"))
+            return
         self._bridge.job(lambda job: runner.run_in_job(name, job, params), tag)
 
     @Slot()
@@ -787,8 +844,8 @@ class MainWindow(QMainWindow):
 
     @Slot(object)
     def _on_enc_filter_scpi(self, req: C.Request):
-        """Encoder filter request from the telemetry panel."""
-        self._call(req, "APPLY_ENC_FILTER")
+        """Encoder filter request from the telemetry panel (a query refills its controls)."""
+        self._call(req, "REFRESH_ENC_FILTER" if req.line == C.enc_filter_query().line else "APPLY_ENC_FILTER")
 
     # Rows per band for chunked bitmap transfer. Each band is a separate
     # UI:DISP:BITMAP:RLE command and the Comms task cannot be fed while it receives one,
@@ -1325,7 +1382,7 @@ class MainWindow(QMainWindow):
     def closeEvent(self, event: QCloseEvent):
         """Stop the motor through the fast path, then close. The watchdog stays armed:
         once the port closes the firmware times out and stays stopped."""
-        if self._board is not None and self._board.connected:
+        if self._board is not None and self._board_owned and self._board.connected:
             try:
                 self._board.close(estop=True)
             except Exception as e:  # noqa: BLE001

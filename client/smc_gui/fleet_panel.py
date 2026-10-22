@@ -118,6 +118,10 @@ def _free_port() -> int:
 
 
 class FleetPanel(QWidget):
+    #: which of the fleet's boards the window's other tabs show (board, role), or none
+    view_board = Signal(object, str)
+    view_none = Signal()
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._bridge = FleetBridge(self)
@@ -202,6 +206,13 @@ class FleetPanel(QWidget):
                   self._load_btn, self._save_btn):
             btns.addWidget(b)
         btns.addStretch()
+        btns.addWidget(QLabel("Show in the tabs:"))
+        self._view = QComboBox()
+        self._view.addItems(list(ROLES) + ["none"])
+        self._view.setToolTip("Which board the Dashboard, Encoder, Graph and the other tabs show while the "
+                              "fleet is open (motion stays here)")
+        self._view.currentTextChanged.connect(self._on_view_changed)
+        btns.addWidget(self._view)
         self._status = QLabel("closed"); self._status.setStyleSheet("color: %s;" % theme.MUTED)
         btns.addWidget(self._status)
         g.addLayout(btns, 5, 0, 1, 10)
@@ -479,7 +490,29 @@ class FleetPanel(QWidget):
     def _on_close_clicked(self):
         self._drive_on.setChecked(False)
         self.abort_mission()
+        self.view_none.emit()                    # the tabs let go before the boards close
         self._bridge.close()
+
+    # --- which board the window's other tabs show ------------------------------------------
+    def view_role(self) -> Optional[str]:
+        role = self._view.currentText()
+        return role if role in ROLES else None
+
+    def set_view_role(self, role: Optional[str]) -> None:
+        self._view.setCurrentText(role if role in ROLES else "none")
+
+    def _show_in_tabs(self) -> None:
+        fleet = self._bridge.fleet
+        role = self.view_role()
+        if fleet is None:
+            return
+        if role is None or role not in fleet.boards:
+            self.view_none.emit()
+        else:
+            self.view_board.emit(fleet.boards[role], role)
+
+    def _on_view_changed(self, _text: str) -> None:
+        self._show_in_tabs()
 
     def close_fleet(self):
         self._on_close_clicked()
@@ -515,6 +548,7 @@ class FleetPanel(QWidget):
         else:
             self._status.setText("open: four boards")
         self._set_open_state(True)
+        self._show_in_tabs()                     # the other tabs show the chosen board (FL at first)
 
     @Slot(str)
     def _on_open_failed(self, why: str):
@@ -720,6 +754,7 @@ class FleetPanel(QWidget):
 
     def shutdown(self):
         self._tick.stop()
+        self.view_none.emit()
         fleet = self._bridge.fleet
         if fleet is not None:
             self._bridge.fleet = None

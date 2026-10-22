@@ -35,18 +35,22 @@ class BoardBridge(QObject):
     def __init__(self, board: Board, parent=None):
         super().__init__(parent)
         self.board = board
-        board.subscribe("connected", self.connected.emit)
-        board.subscribe("session", self.session.emit)
-        board.subscribe("telemetry", lambda data, t: self.telemetry.emit(data))
-        board.subscribe("event", self._on_event)
-        board.subscribe("event_gap", self.event_gap.emit)
-        board.subscribe("reset", self.board_reset.emit)
-        board.subscribe("heartbeat", self.heartbeat.emit)
-        board.subscribe("heartbeat_lost", lambda n: self.heartbeat_lost.emit())
-        board.subscribe("liveness_stale", self.liveness_stale.emit)
-        board.subscribe("estop", self.estop_result.emit)
-        board.subscribe("link_lost", self.link_lost.emit)
-        board.subscribe("error", self.error.emit)
+        self._subs = [
+            ("connected", self.connected.emit), ("session", self.session.emit),
+            ("telemetry", lambda data, t: self.telemetry.emit(data)), ("event", self._on_event),
+            ("event_gap", self.event_gap.emit), ("reset", self.board_reset.emit),
+            ("heartbeat", self.heartbeat.emit), ("heartbeat_lost", lambda n: self.heartbeat_lost.emit()),
+            ("liveness_stale", self.liveness_stale.emit), ("estop", self.estop_result.emit),
+            ("link_lost", self.link_lost.emit), ("error", self.error.emit),
+        ]
+        for kind, fn in self._subs:
+            board.subscribe(kind, fn)
+
+    def detach(self) -> None:
+        """Stop hearing the board (one the window views but does not own: the fleet's)."""
+        for kind, fn in self._subs:
+            self.board.unsubscribe(kind, fn)
+        self._subs = []
 
     def _on_event(self, ev: Event) -> None:
         data = {"status": "%04X" % ev.status if ev.status is not None else "?"}

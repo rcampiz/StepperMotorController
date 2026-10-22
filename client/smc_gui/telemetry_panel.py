@@ -188,14 +188,14 @@ class TelemetryPanel(QWidget):
         self._filt_ema_check = QCheckBox("EMA")
         self._filt_ema_check.setStyleSheet(
             "QCheckBox { color: #00ccff; font-weight: bold; }")
-        self._filt_ema_check.setChecked(True)
+        self._filt_ema_check.setChecked(False)
         layout.addWidget(self._filt_ema_check, 1, 0)
         lbl_alpha = QLabel("Alpha:")
         lbl_alpha.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         layout.addWidget(lbl_alpha, 1, 1)
         self._filt_ema_alpha = QSpinBox()
         self._filt_ema_alpha.setRange(0, 255)
-        self._filt_ema_alpha.setValue(200)
+        self._filt_ema_alpha.setValue(100)
         self._filt_ema_alpha.setFixedWidth(70)
         self._filt_ema_alpha.setFont(QFont("Consolas", 9))
         layout.addWidget(self._filt_ema_alpha, 1, 2)
@@ -204,7 +204,7 @@ class TelemetryPanel(QWidget):
         self._filt_sma_check = QCheckBox("SMA")
         self._filt_sma_check.setStyleSheet(
             "QCheckBox { color: #66ff99; font-weight: bold; }")
-        self._filt_sma_check.setChecked(True)
+        self._filt_sma_check.setChecked(False)
         layout.addWidget(self._filt_sma_check, 2, 0)
         lbl_win = QLabel("Window:")
         lbl_win.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
@@ -224,7 +224,7 @@ class TelemetryPanel(QWidget):
         self._filt_pade_check = QCheckBox("Padé")
         self._filt_pade_check.setStyleSheet(
             "QCheckBox { color: #ffcc00; font-weight: bold; }")
-        self._filt_pade_check.setChecked(True)
+        self._filt_pade_check.setChecked(False)
         self._filt_pade_check.setToolTip(
             "Padé [1/1] approximant lag compensation.\n"
             "Removes averaging blur from EMA/SMA output.")
@@ -259,7 +259,7 @@ class TelemetryPanel(QWidget):
         self._filt_biquad_check = QCheckBox("Butterworth")
         self._filt_biquad_check.setStyleSheet(
             "QCheckBox { color: #ff9966; font-weight: bold; }")
-        self._filt_biquad_check.setChecked(True)
+        self._filt_biquad_check.setChecked(False)
         self._filt_biquad_check.setToolTip(
             "2nd-order Butterworth IIR low-pass filter.\n"
             "Removes high-frequency noise with flat passband.")
@@ -269,7 +269,7 @@ class TelemetryPanel(QWidget):
         layout.addWidget(lbl_bq_cut, 5, 1)
         self._filt_biquad_cutoff = QSpinBox()
         self._filt_biquad_cutoff.setRange(1, 50)
-        self._filt_biquad_cutoff.setValue(5)
+        self._filt_biquad_cutoff.setValue(10)
         self._filt_biquad_cutoff.setSuffix(" Hz")
         self._filt_biquad_cutoff.setFixedWidth(80)
         self._filt_biquad_cutoff.setFont(QFont("Consolas", 9))
@@ -339,7 +339,28 @@ class TelemetryPanel(QWidget):
         self._filt_holt_beta.setToolTip("Trend smoothing (0-255, lower = smoother trend)")
         layout.addWidget(self._filt_holt_beta, 9, 2)
 
-        # Row 10: Buttons
+        # Row 10: the tracking observer (every encoder sample): the firmware's default and the
+        # best of the chains measured (2026-10-21: 32 ms lag, 0.39 RPM noise at 10 Hz, alone)
+        self._filt_obs_check = QCheckBox("Observer (best)")
+        self._filt_obs_check.setStyleSheet("QCheckBox { color: #ff2975; font-weight: bold; }")
+        self._filt_obs_check.setChecked(True)
+        self._filt_obs_check.setToolTip(
+            "Tracking observer on every encoder sample, in place of the measurement window.\n"
+            "Alone at 10 Hz it measured the least lag for its noise (the firmware's default).")
+        layout.addWidget(self._filt_obs_check, 10, 0)
+        lbl_obs = QLabel("Bandwidth:")
+        lbl_obs.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.addWidget(lbl_obs, 10, 1)
+        self._filt_obs_bw = QSpinBox()
+        self._filt_obs_bw.setRange(1, 200)
+        self._filt_obs_bw.setValue(10)
+        self._filt_obs_bw.setSuffix(" Hz")
+        self._filt_obs_bw.setFixedWidth(80)
+        self._filt_obs_bw.setFont(QFont("Consolas", 9))
+        self._filt_obs_bw.setToolTip("Observer bandwidth (lower = smoother, more lag; 10 Hz measured best)")
+        layout.addWidget(self._filt_obs_bw, 10, 2)
+
+        # Row 11: Buttons
         btn_row = QHBoxLayout()
         self._filt_apply_btn = QPushButton("Apply")
         self._filt_apply_btn.setFixedWidth(70)
@@ -357,7 +378,7 @@ class TelemetryPanel(QWidget):
         btn_row.addWidget(self._filt_reset_btn)
 
         btn_row.addStretch()
-        layout.addLayout(btn_row, 10, 0, 1, 4)
+        layout.addLayout(btn_row, 11, 0, 1, 4)
 
         layout.setColumnStretch(3, 1)
         return group
@@ -377,6 +398,7 @@ class TelemetryPanel(QWidget):
                                 self._filt_notch_center.value(), self._filt_notch_q.value()))
         emit(C.enc_filter_holt(self._filt_holt_check.isChecked(), self._filt_holt_alpha.value(),
                                self._filt_holt_beta.value()))
+        emit(C.enc_filter_observer(self._filt_obs_check.isChecked(), self._filt_obs_bw.value()))
         emit(C.enc_filter_rate(self._filt_rate_spin.value()))
 
     @Slot()
@@ -387,47 +409,35 @@ class TelemetryPanel(QWidget):
 
     @Slot()
     def _on_filter_reset(self):
-        """Reset filter config to defaults."""
+        """The firmware's defaults (the 10 Hz tracking observer alone, the best measured):
+        the board resets its chain and the controls read it back."""
         self.enc_filter_command.emit(C.enc_filter_reset())
-        # Reset local controls to defaults
-        self._filt_window_spin.setValue(40)
-        self._filt_rate_spin.setValue(1000)
-        self._filt_ema_check.setChecked(True)
-        self._filt_ema_alpha.setValue(200)
-        self._filt_sma_check.setChecked(True)
-        self._filt_sma_window.setValue(8)
-        self._filt_pade_check.setChecked(True)
-        self._filt_pade_gain.setValue(25)
-        self._filt_pade_max.setValue(50)
-        self._filt_biquad_check.setChecked(True)
-        self._filt_biquad_cutoff.setValue(5)
-        self._filt_notch_check.setChecked(False)
-        self._filt_notch_center.setValue(25)
-        self._filt_notch_q.setValue(50)
-        self._filt_holt_check.setChecked(False)
-        self._filt_holt_alpha.setValue(51)
-        self._filt_holt_beta.setValue(13)
+        self.update_filter_config({})                 # the defaults below, until the board answers
+        self.enc_filter_command.emit(C.enc_filter_query())
 
     @Slot(dict)
     def update_filter_config(self, data: dict):
         """Update filter controls from firmware query response."""
         self._filt_window_spin.setValue(data.get("meas_window_ms", 40))
         self._filt_rate_spin.setValue(data.get("sample_rate_hz", 1000))
-        self._filt_ema_check.setChecked(data.get("ema_enabled", True))
-        self._filt_ema_alpha.setValue(data.get("ema_alpha", 200))
-        self._filt_sma_check.setChecked(data.get("sma_enabled", True))
+        # defaults: the firmware's (the 10 Hz tracking observer alone)
+        self._filt_ema_check.setChecked(data.get("ema_enabled", False))
+        self._filt_ema_alpha.setValue(data.get("ema_alpha", 100))
+        self._filt_sma_check.setChecked(data.get("sma_enabled", False))
         self._filt_sma_window.setValue(data.get("sma_window", 8))
-        self._filt_pade_check.setChecked(data.get("pade_enabled", True))
+        self._filt_pade_check.setChecked(data.get("pade_enabled", False))
         self._filt_pade_gain.setValue(data.get("pade_gain", 25))
         self._filt_pade_max.setValue(data.get("pade_max_corr", 50))
-        self._filt_biquad_check.setChecked(data.get("biquad_enabled", True))
-        self._filt_biquad_cutoff.setValue(data.get("biquad_cutoff_hz", 5))
+        self._filt_biquad_check.setChecked(data.get("biquad_enabled", False))
+        self._filt_biquad_cutoff.setValue(data.get("biquad_cutoff_hz", 10))
         self._filt_notch_check.setChecked(data.get("notch_enabled", False))
         self._filt_notch_center.setValue(data.get("notch_center_hz", 25))
         self._filt_notch_q.setValue(data.get("notch_q10", 50))
         self._filt_holt_check.setChecked(data.get("holt_enabled", False))
         self._filt_holt_alpha.setValue(data.get("holt_alpha", 51))
         self._filt_holt_beta.setValue(data.get("holt_beta", 13))
+        self._filt_obs_check.setChecked(data.get("observer_enabled", True))
+        self._filt_obs_bw.setValue(data.get("observer_bw_hz", 10) or 10)
 
     def _create_status_group(self) -> QGroupBox:
         """Create status indicators group."""

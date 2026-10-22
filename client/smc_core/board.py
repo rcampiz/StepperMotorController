@@ -311,6 +311,12 @@ class Board:
             raise ValueError(f"unknown board event {kind!r}")
         self._subs.setdefault(kind, []).append(fn)
 
+    def unsubscribe(self, kind: str, fn: Callable) -> None:
+        """Take back a subscribe(kind, fn) (the same fn); nothing if it is not there."""
+        subs = self._subs.get(kind, [])
+        if fn in subs:
+            subs.remove(fn)
+
     def _emit(self, kind: str, *args) -> None:
         for fn in self._subs.get(kind, ()):
             try:
