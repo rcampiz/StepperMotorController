@@ -48,7 +48,7 @@ python -m smc_cli test run --sim sysid -p type='"step"' -p speed=800
 python -m smc_cli fleet check --config fleet.json      # docs/MULTI_BOARD.md
 python -m smc_cli fleet drive --config fleet.json --vx 0.2 --seconds 2
 python -m smc_cli fleet estop --config fleet.json
-python -m pytest -q tests
+python -m pytest -q tests        # on every core (pytest-xdist, the dev extra): ~20 s; -n 0 for one process
 ```
 
 ## Starting the GUI on a new machine (a PC or the Raspberry Pi)

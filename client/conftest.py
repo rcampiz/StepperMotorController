@@ -19,3 +19,28 @@ def qapp():
     QtWidgets = pytest.importorskip("PySide6.QtWidgets")
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     yield app
+
+
+@pytest.fixture(autouse=True)
+def _delete_windows():
+    """Every test's windows are deleted when it ends (after its own fixtures' teardown). Closing
+    only hid them: they stayed alive with their timers firing, and every app-wide restyle went
+    through all of them (the light-mode test took 35 s at the end of the GUI tests, 2026-10-22)."""
+    yield
+    if "PySide6.QtWidgets" not in sys.modules:
+        return
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance()
+    if app is None:
+        return
+    # Only the GUI's own windows (a main window, a panel shown on its own): pyqtgraph's menus are
+    # parentless windows too but belong to Python objects, and Qt aborts when one is deleted
+    # under them; a menu inside one of ours goes with it
+    from PySide6.QtWidgets import QMainWindow
+    for w in app.topLevelWidgets():
+        if w.parent() is None and (isinstance(w, QMainWindow) or type(w).__module__.startswith("smc_gui")):
+            w.close()
+            w.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    app.processEvents()

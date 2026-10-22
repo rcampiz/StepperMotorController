@@ -85,6 +85,13 @@ Releases up to 0.5.0 were shared with the firmware: see the root CHANGELOG.md.
   closing the fleet hands them back to their menus (`smc_core.kinematics.indicator`).
 
 ### Changed
+- Tests run on every core by default (pytest-xdist in the dev extra, `-n auto --dist load`):
+  the client suite in ~25 s instead of ~200 s, every test still run. Each test's GUI windows are
+  deleted when it ends (closing only hid them: they piled up with their timers running, and the
+  light-mode test, restyling all of them, took 35 s).
+- A PS4 / PS5 pad over Bluetooth reports its battery: SDL is asked for the pads' full Bluetooth
+  reports (it read "empty" from the short ones). The GUI says the band SDL gives ("battery low,
+  20 % or less"; SDL2 has no percentage).
 - The `gui` extra and requirements.txt take PySide6-Essentials (QtCore / QtGui / QtWidgets /
   QtSvg, all the GUI uses; ~85 MB on the Pi against ~265 MB for the full PySide6, which still
   satisfies them).
