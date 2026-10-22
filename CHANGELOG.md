@@ -67,6 +67,14 @@ tags.
   20 Hz cutoff came back as 10 Hz after a restart (bench 2026-10-21: 20 Hz now survives one).
 
 ### Changed
+- LCD saver: with the title, a pixel-art stepper hovers over the scene: the bench's StepperOnline
+  23HS22-2804-ME1K from behind (light caps, black body, the encoder's raised cover on the rear
+  cap with its green / brown / yellow wires through their clip), drawn after the owner's CAD
+  renders, 78 x 87 at the panel's resolution, cyan and hot-pink rim lights. It bobs on the clock
+  (Hotline Miami's hover, +-3 px over 1.6 s) with a shadow on the floor that narrows as it rises,
+  fades with the title, and repaints on the frames the title leaves. scripts/lcd/gen_motor_sprite.py
+  makes the sprite; scripts/lcd/step_sprite.py renders one from a STEP file instead (cascadio,
+  trimesh) for when the manufacturer's model is to hand.
 - LCD saver: the bands follow the clock (IScreen::setNowMs, from the ScreenManager) at 1.5x the
   indicator's pace, so they keep their speed while the title slows the frames; the title's box
   repaints every other frame again (every frame held the whole saver to ~11 frames/s; now 13-15

@@ -7,6 +7,7 @@
 #include "ui/theme.hpp"
 #include "ui/display_scratch.hpp"
 #include "graphics/primitives/primitives.hpp"
+#include "ui/screens/saver_motor_sprite.hpp"
 #include "harness/defs/harness_l3_l4.hpp"
 #include "harness/pins/protocol_version.hpp"
 #include <string.h>
@@ -492,6 +493,18 @@ constexpr int16_t EXIT_PLATE_L = (W - 24 * EXIT_CHAR_W) / 2 - 6, EXIT_PLATE_R = 
 static_assert(EXIT_PLATE_T > HORIZON_MIN + HORIZON_SPAN, "the exit hint sits on the floor");
 constexpr uint16_t EXIT_INK[2] = {rgb(255, 60, 200), rgb(235, 240, 255)};
 
+// The hovering motor: the sprite, centred above the exit hint, bobbing MOTOR_BOB px over
+// MOTOR_PERIOD_MS, its shadow on the floor narrowing as it rises
+constexpr int16_t MOTOR_SCALE = 1;                     // the sprite is drawn at the panel's resolution
+constexpr int16_t MOTOR_W = MotorSprite::W * MOTOR_SCALE, MOTOR_H = MotorSprite::H * MOTOR_SCALE;
+constexpr int16_t MOTOR_X = (W - MOTOR_W) / 2;
+constexpr int16_t MOTOR_BOB = 3;
+constexpr uint32_t MOTOR_PERIOD_MS = 1600;
+constexpr int16_t MOTOR_SHADOW_Y = EXIT_PLATE_T - 5;            // the shadow's centre row
+constexpr int16_t MOTOR_Y = MOTOR_SHADOW_Y - 6 - MOTOR_BOB - MOTOR_H;   // the sprite's top at rest
+constexpr int16_t MOTOR_ROWS_T = MOTOR_Y - MOTOR_BOB, MOTOR_ROWS_B = MOTOR_SHADOW_Y + 3;
+static_assert(MOTOR_ROWS_T > TITLE_Y_MIN + TITLE_Y_SPAN + 2 * BOX_HH, "the motor clears the title's box");
+
 // The title as last prepared (synthPrepareTitle): the box repaint and the band rows that
 // cross it between repaints compose the same pixels from it
 struct TitleFrame {
@@ -713,7 +726,40 @@ void SaverScreen::composeUpper(int16_t y, int16_t xa, int16_t xb, uint8_t* buf) 
             put(x, c);
         }
     }
+    overlayMotor(y, xa, xb, buf);
     m_vhs.row(y).apply(buf, xa, xa, xb);
+}
+
+void SaverScreen::overlayMotor(int16_t y, int16_t xa, int16_t xb, uint8_t* buf) const
+{
+    if (!m_motorShown || y < MOTOR_ROWS_T || y > MOTOR_ROWS_B) return;
+    auto put = [&](int16_t x, uint16_t c) {
+        buf[(x - xa) * 2] = static_cast<uint8_t>(c >> 8);
+        buf[(x - xa) * 2 + 1] = static_cast<uint8_t>(c & 0xFF);
+    };
+    auto under = [&](int16_t x) { return static_cast<uint16_t>((buf[(x - xa) * 2] << 8) | buf[(x - xa) * 2 + 1]); };
+    // The shadow on the floor: an ellipse, narrower and fainter the higher the motor is
+    const int16_t dy = static_cast<int16_t>(y - MOTOR_SHADOW_Y);
+    if (y > m_horizon && dy >= -2 && dy <= 2) {
+        const int32_t rx = 34 + 3 * m_motorBob;                    // bob > 0: lower, wider
+        const int32_t span = rx * (3 - (dy < 0 ? -dy : dy)) / 3;
+        const int dark = (110 + 12 * m_motorBob) * static_cast<int>(m_motorAlpha) / 256;
+        for (int16_t x = static_cast<int16_t>(W / 2 - span); x <= W / 2 + span; x++) {
+            if (x >= xa && x <= xb) put(x, mix(under(x), 0, dark));
+        }
+    }
+    // The sprite at MOTOR_SCALE, faded with the title
+    const int16_t top = static_cast<int16_t>(MOTOR_Y + m_motorBob);
+    if (y < top || y >= top + MOTOR_H) return;
+    const int16_t sy = static_cast<int16_t>((y - top) / MOTOR_SCALE);
+    const int16_t a = xa > MOTOR_X ? xa : MOTOR_X;
+    const int16_t b = xb < MOTOR_X + MOTOR_W - 1 ? xb : static_cast<int16_t>(MOTOR_X + MOTOR_W - 1);
+    for (int16_t x = a; x <= b; x++) {
+        const uint8_t i = MotorSprite::at(static_cast<int16_t>((x - MOTOR_X) / MOTOR_SCALE), sy);
+        if (i == 0) continue;
+        const uint16_t c = MotorSprite::PALETTE[i];
+        put(x, m_motorAlpha >= 256 ? c : mix(under(x), c, m_motorAlpha));
+    }
 }
 
 void SaverScreen::synthUpperRows(Services::ICanvas& lcd, int16_t first, int16_t last)
@@ -766,6 +812,7 @@ void SaverScreen::floorRow(int16_t y, uint8_t* row) const
             }
         }
     }
+    overlayMotor(y, 0, W - 1, row);
     m_vhs.row(y).apply(row, 0, 0, W - 1);
     // The exit hint over the floor and the bands: a dark plate (the floor seen through it),
     // the lines in the medium font
@@ -870,6 +917,7 @@ void SaverScreen::renderSynthwave(Services::ICanvas& lcd)
     if (!m_synthReady || m_frame >= SCENE_FRAMES) {
         m_seedScene = nextRandom();
         synthNewScene();
+        m_motorShown = false;
         m_vhs.reset();
         m_vhs.step(m_nowMs);
         synthFullPaint(lcd);
@@ -902,6 +950,17 @@ void SaverScreen::renderSynthwave(Services::ICanvas& lcd)
     if ((m_frame & 1) == 0) {
         m_stripe = static_cast<uint8_t>((m_stripe + 8) % 9);   // bands slide down one row
         synthSunBox(lcd);
+        // The motor hovers with the title (its alpha), bobbing on the clock; its rows only
+        // when it moved, faded or went
+        const bool show = m_titleAlpha > 0;
+        const int16_t bob = show ? sinApprox(static_cast<int32_t>(m_nowMs % MOTOR_PERIOD_MS * 1024 / MOTOR_PERIOD_MS),
+                                             MOTOR_BOB) : 0;
+        if (show != m_motorShown || (show && (bob != m_motorBob || m_titleAlpha != m_motorAlpha))) {
+            m_motorShown = show;
+            m_motorBob = bob;
+            m_motorAlpha = m_titleAlpha;
+            synthRows(lcd, MOTOR_ROWS_T, MOTOR_ROWS_B);
+        }
     }
     // The floor rows a grid line left or reached, in runs (it was the whole floor every frame,
     // 40-80 KB: bench 2026-10-21, 8 frames/s while the title showed)

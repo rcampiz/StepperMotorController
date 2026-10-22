@@ -14,7 +14,9 @@
  *    cut, rocks and bobs like that game's menu for 10 s and fades out. Per frame: the floor rows
  *    a grid line left or reached (a floor row is one colour or one line, its verticals fixed),
  *    the sun's box every other frame, the title's box while it shows, and the rows the bands
- *    left and reached. At the bottom, on a dark plate, what it is and the way out ("SCREEN
+ *    left and reached. With the title, a pixel-art NEMA23 with its encoder hovers over the floor
+ *    (Hotline Miami's bob, a shadow that breathes with its height; owner 2026-10-22), repainted
+ *    on the frames the title leaves. At the bottom, on a dark plate, what it is and the way out ("SCREEN
  *    SAVER" / "PRESS ANY BUTTON TO EXIT": someone walking up to the panel may not know).
  *  - HOTLINE: a diagonal stripe band and a blocky SMC card with chromatic aberration,
  *    relaid every 2 s, with VHS glitch slices in between.
@@ -78,6 +80,9 @@ private:
     Graphics::VhsBands m_vhs;              // the tracking bands, on the clock
     uint32_t m_nowMs = 0;
     Services::ICanvas* m_canvas = nullptr; // for the exit hint's glyphs
+    bool m_motorShown = false;             // the hovering motor as drawn: shown, its bob, its alpha
+    int16_t m_motorBob = 0;
+    uint16_t m_motorAlpha = 0;
     void synthNewScene();
     void synthFullPaint(Services::ICanvas& lcd);
     bool floorLine(int16_t r, float phase) const;          // floor row r (1 = under the horizon) is a grid line
@@ -90,6 +95,8 @@ private:
     /// Columns [xa, xb] of sky row y into buf (big-endian RGB565, buf[0] = column xa): the
     /// scene by runs, the stars, the title as last prepared, the bands
     void composeUpper(int16_t y, int16_t xa, int16_t xb, uint8_t* buf) const;
+    /// The hovering motor and its shadow over columns [xa, xb] of row y (buf[0] = column xa)
+    void overlayMotor(int16_t y, int16_t xa, int16_t xb, uint8_t* buf) const;
     void synthUpperRows(Services::ICanvas& lcd, int16_t first, int16_t last);   // sky rows, all of each
     uint16_t synthUpper(int16_t x, int16_t y) const;   // sky, sun, mountains, horizon line
     void renderSynthwave(Services::ICanvas& lcd);

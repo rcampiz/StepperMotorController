@@ -235,6 +235,7 @@
         "server/layers/L3_services/ui/screens/motion_screen.hpp",
         "server/layers/L3_services/ui/screens/recovery_screen.cpp",
         "server/layers/L3_services/ui/screens/recovery_screen.hpp",
+        "server/layers/L3_services/ui/screens/saver_motor_sprite.hpp",
         "server/layers/L3_services/ui/screens/saver_screen.cpp",
         "server/layers/L3_services/ui/screens/saver_screen.hpp",
         "server/layers/L3_services/ui/screens/screen_care_screen.cpp",
