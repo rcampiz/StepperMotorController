@@ -6,10 +6,10 @@
 .DESCRIPTION
     First run, or menu [5]: the one-time setup
       1. an SSH key (~/.ssh/id_ed25519) and a "Host robot" entry in ~/.ssh/config
-      2. the network link on the wired adapter: Internet Connection Sharing from the adapter that
-         has internet (the Pi gets DHCP and internet through the cable), or with no internet,
-         fixed addresses PC 192.168.50.1/24, Pi 192.168.50.2/24. Asked first; admin rights are
-         asked for (UAC) only for this step. Undo from [5].
+      2. the network link on the wired adapter: fixed addresses PC 192.168.50.1/24, Pi
+         192.168.50.2/24 (the default), or from [5] > l, Internet Connection Sharing from the
+         adapter that has internet (the Pi gets DHCP and internet through the cable). Asked
+         first; admin rights are asked for (UAC) only for this step. Undo from [5].
       3. finding the Pi: robot.local (mDNS), then the link's subnet and the ARP table for
          Raspberry Pi MAC prefixes
       4. the key copied to the Pi if needed (its password once), this PC's repository sent to the
@@ -317,18 +317,11 @@ function Ensure-Network($state, [switch]$DryRun) {
     $inet = Get-InternetAdapter $eth.Name
     $mode = Get-StateValue $state "mode"
     $ics = Get-IcsState
-    $pref = Get-StateValue $state "linkPreference"
-    if ($inet -and -not $pref -and -not $DryRun) {
-        Say ("  This PC has internet on '" + $inet.Name + "'. How should the cable to the Pi be addressed?")
-        Say ("   [1] fixed addresses: PC " + $StaticPc + ", Pi " + $StaticPi + " (best when the Pi has its own internet, e.g. Wi-Fi)")
-        Say ("   [2] share this PC's internet with the Pi (Internet Connection Sharing; the Pi gets DHCP)")
-        $n = ""
-        while ($n -notin @("1", "2")) { $n = (Read-Host "  Choose").Trim() }
-        $pref = "ics"
-        if ($n -eq "1") { $pref = "static" }
-        Set-StateValue $state "linkPreference" $pref
-    }
-    if ($pref -eq "static") { $inet = $null }
+    # Fixed addresses unless sharing was chosen ([5] > l): they need no Windows service, survive
+    # reboots and updates, and the Pi has its own internet over Wi-Fi
+    $pref = Get-StateValue $state "linkPreference" "static"
+    if ($pref -ne "ics") { $inet = $null }
+    elseif (-not $inet) { Warn "sharing was chosen, but no connection on this PC has internet: fixed addresses instead" }
     if ($inet) {
         Ok ("internet on: " + $inet.Name + " -> share it to " + $eth.Name + " (ICS)")
         $sharing = ($ics | Where-Object { $_.Name -eq $inet.Name -and $_.Kind -eq "public" }) -and
@@ -361,7 +354,7 @@ function Ensure-Network($state, [switch]$DryRun) {
         } else {
             Say "  The link uses fixed private addresses:"
             Say ("  PC " + $StaticPc + "/24 on '" + $eth.Name + "', Pi " + $StaticPi + "/24 (set on the Pi by pi_setup.sh).")
-            Say "  Undo: Robot.bat > [5] > undo."
+            Say "  Undo: Robot.bat > [5] > undo. To share this PC's internet with the Pi instead: [5] > l."
             if ($DryRun) { Say "  (dry run: not changed)" "DarkGray"; return $eth }
             if (-not (Ask ("Give '" + $eth.Name + "' the address " + $StaticPc + "?"))) { Warn "not changed"; return $eth }
             if (-not (Invoke-Elevated "static-enable" "" $eth.Name)) { return $null }
@@ -371,6 +364,25 @@ function Ensure-Network($state, [switch]$DryRun) {
     }
     if (-not $DryRun) { Save-State $state }
     return $eth
+}
+
+function Switch-Link {
+    $state = Load-State
+    $pref = Get-StateValue $state "linkPreference" "static"
+    if ($pref -eq "ics") {
+        $next = "static"
+        $what = "fixed addresses (PC " + $StaticPc + ", Pi " + $StaticPi + "; the Pi uses its own internet)"
+    } else {
+        $next = "ics"
+        $what = "sharing this PC's internet with the Pi (Internet Connection Sharing; the Pi gets DHCP)"
+    }
+    Say ("  The link now: " + $pref + ". Switch to " + $what + "?")
+    if (-not (Ask "Switch? (the current link is undone first, then the setup runs again)" $false)) { return }
+    if (Get-StateValue $state "mode") { Undo-Network $state }
+    $state = Load-State
+    Set-StateValue $state "linkPreference" $next
+    Save-State $state
+    Run-Setup | Out-Null
 }
 
 function Undo-Network($state) {
@@ -710,11 +722,12 @@ function Show-Menu {
             "3" { Open-RemoteGui }
             "4" { Open-VsCode }
             "5" {
-                Say "   [s] setup again   [d] diagnostics only   [u] undo the network changes"
+                Say "   [s] setup again   [d] diagnostics only   [u] undo the network changes   [l] switch the link (fixed / shared internet)"
                 $s = (Read-Host "  Choose").Trim().ToLower()
                 if ($s -eq "s") { Run-Setup | Out-Null }
                 elseif ($s -eq "d") { Run-Diagnose }
                 elseif ($s -eq "u") { Undo-Network (Load-State) }
+                elseif ($s -eq "l") { Switch-Link }
             }
             "q" { return }
             default { }

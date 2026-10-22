@@ -67,16 +67,16 @@ then the menu shows:
    block in `~/.ssh/config` between `# >>> robot` and `# <<< robot` markers, rewritten with the
    Pi's address on every setup (nothing else in the file is touched).
 2. **The network link,** on the wired adapter with a link light (asked only if there are two).
-   It asks before changing anything:
-   When the PC has internet on another adapter it asks which of the two (and remembers):
-   - **Share the PC's internet:** Windows Internet Connection Sharing
-     from that adapter to the cable, through the `HNetCfg.HNetShare` COM interface (the one the
-     adapter's Properties > Sharing tab uses). Windows gives the cable `192.168.137.1` and hands
-     the Pi an address by DHCP and internet through the cable. Needs administrator rights
-     (Windows asks, for this step only).
-   - **Fixed addresses** (always, when the PC has no internet; the better choice when the Pi has
-     its own internet over Wi-Fi): PC `192.168.50.1/24` on the cable, Pi `192.168.50.2/24` (set
-     on the Pi by `pi_setup.sh`).
+   It asks before changing anything, and needs administrator rights (Windows asks, for this
+   step only):
+   - **Fixed addresses** (the default, no question): PC `192.168.50.1/24` on the cable, Pi
+     `192.168.50.2/24` (set on the Pi by `pi_setup.sh`). No Windows service involved, so it
+     survives reboots and updates; the Pi gets its internet over Wi-Fi.
+   - **Share the PC's internet** (`[5] > l` switches to it, and back): Windows Internet
+     Connection Sharing from the adapter with internet to the cable, through the
+     `HNetCfg.HNetShare` COM interface (the one the adapter's Properties > Sharing tab uses).
+     Windows gives the cable `192.168.137.1` and hands the Pi an address by DHCP and internet
+     through the cable. For a Pi with no Wi-Fi.
 3. **Finding the Pi:** the last known address, `<hostname>.local` (mDNS: `robot.local` until
    the Pi's own name is known; it also finds the Pi over Wi-Fi), `192.168.50.2`, then a ping
    sweep of the cable's subnet and the ARP table for Raspberry Pi MAC prefixes (B8:27:EB,
@@ -129,7 +129,8 @@ then the menu shows:
 - **[4] VS Code on the Pi:** `code --remote ssh-remote+robot /home/<user>/StepperMotorController`
   (offers the Remote - SSH extension if it is missing).
 - **[5] Re-run setup / diagnostics:** `s` setup again, `d` diagnostics only (the link, sharing,
-  the Pi's OS, addresses and boards), `u` undo the network changes.
+  the Pi's OS, addresses and boards), `u` undo the network changes, `l` switch the link between
+  fixed addresses and sharing the PC's internet (undoes the current one, then runs the setup).
 
 The launcher remembers what it set up in `%LOCALAPPDATA%\StepperMotorController\robot_link.json`
 (the adapter, the link mode, the Pi's address and username).
