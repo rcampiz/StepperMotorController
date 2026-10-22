@@ -133,8 +133,10 @@ then the menu shows:
 **The menu:**
 
 - **[1] Terminal on the Pi:** Windows Terminal with `ssh robot`.
-- **[2] Pi desktop:** the VNC viewer on the Pi (RealVNC Viewer or TigerVNC, whichever is
-  installed; offers `winget install RealVNC.VNCViewer` if neither is). Log in with the Pi's
+- **[2] Pi desktop:** the VNC viewer on the Pi (TigerVNC or RealVNC Viewer, whichever is
+  installed; offers `winget install TigerVNC.TigerVNC` if neither is, RealVNC as the fallback:
+  its winget entry's download answered 404 on 2026-10-22). The first time, accept the Pi's
+  certificate (wayvnc makes its own). Log in with the Pi's
   username and password. The robot GUI is on its desktop. `Pi Desktop.bat` does this directly.
 - **[3] Robot GUI on this PC, boards on the Pi:** needs the board bridge (next step of this work).
 - **[4] VS Code on the Pi:** `code --remote ssh-remote+robot /home/<user>/StepperMotorController`

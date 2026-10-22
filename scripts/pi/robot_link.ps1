@@ -757,11 +757,18 @@ function Open-Desktop {
     $viewer = Find-VncViewer
     if (-not $viewer) {
         Warn "no VNC viewer on this PC"
-        if (Ask "Install RealVNC Viewer with winget (it works with the Pi's wayvnc)?") {
-            & winget.exe install --id RealVNC.VNCViewer -e --accept-source-agreements --accept-package-agreements
-            $viewer = Find-VncViewer
+        # TigerVNC first: open source, and it speaks both of wayvnc's logins (TLS and RSA-AES).
+        # RealVNC's winget entry pointed at a download its server answered 404 (7.15.1, 2026-10-22).
+        if (Ask "Install TigerVNC Viewer with winget (open source; it works with the Pi's wayvnc)?") {
+            foreach ($id in @("TigerVNC.TigerVNC", "RealVNC.VNCViewer")) {
+                & winget.exe install --id $id -e --accept-source-agreements --accept-package-agreements
+                $viewer = Find-VncViewer
+                if ($viewer) { break }
+                Warn ($id + " did not install; trying the next viewer")
+            }
         }
-        if (-not $viewer) { Bad "no viewer (TigerVNC works too: winget install TigerVNC.TigerVNC)"; return }
+        if (-not $viewer) { Bad "no viewer: install TigerVNC (tigervnc.org) or RealVNC Viewer by hand, then [2] again"; return }
+        Say "  The first time, the viewer asks about the Pi's certificate (made by the Pi itself): accept it." "Yellow"
     }
     $ip = Get-StateValue $state "piAddress"
     Ok ("opening the Pi's desktop (" + $ip + ") in " + (Split-Path $viewer -Leaf) + "; log in with the Pi's username and password")
