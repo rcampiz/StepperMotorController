@@ -502,7 +502,11 @@ function Invoke-PiSetup($state) {
     if (-not (Test-Path $bundle)) { Bad "git bundle failed (is git installed?)"; return $false }
     $mode = Get-StateValue $state "mode" "ics"
     & scp.exe -q $bundle ($HostAlias + ":/tmp/smc.bundle")
-    & scp.exe -q (Join-Path $PSScriptRoot "pi_setup.sh") ($HostAlias + ":/tmp/smc_pi_setup.sh")
+    # LF only: a Windows checkout may have given the script CRLF, which bash on the Pi refuses
+    $script = Join-Path $env:TEMP "smc_pi_setup.sh"
+    $text = [IO.File]::ReadAllText((Join-Path $PSScriptRoot "pi_setup.sh")) -replace "`r`n", "`n"
+    [IO.File]::WriteAllText($script, $text, (New-Object System.Text.UTF8Encoding($false)))
+    & scp.exe -q $script ($HostAlias + ":/tmp/smc_pi_setup.sh")
     if ($LASTEXITCODE -ne 0) { Bad "copying to the Pi failed"; return $false }
     Ok "repository bundle and pi_setup.sh copied"
     & ssh.exe -t $HostAlias ("bash /tmp/smc_pi_setup.sh --bundle /tmp/smc.bundle --link " + $mode)
