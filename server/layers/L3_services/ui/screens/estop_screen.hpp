@@ -38,6 +38,7 @@ public:
     void onActivate() override;
     bool needsFullRedraw() const override { return m_needsRedraw; }
     void clearRedrawFlag() override { m_needsRedraw = false; }
+    void setNowMs(uint32_t nowMs) override { m_nowMs = nowMs; }
 
     void setFault(bool fault) { if (fault != m_fault) { m_fault = fault; m_full = true; } }
     void setProgress(uint8_t pct) { m_progress = pct > 100 ? 100 : pct; }
@@ -79,8 +80,8 @@ private:
     uint8_t m_stripePhase = 0;
     uint16_t m_tick = 0;             ///< frames since the page came up: the title's rock and flash
     float m_gridPhase = 0.0f;
-    Graphics::VhsBands m_vhs;        ///< the tracking bands, on the frame clock
-    uint32_t m_vhsTicks = 0;
+    Graphics::VhsBands m_vhs;        ///< the tracking bands, on the clock
+    uint32_t m_nowMs = 0;
 
     void applyLayout();
     uint16_t ink(uint16_t c) const;  ///< c faded toward the page by m_alpha

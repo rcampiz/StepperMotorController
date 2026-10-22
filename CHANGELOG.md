@@ -67,6 +67,11 @@ tags.
   20 Hz cutoff came back as 10 Hz after a restart (bench 2026-10-21: 20 Hz now survives one).
 
 ### Changed
+- LCD saver: the bands follow the clock (IScreen::setNowMs, from the ScreenManager) at 1.5x the
+  indicator's pace, so they keep their speed while the title slows the frames; the title's box
+  repaints every other frame again (every frame held the whole saver to ~11 frames/s; now 13-15
+  with the title, 20 without); at the bottom, on a dark plate, "SCREEN SAVER" / "PRESS ANY
+  BUTTON TO EXIT". The E-STOP page's bands follow the clock too.
 - LCD: the VHS tracking bands (`graphics/vhs_bands/vhs_bands.hpp`, shared) roll over the
   synthwave saver (the whole scene, title included) and the E-STOP / FAULT page (the hazard
   stripes, the grid, the page and behind the title's letters; never over the status panel, the

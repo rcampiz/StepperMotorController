@@ -14,7 +14,8 @@
  *    cut, rocks and bobs like that game's menu for 10 s and fades out. Per frame: the floor rows
  *    a grid line left or reached (a floor row is one colour or one line, its verticals fixed),
  *    the sun's box every other frame, the title's box while it shows, and the rows the bands
- *    left and reached.
+ *    left and reached. At the bottom, on a dark plate, what it is and the way out ("SCREEN
+ *    SAVER" / "PRESS ANY BUTTON TO EXIT": someone walking up to the panel may not know).
  *  - HOTLINE: a diagonal stripe band and a blocky SMC card with chromatic aberration,
  *    relaid every 2 s, with VHS glitch slices in between.
  *  - BLANK: a black panel, nothing sent.
@@ -38,6 +39,7 @@ public:
     InputResult handleInput(JoyDirection dir, bool pressed) override;
     void onActivate() override;
     bool needsFullRedraw() const override { return m_needsRedraw; }
+    void setNowMs(uint32_t nowMs) override { m_nowMs = nowMs; }
     void clearRedrawFlag() override { m_needsRedraw = false; }
 
     // Synthwave scene geometry (public for the host tests)
@@ -73,8 +75,9 @@ private:
     uint16_t m_sky[240] = {};              // sky colour per row (horizon < 240)
     uint8_t m_starX[STAR_COUNT] = {};
     uint8_t m_starY[STAR_COUNT] = {};
-    Graphics::VhsBands m_vhs;              // the tracking bands, on the frame clock
-    uint32_t m_vhsTicks = 0;
+    Graphics::VhsBands m_vhs;              // the tracking bands, on the clock
+    uint32_t m_nowMs = 0;
+    Services::ICanvas* m_canvas = nullptr; // for the exit hint's glyphs
     void synthNewScene();
     void synthFullPaint(Services::ICanvas& lcd);
     bool floorLine(int16_t r, float phase) const;          // floor row r (1 = under the horizon) is a grid line

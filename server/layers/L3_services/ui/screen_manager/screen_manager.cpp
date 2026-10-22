@@ -114,6 +114,8 @@ void ScreenManager::render()
         m_statusDirty = false;
     }
 
+    m_renderMs += 50;
+    screen->setNowMs(m_clock != nullptr ? m_clock->getTickMs() : m_renderMs);
     screen->render(*m_lcd);
 
     // The selected row (any chrome screen) animates, Hotline Miami style

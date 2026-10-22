@@ -41,11 +41,14 @@ public:
         for (int i = 0; i < COUNT; i++) m_top[i] = m_prev[i] = -1;
     }
 
+    /// The bands' speed, % of speed() (a screen's own pace: the saver's are quicker)
+    void setSpeedPercent(uint16_t pct) { m_speedPct = pct; }
+
     /// Move the bands to the clock (ms); the noise and the tear re-roll
     void step(uint32_t nowMs) {
         for (int i = 0; i < COUNT; i++) {
             m_prev[i] = m_top[i];
-            m_top[i] = static_cast<int16_t>((start(i) + static_cast<uint64_t>(nowMs) * speed(i) / 1000u) %
+            m_top[i] = static_cast<int16_t>((start(i) + static_cast<uint64_t>(nowMs) * speed(i) * m_speedPct / 100000u) %
                                             static_cast<uint32_t>(SCREEN_H));
         }
         m_frame++;
@@ -167,6 +170,7 @@ private:
     int16_t m_top[COUNT] = {-1, -1};
     int16_t m_prev[COUNT] = {-1, -1};
     uint16_t m_frame = 0;
+    uint16_t m_speedPct = 100;
 
     static uint16_t dimmed(uint16_t c, bool scan) { return scan ? mix(0, c, 205) : c; }
 

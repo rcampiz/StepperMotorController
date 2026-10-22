@@ -100,6 +100,10 @@ public:
 
     /// What CENTER does here, for the footer ("SELECT", "ZERO", "PAUSE"...). nullptr: nothing.
     virtual const char* centerHint() const { return "SELECT"; }
+
+    /// This frame's time (ms: the ScreenManager's clock, or 50 ms a frame without one), just
+    /// before render(): a screen that animates on time rather than on frames keeps it
+    virtual void setNowMs(uint32_t nowMs) { (void)nowMs; }
 };
 
 } // namespace UI

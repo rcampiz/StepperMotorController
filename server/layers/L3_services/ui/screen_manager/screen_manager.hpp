@@ -95,6 +95,7 @@ private:
     bool m_needsClear = false;  ///< Next render should clear screen first
     Platform::IClock* m_clock = nullptr;
     uint32_t m_frameMs = 0;     ///< the stand-in clock when there is none
+    uint32_t m_renderMs = 0;    ///< the stand-in clock for IScreen::setNowMs (50 ms a render)
 };
 
 } // namespace UI

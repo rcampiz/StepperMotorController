@@ -151,7 +151,12 @@ void SaverScreen::render(Services::ICanvas& lcd)
 {
     const SaverStyle style = (m_settings != nullptr) ? m_settings->saverStyle : SaverStyle::SYNTHWAVE;
     if (style == SaverStyle::BLANK) return;        // black, nothing moves, nothing is sent
-    if (style == SaverStyle::SYNTHWAVE) { renderSynthwave(lcd); return; }
+    if (style == SaverStyle::SYNTHWAVE) {
+        m_canvas = &lcd;
+        m_vhs.setSpeedPercent(150);             // quicker than the indicator's (owner 2026-10-22)
+        renderSynthwave(lcd);
+        return;
+    }
     renderHotline(lcd);
 }
 
@@ -477,6 +482,16 @@ void streamRows(Services::ICanvas& lcd, int16_t x0, int16_t y0, int16_t w, int16
     lcd.streamBitmapEnd();
 }
 
+// The way out, at the bottom of the floor on a dark plate (owner 2026-10-22: someone walking up
+// to the panel may not know it is a saver)
+constexpr const char* EXIT_LINES[2] = {"SCREEN SAVER", "PRESS ANY BUTTON TO EXIT"};
+constexpr int16_t EXIT_CHAR_W = 8, EXIT_CHAR_H = 12;    // the medium font
+constexpr int16_t EXIT_LINE_Y[2] = {H - 2 * EXIT_CHAR_H - 3 - 4, H - EXIT_CHAR_H - 4};
+constexpr int16_t EXIT_PLATE_T = EXIT_LINE_Y[0] - 3, EXIT_PLATE_B = H - 1;
+constexpr int16_t EXIT_PLATE_L = (W - 24 * EXIT_CHAR_W) / 2 - 6, EXIT_PLATE_R = W - 1 - EXIT_PLATE_L;
+static_assert(EXIT_PLATE_T > HORIZON_MIN + HORIZON_SPAN, "the exit hint sits on the floor");
+constexpr uint16_t EXIT_INK[2] = {rgb(255, 60, 200), rgb(235, 240, 255)};
+
 // The title as last prepared (synthPrepareTitle): the box repaint and the band rows that
 // cross it between repaints compose the same pixels from it
 struct TitleFrame {
@@ -752,6 +767,33 @@ void SaverScreen::floorRow(int16_t y, uint8_t* row) const
         }
     }
     m_vhs.row(y).apply(row, 0, 0, W - 1);
+    // The exit hint over the floor and the bands: a dark plate (the floor seen through it),
+    // the lines in the medium font
+    if (y >= EXIT_PLATE_T && y <= EXIT_PLATE_B && m_canvas != nullptr) {
+        for (int16_t x = EXIT_PLATE_L; x <= EXIT_PLATE_R; x++) {
+            const uint16_t c = static_cast<uint16_t>((row[x * 2] << 8) | row[x * 2 + 1]);
+            const uint16_t d = mix(c, 0, 170);
+            row[x * 2] = static_cast<uint8_t>(d >> 8);
+            row[x * 2 + 1] = static_cast<uint8_t>(d & 0xFF);
+        }
+        for (int line = 0; line < 2; line++) {
+            const int16_t gy = static_cast<int16_t>(y - EXIT_LINE_Y[line]);
+            if (gy < 0 || gy >= EXIT_CHAR_H) continue;
+            const char* text = EXIT_LINES[line];
+            const int16_t n = static_cast<int16_t>(strlen(text));
+            const int16_t x0 = static_cast<int16_t>((W - n * EXIT_CHAR_W) / 2);
+            for (int16_t i = 0; i < n; i++) {
+                const uint8_t* g = m_canvas->mediumGlyphRows(text[i]);
+                if (g == nullptr) continue;
+                for (int16_t b = 0; b < EXIT_CHAR_W; b++) {
+                    if ((g[gy] & (0x80u >> b)) == 0) continue;
+                    const int16_t x = static_cast<int16_t>(x0 + i * EXIT_CHAR_W + b);
+                    row[x * 2] = static_cast<uint8_t>(EXIT_INK[line] >> 8);
+                    row[x * 2 + 1] = static_cast<uint8_t>(EXIT_INK[line] & 0xFF);
+                }
+            }
+        }
+    }
 }
 
 void SaverScreen::synthRows(Services::ICanvas& lcd, int16_t first, int16_t last)
@@ -825,26 +867,26 @@ void SaverScreen::synthTwinkle(Services::ICanvas& lcd)
 
 void SaverScreen::renderSynthwave(Services::ICanvas& lcd)
 {
-    m_vhsTicks++;                              // the bands' clock: 50 ms a frame
     if (!m_synthReady || m_frame >= SCENE_FRAMES) {
         m_seedScene = nextRandom();
         synthNewScene();
         m_vhs.reset();
-        m_vhs.step(m_vhsTicks * 50u);
+        m_vhs.step(m_nowMs);
         synthFullPaint(lcd);
         m_synthReady = true;
         m_frame = 0;
         return;
     }
     m_frame++;
-    m_vhs.step(m_vhsTicks * 50u);
+    m_vhs.step(m_nowMs);                       // the bands follow the clock, whatever the frame rate
     const float oldPhase = m_phase;
     m_phase += 0.05f;                          // the floor comes toward the viewer
     if (m_phase >= 1.0f) m_phase -= 1.0f;
     lcd.waitForVSync();
     // Once per scene the name fades in, rocks and flashes for a while, and fades out; its box
-    // repaints every frame (it was every other frame, the sun's stripes taking the others: the
-    // text looked choppy, owner 2026-10-21), and once more at the end to leave the sky clean.
+    // repaints every other frame (the sun's stripes take the others) and once more at the end
+    // to leave the sky clean. Every frame, the box (29k px) held the whole saver to ~11
+    // frames/s while it showed (bench 2026-10-22); now the floor and the bands keep their pace.
     if (m_frame >= TITLE_START_FRAME && m_frame <= TITLE_START_FRAME + 2 * FADE_FRAMES + HOLD_TITLE_FRAMES) {
         const uint16_t t = static_cast<uint16_t>(m_frame - TITLE_START_FRAME);
         const uint16_t last = 2 * FADE_FRAMES + HOLD_TITLE_FRAMES;
@@ -852,7 +894,7 @@ void SaverScreen::renderSynthwave(Services::ICanvas& lcd)
         if (t < FADE_FRAMES) a = static_cast<uint16_t>((t + 1) * 256 / FADE_FRAMES);
         else if (t < FADE_FRAMES + HOLD_TITLE_FRAMES) a = 256;
         else a = static_cast<uint16_t>((last - t) * 256 / FADE_FRAMES);
-        {
+        if ((m_frame & 1) != 0 || t == last) {
             m_titleAlpha = a;
             synthTitle(lcd, t);
         }

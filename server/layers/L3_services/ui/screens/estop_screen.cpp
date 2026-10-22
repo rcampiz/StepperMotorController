@@ -430,7 +430,7 @@ void EstopScreen::drawStatic(Services::ICanvas& lcd)
     lcd.waitForVSync();
     lcd.fillScreen(Theme::BG);
     m_vhs.reset();
-    m_vhs.step(m_vhsTicks * 50u);
+    m_vhs.step(m_nowMs);
     drawBands(lcd);
     lcd.fillRect(0, BAND_H, Theme::WIDTH, 2, Theme::MAGENTA);
     lcd.fillRect(0, static_cast<uint16_t>(Theme::HEIGHT - BAND_H - 2), Theme::WIDTH, 2, Theme::MAGENTA);
@@ -512,8 +512,7 @@ void EstopScreen::render(Services::ICanvas& lcd)
     if (wake) m_phaseFrames = 0;
 
     m_tick++;
-    m_vhsTicks++;                  // the bands' clock: 50 ms a frame
-    m_vhs.step(m_vhsTicks * 50u);
+    m_vhs.step(m_nowMs);           // the bands follow the clock, whatever the frame rate
     bool middle = false;           // the middle fades this frame
     if (!m_full) {
         switch (m_phase) {
